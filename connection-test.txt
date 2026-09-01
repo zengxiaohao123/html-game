@@ -1,0 +1,2 @@
+connection test 2026-09-01 12:00 UTC
+This is a temporary verification file, will be deleted immediately.
