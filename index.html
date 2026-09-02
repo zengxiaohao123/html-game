@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>异世界流浪日记 · 核心循环 MVP</title>
+<title>异世界流浪日记 · 核心循环</title>
 <style>
 :root{
   --bg:#14161c; --panel:#1c1f27; --panel2:#222533; --line:#33384a;
@@ -21,7 +21,7 @@ body{
 }
 #app{height:100vh;display:flex;flex-direction:column;}
 #hud{
-  display:flex; align-items:center; gap:14px;
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
   padding:6px 10px; background:var(--panel); border-bottom:1px solid var(--line);
   font-size:13px; min-height:30px;
 }
@@ -29,16 +29,17 @@ body{
 #hud .stat b{font-weight:600; color:#fff;}
 .hpfill{color:var(--good);} .hpfill.low{color:var(--bad);}
 #iconbar{
-  display:flex; justify-content:flex-end; gap:6px; padding:4px 10px;
+  display:flex; justify-content:flex-start; gap:6px; padding:4px 10px; flex-wrap:wrap;
   background:var(--panel); border-bottom:1px solid var(--line);
 }
 .icobtn{
-  padding:4px 10px; background:var(--panel2); border:1px solid var(--line);
-  cursor:pointer; font-size:12px; color:var(--txt); border-radius:3px;
+  padding:4px 12px; background:var(--panel2); border:1px solid var(--line);
+  cursor:pointer; font-size:13px; color:var(--txt); border-radius:3px;
 }
 .icobtn:hover{background:#2c3040;}
+.icobtn.sleep{background:#3a2f12; color:var(--gold); font-weight:600;}
 .icobtn.hidden{display:none;}
-#main{flex:1; display:grid; grid-template-columns:270px 1fr 240px; gap:6px; padding:6px; min-height:0;}
+#main{flex:1; display:grid; grid-template-columns:250px 1fr 230px; gap:6px; padding:6px; min-height:0;}
 #mapWrap{position:relative; background:var(--panel); border:1px solid var(--line); border-radius:4px; min-height:0;}
 #mapViewport{position:absolute; inset:0; overflow:auto;}
 #mapGrid{display:grid; gap:3px; padding:8px;}
@@ -66,66 +67,72 @@ body{
   background:var(--panel); border:1px solid var(--line); border-radius:4px;
   display:flex; flex-direction:column; min-height:0;
 }
-#leftLog h4{padding:6px 8px; font-size:12px; color:var(--txt-dim); border-bottom:1px solid var(--line);}
+.panel-title{padding:6px 8px; font-size:12px; color:var(--txt-dim); border-bottom:1px solid var(--line); flex:none;}
 #logBody{flex:1; overflow-y:auto; padding:6px 8px; font-size:12px; line-height:1.6; min-height:0;}
 #logBody .logline{border-bottom:1px dashed #00000044; padding:2px 0;}
 #goBtn{
   margin:8px; padding:7px; background:var(--gold); color:#241d05; font-weight:700;
-  border:none; border-radius:4px; cursor:pointer; display:none; font-size:13px;
+  border:none; border-radius:4px; cursor:pointer; display:none; font-size:13px; flex:none;
 }
 #goBtn.disabled{background:#555;cursor:not-allowed;}
 #rightPanel{
   background:var(--panel); border:1px solid var(--line); border-radius:4px;
   display:flex; flex-direction:column; min-height:0;
 }
-#rightPanel h4{padding:6px 8px; font-size:12px; color:var(--txt-dim); border-bottom:1px solid var(--line);}
 #promptZone{flex:1; overflow-y:auto; padding:8px; font-size:13px; line-height:1.6; min-height:0;}
+#promptZone .opt{margin:4px 0; padding:8px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:4px;}
+#promptZone .opt:hover{background:#2c3040;}
 #bottom{
-  height:200px; background:var(--panel); border:1px solid var(--line); border-radius:4px;
-  margin:0 6px 6px; display:grid; grid-template-columns:1fr 1fr; gap:6px; padding:6px; min-height:0;
+  height:210px; background:var(--panel); border:1px solid var(--line); border-radius:4px;
+  margin:0 6px 6px; padding:6px; position:relative; min-height:0;
 }
-#storyBox{display:flex; flex-direction:column; min-height:0;}
-#storyBox h4{padding:3px 6px; font-size:12px; color:var(--txt-dim); border-bottom:1px solid var(--line);}
+#storyBox, #combatZone{display:none; height:100%; flex-direction:column; min-height:0;}
+#bottom.mode-story #storyBox{display:flex;}
+#bottom.mode-combat #combatZone{display:flex;}
 #storyBody{flex:1; overflow-y:auto; padding:6px 8px; font-size:13px; line-height:1.7; min-height:0;}
 #storyBody .speaker{color:var(--gold); font-weight:700;}
-#combatZone{display:flex; flex-direction:column; min-height:0; gap:6px;}
-#combatZone h4{padding:3px 6px; font-size:12px; color:var(--txt-dim); border-bottom:1px solid var(--line);}
-#combatZone.collapsed h4{display:block;}
-#allyBar{display:flex; gap:6px; flex-wrap:wrap;}
-.allyTab{padding:4px 8px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; font-size:12px; border-radius:3px;}
+#combatZone h4, #storyBox h4{flex:none;}
+#allyBar{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px;}
+.allyTab{padding:5px 10px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; font-size:12px; border-radius:3px;}
 .allyTab.active{outline:2px solid var(--gold);}
-#skillList{display:flex; gap:6px; flex-wrap:wrap;}
-.skillTag{padding:4px 8px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:3px; font-size:12px;}
+#skillList{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:4px;}
+.skillTag{padding:5px 10px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:3px; font-size:13px;}
 .skillTag.attack{border-color:var(--fire);}
 .skillTag.skill{color:var(--gold);}
-#skillDetail{font-size:11px; color:var(--txt-dim); min-height:2em;}
+.skillTag.active{outline:2px solid var(--gold); background:#2c3040;}
+#skillDetail{font-size:12px; color:var(--txt-dim); min-height:2em; margin-bottom:4px;}
 #talentBox{margin-top:auto;}
 .overlay{
-  position:fixed; inset:0; background:#000000cc; display:none; align-items:center; justify-content:center; z-index:50;
+  position:fixed; inset:0; background:#000000c0; display:none; align-items:center; justify-content:center; z-index:50;
 }
 .overlay.show{display:flex;}
 .modal{
   background:var(--panel); border:1px solid var(--line); border-radius:6px;
-  width:min(520px,92vw); max-height:80vh; overflow:auto; padding:14px;
+  width:min(92vw, 1000px); max-height:92vh; overflow:auto; padding:16px;
+  display:flex; flex-direction:column;
 }
-.modal h2{font-size:16px; margin-bottom:10px; color:var(--gold);}
+.modal h2{font-size:17px; margin-bottom:10px; color:var(--gold); flex:none;}
+#modalBody{flex:1; overflow-y:auto; min-height:0;}
+.modal.wide{width:min(96vw, 1200px);}
+.modal.small{width:min(420px,92vw); height:auto;}
 .mbtn{
-  display:block; width:100%; margin:6px 0; padding:10px; background:var(--panel2);
+  display:block; width:100%; margin:6px 0; padding:11px; background:var(--panel2);
   border:1px solid var(--line); color:var(--txt); cursor:pointer; border-radius:4px; font-size:14px; text-align:left;
 }
 .mbtn:hover{background:#2c3040;}
-.mbtn.small{width:auto; display:inline-block; padding:5px 10px; font-size:12px;}
+.mbtn.small{width:auto; display:inline-block; padding:6px 14px; font-size:13px;}
+.resRow{font-size:14px; line-height:2;}
 .term{color:var(--gold); text-decoration:underline; text-underline-offset:2px; cursor:help;}
 #tooltip{
   position:fixed; display:none; max-width:260px; background:#000d; color:#eee;
   border:1px solid var(--line); padding:6px 8px; font-size:12px; border-radius:4px; z-index:100;
   line-height:1.5;
 }
-.statGrid{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; font-size:12px;}
-.resRow{font-size:13px; line-height:1.8;}
+.statGrid{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; font-size:13px;}
 .e-fire{color:var(--fire)!important;} .e-water{color:var(--water)!important;} .e-grass{color:var(--grass)!important;}
 .e-thunder{color:var(--thunder)!important;} .e-ice{color:var(--ice)!important;} .e-wind{color:var(--wind)!important;} .e-rock{color:var(--rock)!important;}
 .kbd{background:#000a; border:1px solid var(--line); border-radius:3px; padding:0 5px; font-size:11px;}
+.btn-row{display:flex; gap:8px; flex-wrap:wrap;}
 </style>
 </head>
 <body>
@@ -134,25 +141,25 @@ body{
   <div id="iconbar"></div>
   <div id="main">
     <div id="leftLog">
-      <h4>行动记录 · 文字区</h4>
+      <div class="panel-title">行动记录</div>
       <div id="logBody"></div>
-      <button id="goBtn" class="disabled">前往</button>
+      <button id="goBtn">前往</button>
     </div>
     <div id="mapWrap">
       <div id="mapViewport"><div id="mapGrid"></div></div>
     </div>
     <div id="rightPanel">
-      <h4>信息 / 选项</h4>
+      <div class="panel-title" id="rightTitle">事件 / 选择</div>
       <div id="promptZone"></div>
     </div>
   </div>
-  <div id="bottom">
+  <div id="bottom" class="mode-story">
     <div id="storyBox">
-      <h4>剧情 / 对话</h4>
+      <div class="panel-title">剧情</div>
       <div id="storyBody"></div>
     </div>
     <div id="combatZone">
-      <h4>队伍 / 技能（战斗中菜单）</h4>
+      <div class="panel-title">战斗 · 技能</div>
       <div id="allyBar"></div>
       <div id="skillList"></div>
       <div id="skillDetail"></div>
@@ -161,7 +168,7 @@ body{
   </div>
 </div>
 <div id="menuOverlay" class="overlay show">
-  <div class="modal">
+  <div class="modal small">
     <h2>异世界流浪日记</h2>
     <div id="menuBtns"></div>
   </div>
@@ -170,11 +177,13 @@ body{
   <div class="modal">
     <h2 id="modalTitle"></h2>
     <div id="modalBody"></div>
-    <button class="mbtn small" onclick="closeModal()">关闭</button>
+    <div class="btn-row" style="margin-top:8px">
+      <button class="mbtn small" onclick="closeModal()">关闭</button>
+    </div>
   </div>
 </div>
 <div id="gameoverOverlay" class="overlay">
-  <div class="modal">
+  <div class="modal small">
     <h2>健康值归零 · 流浪终结</h2>
     <p id="goMsg"></p>
     <button class="mbtn" onclick="loadAfterGameOver()">读取存档</button>
@@ -188,10 +197,11 @@ const MAX_SAVES = 8;
 const ELEM = {fire:{c:'e-fire',zh:'火'},water:{c:'e-water',zh:'水'},grass:{c:'e-grass',zh:'草'},
   thunder:{c:'e-thunder',zh:'雷'},ice:{c:'e-ice',zh:'冰'},wind:{c:'e-wind',zh:'风'},rock:{c:'e-rock',zh:'岩'}};
 const AURA_ELEMS = ['fire','water','grass','thunder','ice'];
-const DAMAGE_TYPES = ['physical','fire','water','grass','thunder','ice'];
+/* 资源中文名（展示用） */
+const RES_ZH = {wood:'木材', fruit:'果子', flax:'亚麻', rawMeat:'生肉', coin:'金币', emptyBottle:'空瓶子'};
 const TERMS = {
   alert:'主角天赋【战术布置】产生。我方单位攻击时优先攻击该目标；场上至多存在1个；主角用单体攻击新敌人时覆盖旧目标。',
-  charge:'敌人进行强力攻击前的准备状态。蓄力期间不移动、不改变朝向。受到我方任意攻击即被打断；少数带"难以打断"标签的蓄力需更强手段。',
+  charge:'敌人进行强力攻击前的准备状态。蓄力期间不移动、不改变朝向。受到我方任意攻击即被打断。',
   bind:'无法移动，但可以攻击。',
   burn:'每回合开始时流失2%生命值（可致死，没有伤害来源）。持续3回合。',
   aggro:'攻击力+15%；受到的雷元素伤害与草元素伤害+25%。持续2回合。',
@@ -242,6 +252,8 @@ const ENEMIES = {
 function randKey(obj){const ks=Object.keys(obj); return ks[Math.floor(Math.random()*ks.length)];}
 let G=null;
 let combatState=null;
+let gameMode='story';
+let previewCell=null;
 function newGame(){
   return {
     day:1, region:'wild',
@@ -254,6 +266,7 @@ function newGame(){
   };
 }
 function saveGame(slot){
+  if(!G) return;
   const saves=loadSaves();
   const snap=JSON.parse(JSON.stringify(G));
   snap._ts=Date.now();
@@ -295,9 +308,9 @@ function generateMap(day){
 }
 function rollContent(day){
   const r=Math.random();
-  if(r<0.18) return {type:'enemy', key:randKey(ENEMIES), id:0};
-  if(r<0.30) return {type:'loot', done:false};
-  if(r<0.40) return {type:'event', done:false};
+  if(r<0.20) return {type:'enemy', key:randKey(ENEMIES), id:0};
+  if(r<0.32) return {type:'loot', done:false};
+  if(r<0.42) return {type:'event', done:false};
   return {type:'empty'};
 }
 function ensureConnectivity(cells,n){
@@ -360,12 +373,20 @@ function expandVisited(cells,n,x,y,visited){
 }
 const $=id=>document.getElementById(id);
 function el(html){const d=document.createElement('div'); d.innerHTML=html; return d.firstElementChild;}
+function switchMode(m){
+  gameMode=m;
+  $('#bottom').classList.toggle('mode-story', m==='story');
+  $('#bottom').classList.toggle('mode-combat', m==='combat');
+  $('#rightTitle').textContent = m==='combat' ? '插曲' : '事件 / 选择';
+  if(m==='story') $('#goBtn').style.display='none';
+}
 function refreshHUD(){
+  if(!G) return;
   const h=G.hero;
   const hpCls=h.hp< h.maxHp*0.3?'hpfill low':'hpfill';
-  $('hud').innerHTML=
+  $('#hud').innerHTML=
     `<span class="stat">健康 <b>${h.health}</b></span>`+
-    `<span class="stat">天数 <b>D${G.day}</b></span>`+
+    `<span class="stat">天数 <b>${G.day}</b></span>`+
     `<span class="stat">区域 <b>${G.region==='wild'?'野外':'城市'}</b></span>`+
     `<span class="stat">攻击 <b>${h.atk}</b></span>`+
     `<span class="stat">防御 <b>${h.def}</b></span>`+
@@ -375,18 +396,19 @@ function refreshHUD(){
 }
 function renderIconbar(){
   if(!G) return;
-  const show=[['设置',openSettings],['背包',openInventory],['角色',openCharacters],['编队',openFormation],['任务',openTasks],['商店',openShop]];
-  $('iconbar').innerHTML=show.map(([t,f],i)=>`<button class="icobtn" data-i="${i}">${t}</button>`).join('');
-  $('iconbar').querySelectorAll('.icobtn').forEach(b=>b.onclick=()=>show[+b.dataset.i][1]());
-  $('iconbar').querySelectorAll('.icobtn')[5].classList.toggle('hidden', G.day<3);
+  const show=[[ '任务',openTasks],['编队',openFormation],['角色',openCharacters],
+    ['背包',openInventory],['睡觉',sleep],['设置',openSettings],['商店',openShop]];
+  $('#iconbar').innerHTML=show.map(([t,f],i)=>`<button class="icobtn${t==='睡觉'?' sleep':''}" data-i="${i}">${t}</button>`).join('');
+  $('#iconbar').querySelectorAll('.icobtn').forEach(b=>b.onclick=()=>show[+b.dataset.i][1]());
+  $('#iconbar').querySelectorAll('.icobtn')[6].classList.toggle('hidden', G.day<3);
 }
-function log(msg,cls){ 
+function log(msg){ 
   const d=el(`<div class="logline">${msg}</div>`);
-  $('logBody').appendChild(d);
-  $('logBody').scrollTop=$('logBody').scrollHeight;
+  $('#logBody').appendChild(d);
+  $('#logBody').scrollTop=$('#logBody').scrollHeight;
 }
-function story(html){$('storyBody').insertAdjacentHTML('beforeend',`<div>${html}</div>`); $('storyBody').scrollTop=$('storyBody').scrollHeight;}
-function prompt(msg){$('promptZone').innerHTML=msg;}
+function story(html){$('#storyBody').insertAdjacentHTML('beforeend',`<div>${html}</div>`); $('#storyBody').scrollTop=$('#storyBody').scrollHeight;}
+function prompt(msg){$('#promptZone').innerHTML=msg;}
 function e(txt){
   if(typeof txt!=='string') return txt;
   const map={fire:'火',water:'水',grass:'草',thunder:'雷',ice:'冰',wind:'风',rock:'岩'};
@@ -397,7 +419,7 @@ function e(txt){
   return txt;
 }
 function renderMap(){
-  const m=G.map; const grid=$('mapGrid');
+  const m=G.map; const grid=$('#mapGrid');
   grid.style.gridTemplateColumns=`repeat(${m.n},44px)`;
   grid.innerHTML='';
   for(let y=0;y<m.n;y++){
@@ -406,8 +428,7 @@ function renderMap(){
       const cell=el('<div class="cell"></div>');
       if(c.terrain==='obstacle'){cell.classList.add('obstacle');}
       if(c.content && c.content.type) renderCellContent(cell,c);
-      const isPlayer=(G.px===x&&G.py===y);
-      if(isPlayer){cell.classList.add('player'); cell.classList.add('facing-'+G.hero.facing);}
+      if(G.px===x&&G.py===y){cell.classList.add('player'); cell.classList.add('facing-'+G.hero.facing);}
       cell.dataset.x=x; cell.dataset.y=y;
       cell.addEventListener('click',()=>onCellClick(x,y));
       grid.appendChild(cell);
@@ -428,39 +449,41 @@ function renderCellContent(cell,c){
     cell.textContent='❓'; cell.title='事件';
   }
 }
-let previewCell=null;
 function onCellClick(x,y){
+  if(combatState){ combatCellClick(x,y); return; }
   const m=G.map;
-  if(combatState){
-    combatCellClick(x, y);
-    return;
-  }
   const c=m.cells[y*m.n+x];
   if(c.terrain==='obstacle'){ prompt('这是一片无法通行的山脉。'); return; }
   previewCell={x,y};
   let info=`位置 (${x+1},${y+1})<br>`;
-  if(c.content && c.content.type==='enemy') info+=`遭遇 <b>${ENEMIES[c.content.key].name}</b><br>移动过去将进入战斗。`;
+  if(c.content && c.content.type==='enemy') info+=`前方遭遇 <b>${ENEMIES[c.content.key].name}</b><br>移动过去将进入战斗。`;
   else if(c.content && c.content.type==='loot') info+='此处有一个宝箱。';
   else if(c.content && c.content.type==='event') info+='此处有事件发生。';
   else info+='空地。';
   prompt(info);
-  const go=$('goBtn');
+  activateGo(x,y);
+}
+function activateGo(x,y){
+  const go=$('#goBtn');
   go.style.display='block';
+  go.disabled=false;
   go.classList.remove('disabled');
-  go.onclick=()=>{ go.disabled=true; moveExplore(x,y); };
+  go.onclick=()=>{ go.style.display='none'; moveExplore(x,y); };
 }
 function moveExplore(x,y){
+  if(combatState) return;
   const m=G.map;
   const dx=x-G.px, dy=y-G.py;
   if(Math.abs(dx)+Math.abs(dy)!==1){ log('只能移动到相邻一格（上下左右）。'); return; }
   const target=m.cells[y*m.n+x];
   if(target.terrain==='obstacle'){ log('有山脉阻挡，无法通行。'); return; }
-  if(G.hero.actionPoint<1){ log('行动力不足，请先睡觉进入下一天。'); return; }
+  if(G.hero.actionPoint<1){ log('行动力不足，请先「睡觉」进入下一天。'); return; }
+  $('#goBtn').style.display='none';
   G.hero.actionPoint-=1;
   G.hero.facing = dirToFacing(dx,dy);
   G.px=x; G.py=y;
   const drops=dropResources();
-  if(drops){ G.inventory[drops.kind]+=drops.amount; log(`获得 <b>${drops.amount}</b> 份 ${drops.kind}。`); }
+  if(drops){ G.inventory[drops.kind]+=drops.amount; log(`获得 <b>${drops.amount}</b> 份 ${RES_ZH[drops.kind]}。`); }
   if(target.content && target.content.type==='enemy'){ log(`遭遇 <b>${ENEMIES[target.content.key].name}</b>！进入战斗。`); startCombat(target); }
   else if(target.content && target.content.type==='loot' && !target.content.done){ openLoot(target); }
   else if(target.content && target.content.type==='event' && !target.content.done){ runEvent(target); }
@@ -484,7 +507,7 @@ function openLoot(target){
   const k=kinds[Math.floor(Math.random()*kinds.length)];
   const amt=k==='coin'?1+Math.floor(Math.random()*3):1;
   G.inventory[k]+=amt;
-  log(`开启宝箱，获得 <b>${amt}</b> 份 ${k}。`);
+  log(`开启宝箱，获得 <b>${amt}</b> 份 ${RES_ZH[k]}。`);
   refreshHUD(); renderMap();
 }
 function runEvent(target){
@@ -494,7 +517,7 @@ function runEvent(target){
     const g=2+Math.floor(Math.random()*3);
     G.inventory.coin+=g; log(`你遇到商人的遗落行囊，获得 <b>${g}</b> 金币。`);
   } else if(ev<0.7){
-    if(G.hero.hp<G.hero.maxHp){ const h=v=>Math.min(G.hero.maxHp, G.hero.hp+Math.floor(G.hero.maxHp*0.15)+10); G.hero.hp=h(G.hero.hp); log('你在一处温泉旁歇脚，回复了部分生命。'); }
+    if(G.hero.hp<G.hero.maxHp){ G.hero.hp=Math.min(G.hero.maxHp, G.hero.hp+Math.floor(G.hero.maxHp*0.15)+10); log('你在一处温泉旁歇脚，回复了部分生命。'); }
     else log('你在温泉旁歇脚，精神为之一振。');
   } else {
     G.hero.health=Math.max(0,G.hero.health-1); log('一场虚惊让健康有所消耗。');
@@ -502,11 +525,11 @@ function runEvent(target){
   refreshHUD(); renderMap();
 }
 function startCombat(cell){
-  const m=G.map;
   combatState={
-    hero:{x:G.px,y:G.py,facing:G.hero.facing,hp:G.hero.hp,maxHp:G.hero.maxHp,shield:0,moved:false,usedSkill:false},
+    hero:{x:G.px,y:G.py,facing:G.hero.facing,hp:G.hero.hp,maxHp:G.hero.maxHp,shield:0,auras:[]},
     enemies:[],
-    playerMoved:false,
+    playerMoved:false, heroUsedSkill:false, playerOver:false,
+    selectedSkillId:'slash', selectedEnemy:null,
     entryCell:G.px+','+G.py,
     day:G.day
   };
@@ -517,7 +540,7 @@ function startCombat(cell){
     aura:ENEMIES[cell.content.key].aura||null, charge:0, shield:0
   });
   story('战斗开始！');
-  log('进入战斗。你须击败所有敌人。');
+  log('进入战斗。你得击败所有敌人。');
   enterCombatMode();
 }
 function placeEnemyNear(px,py,n){
@@ -529,15 +552,14 @@ function placeEnemyNear(px,py,n){
   return {x:px,y:py};
 }
 function enterCombatMode(){
-  $('goBtn').style.display='none';
-  $('combatZone').classList.toggle('collapsed',false);
+  switchMode('combat');
   updateCombatUI();
   refreshHUD();
   renderCombatMap();
 }
 function renderCombatMap(){
   if(!combatState) return;
-  const m=G.map; const grid=$('mapGrid');
+  const m=G.map; const grid=$('#mapGrid');
   grid.style.gridTemplateColumns=`repeat(${m.n},44px)`;
   grid.innerHTML='';
   for(let y=0;y<m.n;y++)for(let x=0;x<m.n;x++){
@@ -562,22 +584,23 @@ function renderCombatMap(){
 function combatCellClick(x,y){
   const cs=combatState;
   if(!cs) return;
-  const enemy=cs.enemies.find(e=>e.x===x&&e.y===y);
+  const enemy=cs.enemies.find(en=>en.x===x&&en.y===y);
   if(enemy){ cs.selectedEnemy=enemy; prompt(`已选定目标：${ENEMIES[enemy.key].name}`); updateCombatUI(); return; }
   const dx=x-cs.hero.x, dy=y-cs.hero.y;
   if(Math.abs(dx)+Math.abs(dy)!==1){ prompt('只能移动到相邻一格。'); return; }
   const c=G.map.cells[y*G.map.n+x];
   if(c.terrain==='obstacle'){ prompt('山脉阻挡。'); return; }
-  if(cs.enemies.find(e=>e.x===x&&e.y===y)){ prompt('有敌人占据该格。'); return; }
+  if(cs.enemies.some(en=>en.x===x&&en.y===y)){ prompt('有敌人占据该格。'); return; }
+  if(cs.playerMoved){ prompt('本回合已移动，请先结算敌人行动。'); return; }
   cs.hero.facing=dirToFacing(dx,dy);
   cs.hero.x=x; cs.hero.y=y;
-  if(!cs.playerMoved){ cs.playerMoved=true; }
+  cs.playerMoved=true;
   autoCastHero();
   endPlayerPhase();
 }
 function castSelectedSkill(){
   if(!combatState) return;
-  if(combatState.playerMoved){ prompt('本回合已移动，技能请于移动前使用或已自动释放。'); return; }
+  if(combatState.playerMoved){ prompt('本回合已移动，技能请于移动前使用。'); return; }
   if(combatState.heroUsedSkill||combatState.playerOver){ return; }
   const skill=PROTAGONIST.skills.find(s=>PROTAGONIST.selectedSkillIds.includes(s.id)&&s.id===combatState.selectedSkillId)||PROTAGONIST.skills.find(s=>s.id===combatState.selectedSkillId);
   if(!skill){ return; }
@@ -589,6 +612,7 @@ function castSelectedSkill(){
 function resolveSkill(actor, skill, manual){
   if(!combatState) return;
   const enemy=combatState.selectedEnemy || combatState.enemies[0];
+  if(!enemy) return;
   let dmg=computeDamageActor(actor, skill, enemy);
   const txt=e(`${skill.name}对${ENEMIES[enemy.key].name}造成${Math.round(dmg)}点伤害。`);
   log(txt); story(`<b>${actor.name}</b>：${txt}`);
@@ -606,7 +630,7 @@ function computeDamageActor(actor, skill, enemy){
   return dmg;
 }
 function autoCastHero(){
-  if(combatState.heroUsedSkill) return;
+  if(!combatState||combatState.heroUsedSkill) return;
   const skill=PROTAGONIST.skills.find(s=>s.id===combatState.selectedSkillId);
   if(!skill) return;
   resolveSkill(PROTAGONIST, skill, false);
@@ -623,17 +647,13 @@ function applyEnemyDamage(enemy,dmg,skill){
     combatState.enemies=combatState.enemies.filter(e=>e!==enemy);
   }
 }
-function setAura(enemy,elem){
-  if(!AURA_ELEMS.includes(elem)) return;
-  enemy.aura=elem;
-}
+function setAura(enemy,elem){ if(AURA_ELEMS.includes(elem)) enemy.aura=elem; }
 function checkReaction(enemy, elementHit){
   if(!enemy.aura || enemy.aura===elementHit) return;
   const a=enemy.aura, h=elementHit;
   if(a==='fire'&&h==='water'){ enemy.hp-=Math.max(1,Math.round(enemy.hp*0.15)); log(`<span class="e-water">蒸发</span>！${ENEMIES[enemy.key].name}受额外伤害。`); }
   else if(a==='water'&&h==='grass'){ spawnSlime(); log(`${termHTML('zone','绽放')}生成一只草史莱姆援军。`); }
   else if(a==='fire'&&h==='grass'){ enemy.burn=3; log(`<span class="e-grass">燃烧</span>！${ENEMIES[enemy.key].name}将持续灼烧。`); }
-  else if(a==='fire'&&h==='ice'){ /*融化*/ }
   enemy.aura=null;
 }
 function spawnSlime(){
@@ -643,7 +663,6 @@ function spawnSlime(){
 function checkCombatEnd(){
   if(!combatState) return;
   if(combatState.enemies.length===0){
-    const wins=combatState.day;
     G.records.wins=(G.records.wins||0)+1;
     log('战斗胜利！');
     story('战斗胜利，你收起了武器。');
@@ -662,7 +681,6 @@ function enemyTurn(){
   const dx=cs.hero.x-enemy.x, dy=cs.hero.y-enemy.y;
   enemy.facing=dirToFacing(dx,dy);
   const dist=Math.abs(dx)+Math.abs(dy);
-  let action='';
   if(dist===1){
     const eDef=ENEMIES[enemy.key];
     let dmg=eDef.atk*eDef.skillMult;
@@ -672,18 +690,14 @@ function enemyTurn(){
     cs.hero.hp-=dmg;
     log(`${ENEMIES[enemy.key].name} 攻击你，造成 ${dmg} 点伤害。`);
     if(eDef.aura){ cs.hero.aura=eDef.aura; }
-    action='attack';
   } else {
     let nx=enemy.x, ny=enemy.y;
     if(Math.abs(dx)>Math.abs(dy)) nx += dx>0?1:-1; else ny += dy>0?1:-1;
-    const nd=nx===cs.hero.x&&ny===cs.hero.y ? 0 : dist-1;
     if(G.map.cells[ny*G.map.n+nx].terrain!=='obstacle' && !cs.enemies.some(e2=>e2!==enemy&&e2.x===nx&&e2.y===ny)){
       if(!(nx===cs.hero.x&&ny===cs.hero.y)){ enemy.x=nx; enemy.y=ny; log(`${ENEMIES[enemy.key].name} 逼近。`); }
     }
-    action='move';
   }
   cs.hero.shield=0;
-  cs.hero.facing=cs.hero.facing;
   checkCombatEnd();
 }
 function endPlayerPhase(){
@@ -694,37 +708,42 @@ function endPlayerPhase(){
   cs.hero.shield=0; cs.playerMoved=false; cs.heroUsedSkill=false; cs.playerOver=false;
   renderCombatMap(); updateCombatUI(); refreshHUD();
 }
-let combatUi={selectedSkillId:'slash', selectedEnemy:0};
 function updateCombatUI(){
-  if(!combatState){ $('combatZone').classList.add('collapsed'); return; }
+  if(!combatState){ $('#combatZone').classList.remove('active'); switchMode('story'); return; }
   const cs=combatState;
   prompt(
-    `主角 HP ${Math.round(cs.hero.hp)}/${Math.round(cs.hero.maxHp)}${cs.hero.shield>0?` 护盾${Math.round(cs.hero.shield)}`:''}<br>`+
-    cs.enemies.map((e,i)=>`<span style="color:${ENEMIES[e.key].color}">${ENEMIES[e.key].name}</span> HP ${Math.round(e.hp)}${e.aura?`（附着·${ELEM[e.aura].zh}）`:''}${cs.selectedEnemy===e?' <b>←目标</b>':''}<br>`).join('')
+    `主角 生命 ${Math.round(cs.hero.hp)}/${Math.round(cs.hero.maxHp)}${cs.hero.shield>0?` 护盾${Math.round(cs.hero.shield)}`:''}<br>`+
+    cs.enemies.map(en=>`<span style="color:${ENEMIES[en.key].color}">${ENEMIES[en.key].name}</span> 生命 ${Math.round(en.hp)}${en.aura?`（附着·${ELEM[en.aura].zh}）`:''}${cs.selectedEnemy===en?' <b>←目标</b>':''}<br>`).join('')+
+    `<br><b>操作</b>：点选下方技能，再按 <b>Q</b> 释放；或先 <b>移动</b>（点击相邻格 / WASD），移动后会 自动攻击最近的敌人。`
   );
-  $('allyBar').innerHTML=G.team.map(t=>`<div class="allyTab ${t==='pro'?'active':''}" data-t="${t}">${t==='pro'?PROTAGONIST.name:''}</div>`).join('');
-  $('allyBar').querySelectorAll('.allyTab').forEach(b=>b.onclick=()=>selectAlly(b.dataset.t));
+  $('#allyBar').innerHTML=G.team.map(t=>`<div class="allyTab ${t==='pro'?'active':''}" data-t="${t}">${t==='pro'?PROTAGONIST.name:''}</div>`).join('');
+  $('#allyBar').querySelectorAll('.allyTab').forEach(b=>b.onclick=()=>selectAlly(b.dataset.t));
   const skills=PROTAGONIST.skills.filter(s=>PROTAGONIST.selectedSkillIds.includes(s.id));
-  $('skillList').innerHTML=skills.map(s=>`<div class="skillTag ${s.kind==='attack'?'attack':'skill'} ${combatState.selectedSkillId===s.id?'active':''}" data-s="${s.id}" title="${s.desc}">${s.name}</div>`).join('');
-  $('skillList').querySelectorAll('.skillTag').forEach(b=>b.onclick=()=>{ combatState.selectedSkillId=b.dataset.s; updateCombatUI(); showSkillDetail(b.dataset.s); });
-  showSkillDetail(combatState.selectedSkillId||skills[0].id);
+  $('#skillList').innerHTML=skills.map(s=>`<div class="skillTag ${s.kind==='attack'?'attack':'skill'} ${cs.selectedSkillId===s.id?'active':''}" data-s="${s.id}" title="${s.desc}">${s.name}</div>`).join('');
+  $('#skillList').querySelectorAll('.skillTag').forEach(b=>b.onclick=()=>{ cs.selectedSkillId=b.dataset.s; updateCombatUI(); });
+  const cur=PROTAGONIST.skills.find(s=>s.id===cs.selectedSkillId);
+  $('#skillDetail').innerHTML=(cur?`<b>${cur.name}</b>：${e(cur.desc)}`:'');
 }
-function showSkillDetail(id){
-  const s=PROTAGONIST.skills.find(x=>x.id===id);
-  $('skillDetail').innerHTML=s? e(s.desc):'';
-}
-function selectAlly(key){
-  log('MVP 阶段：仅主角可操作。');
-}
+function selectAlly(key){ log('当前阶段：仅主角可操作。'); }
+/* 键盘操作：探索用 WASD 移动，战斗用 WASD 移动 / Q 释放技能 */
 document.addEventListener('keydown',ev=>{
-  if(!combatState) return;
-  if(ev.key.toLowerCase()==='q'){ castSelectedSkill(); }
-  if(ev.key==='w'){ combatMove(0,-1);}
-  if(ev.key==='s'){ combatMove(0,1);}
-  if(ev.key==='a'){ combatMove(-1,0);}
-  if(ev.key==='d'){ combatMove(1,0);}
+  const k=ev.key.toLowerCase();
+  if(combatState){
+    if(k==='q'){ castSelectedSkill(); }
+    if(k==='w'){ combatMove(0,-1); }
+    if(k==='s'){ combatMove(0,1); }
+    if(k==='a'){ combatMove(-1,0); }
+    if(k==='d'){ combatMove(1,0); }
+    return;
+  }
+  if(!G||!G.map) return;
+  if(ev.repeat) return;
+  let dx=0,dy=0;
+  if(k==='w'){dy=-1;} else if(k==='s'){dy=1;} else if(k==='a'){dx=-1;} else if(k==='d'){dx=1;} else {return;}
+  const nx=G.px+dx, ny=G.py+dy;
+  if(nx<0||ny<0||nx>=G.map.n||ny>=G.map.n) return;
+  moveExplore(nx,ny);
 });
-let heroDId=false;
 function combatMove(dx,dy){
   const cs=combatState; if(!cs)return;
   if(cs.playerMoved) return;
@@ -732,7 +751,7 @@ function combatMove(dx,dy){
   if(nx<0||ny<0||nx>=G.map.n||ny>=G.map.n)return;
   const c=G.map.cells[ny*G.map.n+nx];
   if(c.terrain==='obstacle')return;
-  if(cs.enemies.some(e=>e.x===nx&&e.y===ny))return;
+  if(cs.enemies.some(en=>en.x===nx&&en.y===ny))return;
   cs.hero.facing=dirToFacing(dx,dy);
   cs.hero.x=nx;cs.hero.y=ny; cs.playerMoved=true;
   autoCastHero();
@@ -740,18 +759,16 @@ function combatMove(dx,dy){
   renderCombatMap(); updateCombatUI(); refreshHUD();
   endPlayerPhase();
 }
-function systemAction(action){
-}
 function endCombat(victory){
   const cs=combatState;
   const [ex,ey]=cs.entryCell.split(',').map(Number);
-  G.px=ex; G.py=ey; G.hero.hp=Math.round(cs.hero.hp||0);
+  G.px=ex; G.py=ey; G.hero.hp=Math.max(1,Math.round(cs.hero.hp||1));
   G.hero.facing='up';
   combatState=null;
-  $('combatZone').classList.add('collapsed');
   const e=G.map.cells[ey*G.map.n+ex];
-  if(e.content&&e.content.type==='enemy'&&victory){ e.content= {type:'empty'}; }
-  renderMap(); refreshHUD(); updateCombatUI();
+  if(e.content&&e.content.type==='enemy'&&victory){ e.content={type:'empty'}; }
+  switchMode('story');
+  renderMap(); refreshHUD();
 }
 function endCombatByDefeat(){
   const cs=combatState;
@@ -761,21 +778,22 @@ function endCombatByDefeat(){
   story('你败下阵来，狼狈退回安全处。');
   G.hero.hp=1;
   combatState=null;
-  $('combatZone').classList.add('collapsed');
   const [ex,ey]=cs.entryCell.split(',').map(Number);
   G.px=ex; G.py=ey;
+  switchMode('story');
   renderMap(); refreshHUD();
   if(G.hero.health<=0){ showGameOver(); }
-  else { alertDialog('战斗失败', '你损失了部分健康。', ()=>saveGame(0)); }
+  else { alertDialog('战斗失败','你损失了部分健康。'); }
 }
 function showGameOver(){
-  $('goMsg').innerHTML='你的健康已归零，流浪在此终结。你仍可读取存档重新开始。';
-  $('gameoverOverlay').classList.add('show');
+  $('#goMsg').innerHTML='你的健康已归零，流浪在此终结。你仍可读取存档重新开始。';
+  $('#gameoverOverlay').classList.add('show');
 }
-function loadAfterGameOver(){ $('gameoverOverlay').classList.remove('show'); openSaveMenu(true); }
-function backToMenu(){ $('gameoverOverlay').classList.remove('show'); showMenu(); }
+function loadAfterGameOver(){ $('#gameoverOverlay').classList.remove('show'); openReadSaveMenu(); }
+function backToMenu(){ $('#gameoverOverlay').classList.remove('show'); showMenu(); }
 function sleep(){
-  if(G.hero.actionPoint>0 && !confirm('行动力尚未耗尽，仍确定直接睡觉进入下一天吗？')) return;
+  if(!G) return;
+  if(G.hero.actionPoint>0 && !confirm('行动力尚未耗尽，仍确定直接「睡觉」进入下一天吗？')) return;
   G.hero.actionPoint=G.hero.apCap;
   G.day+=1;
   G.map=null;
@@ -790,40 +808,42 @@ function sleep(){
 function openSettings(){ openModal('设置', `
   <button class="mbtn" onclick="saveMenuOpen()">存档</button>
   <button class="mbtn" onclick="openReadSave()">读档</button>
-  <button class="mbtn" onclick="closeModal();backToMenu()">返回主界面（不存档）</button>
-  <button class="mbtn" onclick="sleep()">睡觉 · 进入下一天</button>`);
-}
-let __slot=0;
-function saveMenuOpen(){ openModal('选择存档位', buildSaveSlotHTML('save')); }
+  <button class="mbtn" onclick="closeModal();backToMenu()">返回主界面（不存档）</button>`, 'small'); }
+function saveMenuOpen(){ openModal('选择存档位', buildSaveSlotHTML('save'), 'small'); }
 function openReadSave(){ openReadSaveMenu(); }
-function openModal(title,html){ $('modalTitle').textContent=title; $('modalBody').innerHTML=html; $('modalOverlay').classList.add('show'); }
-function closeModal(){ $('modalOverlay').classList.remove('show'); }
-function alertDialog(title,msg,after){
-  openModal(title, `<p>${msg}</p>${after?`<br><button class="mbtn small" onclick="alertOk()">确定</button>`:''}`);
-  window._alertAfter=after||null;
+function openModal(title,html,size){
+  $('#modalTitle').textContent=title;
+  const modal=$('#modalOverlay').querySelector('.modal');
+  modal.className='modal'+(size==='small'?' small':(size==='wide'?' wide':''));
+  $('#modalBody').innerHTML=html;
+  $('#modalOverlay').classList.add('show');
 }
-function alertOk(){ const f=window._alertAfter; window._alertAfter=null; closeModal(); if(f) f(); }
-function openSaveMenu(afterGameOver){
-  openModal('选择存档位', buildSaveSlotHTML('save'));
+function closeModal(){ $('#modalOverlay').classList.remove('show'); }
+function alertDialog(title,msg){
+  openModal(title, `<p>${msg}</p>`, 'small');
 }
+function openSaveMenu(){ openModal('选择存档位', buildSaveSlotHTML('save'), 'small'); }
 function buildSaveSlotHTML(action){
   const saves=loadSaves();
+  return savesSlotsHTML(action,saves);
+}
+function savesSlotsHTML(action,saves){
   let h='';
   for(let i=0;i<MAX_SAVES;i++){
     const s=saves[i];
     h+=`<button class="mbtn" onclick="${action==='save'?`doSave(${i})`:`doLoad(${i})`}">`+
-       `槽位 ${i+1}${s?` — D${s.day} · ${s.hero.health}健康 · ${new Date(s._ts).toLocaleString()}`:'（空）'}`+
+       `存档位 ${i+1}${s?` — 第 ${s.day} 天 · 健康${s.hero.health} · ${new Date(s._ts).toLocaleString()}`:'（空）'}`+
       `</button>`;
   }
   return h;
 }
-window.doSave=function(i){ saveGame(i); log(`已保存到槽位 ${i+1}。`); closeModal(); };
-window.doLoad=function(i){ if(loadGame(i)){ loadIntoWorld(); } else{ alert('该槽位为空。'); } };
-function openReadSaveMenu(){ openModal('读取存档', buildSaveSlotHTML('load')); }
+window.doSave=function(i){ saveGame(i); log(`已保存到存档位 ${i+1}。`); closeModal(); };
+window.doLoad=function(i){ if(loadGame(i)){ loadIntoWorld(); } else{ alert('该存档位为空。'); } };
+function openReadSaveMenu(){ openModal('读取存档', buildSaveSlotHTML('load'), 'small'); }
 function openInventory(){
   const inv=G.inventory;
-  const rows=Object.entries(inv).map(([k,v])=>`<div class="resRow">${k}：<b>${v}</b></div>`).join('');
-  openModal('背包', rows);
+  const rows=Object.entries(inv).map(([k,v])=>`<div class="resRow">${RES_ZH[k]||k}：<b>${v}</b></div>`).join('');
+  openModal('背包', `<p>你随身携带的物品：</p>${rows}`);
 }
 function openCharacters(){
   const h=G.hero;
@@ -831,14 +851,17 @@ function openCharacters(){
     `<div class="statGrid">
        <span>攻击 <b>${h.atk}</b></span><span>最大生命 <b>${h.maxHp}</b></span>
        <span>防御 <b>${h.def}</b></span><span>逃跑速度 <b>${h.escapeSpeed}</b></span>
-       <span>健康 <b>${h.health}</b></span>
+       <span>健康 <b>${h.health}</b></span><span>行动力上限 <b>${h.apCap}</b></span>
      </div>
-     <div><b>天赋</b>：${PROTAGONIST.passives.map(p=>`<span title="${p.desc}">${p.name}</span>`).join('、')}</div>
-     <div style="margin-top:6px"><b>技能</b>（可带3）：</div>
-     ${PROTAGONIST.skills.map(s=>`<div style="font-size:12px;color:var(--txt-dim)">· ${s.name}${PROTAGONIST.selectedSkillIds.includes(s.id)?' <span style="color:var(--gold)">[携带]</span>':''}：${s.desc}</div>`).join('')}`);
+     <div><b>天赋</b>：</div>
+     ${PROTAGONIST.passives.map(p=>`<div style="font-size:13px;color:var(--txt-dim);margin:3px 0">· ${p.name}：${p.desc}</div>`).join('')}
+     <div style="margin-top:10px"><b>技能</b>（战斗中可带 3 个）：</div>
+     ${PROTAGONIST.skills.map(s=>`<div style="font-size:13px;color:var(--txt-dim);margin:3px 0">· ${s.name}${PROTAGONIST.selectedSkillIds.includes(s.id)?' <span style="color:var(--gold)">[携带]</span>':''}：${e(s.desc)}</div>`).join('')}`);
 }
 function openFormation(){
-  openModal('编队', `<p>MVP 阶段队伍固定为主角一人。后续将支持换入队友（许泠朦/夏阳/陆悠悠/叶唯安等）并调整一二三号位。</p>`);
+  openModal('编队', `<p>当前队伍（主角一人）。后续可换入队友并调整站位。</p>
+    <div style="font-size:14px;margin-top:8px">· 一号位：主角</div>
+    <p style="color:var(--txt-dim);margin-top:8px">队友（许泠朦 / 夏阳 / 陆悠悠 / 叶唯安等）在后续版本加入。</p>`);
 }
 function openTasks(){
   openModal('任务', `<p>任务记录：</p>
@@ -846,52 +869,53 @@ function openTasks(){
     <p>· 探索第 ${G.day} 天的新地图（进行中）</p>`);
 }
 function openShop(){
-  openModal('商店（占位）', `<p>商店商品与定价仍在设计中（规格书十五待定）。</p>`);
+  openModal('商店', `<p>商店商品与定价仍在设计中（待定）。</p>`);
 }
 function showMenu(){
   if(G) saveGame(0);
-  $('menuOverlay').classList.add('show');
-  $('menuBtns').innerHTML=
+  $('#menuOverlay').classList.add('show');
+  $('#menuBtns').innerHTML=
     `<button class="mbtn" onclick="startNew()">新的游戏</button>`+
     `<button class="mbtn" onclick="openReadSave()">读取存档</button>`+
     `<button class="mbtn" onclick="openTutorial()">玩法简介</button>`;
-  if(G){ renderMap(); refreshHUD(); }
 }
 function openTutorial(){
-  openModal('玩法简介', 
-    `移动探索：点击地图格子 → 点「前往」；或按 WASD。<br>
-    起床睡觉：点右上「设置 → 睡觉」进入下一天。<br>
-    遭遇敌人即进入回合战斗：移动即结束你方回合；Q 用已选技能。<br>
-    数值与系统依据《玩法机制介绍-总篇》。`);
+  openModal('玩法简介',
+    `探索：<b>点击地图格子再点「前往」</b>，或用 <b>WASD</b> 键移动。<br>
+    进入下一天：点上方 <b>睡觉</b> 按钮。<br>
+    遇敌进入回合战斗：先点选下方 <b>技能</b>，再按 <b>Q</b> 释放；或直接移动，移动后会自动攻击最近的敌人。<br>
+    数值与系统依据《玩法机制介绍-总篇》。`, 'small');
 }
 window.addEventListener('load',()=>{
   bindTooltip();
+  switchMode('story');
   if(loadSaves()[1]) loadGame(1);
   showMenu();
 });
 function startNew(){
-  $('menuOverlay').classList.remove('show');
+  $('#menuOverlay').classList.remove('show');
   G=newGame();
   G.map=generateMap(G.day);
   G.px=0;G.py=0;
   loadIntoWorld();
 }
 function loadIntoWorld(){
-  $('menuOverlay').classList.remove('show');
+  $('#menuOverlay').classList.remove('show');
   if(!G.map) G.map=generateMap(G.day);
   if(G.px===undefined){G.px=0;G.py=0;}
+  switchMode('story');
   refreshHUD(); renderIconbar(); renderMap();
   story('你又一次在异世界醒来。这一次，你决定无论如何都要活下去。');
 }
 function bindTooltip(){
   document.addEventListener('mouseover',ev=>{
     const t=ev.target.closest('.term'); if(!t)return;
-    const tip=$('tooltip'); tip.style.display='block';
+    const tip=$('#tooltip'); tip.style.display='block';
     tip.textContent=t.title||TERMS[t.dataset.term]||'';
     positionTip(tip,ev);
   });
-  document.addEventListener('mouseout',ev=>{ if(ev.target.closest('.term')) $('tooltip').style.display='none'; });
-  document.addEventListener('mousemove',ev=>{ positionTip($('tooltip'),ev); });
+  document.addEventListener('mouseout',ev=>{ if(ev.target.closest('.term')) $('#tooltip').style.display='none'; });
+  document.addEventListener('mousemove',ev=>{ positionTip($('#tooltip'),ev); });
 }
 function positionTip(tip,ev){
   const x=Math.min(ev.clientX+14, window.innerWidth-270);
