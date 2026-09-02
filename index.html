@@ -1,7 +1,1049 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>异世界流浪日记 · 核心循环 MVP</title>
+<style>
+/* ============================================================
+   异世界流浪日记 · 核心循环 MVP
+   极简：文字与数值为主。规格书第十章 UI 布局。
+   ============================================================ */
+:root{
+  --bg:#14161c; --panel:#1c1f27; --panel2:#222533; --line:#33384a;
+  --txt:#e8e6df; --txt-dim:#9aa0ac; --gold:#d9b64a;
+  --fire:#ff5454; --water:#4a9bff; --grass:#5fd96b; --thunder:#c05bff;
+  --ice:#4fd8d8; --wind:#8fd0ff; --rock:#b09a73;
+  --good:#6ee07a; --bad:#ff6b6b;
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+html,body{height:100%;}
+body{
+  font-family:"Microsoft YaHei","PingFang SC",sans-serif;
+  background:var(--bg); color:var(--txt); overflow:hidden;
+  user-select:none;
+}
+#app{height:100vh;display:flex;flex-direction:column;}
+
+/* ---------- 顶部状态栏 ---------- */
+#hud{
+  display:flex; align-items:center; gap:14px;
+  padding:6px 10px; background:var(--panel); border-bottom:1px solid var(--line);
+  font-size:13px; min-height:30px;
+}
+#hud .stat{white-space:nowrap;}
+#hud .stat b{font-weight:600; color:#fff;}
+.hpfill{color:var(--good);} .hpfill.low{color:var(--bad);}
+
+/* ---------- 功能图标行 ---------- */
+#iconbar{
+  display:flex; justify-content:flex-end; gap:6px; padding:4px 10px;
+  background:var(--panel); border-bottom:1px solid var(--line);
+}
+.icobtn{
+  padding:4px 10px; background:var(--panel2); border:1px solid var(--line);
+  cursor:pointer; font-size:12px; color:var(--txt); border-radius:3px;
+}
+.icobtn:hover{background:#2c3040;}
+.icobtn.hidden{display:none;}
+
+/* ---------- 主区三/四栏 ---------- */
+#main{flex:1; display:grid; grid-template-columns:270px 1fr 240px; gap:6px; padding:6px; min-height:0;}
+#mapWrap{position:relative; background:var(--panel); border:1px solid var(--line); border-radius:4px; min-height:0;}
+#mapViewport{position:absolute; inset:0; overflow:auto;}
+#mapGrid{display:grid; gap:3px; padding:8px;}
+.cell{
+  width:44px; height:44px; background:var(--panel2); border:1px solid var(--line);
+  border-radius:8px; cursor:pointer; position:relative; display:flex;align-items:center;justify-content:center;
+  font-size:20px;
+}
+.cell.obstacle{background:#28261f; cursor:default;}
+.cell.obstacle::after{content:"⛰"; color:#8a6d3b; font-size:22px;}
+.cell.prey{outline:2px solid var(--gold); outline-offset:-2px;}
+.cell.player{background:#31403a;}
+.cell.enemyPick{outline:2px dashed var(--bad);}
+/* 朝向箭头 */
+.facing-up::after{content:"▲"; color:#fff; position:absolute; top:2px; left:50%; transform:translateX(-50%); font-size:10px;}
+.facing-down::after{content:"▼"; color:#fff; position:absolute; bottom:2px; left:50%; transform:translateX(-50%); font-size:10px;}
+.facing-left::after{content:"◀"; color:#fff; position:absolute; left:2px; top:50%; transform:translateY(-50%); font-size:10px;}
+.facing-right::after{content:"▶"; color:#fff; position:absolute; right:2px; top:50%; transform:translateY(-50%); font-size:10px;}
+/* 敌人血量条 */
+.hpbar{position:absolute; left:3px; right:3px; bottom:2px; height:4px; background:#0006; border-radius:2px;}
+.hpbar i{display:block; height:100%; background:var(--bad); border-radius:2px;}
+/* 元素附着印记 */
+.aura-tag{
+  position:absolute; top:2px; left:2px; font-size:9px; color:#fff;
+  background:#000a; padding:0 3px; border-radius:3px;
+}
+
+/* ---------- 左文字区 ---------- */
+#leftLog{
+  background:var(--panel); border:1px solid var(--line); border-radius:4px;
+  display:flex; flex-direction:column; min-height:0;
+}
+#leftLog h4{padding:6px 8px; font-size:12px; color:var(--txt-dim); border-bottom:1px solid var(--line);}
+#logBody{flex:1; overflow-y:auto; padding:6px 8px; font-size:12px; line-height:1.6; min-height:0;}
+#logBody .logline{border-bottom:1px dashed #00000044; padding:2px 0;}
+#goBtn{
+  margin:8px; padding:7px; background:var(--gold); color:#241d05; font-weight:700;
+  border:none; border-radius:4px; cursor:pointer; display:none; font-size:13px;
+}
+#goBtn.disabled{background:#555;cursor:not-allowed;}
+
+/* ---------- 右选项区 ---------- */
+#rightPanel{
+  background:var(--panel); border:1px solid var(--line); border-radius:4px;
+  display:flex; flex-direction:column; min-height:0;
+}
+#rightPanel h4{padding:6px 8px; font-size:12px; color:var(--txt-dim); border-bottom:1px solid var(--line);}
+#promptZone{flex:1; overflow-y:auto; padding:8px; font-size:13px; line-height:1.6; min-height:0;}
+
+/* ---------- 底部剧情区 / 战斗区 ---------- */
+#bottom{
+  height:200px; background:var(--panel); border:1px solid var(--line); border-radius:4px;
+  margin:0 6px 6px; display:grid; grid-template-columns:1fr 1fr; gap:6px; padding:6px; min-height:0;
+}
+#storyBox{display:flex; flex-direction:column; min-height:0;}
+#storyBox h4{padding:3px 6px; font-size:12px; color:var(--txt-dim); border-bottom:1px solid var(--line);}
+#storyBody{flex:1; overflow-y:auto; padding:6px 8px; font-size:13px; line-height:1.7; min-height:0;}
+#storyBody .speaker{color:var(--gold); font-weight:700;}
+#combatZone{display:flex; flex-direction:column; min-height:0; gap:6px;}
+#combatZone h4{padding:3px 6px; font-size:12px; color:var(--txt-dim); border-bottom:1px solid var(--line);}
+#combatZone.collapsed h4{display:block;}
+#allyBar{display:flex; gap:6px; flex-wrap:wrap;}
+.allyTab{padding:4px 8px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; font-size:12px; border-radius:3px;}
+.allyTab.active{outline:2px solid var(--gold);}
+#skillList{display:flex; gap:6px; flex-wrap:wrap;}
+.skillTag{padding:4px 8px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:3px; font-size:12px;}
+.skillTag.attack{border-color:var(--fire);}
+.skillTag.skill{color:var(--gold);}
+#skillDetail{font-size:11px; color:var(--txt-dim); min-height:2em;}
+#talentBox{margin-top:auto;}
+
+/* ---------- 弹窗 / 菜单 ---------- */
+.overlay{
+  position:fixed; inset:0; background:#000000cc; display:none; align-items:center; justify-content:center; z-index:50;
+}
+.overlay.show{display:flex;}
+.modal{
+  background:var(--panel); border:1px solid var(--line); border-radius:6px;
+  width:min(520px,92vw); max-height:80vh; overflow:auto; padding:14px;
+}
+.modal h2{font-size:16px; margin-bottom:10px; color:var(--gold);}
+.mbtn{
+  display:block; width:100%; margin:6px 0; padding:10px; background:var(--panel2);
+  border:1px solid var(--line); color:var(--txt); cursor:pointer; border-radius:4px; font-size:14px; text-align:left;
+}
+.mbtn:hover{background:#2c3040;}
+.mbtn.small{width:auto; display:inline-block; padding:5px 10px; font-size:12px;}
+
+/* 词条 */
+.term{color:var(--gold); text-decoration:underline; text-underline-offset:2px; cursor:help;}
+#tooltip{
+  position:fixed; display:none; max-width:260px; background:#000d; color:#eee;
+  border:1px solid var(--line); padding:6px 8px; font-size:12px; border-radius:4px; z-index:100;
+  line-height:1.5;
+}
+.statGrid{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; font-size:12px;}
+.resRow{font-size:13px; line-height:1.8;}
+/* 元素着色 */
+.e-fire{color:var(--fire)!important;} .e-water{color:var(--water)!important;} .e-grass{color:var(--grass)!important;}
+.e-thunder{color:var(--thunder)!important;} .e-ice{color:var(--ice)!important;} .e-wind{color:var(--wind)!important;} .e-rock{color:var(--rock)!important;}
+.kbd{background:#000a; border:1px solid var(--line); border-radius:3px; padding:0 5px; font-size:11px;}
+</style>
+</head>
 <body>
-<h1>Game Test Page</h1>
-<p>Deploy by Cloudflare Pages</p>
+<div id="app">
+
+  <!-- 顶部状态栏 -->
+  <div id="hud"></div>
+  <!-- 功能图标 -->
+  <div id="iconbar"></div>
+
+  <div id="main">
+    <div id="leftLog">
+      <h4>行动记录 · 文字区</h4>
+      <div id="logBody"></div>
+      <button id="goBtn" class="disabled">前往</button>
+    </div>
+    <div id="mapWrap">
+      <div id="mapViewport"><div id="mapGrid"></div></div>
+    </div>
+    <div id="rightPanel">
+      <h4>信息 / 选项</h4>
+      <div id="promptZone"></div>
+    </div>
+  </div>
+
+  <div id="bottom">
+    <div id="storyBox">
+      <h4>剧情 / 对话</h4>
+      <div id="storyBody"></div>
+    </div>
+    <div id="combatZone">
+      <h4>队伍 / 技能（战斗中菜单）</h4>
+      <div id="allyBar"></div>
+      <div id="skillList"></div>
+      <div id="skillDetail"></div>
+      <div id="talentBox"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- 主菜单 -->
+<div id="menuOverlay" class="overlay show">
+  <div class="modal">
+    <h2>异世界流浪日记</h2>
+    <div id="menuBtns"></div>
+  </div>
+</div>
+
+<!-- 通用弹窗（背包/角色/编队/任务/设置/存档/商店/读档/确认） -->
+<div id="modalOverlay" class="overlay">
+  <div class="modal">
+    <h2 id="modalTitle"></h2>
+    <div id="modalBody"></div>
+    <button class="mbtn small" onclick="closeModal()">关闭</button>
+  </div>
+</div>
+
+<!-- Game Over -->
+<div id="gameoverOverlay" class="overlay">
+  <div class="modal">
+    <h2>健康值归零 · 流浪终结</h2>
+    <p id="goMsg"></p>
+    <button class="mbtn" onclick="loadAfterGameOver()">读取存档</button>
+    <button class="mbtn" onclick="backToMenu()">返回主界面</button>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   异世界流浪日记 · 核心循环 MVP
+   数据与逻辑均依据《玩法机制介绍-总篇》结构化规格书。
+   未实现的系统（剧情分支/图鉴/商店定价/潘天宇等）见规格书「十五」
+   =========================================================== */
+
+/* ---------------- 常量 / 配置 ---------------- */
+const MAX_SAVES = 8;
+const ELEM = {fire:{c:'e-fire',zh:'火'},water:{c:'e-water',zh:'水'},grass:{c:'e-grass',zh:'草'},
+  thunder:{c:'e-thunder',zh:'雷'},ice:{c:'e-ice',zh:'冰'},wind:{c:'e-wind',zh:'风'},rock:{c:'e-rock',zh:'岩'}};
+// 可作附着的元素
+const AURA_ELEMS = ['fire','water','grass','thunder','ice'];
+const DAMAGE_TYPES = ['physical','fire','water','grass','thunder','ice'];
+
+/* 词条库（规格书附录A） */
+const TERMS = {
+  alert:'主角天赋【战术布置】产生。我方单位攻击时优先攻击该目标；场上至多存在1个；主角用单体攻击新敌人时覆盖旧目标。',
+  charge:'敌人进行强力攻击前的准备状态。蓄力期间不移动、不改变朝向。受到我方任意攻击即被打断；少数带"难以打断"标签的蓄力需更强手段。',
+  bind:'无法移动，但可以攻击。',
+  burn:'每回合开始时流失2%生命值（可致死，没有伤害来源）。持续3回合。',
+  aggro:'攻击力+15%；受到的雷元素伤害与草元素伤害+25%。持续2回合。',
+  superconduct:'雷、冰、物理抗性均降低30%。持续3回合。抗性最终结算强制限定在0%~90%之间。',
+  frozen:'无法行动（包括移动、攻击、蓄力等一切主动行为，不包括被动效果）。持续1回合。',
+  cage:'无法行动。',
+  zone:'技能形成的区域效果。持续时间内对范围内单位施加特定效果。',
+  extraTurn:'许泠朦【秋水澄心】天赋触发。仅泠朦能释放技能，无移动。各类增益减益不计时。冷却不减少。',
+  steal:'对方的数值减少，自身的数值对应增加。',
+  dodge:'在敌人即将攻击前从攻击范围内撤出。',
+};
+function termHTML(key, zh){
+  return `<span class="term" data-term="${key}" title="${TERMS[key]||zh}">【${zh}】</span>`;
+}
+
+/* 主角数据（规格书 3.1 角色数据） */
+const PROTAGONIST = {
+  key:'pro', name:'主角', element:null, color:null,
+  base:{atk:10, maxHp:100, def:0, escapeSpeed:100, hp:100},
+  passives:[
+    {name:'战术布置', desc:'攻击时设置【重点目标】，我方优先攻击该目标。'},
+    {name:'暴击', desc:'攻击力+10，暴击率+3%。'},
+    {name:'嗜血', desc:'攻击力+20，攻击型技能3%概率回复自身=本次伤害的50%。'},
+    {name:'起势', desc:'攻击力+30，使用攻击型技能后获得4%伤害加成。'},
+    {name:'格挡', desc:'最大生命+50，受攻击3%概率本伤害归零。'},
+    {name:'坚守', desc:'回合开始获得30护盾，受攻击6%概率回复12%生命。'},
+  ],
+  skills:[
+    {id:'slash', name:'斩击', kind:'attack', type:'physical', range:1,
+     effect:atk=>atk*1.00, target:'front', desc:'对前方一格的敌人造成相当于攻击力100%的物理伤害。'},
+    {id:'blade', name:'万刃斩', kind:'attack', type:'physical', range:1,
+     effect:atk=>atk*0.85, target:'adj', desc:'对周围四格的所有敌人造成相当于攻击力85%的物理伤害。'},
+    {id:'despair', name:'拼命', kind:'attack', type:'physical', range:1,
+     effect:atk=>atk*1.40, target:'front', selfDrain:0.20, desc:'对前方一格的敌人造成140%物理伤害，自身流失20%生命（可致死）。'},
+    {id:'balance', name:'均衡', kind:'attack', type:'physical', range:1,
+     effect:atk=>atk*0.70, target:'front', selfHeal:0.08, dr:0.40, desc:'对前方一格70%物理伤害，回复自身8%生命，本回合受伤害-40%。'},
+    {id:'guerrilla', name:'游击', kind:'attack', type:'physical', range:2,
+     effect:atk=>atk*0.70, target:'nearest', desc:'对两格距离内最近的一名敌人造成70%物理伤害。'},
+  ],
+  selectedSkillIds:['slash','blade','guerrilla']
+};
+
+/* 敌人模板（MVP 用简单敌人；正式数据待定，见规格书十五） */
+const ENEMIES = {
+  slime:{name:'哥布林', icon:'👺', hp:40, atk:8, dmgReduc:0, speed:20,
+    skillMult:1.2, failureHealthPenalty:5, color:'#c05bff'},
+  bat:{name:'毒蛾', icon:'🦋', hp:30, atk:6, dmgReduc:0, speed:30,
+    skillMult:1.1, failureHealthPenalty:4, color:'#5fd96b', aura:'grass'},
+  wolf:{name:'岩狼', icon:'🐺', hp:55, atk:10, dmgReduc:0.1, speed:25,
+    skillMult:1.3, failureHealthPenalty:6, color:'#b09a73'},
+};
+function randKey(obj){const ks=Object.keys(obj); return ks[Math.floor(Math.random()*ks.length)];}
+
+/* ---------------- 全局状态 ---------------- */
+let G=null; // 当前游戏状态
+let combatState=null; // 战斗句柄
+
+/* 新建状态 */
+function newGame(){
+  return {
+    day:1, region:'wild',
+    hero:{atk:10,maxHp:100,hp:100,def:0,escapeSpeed:100,health:30,actionPoint:5,apCap:5,facing:'up'},
+    inventory:{wood:0,fruit:0,flax:0,rawMeat:0,coin:0,emptyBottle:0},
+    records:{slain:{}, wins:0, losses:0},
+    team:[PROTAGONIST.key],
+    map:null, px:0, py:0, st:null, // st = story progress 桩
+    lootLog:[]
+  };
+}
+
+/* ---------------- 存读档 ---------------- */
+function saveGame(slot){
+  const saves=loadSaves();
+  const snap=JSON.parse(JSON.stringify(G));
+  snap._ts=Date.now();
+  saves[slot]=snap;
+  localStorage.setItem('yysw_saves', JSON.stringify(saves));
+}
+function loadSaves(){try{return JSON.parse(localStorage.getItem('yysw_saves'))||{};}catch(e){return {};}}
+function loadGame(slot){
+  const saves=loadSaves();
+  if(!saves[slot]) return false;
+  G=JSON.parse(JSON.stringify(saves[slot]));
+  return true;
+}
+
+/* ---------------- 地图生成 ---------------- */
+function mapSizeForDay(day){
+  // 规格书 4.1 参考：d1=4,d20=6,d50=8,d100=9,d150=12；渐进+随机波动
+  const ref=[[1,4],[20,6],[50,8],[100,9],[150,12]];
+  let n=4;
+  for(const [d,s] of ref){ if(day>=d) n=s; }
+  const jitter=Math.round((Math.random()-0.5)*2);
+  return Math.max(4, n+jitter);
+}
+function generateMap(day){
+  const n=mapSizeForDay(day);
+  const cells=[]; // 一维, row-major
+  for(let i=0;i<n*n;i++) cells.push({terrain:'ground', content:'empty', idx:i});
+  // 障碍（山脉）随机摆放，不堵死：先放少量，再生成连通保证
+  const obstacles=Math.floor(n*n*0.12);
+  for(let k=0;k<obstacles;k++){
+    const i=Math.floor(Math.random()*n*n);
+    if(cells[i].idx===0) continue;
+    cells[i].terrain='obstacle';
+  }
+  // 内容分派：资源 / 敌人 / 宝箱 / 空
+  for(const c of cells){
+    if(c.terrain==='obstacle') continue;
+    c.content=rollContent(day);
+  }
+  // 保底连通：对"ground"格做 BFS 连通，用最小生成树的思路把孤立格子连起来（清除阻挡）
+  ensureConnectivity(cells,n);
+  // 玩家起点
+  const start=cells[0];
+  start.content='empty';
+  return {n, cells, px:0, py:0};
+}
+function rollContent(day){
+  const r=Math.random();
+  if(r<0.18) return {type:'enemy', key:randKey(ENEMIES), id:0};
+  if(r<0.30) return {type:'loot', done:false};
+  if(r<0.40) return {type:'event', done:false};
+  return {type:'empty'};
+}
+function ensureConnectivity(cells,n){
+  const idx=(x,y)=>y*n+x;
+  const inb=(x,y)=>x>=0&&y>=0&&x<n&&y<n;
+  // 1) 物理连通图（ground）
+  const ground=[]; const map={};
+  for(let y=0;y<n;y++)for(let x=0;x<n;x++)if(cells[idx(x,y)].terrain==='ground')ground.push([x,y]);
+  // 生成一个生成树：让所有 ground 都可达
+  const visited=new Map(); const stack=[ground[0]];
+  if(ground[0]) visited.set(ground[0][0]+','+ground[0][1],1);
+  const fwd=[[1,0],[-1,0],[0,1],[0,-1]];
+  while(stack.length){
+    const [cx,cy]=stack.pop();
+    for(const [dx,dy] of fwd){
+      const nx=cx+dx, ny=cy+dy;
+      if(!inb(nx,ny)) continue;
+      const cell=cells[idx(nx,ny)];
+      if(cell.terrain!=='ground') continue;
+      if(visited.has(nx+','+ny)) continue;
+      visited.set(nx+','+ny,1);
+      // 打通：若中间是障碍则清除 → 保证唯一通道存在
+      stack.push([nx,ny]);
+    }
+  }
+  // 2) 被孤立的障碍若阻断唯一路：把起点连通，其余障碍格若孤岛则清除其一侧
+  // 简化：把不在起点连通分量的 ground→ 标记为需清除相邻障碍，这里采用：将孤立障碍就近转回 ground
+  markBridge(cells,n,visited);
+}
+function markBridge(cells,n,visited){
+  const idx=(x,y)=>y*n+x;
+  const inb=(x,y)=>x>=0&&y>=0&&x<n&&y<n;
+  const fwd=[[1,0],[-1,0],[0,1],[0,-1]];
+  // 再次确保每块 ground 都能到起点：把所有 ground 加入，任取一块为源做 DFS，其他不可达的 ground 若被障碍包围则清除障碍
+  // 实现：对未 visited 的 ground，沿上下左右遇到障碍就清除，把它们并入起点分量
+  for(let y=0;y<n;y++)for(let x=0;x<n;x++){
+    const c=cells[idx(x,y)];
+    if(c.terrain!=='ground') continue;
+    if(visited.has(x+','+y)) continue;
+    // 尝试清理通向已访问区的障碍
+    for(const [dx,dy] of fwd){
+      const nx=x+dx,ny=y+dy;
+      if(!inb(nx,ny)) continue;
+      if(cells[idx(nx,ny)].terrain==='obstacle'){
+        cells[idx(nx,ny)].terrain='ground';
+      }else if(visited.has(nx+','+ny)){
+        visited.set(x+','+y,1);
+        expandVisited(cells,n,x,y,visited);
+        break;
+      }
+    }
+  }
+}
+function expandVisited(cells,n,x,y,visited){
+  const idx=(x0,y0)=>y0*n+x0; const inb=(a,b)=>a>=0&&b>=0&&a<n&&b<n;
+  const stack=[[x,y]]; visited.set(x+','+y,1);
+  const fwd=[[1,0],[-1,0],[0,1],[0,-1]];
+  while(stack.length){
+    const [cx,cy]=stack.pop();
+    for(const [dx,dy] of fwd){
+      const nx=cx+dx,ny=cy+dy;
+      if(!inb(nx,ny))continue;
+      if(cells[idx(nx,ny)].terrain!=='ground')continue;
+      if(visited.has(nx+','+ny))continue;
+      visited.set(nx+','+ny,1); stack.push([nx,ny]);
+    }
+  }
+}
+
+/* ---------------- UI 工具 ---------------- */
+const $=id=>document.getElementById(id);
+function el(html){const d=document.createElement('div'); d.innerHTML=html; return d.firstElementChild;}
+function refreshHUD(){
+  const h=G.hero;
+  const hpCls=h.hp< h.maxHp*0.3?'hpfill low':'hpfill';
+  $('hud').innerHTML=
+    `<span class="stat">健康 <b>${h.health}</b></span>`+
+    `<span class="stat">天数 <b>D${G.day}</b></span>`+
+    `<span class="stat">区域 <b>${G.region==='wild'?'野外':'城市'}</b></span>`+
+    `<span class="stat">攻击 <b>${h.atk}</b></span>`+
+    `<span class="stat">防御 <b>${h.def}</b></span>`+
+    `<span class="stat">生命 <b class="${hpCls}">${h.hp}/${h.maxHp}</b></span>`+
+    `<span class="stat">金币 <b>${G.inventory.coin}</b></span>`+
+    `<span class="stat">行动力 <b>${h.actionPoint}/${h.apCap}</b></span>`;
+}
+function renderIconbar(){
+  const show=[['设置',openSettings],['背包',openInventory],['角色',openCharacters],['编队',openFormation],['任务',openTasks],['商店',openShop]];
+  $('iconbar').innerHTML=show.map(([t,f],i)=>`<button class="icobtn" data-i="${i}">${t}</button>`).join('');
+  $('iconbar').querySelectorAll('.icobtn').forEach(b=>b.onclick=()=>show[+b.dataset.i][1]());
+  // 商店仅特定阶段显示（MVP：第1-2天隐藏，之后显示）
+  $('iconbar').querySelectorAll('.icobtn')[5].classList.toggle('hidden', G.day<3);
+}
+function log(msg,cls){ 
+  const d=el(`<div class="logline">${msg}</div>`);
+  $('logBody').appendChild(d);
+  $('logBody').scrollTop=$('logBody').scrollHeight;
+}
+function story(html){$('storyBody').insertAdjacentHTML('beforeend',`<div>${html}</div>`); $('storyBody').scrollTop=$('storyBody').scrollHeight;}
+function prompt(msg){$('promptZone').innerHTML=msg;}
+
+/* 元素着色的文本渲染 */
+function e(txt){ // 简单着色：把“火/水/草/雷/冰/风/岩”后跟“元素/附着/伤害”之类替换
+  if(typeof txt!=='string') return txt;
+  const map={fire:'火',water:'水',grass:'草',thunder:'雷',ice:'冰',wind:'风',rock:'岩'};
+  for(const k in map){
+    const re=new RegExp(map[k]+'(元素|附着|伤害|系)?','g');
+    txt=txt.replace(re, (m)=>`<span class="${ELEM[k].c}">${m}</span>`);
+  }
+  return txt;
+}
+
+/* ---------------- 地图渲染与交互 ---------------- */
+function renderMap(){
+  const m=G.map; const grid=$('mapGrid');
+  grid.style.gridTemplateColumns=`repeat(${m.n},44px)`;
+  grid.innerHTML='';
+  for(let y=0;y<m.n;y++){
+    for(let x=0;x<m.n;x++){
+      const c=m.cells[y*m.n+x];
+      const cell=el('<div class="cell"></div>');
+      if(c.terrain==='obstacle'){cell.classList.add('obstacle');}
+      if(c.content && c.content.type) renderCellContent(cell,c);
+      const isPlayer=(G.px===x&&G.py===y);
+      if(isPlayer){cell.classList.add('player'); cell.classList.add('facing-'+G.hero.facing);}
+      // 敌人在战斗状态隐藏部分属性：MVP 直接显示图标与血量
+      cell.dataset.x=x; cell.dataset.y=y;
+      cell.addEventListener('click',()=>onCellClick(x,y));
+      grid.appendChild(cell);
+    }
+  }
+}
+function renderCellContent(cell,c){
+  if(c.content.type==='enemy'){
+    const eDef=ENEMIES[c.content.key];
+    cell.textContent=eDef.icon;
+    cell.style.color=eDef.color;
+    cell.title=eDef.name;
+    cell.innerHTML+=`<div class="hpbar"><i style="width:${Math.max(5,c.content.hp||eDef.hp)/eDef.hp*100}%"></i></div>`;
+    if(c.content.aura) cell.innerHTML+=`<div class="aura-tag">${ELEM[c.content.aura].zh}</div>`;
+  } else if(c.content.type==='loot' && !c.content.done){
+    cell.textContent='📦'; cell.title='宝箱';
+  } else if(c.content.type==='event' && !c.content.done){
+    cell.textContent='❓'; cell.title='事件';
+  }
+}
+let previewCell=null;
+function onCellClick(x,y){
+  const m=G.map;
+  if(combatState){
+    combatCellClick(x, y);
+    return;
+  }
+  const c=m.cells[y*m.n+x];
+  if(c.terrain==='obstacle'){ prompt('这是一片无法通行的山脉。'); return; }
+  previewCell={x,y};
+  // 预览信息
+  let info=`位置 (${x+1},${y+1})<br>`;
+  if(c.content && c.content.type==='enemy') info+=`遭遇 <b>${ENEMIES[c.content.key].name}</b><br>移动过去将进入战斗。`;
+  else if(c.content && c.content.type==='loot') info+='此处有一个宝箱。';
+  else if(c.content && c.content.type==='event') info+='此处有事件发生。';
+  else info+='空地。';
+  prompt(info);
+  const go=$('goBtn');
+  go.style.display='block';
+  go.classList.remove('disabled');
+  go.onclick=()=>{ go.disabled=true; moveExplore(x,y); };
+}
+/* 探索移动 */
+function moveExplore(x,y){
+  const m=G.map;
+  const dx=x-G.px, dy=y-G.py;
+  if(Math.abs(dx)+Math.abs(dy)!==1){ log('只能移动到相邻一格（上下左右）。'); return; }
+  const target=m.cells[y*m.n+x];
+  if(target.terrain==='obstacle'){ log('有山脉阻挡，无法通行。'); return; }
+  if(G.hero.actionPoint<1){ log('行动力不足，请先睡觉进入下一天。'); return; }
+  G.hero.actionPoint-=1;
+  // 更新朝向（45°按上>右>下>左；直行=移动方向）
+  G.hero.facing = dirToFacing(dx,dy);
+  G.px=x; G.py=y;
+  // 采集（规格书 4.2 递进判定，可 0/2/4/6 个同种）
+  const drops=dropResources();
+  if(drops){ G.inventory[drops.kind]+=drops.amount; log(`获得 <b>${drops.amount}</b> 份 ${drops.kind}。`); }
+  // 触发格子内容
+  if(target.content && target.content.type==='enemy'){ log(`遭遇 <b>${ENEMIES[target.content.key].name}</b>！进入战斗。`); startCombat(target); }
+  else if(target.content && target.content.type==='loot' && !target.content.done){ openLoot(target); }
+  else if(target.content && target.content.type==='event' && !target.content.done){ runEvent(target); }
+  else { log('这里空无一物。'); }
+  if(!combatState){ refreshHUD(); renderMap(); }
+}
+function dirToFacing(dx,dy){
+  if(dx>0)return 'right'; if(dx<0)return 'left'; if(dy>0)return 'down'; return 'up';
+}
+function dropResources(){
+  // 规格书 4.2：50% 得2个同种 → 再50%得2个 …最高3档
+  const pool = G.region==='wild'? ['wood','fruit','flax','rawMeat'] : ['coin','emptyBottle'];
+  const kind=pool[Math.floor(Math.random()*pool.length)];
+  let n=0, p=0.5;
+  while(n<3 && Math.random()<p){ n++; p=0.5; }
+  if(n===0) return null;
+  return {kind, amount:n*2};
+}
+function openLoot(target){
+  target.content.done=true;
+  const kinds = G.region==='wild'? ['wood','fruit','flax','rawMeat']:['coin','emptyBottle'];
+  const k=kinds[Math.floor(Math.random()*kinds.length)];
+  const amt=k==='coin'?1+Math.floor(Math.random()*3):1;
+  G.inventory[k]+=amt;
+  log(`开启宝箱，获得 <b>${amt}</b> 份 ${k}。`);
+  refreshHUD(); renderMap();
+}
+function runEvent(target){
+  target.content.done=true;
+  // 剧情桩：MVP 简单事件（扩张见规格书十五）
+  const ev=Math.random();
+  if(ev<0.4){
+    const g=2+Math.floor(Math.random()*3);
+    G.inventory.coin+=g; log(`你遇到商人的遗落行囊，获得 <b>${g}</b> 金币。`);
+  } else if(ev<0.7){
+    if(G.hero.hp<G.hero.maxHp){ const h=v=>Math.min(G.hero.maxHp, G.hero.hp+Math.floor(G.hero.maxHp*0.15)+10); G.hero.hp=h(G.hero.hp); log('你在一处温泉旁歇脚，回复了部分生命。'); }
+    else log('你在温泉旁歇脚，精神为之一振。');
+  } else {
+    G.hero.health=Math.max(0,G.hero.health-1); log('一场虚惊让健康有所消耗。');
+  }
+  refreshHUD(); renderMap();
+}
+
+/* ---------------- 战斗系统 ---------------- */
+function startCombat(cell){
+  // 复制地图进入战斗；仅本战斗敌人可见，其余隐藏还原战后即可（MVP 用快照）
+  const m=G.map;
+  combatState={
+    hero:{x:G.px,y:G.py,facing:G.hero.facing,hp:G.hero.hp,maxHp:G.hero.maxHp,shield:0,moved:false,usedSkill:false},
+    enemies:[],
+    playerMoved:false,
+    entryCell:G.px+','+G.py,
+    day:G.day
+  };
+  // 场景内的敌人 = 该格敌人（MVP：仅本格一个，简化）；生成在主角相邻空格
+  const epos=placeEnemyNear(G.px,G.py,G.map.n);
+  combatState.enemies.push({
+    x:epos.x, y:epos.y,
+    def:ENEMIES[cell.content.key], key:cell.content.key, hp:cell.content.hp||ENEMIES[cell.content.key].hp,
+    aura:ENEMIES[cell.content.key].aura||null, charge:0, shield:0
+  });
+  story('战斗开始！');
+  log('进入战斗。你须击败所有敌人。');
+  enterCombatMode();
+}
+function placeEnemyNear(px,py,n){
+  // 找主角四邻中第一个 ground、非障碍格
+  const cand=[[px+1,py],[px-1,py],[px,py+1],[px,py-1]];
+  for(const [x,y] of cand){
+    if(x<0||y<0||x>=n||y>=n) continue;
+    if(G.map.cells[y*n+x].terrain==='ground') return {x,y};
+  }
+  return {x:px,y:py};
+}
+function enterCombatMode(){
+  // 隐藏探索元素 → 战斗态渲染只画主角与敌人
+  $('goBtn').style.display='none';
+  $('combatZone').classList.toggle('collapsed',false);
+  updateCombatUI();
+  refreshHUD();
+  renderCombatMap();
+}
+function renderCombatMap(){
+  if(!combatState) return;
+  const m=G.map; const grid=$('mapGrid');
+  grid.style.gridTemplateColumns=`repeat(${m.n},44px)`;
+  grid.innerHTML='';
+  for(let y=0;y<m.n;y++)for(let x=0;x<m.n;x++){
+    const c=m.cells[y*m.n+x];
+    const cell=el('<div class="cell"></div>');
+    if(c.terrain==='obstacle')cell.classList.add('obstacle');
+    // 玩家
+    const cs=combatState;
+    if(cs.hero.x===x&&cs.hero.y===y){cell.classList.add('player');cell.classList.add('facing-'+cs.hero.facing);}
+    // 敌人
+    for(const en of cs.enemies){
+      if(en.x===x&&en.y===y){
+        cell.textContent=ENEMIES[en.key].icon; cell.style.color=ENEMIES[en.key].color;
+        cell.title=ENEMIES[en.key].name;
+        cell.innerHTML+=`<div class="hpbar"><i style="width:${Math.max(5,en.hp)/ENEMIES[en.key].hp*100}%"></i></div>`;
+        if(en.aura)cell.innerHTML+=`<div class="aura-tag">${ELEM[en.aura].zh}</div>`;
+      }
+    }
+    cell.dataset.x=x;cell.dataset.y=y;
+    // 战斗中点击=移动/选敌（MVP：点击敌人=选为技能目标）
+    cell.addEventListener('click',()=>combatCellClick(x,y));
+    grid.appendChild(cell);
+  }
+}
+function combatCellClick(x,y){
+  const cs=combatState;
+  if(!cs) return;
+  // 若点的是敌人 → 设为技能目标（MVP：记录）
+  const enemy=cs.enemies.find(e=>e.x===x&&e.y===y);
+  if(enemy){ cs.selectedEnemy=enemy; prompt(`已选定目标：${ENEMIES[enemy.key].name}`); updateCombatUI(); return; }
+  // 否则尝试移动（前后左右）
+  const dx=x-cs.hero.x, dy=y-cs.hero.y;
+  if(Math.abs(dx)+Math.abs(dy)!==1){ prompt('只能移动到相邻一格。'); return; }
+  const c=G.map.cells[y*G.map.n+x];
+  if(c.terrain==='obstacle'){ prompt('山脉阻挡。'); return; }
+  // 目标格有敌人不可停留
+  if(cs.enemies.find(e=>e.x===x&&e.y===y)){ prompt('有敌人占据该格。'); return; }
+  // 移动 + 朝向
+  cs.hero.facing=dirToFacing(dx,dy);
+  cs.hero.x=x; cs.hero.y=y;
+  if(!cs.playerMoved){ cs.playerMoved=true; } // 首次移动即结束我方移动阶段
+  // 自动释放已选技能（主角）
+  autoCastHero();
+  endPlayerPhase();
+}
+/* 手动释放技能（Q） */
+function castSelectedSkill(){
+  if(!combatState) return;
+  if(combatState.playerMoved){ prompt('本回合已移动，技能请于移动前使用或已自动释放。'); return; }
+  if(combatState.heroUsedSkill||combatState.playerOver){ return; }
+  // 用选中的技能
+  const skill=PROTAGONIST.skills.find(s=>PROTAGONIST.selectedSkillIds.includes(s.id)&&s.id===combatState.selectedSkillId)||PROTAGONIST.skills.find(s=>s.id===combatState.selectedSkillId);
+  if(!skill){ return; }
+  resolveSkill(PROTAGONIST, skill, true);
+  if(!combatState) return;
+  combatState.heroUsedSkill=true;
+  updateCombatUI();
+}
+function resolveSkill(actor, skill, manual){
+  if(!combatState) return;
+  const enemy=combatState.selectedEnemy || combatState.enemies[0];
+  // MVP 简化朝向相关：游击/斩击用"前方/最近"，这里统一对最近敌人
+  let dmg=computeDamageActor(actor, skill, enemy);
+  const txt=e(`${skill.name}对${ENEMIES[enemy.key].name}造成${Math.round(dmg)}点伤害。`);
+  log(txt); story(`<b>${actor.name}</b>：${txt}`);
+  applyEnemyDamage(enemy,dmg,skill);
+  // 副作用
+  if(skill.selfDrain){ const lost=Math.min(G.hero.hp, Math.floor(G.hero.maxHp*skill.selfDrain)); G.hero.hp-=lost; log(`自身流失${lost}生命。`); }
+  if(skill.selfHeal){ G.hero.hp=Math.min(G.hero.maxHp,G.hero.hp+Math.floor(G.hero.maxHp*skill.selfHeal)); }
+  // 元素伤害 → 施加附着
+  if(skill.type!=='physical' && AURA_ELEMS.includes(skill.type)){ setAura(enemy, skill.type); }
+  checkCombatEnd();
+}
+function computeDamageActor(actor, skill, enemy){
+  // 我方→敌方伤害（规格书 9.1）。MVP 化简：baseATK=atk*(1+pct)+flat（无pct/flat）→ atk
+  let base = actor.base ? actor.base.atk : (actor.atk||0);
+  let dmg = base;
+  // 敌方减伤（对 True 外全生效）
+  dmg *= (1 - (ENEMIES[enemy.key].dmgReduc||0));
+  // 技能倍率与最终伤害乘区（MVP：仅技能倍率）
+  dmg *= skill.effect ? skill.effect(1) : 1;
+  return dmg;
+}
+
+function autoCastHero(){
+  if(combatState.heroUsedSkill) return; // 本回合已用过技能（手动或自动）不再重复施放
+  const skill=PROTAGONIST.skills.find(s=>s.id===combatState.selectedSkillId);
+  if(!skill) return;
+  resolveSkill(PROTAGONIST, skill, false);
+  if(!combatState) return;
+  combatState.heroUsedSkill=true;
+}
+function applyEnemyDamage(enemy,dmg,skill){
+  enemy.hp-=dmg;
+  if(enemy.hp>0 && skill.type!=='physical' && skill.type!=='wind' && skill.type!=='rock'){
+    checkReaction(enemy, skill.type);
+  }
+  if(enemy.hp<=0){
+    log(`${ENEMIES[enemy.key].name} 被击败！`);
+    combatState.enemies=combatState.enemies.filter(e=>e!==enemy);
+  }
+}
+function setAura(enemy,elem){
+  if(!AURA_ELEMS.includes(elem)) return;
+  enemy.aura=elem;
+}
+function checkReaction(enemy, elementHit){
+  if(!enemy.aura || enemy.aura===elementHit) return; // 同元素/无附着不反应
+  const a=enemy.aura, h=elementHit;
+  // 反应表（规格书附录B）
+  if(a==='fire'&&h==='water'){ enemy.hp-=Math.max(1,Math.round(enemy.hp*0.15)); log(`<span class="e-water">蒸发</span>！${ENEMIES[enemy.key].name}受额外伤害。`); }
+  else if(a==='water'&&h==='grass'){ spawnSlime(); log(`${termHTML('zone','绽放')}生成一只草史莱姆援军。`); }
+  else if(a==='fire'&&h==='grass'){ enemy.burn=3; log(`<span class="e-grass">燃烧</span>！${ENEMIES[enemy.key].name}将持续灼烧。`); }
+  else if(a==='fire'&&h==='ice'){ /*融化*/ }
+  // 反应后附着消失
+  enemy.aura=null;
+}
+function spawnSlime(){
+  // MVP：生成我方辅助单位（视为额外攻击手段，先以对敌人伤害形式）
+  const e=combatState.enemies[0];
+  if(e){ e.hp-=4; log('草史莱姆助战，施加草系冲击。'); }
+}
+function checkCombatEnd(){
+  if(!combatState) return;
+  if(combatState.enemies.length===0){
+    const wins=combatState.day;
+    G.records.wins=(G.records.wins||0)+1;
+    log('战斗胜利！');
+    story('战斗胜利，你收起了武器。');
+    endCombat(true);
+    return;
+  }
+  if(combatState.hero.hp<=0){
+    endCombatByDefeat();
+  }
+}
+/* 敌人回合 */
+function enemyTurn(){
+  const cs=combatState; if(!cs) return;
+  const enemy=cs.enemies[0];
+  if(!enemy) return;
+  if(enemy.burn){ enemy.burn--; const burn=Math.max(1,Math.round(enemy.hp*0.02)); enemy.hp-=burn; log(`${ENEMIES[enemy.key].name}受燃烧流失${burn}生命。`); }
+  // 敌人朝向主角 + 若贴身则攻击
+  const dx=cs.hero.x-enemy.x, dy=cs.hero.y-enemy.y;
+  enemy.facing=dirToFacing(dx,dy);
+  const dist=Math.abs(dx)+Math.abs(dy);
+  let action='';
+  if(dist===1){
+    // 攻击主角
+    const eDef=ENEMIES[enemy.key];
+    let dmg=eDef.atk*eDef.skillMult;
+    // 简化敌方→我方公式：减伤=护盾+常数（主角无护盾时≈0）
+    const shield=cs.hero.shield;
+    if(shield>0){ const absorb=Math.min(shield,dmg); cs.hero.shield-=absorb; dmg-=absorb; }
+    dmg=Math.max(1,Math.round(dmg));
+    cs.hero.hp-=dmg;
+    log(`${ENEMIES[enemy.key].name} 攻击你，造成 ${dmg} 点伤害。`);
+    // 敌方元素附着（模拟敌方攻击带元素）：岩狼等给主角上临时附着（MVP）
+    if(eDef.aura){ cs.hero.aura=eDef.aura; }
+    action='attack';
+  } else {
+    // 逼近主角一格（直线） MVP
+    let nx=enemy.x, ny=enemy.y;
+    if(Math.abs(dx)>Math.abs(dy)) nx += dx>0?1:-1; else ny += dy>0?1:-1;
+    const nd=nx===cs.hero.x&&ny===cs.hero.y ? 0 : dist-1;
+    if(G.map.cells[ny*G.map.n+nx].terrain!=='obstacle' && !cs.enemies.some(e2=>e2!==enemy&&e2.x===nx&&e2.y===ny)){
+      if(!(nx===cs.hero.x&&ny===cs.hero.y)){ enemy.x=nx; enemy.y=ny; log(`${ENEMIES[enemy.key].name} 逼近。`); }
+    }
+    action='move';
+  }
+  // 回合开始清主角护盾
+  cs.hero.shield=0;
+  cs.hero.facing=cs.hero.facing;
+  // 主角受【格挡/坚守】简化略
+  checkCombatEnd();
+}
+function endPlayerPhase(){
+  const cs=combatState; if(!cs) return;
+  if(cs.enemies.length===0){ return; }
+  // 敌人回合
+  enemyTurn();
+  if(!combatState) return;
+  // 新我方回合开始：清盾、重置行动、刷新
+  cs.hero.shield=0; cs.playerMoved=false; cs.heroUsedSkill=false; cs.playerOver=false;
+  renderCombatMap(); updateCombatUI(); refreshHUD();
+}
+/* 战斗目标选择UI */
+let combatUi={selectedSkillId:'slash', selectedEnemy:0};
+function updateCombatUI(){
+  if(!combatState){ $('combatZone').classList.add('collapsed'); return; }
+  const cs=combatState;
+  // 敌血 + 主角
+  prompt(
+    `主角 HP ${Math.round(cs.hero.hp)}/${Math.round(cs.hero.maxHp)}${cs.hero.shield>0?` 护盾${Math.round(cs.hero.shield)}`:''}<br>`+
+    cs.enemies.map((e,i)=>`<span style="color:${ENEMIES[e.key].color}">${ENEMIES[e.key].name}</span> HP ${Math.round(e.hp)}${e.aura?`（附着·${ELEM[e.aura].zh}）`:''}${cs.selectedEnemy===e?' <b>←目标</b>':''}<br>`).join('')
+  );
+  // ally bar
+  $('allyBar').innerHTML=G.team.map(t=>`<div class="allyTab ${t==='pro'?'active':''}" data-t="${t}">${t==='pro'?PROTAGONIST.name:''}</div>`).join('');
+  $('allyBar').querySelectorAll('.allyTab').forEach(b=>b.onclick=()=>selectAlly(b.dataset.t));
+  // skill list（主角携带3个）
+  const skills=PROTAGONIST.skills.filter(s=>PROTAGONIST.selectedSkillIds.includes(s.id));
+  $('skillList').innerHTML=skills.map(s=>`<div class="skillTag ${s.kind==='attack'?'attack':'skill'} ${combatState.selectedSkillId===s.id?'active':''}" data-s="${s.id}" title="${s.desc}">${s.name}</div>`).join('');
+  $('skillList').querySelectorAll('.skillTag').forEach(b=>b.onclick=()=>{ combatState.selectedSkillId=b.dataset.s; updateCombatUI(); showSkillDetail(b.dataset.s); });
+  // 默认显示第一个技能详细
+  showSkillDetail(combatState.selectedSkillId||skills[0].id);
+}
+function showSkillDetail(id){
+  const s=PROTAGONIST.skills.find(x=>x.id===id);
+  $('skillDetail').innerHTML=s? e(s.desc):'';
+}
+function selectAlly(key){
+  // MVP 仅主角可控
+  log('MVP 阶段：仅主角可操作。');
+}
+/* 手动释放按钮（Q机） */
+document.addEventListener('keydown',ev=>{
+  if(!combatState) return;
+  if(ev.key.toLowerCase()==='q'){ castSelectedSkill(); }
+  if(ev.key==='w'){ combatMove(0,-1);}
+  if(ev.key==='s'){ combatMove(0,1);}
+  if(ev.key==='a'){ combatMove(-1,0);}
+  if(ev.key==='d'){ combatMove(1,0);}
+});
+let heroDId=false;
+function combatMove(dx,dy){
+  const cs=combatState; if(!cs)return;
+  if(cs.playerMoved) return;
+  const nx=cs.hero.x+dx, ny=cs.hero.y+dy;
+  if(nx<0||ny<0||nx>=G.map.n||ny>=G.map.n)return;
+  const c=G.map.cells[ny*G.map.n+nx];
+  if(c.terrain==='obstacle')return;
+  if(cs.enemies.some(e=>e.x===nx&&e.y===ny))return;
+  cs.hero.facing=dirToFacing(dx,dy);
+  cs.hero.x=nx;cs.hero.y=ny; cs.playerMoved=true;
+  autoCastHero();
+  if(!combatState) return;
+  renderCombatMap(); updateCombatUI(); refreshHUD();
+  endPlayerPhase();
+}
+/* 逃跑（战斗选项中，MVP简化） */
+function systemAction(action){
+  // 其他系统动作
+}
+function endCombat(victory){
+  const cs=combatState;
+  // 战斗结束强制传送回进入格
+  const [ex,ey]=cs.entryCell.split(',').map(Number);
+  G.px=ex; G.py=ey; G.hero.hp=Math.round(cs.hero.hp||0);
+  G.hero.facing='up';
+  combatState=null;
+  $('combatZone').classList.add('collapsed');
+  // 战斗内破坏还原：目标格内容若被打掉敌人则清空
+  const e=G.map.cells[ey*G.map.n+ex];
+  if(e.content&&e.content.type==='enemy'&&victory){ e.content= {type:'empty'}; }
+  renderMap(); refreshHUD(); updateCombatUI();
+}
+function endCombatByDefeat(){
+  const cs=combatState;
+  const eDef=ENEMIES[cs.enemies[0].key];
+  G.hero.health=Math.max(0,G.hero.health-(eDef.failureHealthPenalty||5));
+  log(`战斗失败，健康值 -${eDef.failureHealthPenalty||5}。`);
+  story('你败下阵来，狼狈退回安全处。');
+  G.hero.hp=1;
+  combatState=null;
+  $('combatZone').classList.add('collapsed');
+  const [ex,ey]=cs.entryCell.split(',').map(Number);
+  G.px=ex; G.py=ey;
+  renderMap(); refreshHUD();
+  if(G.hero.health<=0){ showGameOver(); }
+  else { alertDialog('战斗失败', '你损失了部分健康。', ()=>saveGame(0)); }
+}
+function showGameOver(){
+  $('goMsg').innerHTML='你的健康已归零，流浪在此终结。你仍可读取存档重新开始。';
+  $('gameoverOverlay').classList.add('show');
+}
+function loadAfterGameOver(){ $('gameoverOverlay').classList.remove('show'); openSaveMenu(true); }
+function backToMenu(){ $('gameoverOverlay').classList.remove('show'); showMenu(); }
+
+/* ---------------- 睡觉 / 天数 ---------------- */
+function sleep(){
+  if(G.hero.actionPoint>0 && !confirm('行动力尚未耗尽，仍确定直接睡觉进入下一天吗？')) return;
+  // 结算睡觉恢复：行动力=上限（不溢出）
+  G.hero.actionPoint=G.hero.apCap;
+  G.day+=1;
+  // 整图重生成
+  G.map=null;
+  const nm=generateMap(G.day);
+  G.map=nm; G.px=0; G.py=0; G.hero.facing='up';
+  // 软 HP 恢复部分（MVP便利：每日恢复20%上限，可不看）
+  G.hero.hp=Math.max(1, Math.min(G.hero.maxHp, Math.round(G.hero.hp+G.hero.maxHp*0.2)));
+  saveGame(2);
+  log(`你睡了一觉，进入第 ${G.day} 天。`);
+  story(`夜色褪去，新的一天开始了。今天是第 ${G.day} 天。`);
+  refreshHUD(); renderMap(); renderIconbar();
+}
+
+/* ---------------- 各功能面板 ---------------- */
+function openSettings(){ openModal('设置', `
+  <button class="mbtn" onclick="saveMenuOpen()">存档</button>
+  <button class="mbtn" onclick="openReadSave()">读档</button>
+  <button class="mbtn" onclick="closeModal();backToMenu()">返回主界面（不存档）</button>
+  <button class="mbtn" onclick="sleep()">睡觉 · 进入下一天</button>`);
+}
+let __slot=0;
+function saveMenuOpen(){ openModal('选择存档位', buildSaveSlotHTML('save')); }
+function openReadSave(){ openReadSaveMenu(); }
+
+/* —— 简单弹窗 —— */
+function openModal(title,html){ $('modalTitle').textContent=title; $('modalBody').innerHTML=html; $('modalOverlay').classList.add('show'); }
+function closeModal(){ $('modalOverlay').classList.remove('show'); }
+function alertDialog(title,msg,after){
+  openModal(title, `<p>${msg}</p>${after?`<br><button class="mbtn small" onclick="alertOk()">确定</button>`:''}`);
+  window._alertAfter=after||null;
+}
+function alertOk(){ const f=window._alertAfter; window._alertAfter=null; closeModal(); if(f) f(); }
+function openSaveMenu(afterGameOver){
+  openModal('选择存档位', buildSaveSlotHTML('save'));
+}
+function buildSaveSlotHTML(action){
+  const saves=loadSaves();
+  let h='';
+  for(let i=0;i<MAX_SAVES;i++){
+    const s=saves[i];
+    h+=`<button class="mbtn" onclick="${action==='save'?`doSave(${i})`:`doLoad(${i})`}">`+
+       `槽位 ${i+1}${s?` — D${s.day} · ${s.hero.health}健康 · ${new Date(s._ts).toLocaleString()}`:'（空）'}`+
+      `</button>`;
+  }
+  return h;
+}
+window.doSave=function(i){ saveGame(i); log(`已保存到槽位 ${i+1}。`); closeModal(); };
+window.doLoad=function(i){ if(loadGame(i)){ loadIntoWorld(); } else{ alert('该槽位为空。'); } };
+function openReadSaveMenu(){ openModal('读取存档', buildSaveSlotHTML('load')); }
+function openInventory(){
+  const inv=G.inventory;
+  const rows=Object.entries(inv).map(([k,v])=>`<div class="resRow">${k}：<b>${v}</b></div>`).join('');
+  openModal('背包', rows);
+}
+function openCharacters(){
+  const h=G.hero;
+  openModal('角色 · 主角',
+    `<div class="statGrid">
+       <span>攻击 <b>${h.atk}</b></span><span>最大生命 <b>${h.maxHp}</b></span>
+       <span>防御 <b>${h.def}</b></span><span>逃跑速度 <b>${h.escapeSpeed}</b></span>
+       <span>健康 <b>${h.health}</b></span>
+     </div>
+     <div><b>天赋</b>：${PROTAGONIST.passives.map(p=>`<span title="${p.desc}">${p.name}</span>`).join('、')}</div>
+     <div style="margin-top:6px"><b>技能</b>（可带3）：</div>
+     ${PROTAGONIST.skills.map(s=>`<div style="font-size:12px;color:var(--txt-dim)">· ${s.name}${PROTAGONIST.selectedSkillIds.includes(s.id)?' <span style="color:var(--gold)">[携带]</span>':''}：${s.desc}</div>`).join('')}`);
+}
+function openFormation(){
+  openModal('编队', `<p>MVP 阶段队伍固定为主角一人。后续将支持换入队友（许泠朦/夏阳/陆悠悠/叶唯安等）并调整一二三号位。</p>`);
+}
+function openTasks(){
+  openModal('任务', `<p>任务记录：</p>
+    <p>· 存活下去（进行中）</p>
+    <p>· 探索第 ${G.day} 天的新地图（进行中）</p>`);
+}
+function openShop(){
+  openModal('商店（占位）', `<p>商店商品与定价仍在设计中（规格书十五待定）。</p>`);
+}
+
+/* ---------------- 主菜单 ---------------- */
+function showMenu(){
+  saveGame(0); // 安全快照
+  $('menuOverlay').classList.add('show');
+  $('menuBtns').innerHTML=
+    `<button class="mbtn" onclick="startNew()">新的游戏</button>`+
+    `<button class="mbtn" onclick="openReadSave()">读取存档</button>`+
+    `<button class="mbtn" onclick="openTutorial()">玩法简介</button>`;
+  renderMap(); refreshHUD();
+}
+function openTutorial(){
+  openModal('玩法简介', 
+    `移动探索：点击地图格子 → 点「前往」；或按 WASD。<br>
+    起床睡觉：点右上「设置 → 睡觉」进入下一天。<br>
+    遭遇敌人即进入回合战斗：移动即结束你方回合；Q 用已选技能。<br>
+    数值与系统依据《玩法机制介绍-总篇》。`);
+}
+window.addEventListener('load',()=>{
+  renderIconbar();
+  if(loadGame(1)){ loadIntoWorld(); } // 自动读默认槽（MVP暂用槽1）
+  else { startNew(); }
+  bindTooltip();
+});
+function startNew(){
+  $('menuOverlay').classList.remove('show');
+  G=newGame();
+  G.map=generateMap(G.day);
+  G.px=0;G.py=0;
+  loadIntoWorld();
+}
+function loadIntoWorld(){
+  $('menuOverlay').classList.remove('show');
+  if(!G.map) G.map=generateMap(G.day);
+  if(G.px===undefined){G.px=0;G.py=0;}
+  refreshHUD(); renderIconbar(); renderMap();
+  story('你又一次在异世界醒来。这一次，你决定无论如何都要活下去。');
+}
+function bindTooltip(){
+  document.addEventListener('mouseover',ev=>{
+    const t=ev.target.closest('.term'); if(!t)return;
+    const tip=$('tooltip'); tip.style.display='block';
+    tip.textContent=t.title||TERMS[t.dataset.term]||'';
+    positionTip(tip,ev);
+  });
+  document.addEventListener('mouseout',ev=>{ if(ev.target.closest('.term')) $('tooltip').style.display='none'; });
+  document.addEventListener('mousemove',ev=>{ positionTip($('tooltip'),ev); });
+}
+function positionTip(tip,ev){
+  const x=Math.min(ev.clientX+14, window.innerWidth-270);
+  const y=ev.clientY+14;
+  tip.style.left=x+'px'; tip.style.top=y+'px';
+}
+</script>
 </body>
 </html>
