@@ -14,14 +14,14 @@
     <div id="leftLog">
       <div class="panel-title">行动记录</div>
       <div id="logBody"></div>
-      <button id="goBtn">前往</button>
     </div>
     <div id="mapWrap">
       <div id="mapViewport"><div id="mapGrid"></div></div>
     </div>
     <div id="rightPanel">
-      <div class="panel-title" id="rightTitle">事件 / 选择</div>
+      <div class="panel-title" id="rightTitle">信息</div>
       <div id="promptZone"></div>
+      <button id="goBtn">前往</button>
     </div>
   </div>
   <div id="bottom" class="mode-story">
@@ -30,11 +30,19 @@
       <div id="storyBody"></div>
     </div>
     <div id="combatZone">
-      <div class="panel-title">战斗 · 技能</div>
-      <div id="allyBar"></div>
-      <div id="skillList"></div>
-      <div id="skillDetail"></div>
-      <div id="talentBox"></div>
+      <div class="panel-title">战斗 · 角色技能</div>
+      <div id="combatMain">
+        <div id="combatLeft">
+          <div id="allyBar"></div>
+          <div id="charAttrs"></div>
+          <div id="skillList"></div>
+          <div id="talentBox"></div>
+        </div>
+        <div id="combatRight">
+          <div class="panel-subtitle">技能详情</div>
+          <div id="skillDetail"></div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
