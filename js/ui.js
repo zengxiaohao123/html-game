@@ -58,7 +58,7 @@ function log(msg){
 
 /* 剧情区（中下）追加一段 */
 function story(html){$('#storyBody').insertAdjacentHTML('beforeend',`<div>${html}</div>`); $('#storyBody').scrollTop=$('#storyBody').scrollHeight;}
-/* 右侧提示/选择区（信息区） */
+/* 右侧提示/选择区 */
 function prompt(msg){$('#promptZone').innerHTML=msg;}
 
 /* 元素着色（技能名等正文里的元素词改色） */
@@ -70,6 +70,12 @@ function e(txt){
     txt=txt.replace(re, (m)=>`<span class="${ELEM[k].c}">${m}</span>`);
   }
   return txt;
+}
+
+/* 词条：把已知【词条】转为下划线可悬浮弹窗，未知的加粗 */
+function terms(txt){
+  if(typeof txt!=='string') return txt;
+  return txt.replace(/【([^】]+)】/g, (m,zh)=> TERMS[zh]? termHTML(zh,zh) : `<b>${m}</b>`);
 }
 
 /* 渲染探索地图 */
@@ -153,33 +159,80 @@ function openInventory(){
   const rows=Object.entries(inv).map(([k,v])=>`<div class="resRow">${RES_ZH[k]||k}：<b>${v}</b></div>`).join('');
   openModal('背包', `<p style="font-size:15px">你随身携带的物品：</p><div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:10px">${rows}</div>`);
 }
+
+/* —— 角色页：每角色一页，点击名字切换 —— */
+let charPageKey='pro';
 function openCharacters(){
-  const h=G.hero;
-  openModal('角色',
-    `<div style="font-size:20px;font-weight:700;margin-bottom:10px">主角</div>
-     <div class="statGrid">
-       <span>攻击 <b>${h.atk}</b></span><span>最大生命 <b>${h.maxHp}</b></span>
-       <span>防御 <b>${h.def}</b></span><span>逃跑速度 <b>${h.escapeSpeed}</b></span>
-       <span>健康 <b>${h.health}</b></span><span>行动力上限 <b>${h.apCap}</b></span>
-     </div>
-     <div style="font-size:16px;margin-top:14px"><b>天赋</b>：</div>
-     ${PROTAGONIST.passives.map(p=>`<div style="font-size:14px;color:var(--txt-dim);margin:4px 0">· ${p.name}：${p.desc}</div>`).join('')}
-     <div style="font-size:16px;margin-top:14px"><b>技能</b>（战斗中可带 3 个）：</div>
-     ${PROTAGONIST.skills.map(s=>`<div style="font-size:14px;color:var(--txt-dim);margin:4px 0">· ${s.name}${PROTAGONIST.selectedSkillIds.includes(s.id)?' <span style="color:var(--gold)">[携带]</span>':''}：${e(s.desc)}</div>`).join('')}
-     ${Object.values(ALLIES).map(a=>`
-       <div style="font-size:20px;font-weight:700;margin:18px 0 8px">${a.name}${a.element?`（<span class="${ELEM[a.element].c}">${ELEM[a.element].zh}</span>）`:''}</div>
-       <div class="statGrid"><span>攻击 <b>${a.atk}</b></span></div>
-       <div style="font-size:16px"><b>天赋</b>：</div>
-       ${a.passives.map(p=>`<div style="font-size:14px;color:var(--txt-dim);margin:4px 0">· ${p.name}：${p.desc}</div>`).join('')}
-       <div style="font-size:16px;margin-top:10px"><b>技能</b>：</div>
-       ${a.skills.map(s=>`<div style="font-size:14px;color:var(--txt-dim);margin:4px 0">· ${s.name}${a.selectedSkillIds.includes(s.id)?' <span style="color:var(--gold)">[携带]</span>':''}：${e(s.desc)}</div>`).join('')}
-     `).join('')}`);
+  const keys=['pro',...Object.keys(ALLIES)];
+  const tabs=keys.map(k=>`<button class="ctab ${k===charPageKey?'on':''}" data-k="${k}">${getChar(k).name}</button>`).join('');
+  openModal('角色', `<div class="ctabs">${tabs}</div><div id="charPageBody">${charPageBody(charPageKey)}</div>`, 'full');
+  $('#modalBody').querySelectorAll('.ctab').forEach(b=>b.onclick=()=>{ charPageKey=b.dataset.k; const body=$('#charPageBody'); if(body) body.innerHTML=charPageBody(charPageKey); });
 }
-function openFormation(){
-  openModal('编队', `<p style="font-size:15px">当前队伍（共 ${G.team.length} 人）。可调整一二三号位。</p>
-    ${G.team.map((k,i)=>`<div style="font-size:16px;margin:8px 0">· ${i+1}号位：${getChar(k).name}</div>`).join('')}
-    <p style="color:var(--txt-dim);margin-top:10px">队友（许泠朦 / 叶唯安 / 潘天宇等）在后续版本加入。</p>`);
+function charPageBody(key){
+  const c=getChar(key);
+  const attrs = key==='pro'
+    ? `<span>攻击 <b>${G.hero.atk}</b></span><span>最大生命 <b>${G.hero.maxHp}</b></span><span>防御 <b>${G.hero.def}</b></span><span>逃跑速度 <b>${G.hero.escapeSpeed}</b></span><span>健康 <b>${G.hero.health}</b></span><span>行动力上限 <b>${G.hero.apCap}</b></span>`
+    : `<span>攻击 <b>${c.atk}</b></span><span>属性 <b>${c.element?ELEM[c.element].zh:'无'}</b></span>`;
+  const talents=c.passives.map(p=>`<div class="charTalent">· ${p.name}：${p.desc}</div>`).join('');
+  const skills=c.skills.map(s=>`<div class="charSkill">· ${s.name}${c.selectedSkillIds.includes(s.id)?' <span class="carry">[携带]</span>':''}：${describeSkill(key,s)}</div>`).join('');
+  return `<div class="charHead">${c.name}${c.element?`（<span class="${ELEM[c.element].c}">${ELEM[c.element].zh}</span>）`:''}</div>
+    <div class="statGrid">${attrs}</div>
+    <div class="sec"><b>天赋</b></div>${talents}
+    <div class="sec"><b>技能</b>（战斗中可携带至多3个）</div>${skills}
+    <div style="margin-top:14px"><button class="mbtn" onclick="openSkillManager('${key}')">调整携带技能</button></div>`;
 }
+
+/* —— 携带技能管理：至多3个，天赋不算 —— */
+let skillPickSel={};
+function openSkillManager(key){
+  skillPickSel[key]=getChar(key).selectedSkillIds.slice();
+  renderSkillManager(key);
+}
+function renderSkillManager(key){
+  const c=getChar(key); const sel=skillPickSel[key];
+  const skills=c.skills.map(s=>{ const on=sel.includes(s.id);
+    return `<div class="skillpick ${on?'sel':''}" onclick="toggleSkillPick('${key}','${s.id}')">${on?'☑':'☐'} <b>${s.name}</b>：${describeSkill(key,s)}</div>`;
+  }).join('');
+  openModal(`调整携带技能 · ${c.name}`,
+    `<p style="font-size:14px;margin-bottom:8px">至多选择 3 个技能（当前 ${sel.length}/3，天赋不计）。</p>${skills}
+     <div class="btn-row" style="margin-top:10px">
+       <button class="mbtn small" onclick="saveSkillManager('${key}')">保存</button>
+       <button class="mbtn small" onclick="openCharacters()">取消</button>
+     </div>`);
+}
+window.toggleSkillPick=function(key,id){
+  const sel=skillPickSel[key]; const i=sel.indexOf(id);
+  if(i>=0) sel.splice(i,1);
+  else { if(sel.length>=3){ alert('至多携带 3 个技能。'); return; } sel.push(id); }
+  renderSkillManager(key);
+};
+window.saveSkillManager=function(key){
+  getChar(key).selectedSkillIds=skillPickSel[key].slice();
+  closeModal();
+  openCharacters();
+};
+
+/* —— 编队：调换一二三号位 —— */
+function openFormation(){ renderFormation(); }
+function renderFormation(){
+  const team=G.team.slice();
+  const rows=team.map((k,i)=>`
+    <div class="frow">
+      <span class="fpos">${i+1}号位</span>
+      <span class="fname">${getChar(k).name}</span>
+      ${i>0?`<button class="mbtn small" onclick="moveSlot(${i},-1)">上移</button>`:''}
+      ${i<team.length-1?`<button class="mbtn small" onclick="moveSlot(${i},1)">下移</button>`:''}
+    </div>`).join('');
+  openModal('编队', `<p style="font-size:15px">调换队伍一二三号位（影响战斗自动释放顺序）。</p>${rows}`, 'full');
+}
+window.moveSlot=function(i,dir){
+  const t=G.team.slice(); const j=i+dir;
+  if(j<0||j>=t.length) return;
+  const tmp=t[i]; t[i]=t[j]; t[j]=tmp;
+  G.team=t;
+  renderFormation();
+};
+
 function openTasks(){
   openModal('任务', `<p style="font-size:15px">任务记录：</p>
     <p style="font-size:15px;margin:8px 0">· 存活下去（进行中）</p>
@@ -213,3 +266,6 @@ let mapDragMoved=false; // 拖拽后抑制误触发的点击
   });
   document.addEventListener('mouseup',()=>{ down=false; vp.classList.remove('dragging'); });
 })();
+
+/* 点击天赋以外任意处，关闭天赋弹窗 */
+document.addEventListener('click',ev=>{ if(!ev.target.closest('.talentTag')) $('#popover').style.display='none'; });
