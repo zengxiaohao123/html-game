@@ -16,25 +16,55 @@ function mapSizeForDay(day){
   return Math.max(4, n+jitter);
 }
 
-/* 生成当天完整地图（障碍 + 内容 + 连通性），起点(0,0)保证空地 */
+/* 生成当天完整地图：不规则连通地块 + 障碍 + 内容，主角随机出生 */
 function generateMap(day){
   const n=mapSizeForDay(day);
   const cells=[];
-  for(let i=0;i<n*n;i++) cells.push({terrain:'ground', content:'empty', idx:i});
-  const obstacles=Math.floor(n*n*0.12);
+  for(let i=0;i<n*n;i++) cells.push({terrain:'void', content:'empty', idx:i});
+  // 1) 用生长法生成一块形状不规则、且可连通的可行走地块（非100%正方形）
+  const blob=generateBlob(n);
+  const groundIdx=[];
+  for(let y=0;y<n;y++)for(let x=0;x<n;x++) if(blob[y*n+x]){ cells[y*n+x].terrain='ground'; groundIdx.push(y*n+x); }
+  // 2) 在可行走地块内撒少量障碍
+  const obstacles=Math.floor(groundIdx.length*0.10);
   for(let k=0;k<obstacles;k++){
-    const i=Math.floor(Math.random()*n*n);
-    if(cells[i].idx===0) continue;
+    const i=groundIdx[Math.floor(Math.random()*groundIdx.length)];
     cells[i].terrain='obstacle';
   }
-  for(const c of cells){
-    if(c.terrain==='obstacle') continue;
-    c.content=rollContent(day);
-  }
+  // 3) 填充内容
+  for(const c of cells) if(c.terrain==='ground') c.content=rollContent(day);
+  // 4) 保底连通（孤立地块会被缝合到主地块）
   ensureConnectivity(cells,n);
-  const start=cells[0];
-  start.content='empty';
-  return {n, cells, px:0, py:0};
+  // 5) 在可行走地块里随机挑出生点（该格保证空地）
+  const groundCells=[];
+  for(let y=0;y<n;y++)for(let x=0;x<n;x++) if(cells[y*n+x].terrain==='ground') groundCells.push({x,y});
+  const start=groundCells[Math.floor(Math.random()*groundCells.length)]||{x:0,y:0};
+  cells[start.y*n+start.x].content={type:'empty'};
+  return {n, cells, px:start.x, py:start.y};
+}
+
+/* 生长法生成不规则地块掩码：从中心随机生长，越靠近边缘越易断，形成非正方形轮廓 */
+function generateBlob(n){
+  const mask=[]; for(let i=0;i<n*n;i++) mask.push(false);
+  const cx=(n-1)/2, cy=(n-1)/2;
+  const target=Math.max(9, Math.floor(n*n*0.55));
+  const baseR=Math.max(2, n*0.38);
+  const stack=[[Math.floor(n/2),Math.floor(n/2)]];
+  const seen=new Set();
+  let count=0;
+  while(stack.length && count<target){
+    const i=Math.floor(Math.random()*stack.length);
+    const [x,y]=stack.splice(i,1)[0];
+    const key=x+','+y; if(seen.has(key))continue; seen.add(key);
+    if(x<0||y<0||x>=n||y>=n)continue;
+    const dist=Math.hypot(x-cx,y-cy);
+    const p=Math.max(0, 1-dist/(baseR*1.5)) * (0.75+Math.random()*0.25);
+    if(dist<=baseR*0.45 || Math.random()<p){
+      mask[y*n+x]=true; count++;
+      for(const [a,b] of [[1,0],[-1,0],[0,1],[0,-1]]) stack.push([x+a,y+b]);
+    }
+  }
+  return mask;
 }
 
 /* 随机填充一个格子的内容（敌人/宝箱/事件/空地） */
