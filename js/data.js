@@ -18,15 +18,16 @@ const RES_ZH = {wood:'木材', fruit:'果子', flax:'亚麻', rawMeat:'生肉', 
 /* 地形中文名：空地=可通行；山脉/地图外=不可通行 */
 const TERRAIN_ZH = {ground:'空地', obstacle:'山脉', void:'不可通行'};
 
-/* 状态（buff/debuff）定义：kind: buff=正面(黄) debuff=负面(红) neutral=中性(灰) */
+/* 状态（buff/debuff）定义：kind: buff=正面(黄) debuff=负面(红) neutral=中性(灰)。
+   未注明 turns（null）= 持续整场战斗，无需标时长。 */
 const ST = {
-  burn:{id:'burn', name:'燃烧', kind:'debuff', desc:'每回合开始时流失2%生命值（可致死，无伤害来源）。持续3回合。'},
+  burn:{id:'burn', name:'燃烧', kind:'debuff', turns:3, desc:'每回合开始时流失2%生命值（可致死，无伤害来源）。持续3回合。'},
   bind:{id:'bind', name:'束缚', kind:'debuff', desc:'无法移动，但可以攻击。'},
-  atkUp:{id:'atkUp', name:'攻击提升', kind:'buff', desc:'攻击力提升25%。'},
+  atkUp:{id:'atkUp', name:'攻击提升', kind:'buff', turns:2, desc:'攻击力提升25%。'},
   shield:{id:'shield', name:'护盾', kind:'buff', desc:'抵消等量伤害（不抵流失类效果），每回合刷新。'},
-  alert:{id:'alert', name:'重点目标', kind:'debuff', desc:'我方单位攻击时优先攻击该目标；场上至多存在1个。'},
-  dr:{id:'dr', name:'伤害减免', kind:'buff', desc:'本回合受到的伤害减少40%。'},
-  crit:{id:'crit', name:'屏息', kind:'buff', desc:'下一次攻击的暴击率提升100%。'},
+  alert:{id:'alert', name:'重点目标', kind:'debuff', desc:'我方单位攻击时优先攻击该目标；场上至多存在1个。持续整场战斗。'},
+  dr:{id:'dr', name:'伤害减免', kind:'buff', turns:1, desc:'本回合受到的伤害减少40%。'},
+  crit:{id:'crit', name:'屏息', kind:'buff', turns:2, desc:'下一次攻击的暴击率提升100%。'},
 };
 
 /* 词条库（悬浮弹窗文案） */
@@ -47,6 +48,9 @@ const TERMS = {
 function termHTML(key, zh){
   return `<span class="term" data-term="${key}">【${zh}】</span>`; // 词条：悬浮查看（data-term 供悬浮弹窗）
 }
+/* 词条中文名 → 键 的反查（供 terms() 把【词条】转成悬浮） */
+const TERM_KEYS = {重点目标:'alert', 蓄力:'charge', 束缚:'bind', 燃烧:'burn', 激化:'aggro',
+  超导:'superconduct', 冰冻:'frozen', 禁锢:'cage', 结界:'zone', 额外回合:'extraTurn', 偷取:'steal', 闪避:'dodge'};
 
 /* 主角（当前唯一可控制单位） */
 const PROTAGONIST = {
@@ -62,20 +66,20 @@ const PROTAGONIST = {
   ],
   skills:[
     {id:'slash', name:'斩击', kind:'attack', type:'physical', range:1,
-     effect:atk=>atk*1.00, target:'front', alert:true,
-     desc:'对前方一格的敌人造成物理伤害（当前约{X}点）。'},
+     effect:atk=>atk*1.00, target:'front', alert:true, formula:'攻击力×100%',
+     desc:'对前方一格的敌人造成{DMG}的物理伤害。'},
     {id:'blade', name:'万刃斩', kind:'attack', type:'physical', range:1,
-     effect:atk=>atk*0.85, target:'adj',
-     desc:'对周围四格的所有敌人造成物理伤害（当前约{X}点）。'},
+     effect:atk=>atk*0.85, target:'adj', formula:'攻击力×85%',
+     desc:'对周围四格的所有敌人造成{DMG}的物理伤害。'},
     {id:'despair', name:'拼命', kind:'attack', type:'physical', range:1,
-     effect:atk=>atk*1.40, target:'front', selfDrain:0.20,
-     desc:'对前方一格的敌人造成物理伤害（当前约{X}点），自身流失20%最大生命（可致死）。'},
+     effect:atk=>atk*1.40, target:'front', selfDrain:0.20, formula:'攻击力×140%',
+     desc:'对前方一格的敌人造成{DMG}的物理伤害，自身流失20%最大生命（可致死）。'},
     {id:'balance', name:'均衡', kind:'attack', type:'physical', range:1,
-     effect:atk=>atk*0.70, target:'front', selfHeal:0.08, dr:1,
-     desc:'对前方一格造成物理伤害（当前约{X}点），回复自身8%最大生命，本回合受伤害-40%。'},
+     effect:atk=>atk*0.70, target:'front', selfHeal:0.08, dr:1, formula:'攻击力×70%',
+     desc:'对前方一格造成{DMG}的物理伤害，回复自身8%最大生命，本回合受伤害-40%。'},
     {id:'guerrilla', name:'游击', kind:'attack', type:'physical', range:2,
-     effect:atk=>atk*0.70, target:'nearest', alert:true,
-     desc:'对两格距离内最近的一名敌人造成物理伤害（当前约{X}点）。'},
+     effect:atk=>atk*0.70, target:'nearest', alert:true, formula:'攻击力×70%',
+     desc:'对两格距离内最近的一名敌人造成{DMG}的物理伤害。'},
   ],
   selectedSkillIds:['slash','blade','guerrilla']
 };
@@ -92,11 +96,11 @@ const ALLIES = {
     ],
     skills:[
       {id:'quhuo', name:'淬火', kind:'attack', type:'fire', range:1, target:'adj',
-       effect:atk=>atk*1.20,
-       desc:'对周围四格随机一名敌人造成火元素伤害（当前约{X}点）。'},
+       effect:atk=>atk*1.20, formula:'攻击力×120%',
+       desc:'对周围四格随机一名敌人造成{DMG}的火元素伤害。'},
       {id:'liaoyuan', name:'燎原', kind:'attack', type:'fire', range:4, target:'frontline',
-       effect:atk=>atk*1.50, burn:3,
-       desc:'对前方一线四格内的所有敌人造成火元素伤害（当前约{X}点），并施加【燃烧】3回合。'},
+       effect:atk=>atk*1.50, burn:3, formula:'攻击力×150%',
+       desc:'对前方一线四格内的所有敌人造成{DMG}的火元素伤害，并施加【燃烧】3回合。'},
       {id:'guwu', name:'鼓舞', kind:'support', type:'buff', range:0, target:'self',
        effect:null, atkBuffPct:0.25, healPct:0.15,
        desc:'主角回复夏阳攻击力15%的生命（约{Y}点），并使攻击力最高的我方角色攻击力+25%（持续2回合）。'},
@@ -113,11 +117,11 @@ const ALLIES = {
     ],
     skills:[
       {id:'jingqiao', name:'精巧射击', kind:'attack', type:'physical', range:3, target:'nearest',
-       effect:atk=>atk*1.00,
-       desc:'对三格距离内最近的一名敌人造成物理伤害（当前约{X}点）。'},
+       effect:atk=>atk*1.00, formula:'攻击力×100%',
+       desc:'对三格距离内最近的一名敌人造成{DMG}的物理伤害。'},
       {id:'qiangli', name:'强力射击', kind:'attack', type:'physical', range:2, target:'frontline',
-       effect:atk=>atk*0.90,
-       desc:'对前方一线两格内的所有敌人造成物理伤害（当前约{X}点）。'},
+       effect:atk=>atk*0.90, formula:'攻击力×90%',
+       desc:'对前方一线两格内的所有敌人造成{DMG}的物理伤害。'},
       {id:'bixi', name:'屏息瞄准', kind:'support', type:'buff', range:0, target:'self',
        effect:null, critBuff:1,
        desc:'陆悠悠下一次攻击的暴击率+100%（不可叠加）。'},
@@ -133,22 +137,25 @@ function getChar(key){ return CHARACTERS[key] || PROTAGONIST; }
 /* 当前队伍的角色定义列表（按 G.team 顺序） */
 function getTeamChars(){ return (G&&G.team||['pro']).map(k=>getChar(k)).filter(Boolean); }
 
-/* 敌人库（含技能/行为说明；普通攻击也算一种技能）。数值按3人队伍多回合调整。 */
+/* 敌人库（含技能/行为说明；普通攻击也算一种技能；含移动方式）。数值按3人队伍多回合调整。 */
 const ENEMIES = {
   slime:{name:'哥布林', icon:'👺', hp:420, atk:8, dmgReduc:0, speed:20,
     skillMult:1.2, failureHealthPenalty:5, color:'#c05bff',
+    move:'移动：缓步向主角逼近，每次移动一格，贴身后再攻击。',
     skills:[
       {name:'挥击', kind:'attack', desc:'对面前一格的敌人造成物理伤害（攻击力×1.2）。'},
       {name:'怒吼', kind:'special', desc:'发出怒吼震慑对手，使自身攻击力小幅提升。'},
     ]},
   bat:{name:'毒蛾', icon:'🦋', hp:330, atk:6, dmgReduc:0, speed:30,
     skillMult:1.1, failureHealthPenalty:4, color:'#5fd96b', aura:'grass',
+    move:'移动：扑扇翅膀向主角靠近，每次移动一格。',
     skills:[
       {name:'毒咬', kind:'attack', desc:'对面前一格的敌人造成物理伤害（攻击力×1.1），并施加草元素附着。'},
       {name:'磷粉', kind:'special', desc:'洒出磷粉，使周围敌人附着草元素。'},
     ]},
   wolf:{name:'岩狼', icon:'🐺', hp:520, atk:10, dmgReduc:0.1, speed:25,
     skillMult:1.3, failureHealthPenalty:6, color:'#b09a73',
+    move:'移动：压低身形向主角奔袭，每次移动一格。',
     skills:[
       {name:'撕咬', kind:'attack', desc:'对面前一格的敌人造成物理伤害（攻击力×1.3）。'},
       {name:'岩突', kind:'special', desc:'掀起岩块攻击，造成岩元素伤害并略微降低目标防御。'},

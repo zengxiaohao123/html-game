@@ -111,11 +111,9 @@ body{
 .allyCard.active{outline:3px solid var(--gold); outline-offset:-1px; background:#2c3040;}
 .allyName{font-size:16px; font-weight:700; color:#fff; line-height:1.2; position:relative; z-index:1;}
 .allyElem{font-size:12px; color:var(--txt-dim); margin-top:3px;}
-.allyMini{font-size:11px; color:var(--txt-dim); margin-top:3px; line-height:1.25; font-weight:400;}
-#charAttrs{display:flex; align-items:center; gap:6px; margin:0 0 6px; padding:0;}
-.attr{background:var(--panel2); border:1px solid var(--line); border-radius:4px; padding:2px 10px; font-size:13px;}
+#charAttrs{display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:0 0 6px; padding:0;}
+.attr{background:var(--panel2); border:1px solid var(--line); border-radius:4px; padding:3px 10px; font-size:13px;}
 .attr b{color:var(--gold); font-size:16px; margin-right:3px;}
-.attr.atk{border-color:var(--fire);}
 /* 状态栏（横向滚动，禁止上下滚动；加大显示） */
 #statusBar{margin-bottom:10px; flex:none;}
 .stbar{display:flex; gap:6px; overflow-x:auto; overflow-y:hidden; padding:4px 0; min-height:30px; align-items:center;}
@@ -146,8 +144,8 @@ body{
 .skillDetailName{font-size:18px; font-weight:700; color:var(--gold); margin-bottom:6px;}
 /* 信息区：敌人两页 */
 .infotabs{display:flex; gap:6px; margin-bottom:8px;}
-.infotab{padding:4px 14px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:4px; font-size:13px;}
-.infotab.on{background:var(--gold); color:#241d05; font-weight:700; border-color:var(--gold);}
+.infotab{padding:4px 14px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:4px; font-size:13px; color:#fff;}
+.infotab.on{background:var(--gold); color:#fff; font-weight:700; border-color:var(--gold);}
 .sec{font-size:13px; color:var(--txt-dim); font-weight:600; margin:8px 0 4px; border-bottom:1px solid var(--line); padding-bottom:2px;}
 .eskill{margin:6px 0; padding:6px 8px; background:var(--panel2); border:1px solid var(--line); border-radius:4px; font-size:13px; line-height:1.6;}
 /* 天赋/状态附近弹窗 */
@@ -157,8 +155,8 @@ body{
 }
 /* 角色页 / 技能管理 / 编队 */
 .ctabs{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;}
-.ctab{padding:8px 18px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:6px; font-size:15px;}
-.ctab.on{background:var(--gold); color:#241d05; font-weight:700; border-color:var(--gold);}
+.ctab{padding:8px 18px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:6px; font-size:15px; color:#fff;}
+.ctab.on{background:var(--gold); color:#fff; font-weight:700; border-color:var(--gold);}
 .charHead{font-size:22px; font-weight:700; margin-bottom:10px;}
 .charTalent,.charSkill{font-size:14px; color:#c9ced6; margin:4px 0; line-height:1.7;}
 .charTalent .term{font-size:13px;}

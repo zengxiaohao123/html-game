@@ -75,7 +75,7 @@ function e(txt){
 /* 词条：把已知【词条】转为下划线可悬浮弹窗，未知的加粗 */
 function terms(txt){
   if(typeof txt!=='string') return txt;
-  return txt.replace(/【([^】]+)】/g, (m,zh)=> TERMS[zh]? termHTML(zh,zh) : `<b>${m}</b>`);
+  return txt.replace(/【([^】]+)】/g, (m,zh)=> TERM_KEYS[zh]? termHTML(TERM_KEYS[zh], zh) : `<b>${m}</b>`);
 }
 
 /* 渲染探索地图 */
@@ -266,18 +266,27 @@ let mapDragMoved=false; // 拖拽后抑制误触发的点击
   document.addEventListener('mouseup',()=>{ down=false; vp.classList.remove('dragging'); });
 })();
 
-/* 点击状态芯片→弹窗查看状态详情；点击天赋以外任意处关闭弹窗 */
+/* 点击状态芯片/天赋标签 → 在附近弹窗查看详情；点击其余处关闭弹窗 */
+function openPopoverNear(el, html){
+  const tip=$('#popover');
+  tip.innerHTML=html;
+  tip.style.display='block';
+  const r=el.getBoundingClientRect();
+  const x=Math.min(r.left, window.innerWidth-320);
+  tip.style.left=x+'px'; tip.style.top=(r.bottom+6)+'px';
+}
 document.addEventListener('click',ev=>{
   const st=ev.target.closest('.stchip');
   if(st){
-    const tip=$('#popover');
     const rounds=st.textContent.match(/·(\d+)回合/);
-    tip.innerHTML=`<b>${st.dataset.name}</b>${rounds?`（${rounds[1]}回合）`:''}<br>${st.dataset.desc||''}`;
-    tip.style.display='block';
-    const r=st.getBoundingClientRect();
-    const x=Math.min(r.left, window.innerWidth-320);
-    tip.style.left=x+'px'; tip.style.top=(r.bottom+6)+'px';
+    openPopoverNear(st, `<b>${st.dataset.name}</b>${rounds?`（${rounds[1]}回合）`:''}<br>${st.dataset.desc||''}`);
     return;
   }
-  if(!ev.target.closest('.talentTag')) $('#popover').style.display='none';
+  const tg=ev.target.closest('.talentTag');
+  if(tg){
+    const c=getChar(tg.dataset.k); const t=c.passives[+tg.dataset.i];
+    if(t) openPopoverNear(tg, `<b>${t.name}</b><br>${t.desc}`);
+    return;
+  }
+  $('#popover').style.display='none';
 });
