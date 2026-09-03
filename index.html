@@ -371,7 +371,7 @@ function expandVisited(cells,n,x,y,visited){
     }
   }
 }
-const $=id=>document.getElementById(id);
+const $=id=>document.querySelector(id);
 function el(html){const d=document.createElement('div'); d.innerHTML=html; return d.firstElementChild;}
 function switchMode(m){
   gameMode=m;
