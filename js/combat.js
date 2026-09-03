@@ -21,6 +21,14 @@ function tickStatuses(statuses){
 }
 function statusArr(statuses){ return Object.values(statuses||{}); }
 
+/* 伤害类型中文（元素着色）；无元素=物理，特殊类型需说明 */
+function elemText(type){
+  if(type==='physical') return '物理伤害';
+  if(type==='real'||type==='true') return '真实伤害';
+  if(ELEM[type]) return `<span class="${ELEM[type].c}">${ELEM[type].zh}元素伤害</span>`;
+  return '伤害';
+}
+
 /* 进入战斗：构建 combatState，并在主角旁生成一名敌人 */
 function startCombat(cell){
   const ally={};
@@ -30,7 +38,7 @@ function startCombat(cell){
     enemies:[], ally, field:{},   // field = 全场结界/境界（显示在主角状态栏）
     playerMoved:false, playerOver:false,
     currentChar:G.team[0]||'pro',
-    selectedEnemy:null, infoCell:null, enemyPage:0,
+    selectedEnemy:null, infoCell:null, enemyPage:0, pendingTarget:null,
     entryCell:G.px+','+G.py,
     day:G.day
   };
@@ -74,11 +82,9 @@ function renderCombatMap(){
   const curChar=getChar(cs.currentChar);
   const selSkill=curChar.skills.find(s=>s.id===cs.ally[cs.currentChar].selSkill);
   const rangeKeys=new Set(selSkill?skillRangeCells(selSkill).map(c=>c.x+','+c.y):[]);
-  // 敌方指示器：默认不显示，仅点击该敌人所在格时显示该敌人的攻击范围（且不含不可通行格）
+  // 敌方指示器：仅当正在查看该敌人所在格时显示其攻击范围（且不含不可通行格），点击其他格则不显示
   const enemyKeys=new Set();
-  const selEnemy = cs.selectedEnemy && cs.enemies.includes(cs.selectedEnemy)
-    ? cs.selectedEnemy
-    : (cs.infoCell? cs.enemies.find(en=>en.x===cs.infoCell.x&&en.y===cs.infoCell.y) : null);
+  const selEnemy = cs.infoCell ? cs.enemies.find(en=>en.x===cs.infoCell.x&&en.y===cs.infoCell.y) : null;
   if(selEnemy){
     for(const [a,b] of [[1,0],[-1,0],[0,1],[0,-1]]){
       const x=selEnemy.x+a, y=selEnemy.y+b;
@@ -150,58 +156,73 @@ function skillDamagePreview(charKey, skill){
   if(!skill||!skill.effect) return null;
   return Math.max(1, Math.round(charAtk(charKey)*skill.effect(1)));
 }
-/* 数值化技能描述：把 {X}（伤害）与 {Y}（治疗等）替换为当前实际数值 */
+/* 数值化技能描述：{DMG}=公式+当前数值；{Y}=治疗等当前数值；词条转悬浮 */
 function describeSkill(charKey, skill){
   if(!skill) return '';
   let d=skill.desc||'';
   const dmg=skillDamagePreview(charKey, skill);
-  if(dmg!=null) d=d.replace(/\{X\}/g, dmg);
+  if(dmg!=null && skill.formula) d=d.replace(/\{DMG\}/g, `${skill.formula}（当前约${dmg}点）`);
   if(skill.healPct) d=d.replace(/\{Y\}/g, Math.round((getChar(charKey).atk||0)*skill.healPct));
   return terms(d);
 }
 
-/* 战斗内点击格子：查看信息 / 选目标 / 移动（含朝障碍转向） */
+/* 战斗内点击格子：查看信息 / 选目标 / 选移动目标（需点「前往」确认，不会直接走） */
 function combatCellClick(x,y){
   const cs=combatState; if(!cs) return;
   if(mapDragMoved) return;
-  const c=G.map.cells[y*G.map.n+x];
+  cs.infoCell={x,y};
+  cs.pendingTarget={x,y};
   const enemy=cs.enemies.find(en=>en.x===x&&en.y===y);
-  if(x===cs.hero.x&&y===cs.hero.y){ cs.infoCell={x,y}; updateCombatInfo(); renderCombatMap(); return; }
-  if(enemy){ cs.selectedEnemy=enemy; cs.infoCell={x,y}; cs.enemyPage=0; updateCombatInfo(); renderCombatMap(); return; }
-  if(c.terrain==='void'){ cs.infoCell={x,y}; updateCombatInfo(); renderCombatMap(); return; }
+  if(enemy){ cs.selectedEnemy=enemy; cs.enemyPage=0; }
+  updateCombatInfo();
+  bindCombatGo(x,y);
+  renderCombatMap();
+}
+
+/* 信息区「前往」按钮（战斗）：确认移动到目标格 */
+function bindCombatGo(x,y){
+  const cs=combatState; const go=$('#goBtn');
   const dx=x-cs.hero.x, dy=y-cs.hero.y;
-  if(Math.abs(dx)+Math.abs(dy)!==1){ cs.infoCell={x,y}; updateCombatInfo(); renderCombatMap(); return; }
-  if(cs.playerMoved){ return; }
-  if(c.terrain==='obstacle' || cs.enemies.some(en=>en.x===x&&en.y===y)){
-    cs.hero.facing=dirToFacing(dx,dy); cs.playerMoved=true;
-    log('前方被阻挡，你只改变了朝向。');
-    cs.infoCell={x,y};
-    autoCastAll(); if(!combatState) return;
-    endPlayerPhase(); return;
-  }
+  if(cs.playerMoved || Math.abs(dx)+Math.abs(dy)!==1){ go.style.display='none'; return; }
+  go.style.display='block';
+  go.disabled=false;
+  go.onclick=confirmCombatMove;
+}
+/* 确认移动：目标为障碍/实体/地图外时只转向，均视为本回合已移动 */
+function confirmCombatMove(){
+  const cs=combatState; if(!cs) return;
+  if(cs.playerMoved) return;
+  if(!cs.pendingTarget) return;
+  const {x,y}=cs.pendingTarget;
+  const dx=x-cs.hero.x, dy=y-cs.hero.y;
+  if(Math.abs(dx)+Math.abs(dy)!==1){ log('只能移动到相邻一格。'); $('#goBtn').style.display='none'; return; }
+  $('#goBtn').style.display='none';
+  const c=G.map.cells[y*G.map.n+x];
   cs.hero.facing=dirToFacing(dx,dy);
-  cs.hero.x=x; cs.hero.y=y; cs.playerMoved=true; cs.infoCell={x,y};
+  if(c.terrain==='ground' && !cs.enemies.some(en=>en.x===x&&en.y===y)){
+    cs.hero.x=x; cs.hero.y=y;
+  } else {
+    log('前方有阻挡，你只改变了朝向。');
+  }
+  cs.playerMoved=true;
   autoCastAll(); if(!combatState) return;
   endPlayerPhase();
 }
 
-/* 战斗内 WASD 移动（移动即结束我方回合；朝障碍转向亦计为本回合已移动） */
+/* 战斗内 WASD 移动（直接走，不需确认；目标为障碍/实体/地图外时只转向并计已移动） */
 function combatMove(dx,dy){
   const cs=combatState; if(!cs)return;
   if(cs.playerMoved) return;
   const nx=cs.hero.x+dx, ny=cs.hero.y+dy;
   if(nx<0||ny<0||nx>=G.map.n||ny>=G.map.n)return;
   const c=G.map.cells[ny*G.map.n+nx];
-  if(c.terrain==='void')return;
-  if(c.terrain==='obstacle' || cs.enemies.some(en=>en.x===nx&&en.y===ny)){
-    cs.hero.facing=dirToFacing(dx,dy); cs.playerMoved=true;
-    log('前方被阻挡，你只改变了朝向。');
-    cs.infoCell={x:nx,y:ny};
-    autoCastAll(); if(!combatState) return;
-    endPlayerPhase(); return;
-  }
   cs.hero.facing=dirToFacing(dx,dy);
-  cs.hero.x=nx;cs.hero.y=ny; cs.playerMoved=true; cs.infoCell={x:nx,y:ny};
+  if(c.terrain==='ground' && !cs.enemies.some(en=>en.x===nx&&en.y===ny)){
+    cs.hero.x=nx; cs.hero.y=ny;
+  } else {
+    log('前方有阻挡，你只改变了朝向。');
+  }
+  cs.playerMoved=true; cs.infoCell={x:cs.hero.x,y:cs.hero.y}; cs.pendingTarget=null;
   autoCastAll(); if(!combatState) return;
   endPlayerPhase();
 }
@@ -262,7 +283,7 @@ function resolveSkill(charKey, skill, manual){
   const base=charAtk(charKey);
   let dmg=base*(1-(ENEMIES[enemy.key].dmgReduc||0))*(skill.effect?skill.effect(1):1);
   dmg=Math.max(1,Math.round(dmg));
-  log(`${char.name} 使用 <b>${skill.name}</b>，对${ENEMIES[enemy.key].name}造成 <b>${dmg}</b> 点伤害。`);
+  log(`${char.name} 使用 <b>${skill.name}</b>，对${ENEMIES[enemy.key].name}造成 <b>${dmg}</b> 点${elemText(skill.type)}。`);
   applyEnemyDamage(enemy,dmg,skill);
   if(skill.burn){ addStatus(enemy.statuses,'burn',skill.burn); log(`${ENEMIES[enemy.key].name} 进入【燃烧】状态。`); }
   if(skill.alert) applyAlert(enemy);
@@ -350,7 +371,7 @@ function enemyTurn(){
     if(shield>0){ const absorb=Math.min(shield,dmg); cs.hero.shield-=absorb; dmg-=absorb; }
     dmg=Math.max(1,Math.round(dmg));
     cs.hero.hp-=dmg; G.hero.hp=cs.hero.hp;
-    log(`${ENEMIES[enemy.key].name} 攻击你，造成 ${dmg} 点伤害。`);
+    log(`${ENEMIES[enemy.key].name} 攻击你，造成 ${dmg} 点${elemText('physical')}。`);
     if(eDef.aura){ cs.hero.aura=eDef.aura;
       cs.ally.pro.statuses.aura={id:'aura', name:'附着·'+ELEM[eDef.aura].zh, kind:'neutral', turns:null,
         desc:'元素附着：受到'+ELEM[eDef.aura].zh+'元素伤害时可能触发元素反应。附着会顶替旧附着。'};
@@ -378,6 +399,7 @@ function endPlayerPhase(){
   tickStatuses(cs.field);
   cs.hero.shield=0; cs.playerMoved=false; cs.playerOver=false;
   for(const k of G.team) cs.ally[k].used=false;
+  $('#goBtn').style.display='none'; // 新回合开始时隐藏「前往」
   renderCombatMap(); updateCombatUI(); refreshHUD();
 }
 
@@ -404,7 +426,6 @@ function updateCombatUI(){
   $('#allyBar').innerHTML=chars.map((c,i)=>`<div class="allyCard ${c.key===cs.currentChar?'active':''}" data-k="${c.key}">
       <div class="allyName">${c.name}</div>
       <div class="allyElem">${c.element?ELEM[c.element].zh:'无属性'} · ${i+1}号位</div>
-      <div class="allyMini">${miniAttrs(c.key)}</div>
     </div>`).join('');
   $('#allyBar').querySelectorAll('.allyCard').forEach(b=>b.onclick=()=>{ cs.currentChar=b.dataset.k; updateCombatUI(); renderCombatMap(); });
   $('#charAttrs').innerHTML=charAttrsHTML(cur.key);
@@ -416,36 +437,24 @@ function updateCombatUI(){
       <span class="skillNum">${i+1}</span>${s.name}${cs.ally[cur.key].used?' <span class="usedMark">已用</span>':''}
     </div>`).join('');
   $('#skillList').querySelectorAll('.skillTag').forEach(b=>b.onclick=()=>selectSkill(cur.key, b.dataset.s));
-  $('#talentBox').innerHTML=`<span class="talentLabel">天赋</span>`+cur.passives.map((p,i)=>`<span class="talentTag" data-i="${i}">${p.name}</span>`).join('');
-  $('#talentBox').querySelectorAll('.talentTag').forEach(b=>b.onclick=(ev)=>showTalentPopup(ev, cur.key, +b.dataset.i));
+  $('#talentBox').innerHTML=`<span class="talentLabel">天赋</span>`+cur.passives.map((p,i)=>`<span class="talentTag" data-k="${cur.key}" data-i="${i}">${p.name}</span>`).join('');
   const sel=cur.skills.find(s=>s.id===cs.ally[cur.key].selSkill);
   $('#skillDetail').innerHTML= sel? `<div class="skillDetailName">${sel.name}</div><div class="skillDetailText">${describeSkill(cur.key, sel)}</div>` : '';
   updateCombatInfo();
 }
 
-/* 角色小属性（显示在角色卡名字附近） */
-function miniAttrs(key){
+/* 数值行：攻防血、逃跑速度等写在这独立一行（角色卡内不显示数值） */
+function charAttrsHTML(key){
   if(key==='pro'){
-    return `生命${Math.round(combatState.hero.hp)}/${G.hero.maxHp} · 防御${G.hero.def} · 逃跑${G.hero.escapeSpeed}`;
+    const h=G.hero;
+    return `<span class="attr"><b>攻击</b> ${h.atk}</span>
+      <span class="attr"><b>生命</b> ${Math.round(combatState.hero.hp)}/${h.maxHp}</span>
+      <span class="attr"><b>防御</b> ${h.def}</span>
+      <span class="attr"><b>逃跑速度</b> ${h.escapeSpeed}</span>`;
   }
   const c=getChar(key);
-  return `攻击${c.atk} · ${c.element?ELEM[c.element].zh:'无属性'}`;
-}
-/* 数值行（小）：只突出攻击力 */
-function charAttrsHTML(key){
-  if(key==='pro') return `<span class="attr atk">攻击 <b>${G.hero.atk}</b></span>`;
-  return `<span class="attr atk">攻击 <b>${getChar(key).atk}</b></span>`;
-}
-
-/* 天赋附近弹窗（positioned popover） */
-function showTalentPopup(ev, charKey, i){
-  const c=getChar(charKey); const t=c.passives[i]; if(!t) return;
-  const tip=$('#popover');
-  tip.innerHTML=`<b>${t.name}</b><br>${t.desc}`;
-  tip.style.display='block';
-  const r=ev.currentTarget.getBoundingClientRect();
-  const x=Math.min(r.left, window.innerWidth-320);
-  tip.style.left=x+'px'; tip.style.top=(r.bottom+6)+'px';
+  return `<span class="attr"><b>攻击</b> ${c.atk}</span>
+    <span class="attr"><b>属性</b> ${c.element?ELEM[c.element].zh:'无'}</span>`;
 }
 
 /* —— 信息区 —— */
@@ -453,13 +462,16 @@ function updateCombatInfo(){
   const cs=combatState; if(!cs) return;
   if(!cs.infoCell) cs.infoCell={x:cs.hero.x,y:cs.hero.y};
   const {x,y}=cs.infoCell;
-  if(x===cs.hero.x&&y===cs.hero.y){
-    prompt(`<b>主角</b><br>攻击 ${G.hero.atk} · 防御 ${G.hero.def} · 生命 ${Math.round(cs.hero.hp)}/${G.hero.maxHp}${cs.hero.shield?`<br>护盾 ${Math.round(cs.hero.shield)}`:''}<br><div class="sec">状态</div>${statusBarHTML(cs.ally.pro.statuses, cs.field)}`);
-    return;
-  }
   const en=cs.enemies.find(en=>en.x===x&&en.y===y);
   if(en){ prompt(enemyInfo(en)); return; }
-  prompt('该格位空无一物。');
+  if(x===cs.hero.x&&y===cs.hero.y){ prompt(heroInfoHTML()); return; }
+  const c=G.map.cells[y*G.map.n+x];
+  const tname = c.terrain==='void'?'不可通行':c.terrain==='obstacle'?'山脉障碍':'空地';
+  prompt(`<b>${tname}</b>（${x+1},${y+1}）`);
+}
+function heroInfoHTML(){
+  const cs=combatState;
+  return `<b>主角</b><br>攻击 ${G.hero.atk} · 防御 ${G.hero.def} · 生命 ${Math.round(cs.hero.hp)}/${G.hero.maxHp}${cs.hero.shield?`<br>护盾 ${Math.round(cs.hero.shield)}`:''}<br><div class="sec">状态</div>${statusBarHTML(cs.ally.pro.statuses, cs.field)}`;
 }
 /* 敌人信息：两个页面（属性 / 详细技能） */
 function enemyInfo(en){
@@ -482,8 +494,10 @@ function enemyAttrsHTML(en){
 }
 function enemySkillsHTML(en){
   const eDef=ENEMIES[en.key];
+  const move = eDef.move || '移动：向主角方向移动，每次一格。';
   const list=(eDef.skills||[]).map(s=>`<div class="eskill"><b>${s.name}</b>（${s.kind==='attack'?'攻击':'特殊'}）<br>${s.desc}</div>`).join('');
-  return `<b>${eDef.name}</b> 的技能 / 特殊效果：${list||'暂无'}`;
+  return `<b>${eDef.name}</b> 的技能 / 特殊效果：
+    <div class="eskill"><b>移动</b>（移动）<br>${move}</div>${list||'暂无'}`;
 }
 /* 敌人本回合意图（详细）：是否移动、如何移动、是否攻击、用哪个技能 */
 function enemyIntent(en){
