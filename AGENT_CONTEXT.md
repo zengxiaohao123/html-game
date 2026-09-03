@@ -40,7 +40,7 @@
   - 2026-09-02 已同步 UI 规范（全中文、图标顺序、剧情/战斗同区按模式切换、大面板）与十六、当前实现状态
 - [x] **游戏本体（index.html）核心循环 MVP 已实现并部署（可试玩）**
   - 已实现：每天随机地图（尺寸随天数渐进）、WASD/点格+前往连续移动+朝向、资源递进采集(0/2/4/6)、宝箱/事件格、回合战斗(WASD/Q/点敌选目标)、主角5攻击技、敌人逼近/贴身攻击、基础元素反应(蒸发/燃烧/绽放)、睡觉进下一天、8槽localStorage存档、健康归零GameOver、主菜单/背包/角色/编队/任务/商店
-  - 已修复：①战斗击杀后 `combatState` 置空越界访问(加空守卫)；②启动 `renderIconbar` 在 `G=null` 读 `G.day` 抛错导致主菜单无按钮(加 `if(!G) return` + 改为 load 先展示主菜单)；③只能移动1次(goBtn onclick 里 `disabled=true` 永久禁用，改为 display 隐藏+每次预览重启用)；④探索 WASD 连续移动
+  - 已修复：①战斗击杀后 `combatState` 置空越界访问(加空守卫)；②启动主菜单无按钮/页面只显示标题的**根因**是 `$` 辅助函数误用 `document.getElementById(id)`、而全代码统一按 `$('#id')`（带 `#` 前缀）调用，导致启动 `switchMode('story')` 时 `$('#bottom')` 返回 null 抛 `TypeError`，`load` 处理器中断、`showMenu()` 永不执行。已改为 `const $=id=>document.querySelector(id)`（2026-09-03 曾在线上复现该报错并据此修复）；③只能移动1次(goBtn onclick 里 `disabled=true` 永久禁用，改为 display 隐藏+每次预览重启用)；④探索 WASD 连续移动
   - **UI 重构(2026-09-02)**：图标行顺序=任务/编队/角色/背包/睡觉/设置/商店(睡觉独立按钮不进设置)；左=行動记录(不叫文字区)；右标题 探索"事件 / 选择"、战斗"插曲"；底部"剧情/战斗技能"同区按 mode-story/mode-combat 切换、不并存；大面板(背包/角色/编队/任务近全屏可滚动)；前端全中文(資源映射 RES_ZH、生命≠HP、第X天≠Dx)
   - **未实现(见规格书十五)**：剧情线、队友、图鉴、商店定价、更多敌人、完整伤害乘区、心理压力
 
@@ -92,4 +92,4 @@ WebFetch({ url: "https://html-game-ap9.pages.dev/" })
 1. Cloudflare Pages 控制台 → html-game → Deployments，看最新构建是否成功
 2. 如失败，查看构建日志错误（常见：路径写错、main 分支未选中、index.html 不在根目录）
 3. 修复后重新 commit 触发自动重部署
-4. **用户浏览器仍显示旧版（如主界面只有标题、无按钮）→ 多为浏览器/边缘缓存命中旧 JS，提示用户 硬刷新(Ctrl+F5) 或 无痕窗口，或带唯一 query 参数访问**
+4. **页面只显示标题、无主菜单按钮，且已确认线上 JS 就是新的（含 `const $=id=>document.querySelector(id)`）→ 多为浏览器/边缘缓存命中旧 JS，提示用户 硬刷新(Ctrl+F5) 或 无痕窗口，或带唯一 query 参数访问。若线上 JS 仍是旧的 `getElementById` 版本 → 是旧部署，重新 commit 触发 CF 重部署。**
