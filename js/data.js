@@ -1,7 +1,6 @@
 /* ============================================================
    js/data.js —— 模块：数据与常量
    角色 / 敌人 / 技能 / 天赋 / 状态 / 词条 / 元素 / 资源 定义。
-   本文件只做定义，被其它模块在运行时读取。
    ============================================================ */
 "use strict";
 
@@ -15,6 +14,9 @@ const AURA_ELEMS = ['fire','water','grass','thunder','ice'];
 
 /* 资源中文名（展示用） */
 const RES_ZH = {wood:'木材', fruit:'果子', flax:'亚麻', rawMeat:'生肉', coin:'金币', emptyBottle:'空瓶子'};
+
+/* 地形中文名：空地=可通行；山脉/地图外=不可通行 */
+const TERRAIN_ZH = {ground:'空地', obstacle:'山脉', void:'不可通行'};
 
 /* 状态（buff/debuff）定义：kind: buff=正面(黄) debuff=负面(红) neutral=中性(灰) */
 const ST = {
@@ -43,7 +45,7 @@ const TERMS = {
   dodge:'【闪避】在敌人即将攻击前从攻击范围内撤出。',
 };
 function termHTML(key, zh){
-  return `<span class="term" data-term="${key}" title="${TERMS[key]||zh}">【${zh}】</span>`;
+  return `<span class="term" data-term="${key}">【${zh}】</span>`; // 词条：悬浮查看（data-term 供悬浮弹窗）
 }
 
 /* 主角（当前唯一可控制单位） */

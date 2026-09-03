@@ -106,7 +106,6 @@ function renderCellContent(cell,c){
     cell.style.color=eDef.color;
     cell.title=eDef.name;
     cell.innerHTML+=`<div class="hpbar"><i style="width:${Math.max(5,c.content.hp||eDef.hp)/eDef.hp*100}%"></i></div>`;
-    if(c.content.aura) cell.innerHTML+=`<div class="aura-tag">${ELEM[c.content.aura].zh}</div>`;
   } else if(c.content.type==='loot' && !c.content.done){
     cell.textContent='📦'; cell.title='宝箱';
   } else if(c.content.type==='event' && !c.content.done){
@@ -267,5 +266,18 @@ let mapDragMoved=false; // 拖拽后抑制误触发的点击
   document.addEventListener('mouseup',()=>{ down=false; vp.classList.remove('dragging'); });
 })();
 
-/* 点击天赋以外任意处，关闭天赋弹窗 */
-document.addEventListener('click',ev=>{ if(!ev.target.closest('.talentTag')) $('#popover').style.display='none'; });
+/* 点击状态芯片→弹窗查看状态详情；点击天赋以外任意处关闭弹窗 */
+document.addEventListener('click',ev=>{
+  const st=ev.target.closest('.stchip');
+  if(st){
+    const tip=$('#popover');
+    const rounds=st.textContent.match(/·(\d+)回合/);
+    tip.innerHTML=`<b>${st.dataset.name}</b>${rounds?`（${rounds[1]}回合）`:''}<br>${st.dataset.desc||''}`;
+    tip.style.display='block';
+    const r=st.getBoundingClientRect();
+    const x=Math.min(r.left, window.innerWidth-320);
+    tip.style.left=x+'px'; tip.style.top=(r.bottom+6)+'px';
+    return;
+  }
+  if(!ev.target.closest('.talentTag')) $('#popover').style.display='none';
+});
