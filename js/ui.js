@@ -15,9 +15,13 @@ function switchMode(m){
   gameMode=m;
   $('#bottom').classList.toggle('mode-story', m==='story');
   $('#bottom').classList.toggle('mode-combat', m==='combat');
-  $('#rightTitle').textContent = m==='combat' ? '插曲' : '事件 / 选择';
+  $('#rightTitle').textContent = '信息';
   if(m==='story') $('#goBtn').style.display='none';
 }
+
+/* 清空行动记录 / 剧情区 */
+function clearLog(){ $('#logBody').innerHTML=''; }
+function clearStory(){ $('#storyBody').innerHTML=''; }
 
 /* 刷新顶部状态栏（HUD） */
 function refreshHUD(){
@@ -54,7 +58,7 @@ function log(msg){
 
 /* 剧情区（中下）追加一段 */
 function story(html){$('#storyBody').insertAdjacentHTML('beforeend',`<div>${html}</div>`); $('#storyBody').scrollTop=$('#storyBody').scrollHeight;}
-/* 右侧提示/选择区 */
+/* 右侧提示/选择区（信息区） */
 function prompt(msg){$('#promptZone').innerHTML=msg;}
 
 /* 元素着色（技能名等正文里的元素词改色） */
@@ -78,7 +82,8 @@ function renderMap(){
       const c=m.cells[y*m.n+x];
       const cell=el('<div class="cell"></div>');
       if(c.terrain==='obstacle'){cell.classList.add('obstacle');}
-      if(c.content && c.content.type) renderCellContent(cell,c);
+      else if(c.terrain==='void'){cell.classList.add('void');}
+      if(c.terrain!=='void' && c.content && c.content.type) renderCellContent(cell,c);
       if(G.px===x&&G.py===y){cell.classList.add('player'); cell.classList.add('facing-'+G.hero.facing);}
       cell.dataset.x=x; cell.dataset.y=y;
       cell.addEventListener('click',()=>onCellClick(x,y));
@@ -105,15 +110,17 @@ function renderCellContent(cell,c){
 
 /* —— 面板弹窗 —— */
 function openSettings(){ openModal('设置', `
-  <button class="mbtn" onclick="saveMenuOpen()">存档</button>
-  <button class="mbtn" onclick="openReadSave()">读档</button>
-  <button class="mbtn" onclick="closeModal();backToMenu()">返回主界面（不存档）</button>`, 'small'); }
+  <div style="display:flex;gap:14px;flex-wrap:wrap">
+    <button class="mbtn small" onclick="saveMenuOpen()">存档</button>
+    <button class="mbtn small" onclick="openReadSave()">读档</button>
+    <button class="mbtn small" onclick="closeModal();backToMenu()">返回主界面（不存档）</button>
+  </div>`, 'full'); }
 function saveMenuOpen(){ openModal('选择存档位', buildSaveSlotHTML('save'), 'small'); }
 function openReadSave(){ openReadSaveMenu(); }
 function openModal(title,html,size){
   $('#modalTitle').textContent=title;
   const modal=$('#modalOverlay').querySelector('.modal');
-  modal.className='modal'+(size==='small'?' small':(size==='wide'?' wide':''));
+  modal.className='modal'+(size==='small'?' small':(size==='wide'?' wide':(size==='full'?' full':'')));
   $('#modalBody').innerHTML=html;
   $('#modalOverlay').classList.add('show');
 }
@@ -140,35 +147,69 @@ window.doSave=function(i){ saveGame(i); log(`已保存到存档位 ${i+1}。`); 
 window.doLoad=function(i){ if(loadGame(i)){ loadIntoWorld(); } else{ alert('该存档位为空。'); } };
 function openReadSaveMenu(){ openModal('读取存档', buildSaveSlotHTML('load'), 'small'); }
 
-/* —— 各功能页 —— */
+/* —— 各功能页（大面板，占据整个屏幕） —— */
 function openInventory(){
   const inv=G.inventory;
   const rows=Object.entries(inv).map(([k,v])=>`<div class="resRow">${RES_ZH[k]||k}：<b>${v}</b></div>`).join('');
-  openModal('背包', `<p>你随身携带的物品：</p>${rows}`);
+  openModal('背包', `<p style="font-size:15px">你随身携带的物品：</p><div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:10px">${rows}</div>`);
 }
 function openCharacters(){
   const h=G.hero;
-  openModal('角色 · 主角',
-    `<div class="statGrid">
+  openModal('角色',
+    `<div style="font-size:20px;font-weight:700;margin-bottom:10px">主角</div>
+     <div class="statGrid">
        <span>攻击 <b>${h.atk}</b></span><span>最大生命 <b>${h.maxHp}</b></span>
        <span>防御 <b>${h.def}</b></span><span>逃跑速度 <b>${h.escapeSpeed}</b></span>
        <span>健康 <b>${h.health}</b></span><span>行动力上限 <b>${h.apCap}</b></span>
      </div>
-     <div><b>天赋</b>：</div>
-     ${PROTAGONIST.passives.map(p=>`<div style="font-size:13px;color:var(--txt-dim);margin:3px 0">· ${p.name}：${p.desc}</div>`).join('')}
-     <div style="margin-top:10px"><b>技能</b>（战斗中可带 3 个）：</div>
-     ${PROTAGONIST.skills.map(s=>`<div style="font-size:13px;color:var(--txt-dim);margin:3px 0">· ${s.name}${PROTAGONIST.selectedSkillIds.includes(s.id)?' <span style="color:var(--gold)">[携带]</span>':''}：${e(s.desc)}</div>`).join('')}`);
+     <div style="font-size:16px;margin-top:14px"><b>天赋</b>：</div>
+     ${PROTAGONIST.passives.map(p=>`<div style="font-size:14px;color:var(--txt-dim);margin:4px 0">· ${p.name}：${p.desc}</div>`).join('')}
+     <div style="font-size:16px;margin-top:14px"><b>技能</b>（战斗中可带 3 个）：</div>
+     ${PROTAGONIST.skills.map(s=>`<div style="font-size:14px;color:var(--txt-dim);margin:4px 0">· ${s.name}${PROTAGONIST.selectedSkillIds.includes(s.id)?' <span style="color:var(--gold)">[携带]</span>':''}：${e(s.desc)}</div>`).join('')}
+     ${Object.values(ALLIES).map(a=>`
+       <div style="font-size:20px;font-weight:700;margin:18px 0 8px">${a.name}${a.element?`（<span class="${ELEM[a.element].c}">${ELEM[a.element].zh}</span>）`:''}</div>
+       <div class="statGrid"><span>攻击 <b>${a.atk}</b></span></div>
+       <div style="font-size:16px"><b>天赋</b>：</div>
+       ${a.passives.map(p=>`<div style="font-size:14px;color:var(--txt-dim);margin:4px 0">· ${p.name}：${p.desc}</div>`).join('')}
+       <div style="font-size:16px;margin-top:10px"><b>技能</b>：</div>
+       ${a.skills.map(s=>`<div style="font-size:14px;color:var(--txt-dim);margin:4px 0">· ${s.name}${a.selectedSkillIds.includes(s.id)?' <span style="color:var(--gold)">[携带]</span>':''}：${e(s.desc)}</div>`).join('')}
+     `).join('')}`);
 }
 function openFormation(){
-  openModal('编队', `<p>当前队伍（主角一人）。后续可换入队友并调整站位。</p>
-    <div style="font-size:14px;margin-top:8px">· 一号位：主角</div>
-    <p style="color:var(--txt-dim);margin-top:8px">队友（许泠朦 / 夏阳 / 陆悠悠 / 叶唯安等）在后续版本加入。</p>`);
+  openModal('编队', `<p style="font-size:15px">当前队伍（共 ${G.team.length} 人）。可调整一二三号位。</p>
+    ${G.team.map((k,i)=>`<div style="font-size:16px;margin:8px 0">· ${i+1}号位：${getChar(k).name}</div>`).join('')}
+    <p style="color:var(--txt-dim);margin-top:10px">队友（许泠朦 / 叶唯安 / 潘天宇等）在后续版本加入。</p>`);
 }
 function openTasks(){
-  openModal('任务', `<p>任务记录：</p>
-    <p>· 存活下去（进行中）</p>
-    <p>· 探索第 ${G.day} 天的新地图（进行中）</p>`);
+  openModal('任务', `<p style="font-size:15px">任务记录：</p>
+    <p style="font-size:15px;margin:8px 0">· 存活下去（进行中）</p>
+    <p style="font-size:15px;margin:8px 0">· 探索第 ${G.day} 天的新地图（进行中）</p>`);
 }
 function openShop(){
-  openModal('商店', `<p>商店商品与定价仍在设计中（待定）。</p>`);
+  openModal('商店', `<p style="font-size:15px">商店商品与定价仍在设计中（待定）。</p>`);
 }
+
+/* —— 地图视口：滚轮缩放 + 拖拽平移（仅视觉，不影响内容） —— */
+let mapDragMoved=false; // 拖拽后抑制误触发的点击
+(function initMapViewport(){
+  const vp=$('#mapViewport'); const grid=$('#mapGrid');
+  let scale=1;
+  vp.addEventListener('wheel', e=>{
+    e.preventDefault();
+    scale=Math.min(2, Math.max(0.5, scale + (e.deltaY>0?-0.12:0.12)));
+    grid.style.transform=`scale(${scale})`;
+  }, {passive:false});
+  let down=false,sx=0,sy=0,sl=0,st=0;
+  vp.addEventListener('mousedown',e=>{
+    down=true; mapDragMoved=false; sx=e.clientX; sy=e.clientY; sl=vp.scrollLeft; st=vp.scrollTop;
+    vp.classList.add('dragging');
+  });
+  document.addEventListener('mousemove',e=>{
+    if(down){
+      const dx=e.clientX-sx, dy=e.clientY-sy;
+      if(Math.abs(dx)>5||Math.abs(dy)>5) mapDragMoved=true;
+      vp.scrollLeft=sl-dx; vp.scrollTop=st-dy;
+    }
+  });
+  document.addEventListener('mouseup',()=>{ down=false; vp.classList.remove('dragging'); });
+})();

@@ -18,7 +18,7 @@ function newGame(){
     hero:{atk:10,maxHp:100,hp:100,def:0,escapeSpeed:100,health:30,actionPoint:5,apCap:5,facing:'up'},
     inventory:{wood:0,fruit:0,flax:0,rawMeat:0,coin:0,emptyBottle:0},
     records:{slain:{}, wins:0, losses:0},
-    team:[PROTAGONIST.key],
+    team:['pro','xiayang','luyouyou'],
     map:null, px:0, py:0, st:null,
     lootLog:[]
   };
@@ -37,9 +37,10 @@ function showMenu(){
 /* 玩法简介弹窗 */
 function openTutorial(){
   openModal('玩法简介',
-    `探索：<b>点击地图格子再点「前往」</b>，或用 <b>WASD</b> 键移动。<br>
+    `探索：<b>点击地图格子再点「前往」</b>（信息区），或用 <b>WASD</b> 键移动。<br>
     进入下一天：点上方 <b>睡觉</b> 按钮。<br>
-    遇敌进入回合战斗：先点选下方 <b>技能</b>，再按 <b>Q</b> 释放；或直接移动，移动后会自动攻击最近的敌人。<br>
+    遇敌进入回合战斗：点下方 <b>角色卡</b>（<b>F1/F2/F3</b>）切换角色；点 <b>技能</b>（<b>1/2/3</b>）选中，再点一次即主动使用（或按 <b>Q</b>）；移动（WASD/点击相邻格）后各角色会自动释放已选技能。<br>
+    地图可<b>滚轮缩放</b>、<b>拖拽平移</b>（仅视觉）。<br>
     数值与系统依据《玩法机制介绍-总篇》。`, 'small');
 }
 
@@ -65,7 +66,7 @@ function startNew(){
   $('#menuOverlay').classList.remove('show');
   G=newGame();
   G.map=generateMap(G.day);
-  G.px=0;G.py=0;
+  G.px=G.map.px; G.py=G.map.py;
   loadIntoWorld();
 }
 
@@ -73,7 +74,7 @@ function startNew(){
 function loadIntoWorld(){
   $('#menuOverlay').classList.remove('show');
   if(!G.map) G.map=generateMap(G.day);
-  if(G.px===undefined){G.px=0;G.py=0;}
+  if(G.px===undefined||G.py===undefined){ G.px=G.map.px; G.py=G.map.py; }
   switchMode('story');
   refreshHUD(); renderIconbar(); renderMap();
   story('你又一次在异世界醒来。这一次，你决定无论如何都要活下去。');
@@ -85,11 +86,11 @@ function sleep(){
   if(G.hero.actionPoint>0 && !confirm('行动力尚未耗尽，仍确定直接「睡觉」进入下一天吗？')) return;
   G.hero.actionPoint=G.hero.apCap;
   G.day+=1;
-  G.map=null;
   const nm=generateMap(G.day);
-  G.map=nm; G.px=0; G.py=0; G.hero.facing='up';
+  G.map=nm; G.px=nm.px; G.py=nm.py; G.hero.facing='up';
   G.hero.hp=Math.max(1, Math.min(G.hero.maxHp, Math.round(G.hero.hp+G.hero.maxHp*0.2)));
   saveGame(2);
+  clearLog(); clearStory(); // 睡觉时清空行动记录与剧情区
   log(`你睡了一觉，进入第 ${G.day} 天。`);
   story(`夜色褪去，新的一天开始了。今天是第 ${G.day} 天。`);
   refreshHUD(); renderMap(); renderIconbar();
