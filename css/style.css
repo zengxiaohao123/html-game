@@ -1,0 +1,132 @@
+/* ============================================================
+   异世界流浪日记 · 全站样式（模块：界面与UI / css/style.css）
+   内容与原先内联于 index.html 的样式完全一致，仅从 HTML 中拆出。
+   ============================================================ */
+:root{
+  --bg:#14161c; --panel:#1c1f27; --panel2:#222533; --line:#33384a;
+  --txt:#e8e6df; --txt-dim:#9aa0ac; --gold:#d9b64a;
+  --fire:#ff5454; --water:#4a9bff; --grass:#5fd96b; --thunder:#c05bff;
+  --ice:#4fd8d8; --wind:#8fd0ff; --rock:#b09a73;
+  --good:#6ee07a; --bad:#ff6b6b;
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+html,body{height:100%;}
+body{
+  font-family:"Microsoft YaHei","PingFang SC",sans-serif;
+  background:var(--bg); color:var(--txt); overflow:hidden;
+  user-select:none;
+}
+#app{height:100vh;display:flex;flex-direction:column;}
+#hud{
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  padding:6px 10px; background:var(--panel); border-bottom:1px solid var(--line);
+  font-size:13px; min-height:30px;
+}
+#hud .stat{white-space:nowrap;}
+#hud .stat b{font-weight:600; color:#fff;}
+.hpfill{color:var(--good);} .hpfill.low{color:var(--bad);}
+#iconbar{
+  display:flex; justify-content:flex-start; gap:6px; padding:4px 10px; flex-wrap:wrap;
+  background:var(--panel); border-bottom:1px solid var(--line);
+}
+.icobtn{
+  padding:4px 12px; background:var(--panel2); border:1px solid var(--line);
+  cursor:pointer; font-size:13px; color:var(--txt); border-radius:3px;
+}
+.icobtn:hover{background:#2c3040;}
+.icobtn.sleep{background:#3a2f12; color:var(--gold); font-weight:600;}
+.icobtn.hidden{display:none;}
+#main{flex:1; display:grid; grid-template-columns:250px 1fr 230px; gap:6px; padding:6px; min-height:0;}
+#mapWrap{position:relative; background:var(--panel); border:1px solid var(--line); border-radius:4px; min-height:0;}
+#mapViewport{position:absolute; inset:0; overflow:auto;}
+#mapGrid{display:grid; gap:3px; padding:8px;}
+.cell{
+  width:44px; height:44px; background:var(--panel2); border:1px solid var(--line);
+  border-radius:8px; cursor:pointer; position:relative; display:flex;align-items:center;justify-content:center;
+  font-size:20px;
+}
+.cell.obstacle{background:#28261f; cursor:default;}
+.cell.obstacle::after{content:"⛰"; color:#8a6d3b; font-size:22px;}
+.cell.prey{outline:2px solid var(--gold); outline-offset:-2px;}
+.cell.player{background:#31403a;}
+.cell.enemyPick{outline:2px dashed var(--bad);}
+.facing-up::after{content:"▲"; color:#fff; position:absolute; top:2px; left:50%; transform:translateX(-50%); font-size:10px;}
+.facing-down::after{content:"▼"; color:#fff; position:absolute; bottom:2px; left:50%; transform:translateX(-50%); font-size:10px;}
+.facing-left::after{content:"◀"; color:#fff; position:absolute; left:2px; top:50%; transform:translateY(-50%); font-size:10px;}
+.facing-right::after{content:"▶"; color:#fff; position:absolute; right:2px; top:50%; transform:translateY(-50%); font-size:10px;}
+.hpbar{position:absolute; left:3px; right:3px; bottom:2px; height:4px; background:#0006; border-radius:2px;}
+.hpbar i{display:block; height:100%; background:var(--bad); border-radius:2px;}
+.aura-tag{
+  position:absolute; top:2px; left:2px; font-size:9px; color:#fff;
+  background:#000a; padding:0 3px; border-radius:3px;
+}
+#leftLog{
+  background:var(--panel); border:1px solid var(--line); border-radius:4px;
+  display:flex; flex-direction:column; min-height:0;
+}
+.panel-title{padding:6px 8px; font-size:12px; color:var(--txt-dim); border-bottom:1px solid var(--line); flex:none;}
+#logBody{flex:1; overflow-y:auto; padding:6px 8px; font-size:12px; line-height:1.6; min-height:0;}
+#logBody .logline{border-bottom:1px dashed #00000044; padding:2px 0;}
+#goBtn{
+  margin:8px; padding:7px; background:var(--gold); color:#241d05; font-weight:700;
+  border:none; border-radius:4px; cursor:pointer; display:none; font-size:13px; flex:none;
+}
+#goBtn.disabled{background:#555;cursor:not-allowed;}
+#rightPanel{
+  background:var(--panel); border:1px solid var(--line); border-radius:4px;
+  display:flex; flex-direction:column; min-height:0;
+}
+#promptZone{flex:1; overflow-y:auto; padding:8px; font-size:13px; line-height:1.6; min-height:0;}
+#promptZone .opt{margin:4px 0; padding:8px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:4px;}
+#promptZone .opt:hover{background:#2c3040;}
+#bottom{
+  height:210px; background:var(--panel); border:1px solid var(--line); border-radius:4px;
+  margin:0 6px 6px; padding:6px; position:relative; min-height:0;
+}
+#storyBox, #combatZone{display:none; height:100%; flex-direction:column; min-height:0;}
+#bottom.mode-story #storyBox{display:flex;}
+#bottom.mode-combat #combatZone{display:flex;}
+#storyBody{flex:1; overflow-y:auto; padding:6px 8px; font-size:13px; line-height:1.7; min-height:0;}
+#storyBody .speaker{color:var(--gold); font-weight:700;}
+#combatZone h4, #storyBox h4{flex:none;}
+#allyBar{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px;}
+.allyTab{padding:5px 10px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; font-size:12px; border-radius:3px;}
+.allyTab.active{outline:2px solid var(--gold);}
+#skillList{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:4px;}
+.skillTag{padding:5px 10px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:3px; font-size:13px;}
+.skillTag.attack{border-color:var(--fire);}
+.skillTag.skill{color:var(--gold);}
+.skillTag.active{outline:2px solid var(--gold); background:#2c3040;}
+#skillDetail{font-size:12px; color:var(--txt-dim); min-height:2em; margin-bottom:4px;}
+#talentBox{margin-top:auto;}
+.overlay{
+  position:fixed; inset:0; background:#000000c0; display:none; align-items:center; justify-content:center; z-index:50;
+}
+.overlay.show{display:flex;}
+.modal{
+  background:var(--panel); border:1px solid var(--line); border-radius:6px;
+  width:min(92vw, 1000px); max-height:92vh; overflow:auto; padding:16px;
+  display:flex; flex-direction:column;
+}
+.modal h2{font-size:17px; margin-bottom:10px; color:var(--gold); flex:none;}
+#modalBody{flex:1; overflow-y:auto; min-height:0;}
+.modal.wide{width:min(96vw, 1200px);}
+.modal.small{width:min(420px,92vw); height:auto;}
+.mbtn{
+  display:block; width:100%; margin:6px 0; padding:11px; background:var(--panel2);
+  border:1px solid var(--line); color:var(--txt); cursor:pointer; border-radius:4px; font-size:14px; text-align:left;
+}
+.mbtn:hover{background:#2c3040;}
+.mbtn.small{width:auto; display:inline-block; padding:6px 14px; font-size:13px;}
+.resRow{font-size:14px; line-height:2;}
+.term{color:var(--gold); text-decoration:underline; text-underline-offset:2px; cursor:help;}
+#tooltip{
+  position:fixed; display:none; max-width:260px; background:#000d; color:#eee;
+  border:1px solid var(--line); padding:6px 8px; font-size:12px; border-radius:4px; z-index:100;
+  line-height:1.5;
+}
+.statGrid{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; font-size:13px;}
+.e-fire{color:var(--fire)!important;} .e-water{color:var(--water)!important;} .e-grass{color:var(--grass)!important;}
+.e-thunder{color:var(--thunder)!important;} .e-ice{color:var(--ice)!important;} .e-wind{color:var(--wind)!important;} .e-rock{color:var(--rock)!important;}
+.kbd{background:#000a; border:1px solid var(--line); border-radius:3px; padding:0 5px; font-size:11px;}
+.btn-row{display:flex; gap:8px; flex-wrap:wrap;}
