@@ -41,7 +41,7 @@ function openTutorial(){
     进入下一天：点上方 <b>睡觉</b> 按钮。<br>
     遇敌进入回合战斗：点下方 <b>角色卡</b>（<b>F1/F2/F3</b>）切换角色；点 <b>技能</b>（<b>1/2/3</b>）选中，再点一次即主动使用（或按 <b>Q</b>）；移动（WASD/点击相邻格）后各角色自动释放已选技能。<br>
     战斗中点敌人可在右侧信息区查看<b>属性/意图/状态</b>，并可切到「详细技能」页查看其技能介绍。<br>
-    状态栏记录单位身上的增益/减益（正面黄框、负面红框），主角额外记录全场结界/境界。<br>
+    状态栏记录单位身上的增益/减益（正面黄框、负面红框），<b>点击状态</b>可查看详情；技能描述中的【词条】<b>悬浮</b>可查看解释。<br>
     地图可<b>滚轮缩放</b>、<b>拖拽平移</b>（仅视觉）。<br>
     数值与系统依据《玩法机制介绍-总篇》。`, 'small');
 }
@@ -93,6 +93,7 @@ function sleep(){
   G.hero.hp=Math.max(1, Math.min(G.hero.maxHp, Math.round(G.hero.hp+G.hero.maxHp*0.2)));
   saveGame(2);
   clearLog(); clearStory(); // 睡觉时清空行动记录与剧情区
+  prompt(''); // 睡觉时刷新（清空）信息区
   log(`你睡了一觉，进入第 ${G.day} 天。`);
   story(`夜色褪去，新的一天开始了。今天是第 ${G.day} 天。`);
   refreshHUD(); renderMap(); renderIconbar();
@@ -110,7 +111,7 @@ function bindTooltip(){
   document.addEventListener('mousemove',ev=>{ positionTip($('#tooltip'),ev); });
 }
 function positionTip(tip,ev){
-  const x=Math.min(ev.clientX+14, window.innerWidth-270);
+  const x=Math.min(ev.clientX+14, window.innerWidth-300);
   const y=ev.clientY+14;
   tip.style.left=x+'px'; tip.style.top=y+'px';
 }

@@ -2,6 +2,7 @@
    js/explore.js —— 模块：地图与探索（探索交互）
    点击预览 / 前往移动 / 资源拾取 / 宝箱 / 事件（含选项双击确认）。
    信息区 = 右侧，只显示被点击格子的信息与「前往」按钮。
+   地形命名：空地=可通行；山脉/地图外=不可通行。
    ============================================================ */
 "use strict";
 
@@ -16,11 +17,13 @@ function onCellClick(x,y){
   const c=m.cells[y*m.n+x];
   previewCell={x,y};
   let info=`<b>位置 (${x+1},${y+1})</b><br>`;
-  if(c.terrain==='void'){ info+='地图之外，荒无人烟。'; prompt(info); $('#goBtn').style.display='none'; return; }
-  if(c.terrain==='obstacle'){ info+='这是一片无法通行的山脉。'; prompt(info); $('#goBtn').style.display='none'; return; }
-  if(c.content && c.content.type==='enemy') info+=`前方遭遇 <b>${ENEMIES[c.content.key].name}</b><br>移动过去将进入战斗。`;
-  else if(c.content && c.content.type==='loot') info+='此处有一个宝箱。';
-  else if(c.content && c.content.type==='event') info+='此处有事件发生。';
+  if(c.terrain==='void'){ info+='不可通行（地图之外）。'; prompt(info); $('#goBtn').style.display='none'; return; }
+  if(c.terrain==='obstacle'){ info+='山脉障碍，无法通行。'; prompt(info); $('#goBtn').style.display='none'; return; }
+  const ct=c.content&&c.content.type;
+  if(ct==='enemy') info+=`前方遭遇 <b>${ENEMIES[c.content.key].name}</b><br>移动过去将进入战斗。`;
+  else if(ct==='loot' && !c.content.done) info+='此处有一个宝箱。';
+  else if(ct==='event' && !c.content.done) info+='此处有事件发生。';
+  else if(ct==='loot'||ct==='event') info+='这里的东西已被取走，如今是空地。';
   else info+='空地。';
   prompt(info);
   activateGo(x,y);
@@ -36,14 +39,14 @@ function activateGo(x,y){
 }
 
 /* 移动到相邻格：扣 AP、改朝向、触发拾取 / 敌人 / 宝箱 / 事件。
-   朝障碍/地图外移动：只改变朝向、不移动、不消耗行动力（返还）。 */
+   朝障碍/不可通行移动：只改变朝向、不移动、不消耗行动力（返还）。 */
 function moveExplore(x,y){
   if(combatState) return;
   const m=G.map;
   const dx=x-G.px, dy=y-G.py;
   if(Math.abs(dx)+Math.abs(dy)!==1){ log('只能移动到相邻一格（上下左右）。'); return; }
   const target=m.cells[y*m.n+x];
-  // 障碍/地图外：转向但不移动、不消耗行动力
+  // 不可通行：转向但不移动、不消耗行动力
   if(target.terrain==='obstacle' || target.terrain==='void'){
     G.hero.facing=dirToFacing(dx,dy);
     log('前方有阻挡，你转身面向那边，行动力并未消耗。');
