@@ -63,6 +63,53 @@ const PROTAGONIST = {
   selectedSkillIds:['slash','blade','guerrilla']
 };
 
+/* 队友（占位，用于测试3槽角色技能区；后续按规格书补齐） */
+const ALLIES = {
+  xiayang:{ key:'xiayang', name:'夏阳', element:'fire', atk:70,
+    passives:[
+      {name:'无所畏惧', desc:'主角攻击力+30，自身攻击力+45。'},
+      {name:'活力满满', desc:'睡觉时回复的生命值和健康值翻倍。'},
+      {name:'好奇心', desc:'战斗胜利30%概率额外获一次奖励，50%概率额外获1金币。'},
+      {name:'心想事成', desc:'可切换行动方式为【巧遇】，移动至场上任意一格，每天限1次。'},
+      {name:'涅槃', desc:'战斗中主角受致命伤时不倒下，回复50%生命并使全体我方攻击+25%（每天限1次）。'},
+    ],
+    skills:[
+      {id:'quhuo', name:'淬火', kind:'attack', type:'fire', range:1, target:'adj',
+       effect:atk=>atk*1.20, desc:'对周围四格随机一名敌人造成相当于攻击力120%的火元素伤害。'},
+      {id:'liaoyuan', name:'燎原', kind:'attack', type:'fire', range:4, target:'frontline',
+       effect:atk=>atk*1.50, burn:3, desc:'对前方一线四格内的所有敌人造成150%火元素伤害，并施加【燃烧】3回合。'},
+      {id:'guwu', name:'鼓舞', kind:'support', type:'buff', range:0, target:'self',
+       effect:null, desc:'使我方士气大振，主角回复自身攻击力15%的生命。'},
+    ],
+    selectedSkillIds:['quhuo','liaoyuan','guwu']
+  },
+  luyouyou:{ key:'luyouyou', name:'陆悠悠', element:'wind', atk:75,
+    passives:[
+      {name:'巧手', desc:'睡觉40%概率获1随机资源；合成25%概率获1随机资源。'},
+      {name:'烹饪', desc:'食物效果更好；主角最大生命+100。'},
+      {name:'蹁跹', desc:'探索每移动后主角回复30生命；战斗闪避时主角回复30生命。'},
+      {name:'风息', desc:'自身攻击力+60，暴击率+30%；暴击时本次技能伤害由物理转为风元素。'},
+      {name:'比翼', desc:'自身暴击后，其余我方角色下一次攻击暴击率+100%。'},
+    ],
+    skills:[
+      {id:'jingqiao', name:'精巧射击', kind:'attack', type:'physical', range:3, target:'nearest',
+       effect:atk=>atk*1.00, desc:'对三格距离内最近的一名敌人造成相当于攻击力100%的物理伤害。'},
+      {id:'qiangli', name:'强力射击', kind:'attack', type:'physical', range:2, target:'frontline',
+       effect:atk=>atk*0.90, desc:'对前方一线两格内的所有敌人造成90%物理伤害。'},
+      {id:'bixi', name:'屏息瞄准', kind:'support', type:'buff', range:0, target:'self',
+       effect:null, desc:'屏息凝神，为下一次攻击蓄力。'},
+    ],
+    selectedSkillIds:['jingqiao','qiangli','bixi']
+  }
+};
+
+/* 统一角色表：'pro'=主角，其余=队友 */
+const CHARACTERS = Object.assign({ pro:PROTAGONIST }, ALLIES);
+/* 取角色定义 */
+function getChar(key){ return CHARACTERS[key] || PROTAGONIST; }
+/* 当前队伍的角色定义列表（按 G.team 顺序） */
+function getTeamChars(){ return (G&&G.team||['pro']).map(k=>getChar(k)).filter(Boolean); }
+
 /* 敌人库（临时占位，后续按规格书补齐） */
 const ENEMIES = {
   slime:{name:'哥布林', icon:'👺', hp:40, atk:8, dmgReduc:0, speed:20,
