@@ -453,8 +453,7 @@ function charAttrsHTML(key){
       <span class="attr"><b>逃跑速度</b> ${h.escapeSpeed}</span>`;
   }
   const c=getChar(key);
-  return `<span class="attr"><b>攻击</b> ${c.atk}</span>
-    <span class="attr"><b>属性</b> ${c.element?ELEM[c.element].zh:'无'}</span>`;
+  return `<span class="attr"><b>攻击</b> ${c.atk}</span>`; // 元素属性随角色名展示，不放进数值行
 }
 
 /* —— 信息区 —— */
@@ -571,6 +570,11 @@ function endCombatByDefeat(){
   clearLog();
   const [ex,ey]=cs.entryCell.split(',').map(Number);
   G.px=ex; G.py=ey;
+  // 战斗失败：保留该格敌人，使其可再次作战（防止任何情况下被误清空）
+  const entry=G.map.cells[ey*G.map.n+ex];
+  if(cs.enemies[0] && entry.content && entry.content.type!=='enemy'){
+    entry.content={type:'enemy', key:cs.enemies[0].key, id:0};
+  }
   switchMode('story');
   prompt(''); // 战斗结束时刷新（清空）信息区
   renderMap(); refreshHUD();
