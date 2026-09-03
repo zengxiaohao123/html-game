@@ -159,13 +159,14 @@ function openInventory(){
   openModal('背包', `<p style="font-size:15px">你随身携带的物品：</p><div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:10px">${rows}</div>`);
 }
 
-/* —— 角色页：每角色一页，点击名字切换 —— */
+/* —— 角色页：每角色一页，点击名字切换（切换时立即高亮被选按钮） —— */
 let charPageKey='pro';
-function openCharacters(){
+function openCharacters(){ renderCharacters(); }
+function renderCharacters(){
   const keys=['pro',...Object.keys(ALLIES)];
   const tabs=keys.map(k=>`<button class="ctab ${k===charPageKey?'on':''}" data-k="${k}">${getChar(k).name}</button>`).join('');
   openModal('角色', `<div class="ctabs">${tabs}</div><div id="charPageBody">${charPageBody(charPageKey)}</div>`, 'full');
-  $('#modalBody').querySelectorAll('.ctab').forEach(b=>b.onclick=()=>{ charPageKey=b.dataset.k; const body=$('#charPageBody'); if(body) body.innerHTML=charPageBody(charPageKey); });
+  $('#modalBody').querySelectorAll('.ctab').forEach(b=>b.onclick=()=>{ charPageKey=b.dataset.k; renderCharacters(); });
 }
 function charPageBody(key){
   const c=getChar(key);
@@ -266,14 +267,21 @@ let mapDragMoved=false; // 拖拽后抑制误触发的点击
   document.addEventListener('mouseup',()=>{ down=false; vp.classList.remove('dragging'); });
 })();
 
-/* 点击状态芯片/天赋标签 → 在附近弹窗查看详情；点击其余处关闭弹窗 */
+/* 点击状态芯片/天赋标签 → 在附近弹窗查看详情；点击其余处关闭弹窗。
+   弹窗默认在元素下方，若超出屏幕底部则翻转到上方，避免被遮挡。 */
 function openPopoverNear(el, html){
   const tip=$('#popover');
   tip.innerHTML=html;
   tip.style.display='block';
+  tip.style.visibility='hidden'; // 先隐藏以测量尺寸
   const r=el.getBoundingClientRect();
-  const x=Math.min(r.left, window.innerWidth-320);
-  tip.style.left=x+'px'; tip.style.top=(r.bottom+6)+'px';
+  const w=tip.offsetWidth||260, h=tip.offsetHeight||60;
+  tip.style.visibility='visible';
+  let x=r.left;
+  if(x+w>window.innerWidth-8) x=Math.max(8, window.innerWidth-8-w);
+  let y=r.bottom+6;
+  if(y+h>window.innerHeight-8) y=Math.max(8, r.top-h-6);
+  tip.style.left=x+'px'; tip.style.top=y+'px';
 }
 document.addEventListener('click',ev=>{
   const st=ev.target.closest('.stchip');
