@@ -39,14 +39,16 @@ function refreshHUD(){
     `<span class="stat">行动力 <b>${h.actionPoint}/${h.apCap}</b></span>`;
 }
 
-/* 刷新功能图标行（任务/编队/角色/背包/睡觉/设置/商店） */
+/* 刷新功能图标行（任务/编队/角色/背包/睡觉/设置/商店/合成/载具） */
 function renderIconbar(){
   if(!G) return;
   const show=[[ '任务',openTasks],['编队',openFormation],['角色',openCharacters],
-    ['背包',openInventory],['睡觉',sleep],['设置',openSettings],['商店',openShop]];
+    ['背包',openInventory],['睡觉',sleep],['设置',openSettings],['商店',openShop],['合成',openCraft],['载具',openVehicles]];
   $('#iconbar').innerHTML=show.map(([t,f],i)=>`<button class="icobtn${t==='睡觉'?' sleep':''}" data-i="${i}">${t}</button>`).join('');
   $('#iconbar').querySelectorAll('.icobtn').forEach(b=>b.onclick=()=>show[+b.dataset.i][1]());
-  $('#iconbar').querySelectorAll('.icobtn')[6].classList.toggle('hidden', G.day<3);
+  // 商店在游戏前期隐藏（按中文名定位，避免数字下标错位）
+  const shopIdx=show.findIndex(s=>s[0]==='商店');
+  $('#iconbar').querySelectorAll('.icobtn')[shopIdx].classList.toggle('hidden', G.day<3);
 }
 
 /* 行动记录（左侧）追加一行 */
@@ -122,14 +124,6 @@ function openSettings(){ openModal('设置', `
   </div>`, 'full'); }
 function saveMenuOpen(){ openModal('选择存档位', buildSaveSlotHTML('save'), 'small'); }
 function openReadSave(){ openReadSaveMenu(); }
-function openModal(title,html,size){
-  $('#modalTitle').textContent=title;
-  const modal=$('#modalOverlay').querySelector('.modal');
-  modal.className='modal'+(size==='small'?' small':(size==='wide'?' wide':(size==='full'?' full':'')));
-  $('#modalBody').innerHTML=html;
-  $('#modalOverlay').classList.add('show');
-}
-function closeModal(){ $('#modalOverlay').classList.remove('show'); }
 function alertDialog(title,msg){
   openModal(title, `<p>${msg}</p>`, 'small');
 }
@@ -155,8 +149,31 @@ function openReadSaveMenu(){ openModal('读取存档', buildSaveSlotHTML('load')
 /* —— 各功能页（大面板，占据整个屏幕） —— */
 function openInventory(){
   const inv=G.inventory;
-  const rows=Object.entries(inv).map(([k,v])=>`<div class="resRow">${RES_ZH[k]||k}：<b>${v}</b></div>`).join('');
+  const rows=Object.entries(inv).map(([k,v])=>`<div class="resRow">${itemName(k)}：<b>${v}</b></div>`).join('');
   openModal('背包', `<p style="font-size:15px">你随身携带的物品：</p><div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:10px">${rows}</div>`);
+}
+
+/* —— 弹窗层级栈：记录已打开的前一层，供 ESC 退回一层 —— */
+let modalStack=[];
+function openModal(title,html,size,opt){
+  const ov=$('#modalOverlay');
+  // 已有弹窗且非「原地刷新」（replace，用于合成/载具数值反复变化）：先把当前层压栈，便于 ESC 后退
+  if(ov.classList.contains('show') && !(opt&&opt.replace)){
+    const m=ov.querySelector('.modal');
+    const sz=m.classList.contains('small')?'small':m.classList.contains('wide')?'wide':m.classList.contains('full')?'full':'';
+    modalStack.push({title:$('#modalTitle').textContent, html:$('#modalBody').innerHTML, size:sz});
+  }
+  $('#modalTitle').textContent=title;
+  const modal=ov.querySelector('.modal');
+  modal.className='modal'+(size==='small'?' small':(size==='wide'?' wide':(size==='full'?' full':'')));
+  $('#modalBody').innerHTML=html;
+  ov.classList.add('show');
+}
+function closeModal(){ $('#modalOverlay').classList.remove('show'); modalStack.length=0; }
+/* ESC 退回一层；若无更后一层则完全关闭 */
+function modalBack(){
+  if(modalStack.length){ const p=modalStack.pop(); $('#modalOverlay').classList.remove('show'); openModal(p.title,p.html,p.size); return true; }
+  closeModal(); return false;
 }
 
 /* —— 角色页：每角色一页，点击名字切换（切换时立即高亮被选按钮） —— */
@@ -311,4 +328,15 @@ document.addEventListener('click',ev=>{
     return;
   }
   $('#popover').style.display='none';
+});
+
+/* —— ESC 退回一层界面 —— */
+/* 主界面/游戏结束界面：无效果；有弹窗：退回一层；主要游玩页：打开设置。
+   不影响行动记录区、地图本身、角色技能区、选项信息区。 */
+document.addEventListener('keydown', ev=>{
+  if(ev.key!=='Escape') return;
+  ev.preventDefault();
+  if($('#menuOverlay').classList.contains('show') || $('#gameoverOverlay').classList.contains('show')) return;
+  if($('#modalOverlay').classList.contains('show')){ modalBack(); return; }
+  if(G) openSettings();
 });
