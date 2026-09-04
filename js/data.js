@@ -28,6 +28,21 @@ const ITEMS = { // 制作产物（占位，暂无使用逻辑）
 function itemName(k){ return RES_ZH[k] || (ITEMS[k]&&ITEMS[k].name) || k; }
 function itemDesc(k){ return ITEMS[k]? ITEMS[k].desc : (RES_DESC[k]||''); }
 
+/* 商店物品：buy=购买价（金币/单位）；sellable=false=仅可购买不可出售。
+   出售价 = 购买价 × 50%（向下取整）。名称/描述复用 itemName/itemDesc。 */
+const SHOP_ITEMS = [
+  {key:'wood',         buy:2,  sellable:true},
+  {key:'flax',         buy:3,  sellable:true},
+  {key:'fruit',        buy:2,  sellable:true},
+  {key:'rawMeat',      buy:4,  sellable:true},
+  {key:'emptyBottle',  buy:5,  sellable:true},
+  {key:'bandage',      buy:20, sellable:true},
+  {key:'jerky',        buy:30, sellable:true},
+  {key:'herbpoultice', buy:25, sellable:true},
+  {key:'campkit',      buy:40, sellable:false},
+  {key:'jerrycan',     buy:35, sellable:true},
+];
+
 /* 地形中文名：空地=可通行；山脉/地图外=不可通行 */
 const TERRAIN_ZH = {ground:'空地', obstacle:'山脉', void:'不可通行'};
 
