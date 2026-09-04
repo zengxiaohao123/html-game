@@ -57,12 +57,17 @@ const PROTAGONIST = {
   key:'pro', name:'主角', element:null, color:null,
   base:{atk:10, maxHp:100, def:0, escapeSpeed:100, hp:100},
   passives:[
-    {name:'战术布置', desc:'攻击时设置【重点目标】，我方优先攻击该目标（持续至该敌人被击败）。'},
-    {name:'暴击', desc:'攻击力+10，暴击率+3%。'},
-    {name:'嗜血', desc:'攻击力+20，攻击型技能3%概率回复自身=本次伤害的50%。'},
-    {name:'起势', desc:'攻击力+30，使用攻击型技能后获得4%伤害加成。'},
-    {name:'格挡', desc:'最大生命+50，受攻击3%概率使本次伤害归零。'},
-    {name:'坚守', desc:'回合开始获得30护盾，受攻击6%概率回复12%生命。'},
+    {id:'tactic', name:'战术布置', desc:'攻击时设置【重点目标】，我方优先攻击该目标（持续至该敌人被击败）。'},
+    {id:'crit', name:'暴击', level:1, scal:{atk:{base:10,grow:5}, crit:{base:3,grow:1,pct:true}},
+     desc:'攻击力+{atk}，暴击率+{crit}%。'},
+    {id:'blood', name:'嗜血', level:1, scal:{atk:{base:20,grow:4}},
+     desc:'攻击力+{atk}，攻击型技能3%概率回复自身=本次伤害的50%。'},
+    {id:'momentum', name:'起势', level:1, scal:{atk:{base:30,grow:5}},
+     desc:'攻击力+{atk}，使用攻击型技能后获得4%伤害加成。'},
+    {id:'block', name:'格挡', level:1, scal:{hp:{base:50,grow:20}},
+     desc:'最大生命+{hp}，受攻击3%概率使本次伤害归零。'},
+    {id:'hold', name:'坚守', level:1, scal:{shield:{base:30,grow:8}},
+     desc:'回合开始获得{shield}护盾，受攻击6%概率回复12%生命。'},
   ],
   skills:[
     {id:'slash', name:'斩击', kind:'attack', type:'physical', range:1,
@@ -88,11 +93,12 @@ const PROTAGONIST = {
 const ALLIES = {
   xiayang:{ key:'xiayang', name:'夏阳', element:'fire', atk:70,
     passives:[
-      {name:'无所畏惧', desc:'主角攻击力+30，自身攻击力+45。'},
-      {name:'活力满满', desc:'睡觉时回复的生命值和健康值翻倍。'},
-      {name:'好奇心', desc:'战斗胜利30%概率额外获一次奖励，50%概率额外获1金币。'},
-      {name:'心想事成', desc:'可切换行动方式为【巧遇】，移动至场上任意一格，每天限1次。'},
-      {name:'涅槃', desc:'战斗中主角受致命伤时不倒下，回复50%生命并使全体我方攻击+25%（每天限1次）。'},
+      {id:'fearless', name:'无所畏惧', level:1, scal:{pro:{base:30,grow:5}, self:{base:45,grow:5}},
+       desc:'主角攻击力+{pro}，自身攻击力+{self}。'},
+      {id:'vigor', name:'活力满满', desc:'睡觉时回复的生命值和健康值翻倍。'},
+      {id:'curious', name:'好奇心', desc:'战斗胜利30%概率额外获一次奖励，50%概率额外获1金币。'},
+      {id:'lucky', name:'心想事成', desc:'可切换行动方式为【巧遇】，移动至场上任意一格，每天限1次。'},
+      {id:'rebirth', name:'涅槃', desc:'战斗中主角受致命伤时不倒下，回复50%生命并使全体我方攻击+25%（每天限1次）。'},
     ],
     skills:[
       {id:'quhuo', name:'淬火', kind:'attack', type:'fire', range:1, target:'adj',
@@ -102,18 +108,22 @@ const ALLIES = {
        effect:atk=>atk*1.50, burn:3, formula:'攻击力×150%',
        desc:'对前方一线四格内的所有敌人造成{DMG}的火元素伤害，并施加【燃烧】3回合。'},
       {id:'guwu', name:'鼓舞', kind:'support', type:'buff', range:0, target:'self',
-       effect:null, atkBuffPct:0.25, healPct:0.15,
-       desc:'主角回复夏阳攻击力15%的生命（约{Y}点），并使攻击力最高的我方角色攻击力+25%（持续2回合）。'},
+       effect:null, atkBuffPct:0.25, healPct:0.15, level:1,
+       scal:{buff:{base:25,grow:2,pct:true}, heal:{base:15,grow:1,pct:true}},
+       desc:'主角回复夏阳攻击力{heal}%的生命（约{Y}点），并使攻击力最高的我方角色攻击力+{buff}%（持续2回合）。'},
     ],
     selectedSkillIds:['quhuo','liaoyuan','guwu']
   },
   luyouyou:{ key:'luyouyou', name:'陆悠悠', element:'wind', atk:75,
     passives:[
-      {name:'巧手', desc:'睡觉40%概率获1随机资源；合成25%概率获1随机资源。'},
-      {name:'烹饪', desc:'食物效果更好；主角最大生命+100。'},
-      {name:'蹁跹', desc:'探索每移动后主角回复30生命；战斗闪避时主角回复30生命。'},
-      {name:'风息', desc:'自身攻击力+60，暴击率+30%；暴击时本次技能伤害由物理转为风元素。'},
-      {name:'比翼', desc:'自身暴击后，其余我方角色下一次攻击暴击率+100%。'},
+      {id:'skillful', name:'巧手', level:1, scal:{wood:{base:1,grow:1}},
+       desc:'睡觉40%概率获{wood}随机资源；合成25%概率获{wood}随机资源。'},
+      {id:'cook', name:'烹饪', desc:'食物效果更好；主角最大生命+100。'},
+      {id:'flutter', name:'蹁跹', level:1, scal:{hp:{base:30,grow:6}},
+       desc:'探索每移动后主角回复{hp}生命；战斗闪避时主角回复{hp}生命。'},
+      {id:'wind', name:'风息', level:1, scal:{atk:{base:60,grow:6}, crit:{base:30,grow:2,pct:true}},
+       desc:'自身攻击力+{atk}，暴击率+{crit}%；暴击时本次技能伤害由物理转为风元素。'},
+      {id:'duo', name:'比翼', desc:'自身暴击后，其余我方角色下一次攻击暴击率+100%。'},
     ],
     skills:[
       {id:'jingqiao', name:'精巧射击', kind:'attack', type:'physical', range:3, target:'nearest',
@@ -136,6 +146,34 @@ const CHARACTERS = Object.assign({ pro:PROTAGONIST }, ALLIES);
 function getChar(key){ return CHARACTERS[key] || PROTAGONIST; }
 /* 当前队伍的角色定义列表（按 G.team 顺序） */
 function getTeamChars(){ return (G&&G.team||['pro']).map(k=>getChar(k)).filter(Boolean); }
+
+/* —— 等级 / 羁绊：技能等级计算 —— */
+/* 返回某条目的当前等级：主角走自身技能等级（G.proLevels），队友走羁绊等级（G.bonds）。
+   无 scal（固定效果）的条目无等级，此函数不被调用。 */
+function entryLevel(ownerKey, entry){
+  if(!entry || !entry.scal) return 1;
+  if(ownerKey==='pro'){ const m=(G&&G.proLevels); return (m && m[entry.id])? m[entry.id] : 1; }
+  const b=(G&&G.bonds&&G.bonds[ownerKey]); return b ? (b.level||1) : 1;
+}
+/* 计算某等级条目的一个可升级数值 */
+function tierValue(entry, level, key){
+  const s=entry.scal[key]; if(!s) return 0;
+  return s.base + (s.grow||0) * Math.max(0, (level||1)-1);
+}
+/* 渲染带等级的描述：{key} 占位符替换为黄色高亮数值（可升级数值一律黄字）。
+   pct=true 的数值会在末尾补「%」。ext 可补充额外占位符（如 {Y} 治疗量）。 */
+function lvDescText(entry, level, ext){
+  let d=entry.desc||'';
+  if(entry.scal){
+    for(const key in entry.scal){
+      const s=entry.scal[key];
+      const v=tierValue(entry, level, key);
+      d=d.split('{'+key+'}').join(`<span class="lvlup">${v}${s.pct?'%':''}</span>`);
+    }
+  }
+  if(ext){ for(const key in ext){ d=d.split('{'+key+'}').join(`<span class="lvlup">${ext[key]}</span>`); } }
+  return terms(d);
+}
 
 /* 敌人库（含技能/行为说明；普通攻击也算一种技能；含移动方式）。数值按3人队伍多回合调整。 */
 const ENEMIES = {
