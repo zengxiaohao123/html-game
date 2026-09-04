@@ -46,9 +46,7 @@ function renderIconbar(){
     ['背包',openInventory],['睡觉',sleep],['设置',openSettings],['商店',openShop],['合成',openCraft],['载具',openVehicles]];
   $('#iconbar').innerHTML=show.map(([t,f],i)=>`<button class="icobtn${t==='睡觉'?' sleep':''}" data-i="${i}">${t}</button>`).join('');
   $('#iconbar').querySelectorAll('.icobtn').forEach(b=>b.onclick=()=>show[+b.dataset.i][1]());
-  // 商店在游戏前期隐藏（按中文名定位，避免数字下标错位）
-  const shopIdx=show.findIndex(s=>s[0]==='商店');
-  $('#iconbar').querySelectorAll('.icobtn')[shopIdx].classList.toggle('hidden', G.day<3);
+  // 测试期间：商店按钮无视区域始终显示
 }
 
 /* 行动记录（左侧）追加一行 */
@@ -146,12 +144,41 @@ window.doSave=function(i){ saveGame(i); log(`已保存到存档位 ${i+1}。`); 
 window.doLoad=function(i){ if(loadGame(i)){ loadIntoWorld(); } else{ alert('该存档位为空。'); } };
 function openReadSaveMenu(){ openModal('读取存档', buildSaveSlotHTML('load'), 'small'); }
 
-/* —— 各功能页（大面板，占据整个屏幕） —— */
-function openInventory(){
-  const inv=G.inventory;
-  const rows=Object.entries(inv).map(([k,v])=>`<div class="resRow">${itemName(k)}：<b>${v}</b></div>`).join('');
-  openModal('背包', `<p style="font-size:15px">你随身携带的物品：</p><div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:10px">${rows}</div>`);
+/* —— 背包：全屏格子化（同种自动合并显示数量）、可预览、部分可「使用」 —— */
+let invMsg='';
+function openInventory(){ if(G){ invMsg=''; renderInventory(); } }
+function renderInventory(){
+  const keys=Object.keys(G.inventory).filter(k=>k!=='coin' && (G.inventory[k]||0)>0);
+  const tiles=keys.map(k=>{
+    const n=G.inventory[k];
+    const useBtn = itemUsable(k) ? `<button class="mbtn tiny invUse" onclick="useInvItem('${k}')">使用</button>` : '';
+    return `<div class="itile">
+      <div class="iname craftlink" data-key="${k}">${itemName(k)}</div>
+      <div class="icount">×${n}</div>
+      ${useBtn}
+    </div>`;
+  }).join('');
+  openModal('背包',
+    `<div class="invbar"><span class="invtitle">随身物品</span><span class="invcoin">金币 <b>${G.inventory.coin}</b></span></div>${
+      invMsg?`<div class="shopmsg">${invMsg}</div>`:''}
+     <div class="vgrid inv">${tiles||'<span class="stempty">背包空空如也</span>'}</div>`, 'full', {replace:true});
 }
+/* 使用背包物品：每次用 1 个；用尽该格自动消失、后续顶替 */
+window.useInvItem=function(k){
+  if(combatState){ invMsg='战斗中无法使用物品。'; renderInventory(); return; }
+  const n=G.inventory[k]||0; if(n<=0){ renderInventory(); return; }
+  const eff=USE_EFFECTS[k]; if(!eff){ renderInventory(); return; }
+  G.inventory[k]-=1;
+  const heal=eff.heal||0;
+  if(heal && G.hero.hp<G.hero.maxHp){
+    G.hero.hp=Math.min(G.hero.maxHp, G.hero.hp+heal);
+    if(combatState) combatState.hero.hp=G.hero.hp;
+    log(`使用了 <b>${itemName(k)}</b>，回复 ${heal} 点生命。`);
+  } else {
+    log(`使用了 <b>${itemName(k)}</b>。`);
+  }
+  refreshHUD(); renderInventory();
+};
 
 /* —— 弹窗层级栈：记录已打开的前一层，供 ESC 退回一层 —— */
 let modalStack=[];
@@ -266,11 +293,12 @@ function openTasks(){
     <p style="font-size:15px;margin:8px 0">· 探索第 ${G.day} 天的新地图（进行中）</p>`);
 }
 
-/* —— 商店：左右两列；购买/出售共用滑块；点击物品可查看说明 —— */
+/* —— 商店：左右两列；购买/出售共用滑块；点击物品可查看说明；提示显示在商店界面 —— */
 let shopQty={};
+let shopMsg=''; // 商店内即时提示（不足/超额等，直显在店内而非行动记录）
 function openShop(){
   if(combatState){ log('战斗中无法访问商店。'); return; }
-  if(G) renderShop();
+  if(G){ shopMsg=''; renderShop(); }
 }
 function shopSellPrice(it){ return Math.floor(it.buy*0.5); }
 function renderShop(){
@@ -279,11 +307,11 @@ function renderShop(){
     const q=Math.max(1, shopQty[it.key]||1); shopQty[it.key]=q;
     const sell=shopSellPrice(it);
     const sellBtn = it.sellable
-      ? `<button class="mbtn tiny" onclick="shopTrade('${it.key}','sell')">出售</button>`
+      ? `<button class="mbtn tiny" onclick="shopTrade('${it.key}','sell')">卖出</button>`
       : `<span class="nohint">不可出售</span>`;
     return `<div class="sitem">
       <div class="shead"><span class="craftlink" data-key="${it.key}">${itemName(it.key)}</span>
-        <span class="sprice">${it.sellable?`购${it.buy}/售${sell}`:`购${it.buy}`}</span></div>
+        <span class="sprice">${it.sellable?`买入 <b>${it.buy}</b> · 卖出 <b>${sell}</b> 金币`:`买入 <b>${it.buy}</b> 金币（不可出售）`}</span></div>
       <div class="sown">持有 <b>${have}</b> · 金币 <b>${G.inventory.coin}</b></div>
       <div class="rcCtl">
         <span class="craftQty">×${q}</span>
@@ -294,26 +322,28 @@ function renderShop(){
     </div>`;
   }).join('');
   openModal('商店',
-    `<p class="mhint">点击物品可查看说明。购买与出售共用同一滑块设定数量；出售价为购买价的一半。</p>
+    `<p class="mhint">点击物品可查看说明。购买与卖出共用同一滑块设定数量；卖出价为买入价的一半。没买够或要卖超出持有会在此提示。</p>
+     <div class="shopmsg ${shopMsg?'show':''}">${shopMsg}</div>
      <div class="cwrapper">${list}</div>`, 'full', {replace:true});
 }
-window.shopSet=function(key,v){ shopQty[key]=Math.max(1,(+v||1)); renderShop(); };
+window.shopSet=function(key,v){ shopQty[key]=Math.max(1,(+v||1)); shopMsg=''; renderShop(); };
 window.shopTrade=function(key,act){
   const it=SHOP_ITEMS.find(x=>x.key===key); if(!it) return;
   if(combatState){ log('战斗中无法访问商店。'); return; }
   const q=Math.max(1,shopQty[key]||1);
   if(act==='buy'){
     const cost=it.buy*q;
-    if(G.inventory.coin<cost){ log('金币不足，无法购买。'); return; }
+    if(G.inventory.coin<cost){ shopMsg='金币不足，无法完成该笔购买。'; refreshHUD(); renderShop(); return; }
     G.inventory.coin-=cost; G.inventory[key]=(G.inventory[key]||0)+q;
-    log(`购买 <b>${itemName(key)} ×${q}</b>，花费 ${cost} 金币。`);
+    shopMsg=`已购买 <b>${itemName(key)} ×${q}</b>，花费 <b>${cost}</b> 金币。`;
   } else {
-    if(!it.sellable){ log('该物品不可出售。'); return; }
+    if(!it.sellable){ shopMsg='该物品不可出售。'; refreshHUD(); renderShop(); return; }
     const sell=shopSellPrice(it), gain=sell*q;
-    if((G.inventory[key]||0)<q){ log('你没有足够的该物品可出售。'); return; }
+    if((G.inventory[key]||0)<q){ shopMsg='你要卖出的数量超出当前持有。'; refreshHUD(); renderShop(); return; }
     G.inventory[key]-=q; G.inventory.coin+=gain;
-    log(`出售 <b>${itemName(key)} ×${q}</b>，获得 ${gain} 金币。`);
+    shopMsg=`已卖出 <b>${itemName(key)} ×${q}</b>，获得 <b>${gain}</b> 金币。`;
   }
+  log(shopMsg.replace(/<[^>]+>/g,''));
   refreshHUD(); renderShop();
 };
 
