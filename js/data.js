@@ -13,39 +13,94 @@ const ELEM = {fire:{c:'e-fire',zh:'火'},water:{c:'e-water',zh:'水'},grass:{c:'
 const AURA_ELEMS = ['fire','water','grass','thunder','ice'];
 
 /* 资源中文名（展示用） */
-const RES_ZH = {wood:'木材', fruit:'果子', flax:'亚麻', rawMeat:'生肉', coin:'金币', emptyBottle:'空瓶子'};
+const RES_ZH = {wood:'木材', fruit:'果子', flax:'亚麻', rawMeat:'生肉', coin:'金币', emptyBottle:'空瓶子', iron:'铁块'};
 
-/* 资源/物品的效果描述（供配方点击预览） */
-const RES_DESC = {wood:'硬实的薪柴，可作燃料或材料。', fruit:'饱满的野果，食之可恢复少许生命。', flax:'韧性的亚麻纤维，可编织成绷带。',
-  rawMeat:'新鲜的肉块，需要加工或烤制。', coin:'通行的钱币，可在商店使用。', emptyBottle:'清洗干净的空瓶，可用来盛装药汁。'};
-const ITEMS = { // 制作产物（占位，暂无使用逻辑）
-  bandage:{name:'绷带', desc:'用亚麻编织的简易绷带，包扎伤口可回复20点生命。'},
-  jerky:{name:'风干肉', desc:'经调味风干保存的肉干，食用可回复30点生命。'},
-  herbpoultice:{name:'草药膏', desc:'果子与药汁调配的草药膏，涂抹可回复25点生命。'},
-  campkit:{name:'营火套件', desc:'一整套生火工具，野外可安全扎营休息。'},
-  jerrycan:{name:'疾行油', desc:'特制润滑油，给载具注油后能更省力地前行。'},
+/* 资源的效果描述（供配方点击预览）：描述为用户原稿，禁止改动。
+   铁块不属于自然资源/城市资源，无法常规探索获得；仅特殊事件/特殊敌人/商店购买获得。 */
+const RES_DESC = {wood:'基础材料。可用于合成、交易',
+  fruit:'可食用的野果。可用于合成、交易，可直接使用回复20生命值且有20%概率增加1点健康',
+  flax:'基础材料。可用于合成、交易',
+  rawMeat:'未处理的肉块。可用于合成、交易，可直接使用回复20生命值',
+  coin:'通行的钱币，可在商店使用。',
+  emptyBottle:'随处可见的空瓶子，可用于交易',
+  iron:'相对罕见的基础材料。可用于合成、交易'};
+
+/* 自然资源集（陷阱随机池用；铁块非自然资源、不入池，空瓶子属城市资源也不入池） */
+const NATURAL_RESOURCES = ['wood','flax','fruit','rawMeat'];
+
+/* 制作产物 / 永久物品（desc 为用户原稿，禁止改动；【天赋·xx】为词条式写法，
+   未入词条库时按粗体展示）。permanent=true 表示永久物品：效果持久、不可手动使用、不可消耗、不可出售。 */
+const ITEMS = {
+  cookedMeat:{name:'熟肉', desc:'香喷喷的肉排。可用于交易，可直接使用回复70点生命值'},
+  campfire:{name:'篝火', desc:'食用食物后，使对应的此类食物可回复生命值永久增加（果子+1，生肉+2，熟肉+4）', permanent:true},
+  club:{name:'木棒', desc:'使主角的【天赋·暴击】提升1级。可叠加', permanent:true},
+  cloth:{name:'布衣', desc:'使主角的【天赋·格挡】提升1级。可叠加', permanent:true},
+  tent:{name:'帐篷', desc:'探索时行动力上限+1。可叠加', permanent:true},
+  trap:{name:'陷阱', desc:'睡觉时，有50%获得1个随机自然资源。可叠加', permanent:true},
+  quilt:{name:'被子', desc:'睡觉时，主角回复30点生命值。可叠加', permanent:true},
+  dagger:{name:'匕首', desc:'使主角的【天赋·嗜血】提升1级。可叠加', permanent:true},
+  leather:{name:'皮衣', desc:'使主角的【天赋·坚守】提升1级。可叠加', permanent:true},
+  ironSword:{name:'铁剑', desc:'使主角的【天赋·起势】提升1级。可叠加', permanent:true},
+  armor:{name:'盔甲', desc:'使主角的【天赋·格挡】和【天赋·坚守】各提升1级。可叠加', permanent:true},
 };
 function itemName(k){ return RES_ZH[k] || (ITEMS[k]&&ITEMS[k].name) || k; }
 function itemDesc(k){ return ITEMS[k]? ITEMS[k].desc : (RES_DESC[k]||''); }
 
-/* 商店物品：buy=购买价（金币/单位）；sellable=false=仅可购买不可出售。
-   出售价 = 购买价 × 50%（向下取整）。名称/描述复用 itemName/itemDesc。 */
+/* 商店物品：buy=基础购买价（金币/单位）；sellable=false=仅可购买不可出售。
+   出售价 = 购买价 × 50%（向下取整）。名称/描述复用 itemName/itemDesc。
+   匕首/皮衣为永久物品，仅购不可售；每获得1个，该物品售价+priceGrow（无上限）。 */
 const SHOP_ITEMS = [
   {key:'wood',         buy:2,  sellable:true},
   {key:'flax',         buy:3,  sellable:true},
   {key:'fruit',        buy:2,  sellable:true},
   {key:'rawMeat',      buy:4,  sellable:true},
   {key:'emptyBottle',  buy:5,  sellable:true},
-  {key:'bandage',      buy:20, sellable:true},
-  {key:'jerky',        buy:30, sellable:true},
-  {key:'herbpoultice', buy:25, sellable:true},
-  {key:'campkit',      buy:40, sellable:false},
-  {key:'jerrycan',     buy:35, sellable:true},
+  {key:'iron',         buy:6,  sellable:true},
+  {key:'dagger',       buy:32, sellable:false, priceGrow:4, permanent:true},
+  {key:'leather',      buy:20, sellable:false, priceGrow:4, permanent:true},
 ];
 
-/* 背包「使用」效果：heal=回复生命；不在此表的物品在背包无「使用」按钮 */
-const USE_EFFECTS = { fruit:{heal:15}, bandage:{heal:20}, jerky:{heal:30}, herbpoultice:{heal:25} };
-function itemUsable(k){ return !!USE_EFFECTS[k]; }
+/* 该物品当前实际购买价：priceGrow 物品 = 基础价 + 递增价 × 已拥有数量 */
+function itemBuyPrice(key){
+  const it=SHOP_ITEMS.find(x=>x.key===key); if(!it) return 0;
+  const owned=(G&&G.inventory&&G.inventory[key])||0;
+  return it.buy + (it.priceGrow? it.priceGrow*owned : 0);
+}
+
+/* 可直接「使用」的食物：heal=基础回血；healthChance=果子 20% 概率 +1 健康。
+   不在此表的（含永久物品）在背包无「使用」按钮。 */
+const FOOD = { fruit:{heal:20, healthChance:0.2}, rawMeat:{heal:20}, cookedMeat:{heal:70} };
+function itemUsable(k){ return !!FOOD[k]; }
+/* 篝火（永久物品，至多1个）：食用食物后，对应食物回血永久提升（果子+1/生肉+2/熟肉+4） */
+function foodHeal(k){
+  const camp=G && G.inventory && G.inventory.campfire>0;
+  const base=FOOD[k]? FOOD[k].heal : 0;
+  const add = camp ? (k==='fruit'?1 : k==='rawMeat'?2 : k==='cookedMeat'?4 : 0) : 0;
+  return base+add;
+}
+
+/* —— 永久物品：获得即生效，不可消耗/不可出售，效果随获得数量永久叠加 —— */
+function grantPermanentItem(key){
+  G.inventory[key]=(G.inventory[key]||0)+1;
+  switch(key){
+    case 'club':      bumpPro('crit'); break;      // 天赋·暴击 +1
+    case 'cloth':     bumpPro('block'); break;     // 天赋·格挡 +1
+    case 'dagger':    bumpPro('blood'); break;     // 天赋·嗜血 +1
+    case 'leather':   bumpPro('hold'); break;      // 天赋·坚守 +1
+    case 'ironSword': bumpPro('momentum'); break;  // 天赋·起势 +1
+    case 'armor':     bumpPro('block'); bumpPro('hold'); break; // 格挡+1 且 坚守+1
+    case 'tent':      // 探索时行动力上限+1，并补1点当前行动力
+      G.hero.apCap=(G.hero.apCap||5)+1;
+      G.hero.actionPoint=(G.hero.actionPoint||0)+1;
+      break;
+    // 篝火 / 陷阱 / 被子：无即时数值，效果分别在 食物回血(食) / 睡觉(陷阱·被子) 时结算
+  }
+}
+/* 主角某天赋等级+1（默认1级，随永久物品叠加） */
+function bumpPro(talent){
+  G.proLevels=G.proLevels||{};
+  G.proLevels[talent]=(G.proLevels[talent]||1)+1;
+}
 
 /* 地形中文名：空地=可通行；山脉/地图外=不可通行 */
 const TERRAIN_ZH = {ground:'空地', obstacle:'山脉', void:'不可通行'};

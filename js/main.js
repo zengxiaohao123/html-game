@@ -19,7 +19,7 @@ function newGame(){
   return {
     day:1, region:'wild',
     hero:{atk:10,maxHp:100,hp:100,def:0,escapeSpeed:100,health:30,actionPoint:5,apCap:5,facing:'up'},
-    inventory:{wood:0,fruit:0,flax:0,rawMeat:0,coin:20,emptyBottle:0},
+    inventory:{wood:0,fruit:0,flax:0,rawMeat:0,coin:20,emptyBottle:0,iron:0},
     records:{slain:{}, wins:0, losses:0},
     team:['pro','xiayang','luyouyou'],
     proLevels:{},  // 主角各可升级条目(天赋/技能)的等级库，初始缺省=1
@@ -159,10 +159,28 @@ function sleep(){
   const nm=generateMap(G.day);
   G.map=nm; G.px=nm.px; G.py=nm.py; G.hero.facing='up';
   G.hero.hp=Math.max(1, Math.min(G.hero.maxHp, Math.round(G.hero.hp+G.hero.maxHp*0.2)));
+  // 被子（永久物品）：每床回复30生命，所有被子叠加为1次总和
+  let quiltHeal=0;
+  const quiltN=G.inventory.quilt||0;
+  if(quiltN>0){ const before=G.hero.hp; G.hero.hp=Math.min(G.hero.maxHp, G.hero.hp+30*quiltN); quiltHeal=G.hero.hp-before; }
+  // 陷阱（永久物品）：每陷阱独立50%概率各获1随机自然资源，最后综合汇报
+  const trapN=G.inventory.trap||0;
+  const trapGain={};
+  for(let i=0;i<trapN;i++){
+    if(Math.random()<0.5){
+      const k=NATURAL_RESOURCES[Math.floor(Math.random()*NATURAL_RESOURCES.length)];
+      G.inventory[k]=(G.inventory[k]||0)+1; trapGain[k]=(trapGain[k]||0)+1;
+    }
+  }
   saveGame(2);
   clearLog(); clearStory(); // 睡觉时清空行动记录与剧情区
   prompt(''); // 睡觉时刷新（清空）信息区
   log(`你睡了一觉，进入第 ${G.day} 天。`);
+  if(quiltHeal>0) log(`被子为你<span class="lvlup">回复 ${quiltHeal}</span> 点生命。`);
+  if(trapN>0){
+    const keys=Object.keys(trapGain);
+    log(keys.length? `陷阱收获自然资源：${keys.map(k=>RES_ZH[k]+'×'+trapGain[k]).join('，')}。` : '陷阱一无所获，风平浪静。');
+  }
   story(`夜色褪去，新的一天开始了。今天是第 ${G.day} 天。`);
   refreshHUD(); renderMap(); renderIconbar();
 }
