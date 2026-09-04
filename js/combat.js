@@ -1,7 +1,7 @@
 /* ============================================================
    js/combat.js —— 模块：战斗系统
    回合制战斗：入场、移动即结束我方回合、多角色技能释放、
-   攻击朝向判定、状态(buff/debuff)系统、伤害结算、
+   攻击朝向判定、状态(buff/debuff)系统、伤害结算、暴击判定、
    元素附着/反应、敌人 AI、敌人意图/范围指示、胜负与失败后果。
    ============================================================ */
 "use strict";
@@ -152,19 +152,57 @@ function charAtk(charKey){
   }
   return a;
 }
+/* —— 暴击率 —— */
+/* 基础暴击率：来自会加暴击的天赋（主角·暴击 / 陆悠悠·风息），随等级变化 */
+function baseCritRate(charKey){
+  const c=getChar(charKey); let crit=0;
+  const pick=charKey==='pro'
+    ? c.passives.find(p=>p.id==='crit')
+    : (charKey==='luyouyou' ? c.passives.find(p=>p.id==='wind') : null);
+  if(pick && pick.scal && pick.scal.crit) crit += tierValue(pick, entryLevel(charKey,pick), 'crit');
+  return crit;
+}
+/* 实时暴击率：基础 + 临时加成（屏息/比翼等「下一次攻击暴击率+100%」），最终限幅0~100% */
+function charCritRate(charKey){
+  let r=baseCritRate(charKey);
+  const sts=combatState && combatState.ally[charKey] && combatState.ally[charKey].statuses;
+  if(sts && sts.crit) r+=100;
+  return Math.max(0, Math.min(100, r));
+}
 function skillDamagePreview(charKey, skill){
   if(!skill||!skill.effect) return null;
   return Math.max(1, Math.round(charAtk(charKey)*skill.effect(1)));
 }
-/* 数值化技能描述：{DMG}=公式+当前数值；{Y}=治疗等当前数值；词条转悬浮 */
+/* 数值化技能描述：{DMG}=公式+当前数值；{Y}=治疗等当前数值；可升级数值黄字；词条转悬浮 */
 function describeSkill(charKey, skill){
   if(!skill) return '';
   let d=skill.desc||'';
   const dmg=skillDamagePreview(charKey, skill);
-  if(dmg!=null && skill.formula) d=d.replace(/\{DMG\}/g, `${skill.formula}（当前约${dmg}点）`);
-  if(skill.healPct) d=d.replace(/\{Y\}/g, Math.round((getChar(charKey).atk||0)*skill.healPct));
+  if(skill.scal){ // 有等级：等级=主角自身等级/队友羁绊等级，可升级数值黄色高亮
+    const level=entryLevel(charKey, skill);
+    const ext={};
+    if(dmg!=null && skill.formula) ext.DMG=`${skill.formula}（当前约${dmg}点）`;
+    const hp=healPreview(charKey, skill);
+    if(hp) ext.Y=hp;
+    d=lvDescText(skill, level, ext);
+  } else {
+    if(dmg!=null && skill.formula) d=d.replace(/\{DMG\}/g, `${skill.formula}（当前约${dmg}点）`);
+    if(skill.healPct) d=d.replace(/\{Y\}/g, Math.round((getChar(charKey).atk||0)*skill.healPct));
+  }
   return terms(d);
 }
+/* 治疗类辅助技能的预览治疗量 */
+function healPreview(charKey, skill){
+  if(skill && skill.id==='guwu'){
+    const level=entryLevel(charKey, skill);
+    const heal=vTier(skill,'heal',level); // %
+    return Math.round((getChar(charKey).atk||0)*heal/100);
+  }
+  if(skill && skill.healPct) return Math.round((getChar(charKey).atk||0)*skill.healPct);
+  return 0;
+}
+/* 读取某条目 scals 中 key 当前等级下的值（百分比返回 0~100 点数形式） */
+function vTier(entry,key,level){ return (entry&&entry.scal&&entry.scal[key])? tierValue(entry,level,key):0; }
 
 /* 战斗内点击格子：查看信息 / 选目标 / 选移动目标（需点「前往」确认，不会直接走） */
 function combatCellClick(x,y){
@@ -272,7 +310,7 @@ function autoCastChar(charKey){
   cs.ally[charKey].used=true;
 }
 
-/* 技能结算：算伤害、应用效果与状态、记录行动记录、检查结束 */
+/* 技能结算：算伤害（含暴击）、应用效果与状态、记录行动记录、检查结束 */
 function resolveSkill(charKey, skill, manual){
   if(!combatState) return;
   const char=getChar(charKey);
@@ -281,10 +319,18 @@ function resolveSkill(charKey, skill, manual){
   if(enemies.length===0) return;
   const enemy = combatState.selectedEnemy && enemies.includes(combatState.selectedEnemy) ? combatState.selectedEnemy : enemies[0];
   const base=charAtk(charKey);
+  const critRate=charCritRate(charKey);
+  const isCrit=Math.random()*100 < critRate;
   let dmg=base*(1-(ENEMIES[enemy.key].dmgReduc||0))*(skill.effect?skill.effect(1):1);
   dmg=Math.max(1,Math.round(dmg));
-  log(`${char.name} 使用 <b>${skill.name}</b>，对${ENEMIES[enemy.key].name}造成 <b>${dmg}</b> 点${elemText(skill.type)}。`);
+  if(isCrit) dmg*=2; // 暴击伤害固定+100%（即×2）
+  const critTxt=isCrit?'<span class="crit-hint">暴击！</span>':'';
+  log(`${char.name} 使用 <b>${skill.name}</b>，对${ENEMIES[enemy.key].name}造成 ${critTxt}<b>${dmg}</b> 点${elemText(skill.type)}。`);
   applyEnemyDamage(enemy,dmg,skill);
+  // 使用了一次攻击型技能 → 消耗「下一次攻击暴击率+100%」效果（屏息/比翼，提前失效）
+  consumeCritBuff(charKey);
+  // 陆悠悠·比翼：自身暴击后，其余我方角色下一次攻击暴击率+100%
+  if(isCrit && charKey==='luyouyou'){ triggerBiyi(); }
   if(skill.burn){ addStatus(enemy.statuses,'burn',skill.burn); log(`${ENEMIES[enemy.key].name} 进入【燃烧】状态。`); }
   if(skill.alert) applyAlert(enemy);
   if(skill.type!=='physical' && AURA_ELEMS.includes(skill.type)) setAura(enemy, skill.type);
@@ -294,6 +340,20 @@ function resolveSkill(charKey, skill, manual){
     if(skill.dr){ addStatus(combatState.ally.pro.statuses,'dr',1); log('获得【伤害减免】。'); }
   }
   checkCombatEnd();
+}
+/* 使用攻击型技能后，消耗该单位的「下一次攻击暴击率+100%」标记 */
+function consumeCritBuff(charKey){
+  const sts=combatState && combatState.ally[charKey] && combatState.ally[charKey].statuses;
+  if(sts && sts.crit){ delete sts.crit; log(`${getChar(charKey).name} 消耗了【屏息】，暴击加成已生效。`); }
+}
+/* 陆悠悠·比翼：自身暴击后，其余我方角色下一次攻击暴击率+100% */
+function triggerBiyi(){
+  for(const k of G.team){
+    if(k==='luyouyou') continue;
+    const sts=combatState.ally[k] && combatState.ally[k].statuses;
+    if(sts) addStatus(sts,'crit',null);
+  }
+  log('【比翼】触发：其余我方角色下一次攻击暴击率+100%。');
 }
 
 /* 设置【重点目标】（单一目标） */
@@ -307,11 +367,14 @@ function applyAlert(enemy){
 function applySupport(charKey, skill){
   const cs=combatState;
   if(skill.id==='guwu'){
-    const heal=Math.max(1,Math.round((getChar(charKey).atk||0)*skill.healPct));
+    const level=entryLevel(charKey, skill);
+    const healPct=vTier(skill,'heal',level)/100;   // 鼓舞·治疗%，随等级
+    const atkBuff=vTier(skill,'buff',level)/100;   // 鼓舞·攻击增益%，随等级
+    const heal=Math.max(1,Math.round((getChar(charKey).atk||0)*healPct));
     if(cs.hero.hp<G.hero.maxHp){ cs.hero.hp=Math.min(G.hero.maxHp, cs.hero.hp+heal); G.hero.hp=cs.hero.hp; log(`主角回复 ${heal} 点生命。`); }
     let top=null, topAtk=-1;
     for(const k of G.team){ const a=charAtk(k); if(a>topAtk){topAtk=a; top=k;} }
-    if(top){ addStatus(cs.ally[top].statuses,'atkUp',2); log(`${getChar(top).name} 攻击力+25%（持续2回合）。`); }
+    if(top){ addStatus(cs.ally[top].statuses,'atkUp',2); log(`${getChar(top).name} 攻击力+${Math.round(atkBuff*100)}%（持续2回合）。`); }
   } else if(skill.id==='bixi'){
     addStatus(cs.ally[charKey].statuses,'crit',2);
     log(`${getChar(charKey).name} 屏息凝神，下一次攻击暴击率+100%。`);
@@ -434,26 +497,32 @@ function updateCombatUI(){
     : statusBarHTML(cs.ally[cur.key].statuses, null);
   const skills=cur.skills.filter(s=>cur.selectedSkillIds.includes(s.id));
   $('#skillList').innerHTML=skills.map((s,i)=>`<div class="skillTag ${s.kind==='attack'?'attack':'skill'} ${cs.ally[cur.key].selSkill===s.id?'active':''}" data-s="${s.id}">
-      <span class="skillNum">${i+1}</span>${s.name}${cs.ally[cur.key].used?' <span class="usedMark">已用</span>':''}
+      <span class="skillNum">${i+1}</span>${skillDisplayName(cur.key,s)}${cs.ally[cur.key].used?' <span class="usedMark">已用</span>':''}
     </div>`).join('');
   $('#skillList').querySelectorAll('.skillTag').forEach(b=>b.onclick=()=>selectSkill(cur.key, b.dataset.s));
-  $('#talentBox').innerHTML=`<span class="talentLabel">天赋</span>`+cur.passives.map((p,i)=>`<span class="talentTag" data-k="${cur.key}" data-i="${i}">${p.name}</span>`).join('');
+  $('#talentBox').innerHTML=`<span class="talentLabel">天赋</span>`+cur.passives.map((p,i)=>`<span class="talentTag" data-k="${cur.key}" data-i="${i}">${talentDisplayName(cur.key,p)}</span>`).join('');
   const sel=cur.skills.find(s=>s.id===cs.ally[cur.key].selSkill);
-  $('#skillDetail').innerHTML= sel? `<div class="skillDetailName">${sel.name}</div><div class="skillDetailText">${describeSkill(cur.key, sel)}</div>` : '';
+  $('#skillDetail').innerHTML= sel? `<div class="skillDetailName">${skillDisplayName(cur.key,sel)}</div><div class="skillDetailText">${describeSkill(cur.key, sel)}</div>` : '';
   updateCombatInfo();
 }
 
-/* 数值行：攻防血、逃跑速度等写在这独立一行（角色卡内不显示数值） */
+/* 技能/天赋带等级的展示名：在尾部附加「·等级N」 */
+function skillDisplayName(ownerKey, s){ return s.scal ? `${s.name}·等级${entryLevel(ownerKey,s)}` : s.name; }
+function talentDisplayName(ownerKey, p){ return p.scal ? `${p.name}·等级${entryLevel(ownerKey,p)}` : p.name; }
+
+/* 数值行：攻防血、逃跑速度、暴击率等写在这独立一行（角色卡内不显示数值） */
 function charAttrsHTML(key){
   if(key==='pro'){
     const h=G.hero;
     return `<span class="attr"><b>攻击</b> ${h.atk}</span>
       <span class="attr"><b>生命</b> ${Math.round(combatState.hero.hp)}/${h.maxHp}</span>
       <span class="attr"><b>防御</b> ${h.def}</span>
+      <span class="attr"><b>暴击率</b> ${charCritRate(key)}%</span>
       <span class="attr"><b>逃跑速度</b> ${h.escapeSpeed}</span>`;
   }
   const c=getChar(key);
-  return `<span class="attr"><b>攻击</b> ${c.atk}</span>`; // 元素属性随角色名展示，不放进数值行
+  return `<span class="attr"><b>攻击</b> ${c.atk}</span>
+    <span class="attr"><b>暴击率</b> ${charCritRate(key)}%</span>`; // 元素属性随角色名展示，不放进数值行
 }
 
 /* —— 信息区 —— */
