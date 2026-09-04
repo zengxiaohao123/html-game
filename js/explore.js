@@ -39,7 +39,8 @@ function activateGo(x,y){
 }
 
 /* 移动到相邻格：扣 AP、改朝向、触发拾取 / 敌人 / 宝箱 / 事件。
-   朝障碍/不可通行移动：只改变朝向、不移动、不消耗行动力（返还）。 */
+   朝障碍/不可通行移动：只改变朝向、不移动、不消耗行动力（返还）。
+   真实移动才会消耗当前所选载具的一个次数。 */
 function moveExplore(x,y){
   if(combatState) return;
   const m=G.map;
@@ -59,6 +60,7 @@ function moveExplore(x,y){
   G.hero.actionPoint-=1;
   G.hero.facing = dirToFacing(dx,dy);
   G.px=x; G.py=y;
+  useVehicleOnMove(); // 真实移动：消耗已选载具一个次数（耗尽自动切回徒步）
   const drops=dropResources();
   if(drops){ G.inventory[drops.kind]+=drops.amount; log(`获得 <b>${drops.amount}</b> 份 ${RES_ZH[drops.kind]}。`); }
   if(target.content && target.content.type==='enemy'){ log(`遭遇 <b>${ENEMIES[target.content.key].name}</b>！进入战斗。`); startCombat(target); }
