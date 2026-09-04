@@ -265,9 +265,57 @@ function openTasks(){
     <p style="font-size:15px;margin:8px 0">· 存活下去（进行中）</p>
     <p style="font-size:15px;margin:8px 0">· 探索第 ${G.day} 天的新地图（进行中）</p>`);
 }
+
+/* —— 商店：左右两列；购买/出售共用滑块；点击物品可查看说明 —— */
+let shopQty={};
 function openShop(){
-  openModal('商店', `<p style="font-size:15px">商店商品与定价仍在设计中（待定）。</p>`);
+  if(combatState){ log('战斗中无法访问商店。'); return; }
+  if(G) renderShop();
 }
+function shopSellPrice(it){ return Math.floor(it.buy*0.5); }
+function renderShop(){
+  const list=SHOP_ITEMS.map(it=>{
+    const have=G.inventory[it.key]||0;
+    const q=Math.max(1, shopQty[it.key]||1); shopQty[it.key]=q;
+    const sell=shopSellPrice(it);
+    const sellBtn = it.sellable
+      ? `<button class="mbtn tiny" onclick="shopTrade('${it.key}','sell')">出售</button>`
+      : `<span class="nohint">不可出售</span>`;
+    return `<div class="sitem">
+      <div class="shead"><span class="craftlink" data-key="${it.key}">${itemName(it.key)}</span>
+        <span class="sprice">${it.sellable?`购${it.buy}/售${sell}`:`购${it.buy}`}</span></div>
+      <div class="sown">持有 <b>${have}</b> · 金币 <b>${G.inventory.coin}</b></div>
+      <div class="rcCtl">
+        <span class="craftQty">×${q}</span>
+        <input type="range" class="craftRange" min="1" max="99" value="${q}" oninput="shopSet('${it.key}',this.value)">
+        <button class="mbtn tiny craftDo" onclick="shopTrade('${it.key}','buy')">购买</button>
+        ${sellBtn}
+      </div>
+    </div>`;
+  }).join('');
+  openModal('商店',
+    `<p class="mhint">点击物品可查看说明。购买与出售共用同一滑块设定数量；出售价为购买价的一半。</p>
+     <div class="cwrapper">${list}</div>`, 'full', {replace:true});
+}
+window.shopSet=function(key,v){ shopQty[key]=Math.max(1,(+v||1)); renderShop(); };
+window.shopTrade=function(key,act){
+  const it=SHOP_ITEMS.find(x=>x.key===key); if(!it) return;
+  if(combatState){ log('战斗中无法访问商店。'); return; }
+  const q=Math.max(1,shopQty[key]||1);
+  if(act==='buy'){
+    const cost=it.buy*q;
+    if(G.inventory.coin<cost){ log('金币不足，无法购买。'); return; }
+    G.inventory.coin-=cost; G.inventory[key]=(G.inventory[key]||0)+q;
+    log(`购买 <b>${itemName(key)} ×${q}</b>，花费 ${cost} 金币。`);
+  } else {
+    if(!it.sellable){ log('该物品不可出售。'); return; }
+    const sell=shopSellPrice(it), gain=sell*q;
+    if((G.inventory[key]||0)<q){ log('你没有足够的该物品可出售。'); return; }
+    G.inventory[key]-=q; G.inventory.coin+=gain;
+    log(`出售 <b>${itemName(key)} ×${q}</b>，获得 ${gain} 金币。`);
+  }
+  refreshHUD(); renderShop();
+};
 
 /* —— 地图视口：滚轮缩放 + 拖拽平移（仅视觉，不影响内容） —— */
 let mapDragMoved=false; // 拖拽后抑制误触发的点击
@@ -325,6 +373,12 @@ document.addEventListener('click',ev=>{
       const desc=t.scal? lvDescText(t, entryLevel(owner,t)) : t.desc;
       openPopoverNear(tg, `<b>${name}</b><br>${desc}`);
     }
+    return;
+  }
+  const cl=ev.target.closest('.craftlink'); // 合成/商店里的资源或物品：点击预览说明
+  if(cl){
+    const key=cl.dataset.key;
+    openPopoverNear(cl, `<b>${itemName(key)}</b><br>${itemDesc(key)||'（暂无说明）'}`);
     return;
   }
   $('#popover').style.display='none';
