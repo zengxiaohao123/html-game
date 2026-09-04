@@ -31,6 +31,17 @@ function elemText(type){
 
 /* 进入战斗：构建 combatState，并在主角旁生成一名敌人 */
 function startCombat(cell){
+  const key=cell.content.key, hp=cell.content.hp||ENEMIES[key].hp;
+  const epos=placeEnemyNear(G.px,G.py,G.map.n);
+  initCombatState({ enemyKey:key, enemyHp:hp, enemyPos:{x:epos.x,y:epos.y} });
+  clearLog(); clearStory(); // 战斗开始时清空行动记录与剧情区
+  log('进入战斗。你得击败所有敌人。');
+  enterCombatMode();
+}
+
+/* 初始化战斗状态（进场 / 读档重回共用）。
+   同时记录 startSnapshot：战斗中存档一律以「这次战斗开始瞬间」为准。 */
+function initCombatState(o){
   const ally={};
   for(const k of G.team){ const c=getChar(k); ally[k]={statuses:{}, used:false, selSkill:c.selectedSkillIds[0]}; }
   combatState={
@@ -40,16 +51,33 @@ function startCombat(cell){
     currentChar:G.team[0]||'pro',
     selectedEnemy:null, infoCell:null, enemyPage:0, pendingTarget:null,
     entryCell:G.px+','+G.py,
-    day:G.day
+    day:G.day,
+    startSnapshot:{
+      heroHp:G.hero.hp,
+      vehicles:JSON.parse(JSON.stringify(G.vehicles||[])),
+      vehicleSel:G.vehicleSel!=null?G.vehicleSel:0,
+      enemyKey:o.enemyKey, enemyHp:o.enemyHp, enemyPos:{x:o.enemyPos.x,y:o.enemyPos.y}
+    }
   };
-  const epos=placeEnemyNear(G.px,G.py,G.map.n);
   combatState.enemies.push({
-    x:epos.x, y:epos.y, facing:dirToFacing(G.px-epos.x, G.py-epos.y),
-    def:ENEMIES[cell.content.key], key:cell.content.key, hp:cell.content.hp||ENEMIES[cell.content.key].hp,
-    aura:ENEMIES[cell.content.key].aura||null, charge:0, shield:0, statuses:{}
+    x:o.enemyPos.x, y:o.enemyPos.y, facing:dirToFacing(G.px-o.enemyPos.x, G.py-o.enemyPos.y),
+    def:ENEMIES[o.enemyKey], key:o.enemyKey, hp:o.enemyHp,
+    aura:ENEMIES[o.enemyKey].aura||null, charge:0, shield:0, statuses:{}
   });
-  clearLog(); clearStory(); // 战斗开始时清空行动记录与剧情区
-  log('进入战斗。你得击败所有敌人。');
+}
+
+/* 读档重回战斗：以本次战斗开始瞬间的敌我状态直接进入战斗
+   （剧情区随 mode='combat' 立即被角色技能区替换）。 */
+function reenterCombat(snap){
+  if(!snap || !G.map){ switchMode('story'); return; }
+  const key=snap.enemyKey, hp=snap.enemyHp||ENEMIES[key].hp;
+  let ex=snap.enemyPos?snap.enemyPos.x:-1, ey=snap.enemyPos?snap.enemyPos.y:-1;
+  if(!(ex>=0 && ey>=0 && ex<G.map.n && ey<G.map.n && G.map.cells[ey*G.map.n+ex].terrain==='ground')){
+    const p=placeEnemyNear(G.px,G.py,G.map.n); ex=p.x; ey=p.y;
+  }
+  initCombatState({ enemyKey:key, enemyHp:hp, enemyPos:{x:ex,y:ey} });
+  clearLog(); clearStory();
+  log('读档回到本次战斗开始。你得击败所有敌人。');
   enterCombatMode();
 }
 
@@ -70,6 +98,7 @@ function enterCombatMode(){
   updateCombatUI();
   refreshHUD();
   renderCombatMap();
+  renderIconbar(); // 战斗态：图标行置灰「编队/睡觉」
 }
 
 /* 战斗地图渲染：主角 + 敌人(带朝向) + 障碍/地图外 + 范围指示 */
@@ -226,7 +255,7 @@ function bindCombatGo(x,y){
   go.disabled=false;
   go.onclick=confirmCombatMove;
 }
-/* 确认移动：目标为障碍/实体/地图外时只转向，均视为本回合已移动；真实移动消耗载具 */
+/* 确认移动：目标为障碍/实体/地图外时只转向，均视为本回合已移动 */
 function confirmCombatMove(){
   const cs=combatState; if(!cs) return;
   if(cs.playerMoved) return;
@@ -464,7 +493,7 @@ function endPlayerPhase(){
 
 /* —— 状态栏 HTML：状态需鼠标【点击】查看详情（非悬浮） —— */
 function statusChipHTML(s){
-  const safe=(s.desc||'').replace(/"/g,'&quot;');
+  const safe=(s.desc||'').replace(/\"/g,'&quot;');
   return `<span class="stchip st-${s.kind}" data-st="${s.id}" data-name="${s.name}" data-desc="${safe}">${s.name}${s.turns!=null?` ·${s.turns}回合`:''}</span>`;
 }
 function statusBarHTML(statuses, extraField){
@@ -577,39 +606,6 @@ function enemyIntent(en){
 }
 
 /* 战斗内键盘 */
-document.addEventListener('keydown',ev=>{
-  if(!combatState){
-    if(!G||!G.map) return;
-    if(ev.repeat) return;
-    let dx=0,dy=0;
-    const k=ev.key.toLowerCase();
-    if(k==='w'){dy=-1;} else if(k==='s'){dy=1;} else if(k==='a'){dx=-1;} else if(k==='d'){dx=1;} else {return;}
-    const nx=G.px+dx, ny=G.py+dy;
-    if(nx<0||ny<0||nx>=G.map.n||ny>=G.map.n) return;
-    moveExplore(nx,ny);
-    return;
-  }
-  const cs=combatState;
-  const k=ev.key.toLowerCase();
-  if(k==='q'){ castSkill(cs.currentChar, true); }
-  else if(k==='w'){ combatMove(0,-1); }
-  else if(k==='s'){ combatMove(0,1); }
-  else if(k==='a'){ combatMove(-1,0); }
-  else if(k==='d'){ combatMove(1,0); }
-  else if(ev.key==='1'||ev.key==='2'||ev.key==='3'){
-    const cur=getChar(cs.currentChar);
-    const skills=cur.skills.filter(s=>cur.selectedSkillIds.includes(s.id));
-    const idx=+ev.key-1;
-    if(skills[idx]) selectSkill(cs.currentChar, skills[idx].id);
-  }
-  else if(ev.key==='f1'||ev.key==='f2'||ev.key==='f3'){
-    const chars=getTeamChars();
-    const idx=+ev.key.slice(1)-1;
-    if(chars[idx]){ cs.currentChar=chars[idx].key; updateCombatUI(); renderCombatMap(); }
-  }
-});
-
-/* 战斗胜利 */
 function endCombat(victory){
   const cs=combatState;
   const [ex,ey]=cs.entryCell.split(',').map(Number);
