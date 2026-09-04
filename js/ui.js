@@ -170,11 +170,18 @@ function renderCharacters(){
 }
 function charPageBody(key){
   const c=getChar(key);
+  const bondHTML = key==='pro'
+    ? '' // 主角无羁绊等级
+    : `<span>羁绊等级 <b>${G.bonds&&G.bonds[key]?G.bonds[key].level:1}</b></span>`;
   const attrs = key==='pro'
     ? `<span>攻击 <b>${G.hero.atk}</b></span><span>最大生命 <b>${G.hero.maxHp}</b></span><span>防御 <b>${G.hero.def}</b></span><span>逃跑速度 <b>${G.hero.escapeSpeed}</b></span><span>健康 <b>${G.hero.health}</b></span><span>行动力上限 <b>${G.hero.apCap}</b></span>`
-    : `<span>攻击 <b>${c.atk}</b></span><span>属性 <b>${c.element?ELEM[c.element].zh:'无'}</b></span>`;
-  const talents=c.passives.map(p=>`<div class="charTalent">· ${p.name}：${p.desc}</div>`).join('');
-  const skills=c.skills.map(s=>`<div class="charSkill">· ${s.name}${c.selectedSkillIds.includes(s.id)?' <span class="carry">[携带]</span>':''}：${describeSkill(key,s)}</div>`).join('');
+    : `<span>攻击 <b>${c.atk}</b></span><span>属性 <b>${c.element?ELEM[c.element].zh:'无'}</b></span>${bondHTML}`;
+  const talents=c.passives.map(p=>{
+    const name=p.scal? talentDisplayName(key,p) : p.name;
+    const desc=p.scal? lvDescText(p, entryLevel(key,p)) : terms(p.desc);
+    return `<div class="charTalent">· ${name}：${desc}</div>`;
+  }).join('');
+  const skills=c.skills.map(s=>`<div class="charSkill">· ${skillDisplayName(key,s)}${c.selectedSkillIds.includes(s.id)?' <span class="carry">[携带]</span>':''}：${describeSkill(key,s)}</div>`).join('');
   return `<div class="charHead">${c.name}${c.element?`（<span class="${ELEM[c.element].c}">${ELEM[c.element].zh}</span>）`:''}</div>
     <div class="statGrid">${attrs}</div>
     <div class="sec"><b>天赋</b></div>${talents}
@@ -191,7 +198,7 @@ function openSkillManager(key){
 function renderSkillManager(key){
   const c=getChar(key); const sel=skillPickSel[key];
   const skills=c.skills.map(s=>{ const on=sel.includes(s.id);
-    return `<div class="skillpick ${on?'sel':''}" onclick="toggleSkillPick('${key}','${s.id}')">${on?'☑':'☐'} <b>${s.name}</b>：${describeSkill(key,s)}</div>`;
+    return `<div class="skillpick ${on?'sel':''}" onclick="toggleSkillPick('${key}','${s.id}')">${on?'☑':'☐'} <b>${skillDisplayName(key,s)}</b>：${describeSkill(key,s)}</div>`;
   }).join('');
   openModal(`调整携带技能 · ${c.name}`,
     `<p style="font-size:14px;margin-bottom:8px">至多选择 3 个技能（当前 ${sel.length}/3，天赋不计）。</p>${skills}
@@ -216,13 +223,16 @@ window.saveSkillManager=function(key){
 function openFormation(){ renderFormation(); }
 function renderFormation(){
   const team=G.team.slice();
-  const rows=team.map((k,i)=>`
+  const rows=team.map((k,i)=>{
+    const bond = k!=='pro' ? ` <span class="fbond">羁绊 ${G.bonds&&G.bonds[k]?G.bonds[k].level:1} 级</span>` : '';
+    return `
     <div class="frow">
       <span class="fpos">${i+1}号位</span>
-      <span class="fname">${getChar(k).name}</span>
+      <span class="fname">${getChar(k).name}${bond}</span>
       ${i>0?`<button class="mbtn small" onclick="moveSlot(${i},-1)">上移</button>`:''}
       ${i<team.length-1?`<button class="mbtn small" onclick="moveSlot(${i},1)">下移</button>`:''}
-    </div>`).join('');
+    </div>`;
+  }).join('');
   openModal('编队', `<p style="font-size:15px">调换队伍一二三号位（影响战斗自动释放顺序）。</p>${rows}`, 'full');
 }
 window.moveSlot=function(i,dir){
@@ -292,8 +302,12 @@ document.addEventListener('click',ev=>{
   }
   const tg=ev.target.closest('.talentTag');
   if(tg){
-    const c=getChar(tg.dataset.k); const t=c.passives[+tg.dataset.i];
-    if(t) openPopoverNear(tg, `<b>${t.name}</b><br>${t.desc}`);
+    const owner=tg.dataset.k; const c=getChar(owner); const t=c.passives[+tg.dataset.i];
+    if(t){
+      const name=t.scal? talentDisplayName(owner,t) : t.name;
+      const desc=t.scal? lvDescText(t, entryLevel(owner,t)) : t.desc;
+      openPopoverNear(tg, `<b>${name}</b><br>${desc}`);
+    }
     return;
   }
   $('#popover').style.display='none';
