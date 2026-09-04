@@ -24,6 +24,8 @@ function newGame(){
     team:['pro','xiayang','luyouyou'],
     proLevels:{},  // 主角各可升级条目(天赋/技能)的等级库，初始缺省=1
     bonds,         // 队友羁绊：{ key:{level, affinity} }
+    vehicles:[{key:'walk',uses:null},{key:'raft',uses:3},{key:'bike',uses:2},{key:'bike',uses:2}],
+    vehicleSel:0,  // 当前选用的载具槽位（0=徒步跋涉）
     map:null, px:0, py:0, st:null,
     lootLog:[]
   };

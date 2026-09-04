@@ -15,6 +15,19 @@ const AURA_ELEMS = ['fire','water','grass','thunder','ice'];
 /* 资源中文名（展示用） */
 const RES_ZH = {wood:'木材', fruit:'果子', flax:'亚麻', rawMeat:'生肉', coin:'金币', emptyBottle:'空瓶子'};
 
+/* 资源/物品的效果描述（供配方点击预览） */
+const RES_DESC = {wood:'硬实的薪柴，可作燃料或材料。', fruit:'饱满的野果，食之可恢复少许生命。', flax:'韧性的亚麻纤维，可编织成绷带。',
+  rawMeat:'新鲜的肉块，需要加工或烤制。', coin:'通行的钱币，可在商店使用。', emptyBottle:'清洗干净的空瓶，可用来盛装药汁。'};
+const ITEMS = { // 制作产物（占位，暂无使用逻辑）
+  bandage:{name:'绷带', desc:'用亚麻编织的简易绷带，包扎伤口可回复20点生命。'},
+  jerky:{name:'风干肉', desc:'经调味风干保存的肉干，食用可回复30点生命。'},
+  herbpoultice:{name:'草药膏', desc:'果子与药汁调配的草药膏，涂抹可回复25点生命。'},
+  campkit:{name:'营火套件', desc:'一整套生火工具，野外可安全扎营休息。'},
+  jerrycan:{name:'疾行油', desc:'特制润滑油，给载具注油后能更省力地前行。'},
+};
+function itemName(k){ return RES_ZH[k] || (ITEMS[k]&&ITEMS[k].name) || k; }
+function itemDesc(k){ return ITEMS[k]? ITEMS[k].desc : (RES_DESC[k]||''); }
+
 /* 地形中文名：空地=可通行；山脉/地图外=不可通行 */
 const TERRAIN_ZH = {ground:'空地', obstacle:'山脉', void:'不可通行'};
 
@@ -110,7 +123,7 @@ const ALLIES = {
       {id:'guwu', name:'鼓舞', kind:'support', type:'buff', range:0, target:'self',
        effect:null, atkBuffPct:0.25, healPct:0.15, level:1,
        scal:{buff:{base:25,grow:2,pct:true}, heal:{base:15,grow:1,pct:true}},
-       desc:'主角回复夏阳攻击力{heal}%的生命（约{Y}点），并使攻击力最高的我方角色攻击力+{buff}%（持续2回合）。'},
+       desc:'主角回复夏阳攻击力{heal}的生命（约{Y}点），并使攻击力最高的我方角色攻击力+{buff}（持续2回合）。'},
     ],
     selectedSkillIds:['quhuo','liaoyuan','guwu']
   },
