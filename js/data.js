@@ -43,6 +43,10 @@ const SHOP_ITEMS = [
   {key:'jerrycan',     buy:35, sellable:true},
 ];
 
+/* 背包「使用」效果：heal=回复生命；不在此表的物品在背包无「使用」按钮 */
+const USE_EFFECTS = { fruit:{heal:15}, bandage:{heal:20}, jerky:{heal:30}, herbpoultice:{heal:25} };
+function itemUsable(k){ return !!USE_EFFECTS[k]; }
+
 /* 地形中文名：空地=可通行；山脉/地图外=不可通行 */
 const TERRAIN_ZH = {ground:'空地', obstacle:'山脉', void:'不可通行'};
 
