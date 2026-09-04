@@ -2,6 +2,7 @@
    js/map.js —— 模块：地图与探索（地图生成）
    每日随机地图：尺寸随天数渐进、保底连通、格子内容填充。
    地形：空地=可通行(可能出资源)；山脉/地图外=不可通行。
+   有效地图为内区 n×n，其外再包一圈「地图外」(void) 边框。
    ============================================================ */
 "use strict";
 
@@ -17,15 +18,19 @@ function mapSizeForDay(day){
   return Math.max(4, n+jitter);
 }
 
-/* 生成当天完整地图：不规则连通地块 + 障碍 + 内容，主角随机出生 */
+/* 生成当天完整地图：内区不规则连通地块 + 障碍 + 内容，主角随机出生；
+   内区外围包一圈「地图外」(void) 边框，不影响有效地图生成。 */
 function generateMap(day){
-  const n=mapSizeForDay(day);
+  const inner=mapSizeForDay(day);   // 有效可玩尺寸
+  const n=inner+2;                  // 总边长：上下左右各多1圈地图外
+  const off=1;                      // 内区起点偏移
   const cells=[];
   for(let i=0;i<n*n;i++) cells.push({terrain:'void', content:'empty', idx:i});
-  // 1) 生长法生成不规则可行走地块（空地），约80%面积，减少不可通行
-  const blob=generateBlob(n);
+  // 1) 在内区用生长法生成不规则可行走地块（空地），约80%面积，减少不可通行
+  const blob=generateBlob(inner);
   const groundIdx=[];
-  for(let y=0;y<n;y++)for(let x=0;x<n;x++) if(blob[y*n+x]){ cells[y*n+x].terrain='ground'; groundIdx.push(y*n+x); }
+  for(let y=0;y<inner;y++)for(let x=0;x<inner;x++)
+    if(blob[y*inner+x]){ const ci=(y+off)*n+(x+off); cells[ci].terrain='ground'; groundIdx.push(ci); }
   // 2) 在空地内撒少量山脉障碍
   const obstacles=Math.floor(groundIdx.length*0.08);
   for(let k=0;k<obstacles;k++){
@@ -36,10 +41,11 @@ function generateMap(day){
   for(const c of cells) if(c.terrain==='ground') c.content=rollContent(day);
   // 4) 保底连通（孤立地块会被缝合到主地块）
   ensureConnectivity(cells,n);
-  // 5) 随机挑出生点（该格保证空地）
+  // 5) 随机挑出生点（该格保证空地，位于内区）
   const groundCells=[];
-  for(let y=0;y<n;y++)for(let x=0;x<n;x++) if(cells[y*n+x].terrain==='ground') groundCells.push({x,y});
-  const start=groundCells[Math.floor(Math.random()*groundCells.length)]||{x:0,y:0};
+  for(let y=0;y<inner;y++)for(let x=0;x<inner;x++)
+    if(cells[(y+off)*n+(x+off)].terrain==='ground') groundCells.push({x:x+off,y:y+off});
+  const start=groundCells[Math.floor(Math.random()*groundCells.length)]||{x:off,y:off};
   cells[start.y*n+start.x].content={type:'empty'};
   return {n, cells, px:start.x, py:start.y};
 }

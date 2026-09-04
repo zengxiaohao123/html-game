@@ -166,6 +166,7 @@ body{
 .frow{display:flex; align-items:center; gap:12px; margin:8px 0; padding:10px 12px; background:var(--panel2); border:1px solid var(--line); border-radius:5px;}
 .fpos{font-size:14px; color:var(--txt-dim); width:60px;}
 .fname{font-size:17px; font-weight:700; flex:1;}
+.fbond{color:var(--gold); font-size:13px; font-weight:600;}
 .overlay{
   position:fixed; inset:0; background:#000000c0; display:none; align-items:center; justify-content:center; z-index:50;
 }
@@ -180,6 +181,12 @@ body{
 .modal.wide{width:min(96vw, 1200px);}
 .modal.full{width:min(97vw, 1600px); height:94vh; max-height:94vh;}
 .modal.small{width:min(420px,92vw); height:auto;}
+/* —— 主界面（未进入游戏前）：不透明全屏遮罩 + 大号选项 —— */
+#menuOverlay{background:#14161c;} /* 完全遮挡后方内容，避免透视 */
+#menuOverlay .modal.small{width:min(560px,94vw); height:auto;}
+#menuOverlay h2{font-size:30px; text-align:center; margin:6px 0 22px; letter-spacing:2px;}
+#menuOverlay .mbtn{text-align:center; padding:18px 0; font-size:20px; border-radius:8px; margin:10px 0;}
+#menuOverlay .mbtn:hover{background:#2c3040;}
 .mbtn{
   display:block; width:100%; margin:6px 0; padding:11px; background:var(--panel2);
   border:1px solid var(--line); color:var(--txt); cursor:pointer; border-radius:4px; font-size:14px; text-align:left;
@@ -188,6 +195,9 @@ body{
 .mbtn.small{width:auto; display:inline-block; padding:6px 14px; font-size:13px;}
 .resRow{font-size:14px; line-height:2; color:#cfd4dc;}
 .term{color:var(--gold); text-decoration:underline; text-underline-offset:2px; cursor:help;}
+/* 可升级数值 / 暴击提示：黄色高亮 */
+.lvlup{color:#ffd23f; font-weight:700;}
+.crit-hint{color:#ffd23f; font-weight:700; margin-right:2px;}
 #tooltip{
   position:fixed; display:none; max-width:280px; background:#0e1016; color:#eee;
   border:1px solid var(--line); padding:7px 9px; font-size:12.5px; border-radius:4px; z-index:100;
