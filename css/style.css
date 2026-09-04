@@ -1,7 +1,6 @@
 /* ============================================================
    异世界流浪日记 · 全站样式（模块：界面与UI / css/style.css）
-   布局：左侧行动记录(约1/3) / 中地图 / 右侧信息区；底部剧情或战斗角色技能区。
-   文字一律浅色（白/灰白/红/黄/金），不在深色背景上用深色字。
+   文字一律浅色（白/灰白/红/黄/金）。
    ============================================================ */
 :root{
   --bg:#14161c; --panel:#1c1f27; --panel2:#222533; --line:#33384a;
@@ -12,28 +11,14 @@
 }
 *{box-sizing:border-box; margin:0; padding:0;}
 html,body{height:100%;}
-body{
-  font-family:"Microsoft YaHei","PingFang SC",sans-serif;
-  background:var(--bg); color:var(--txt); overflow:hidden;
-  user-select:none;
-}
+body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg); color:var(--txt); overflow:hidden; user-select:none;}
 #app{height:100vh;display:flex;flex-direction:column;}
-#hud{
-  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
-  padding:6px 10px; background:var(--panel); border-bottom:1px solid var(--line);
-  font-size:13px; min-height:30px;
-}
+#hud{display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:6px 10px; background:var(--panel); border-bottom:1px solid var(--line); font-size:13px; min-height:30px;}
 #hud .stat{white-space:nowrap;}
 #hud .stat b{font-weight:600; color:#fff;}
 .hpfill{color:var(--good);} .hpfill.low{color:var(--bad);}
-#iconbar{
-  display:flex; justify-content:flex-start; gap:6px; padding:4px 10px; flex-wrap:wrap;
-  background:var(--panel); border-bottom:1px solid var(--line);
-}
-.icobtn{
-  padding:4px 12px; background:var(--panel2); border:1px solid var(--line);
-  cursor:pointer; font-size:13px; color:var(--txt); border-radius:3px;
-}
+#iconbar{display:flex; justify-content:flex-start; gap:6px; padding:4px 10px; flex-wrap:wrap; background:var(--panel); border-bottom:1px solid var(--line);}
+.icobtn{padding:4px 12px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; font-size:13px; color:var(--txt); border-radius:3px;}
 .icobtn:hover{background:#2c3040;}
 .icobtn.sleep{background:#3a2f12; color:var(--gold); font-weight:600;}
 .icobtn.hidden{display:none;}
@@ -44,79 +29,55 @@ body{
 #mapViewport{position:absolute; inset:0; overflow:auto; cursor:grab;}
 #mapViewport.dragging{cursor:grabbing;}
 #mapGrid{display:grid; gap:3px; padding:8px; transform-origin:0 0; width:max-content;}
-.cell{
-  width:44px; height:44px; background:var(--panel2); border:1px solid var(--line);
-  border-radius:8px; cursor:pointer; position:relative; display:flex;align-items:center;justify-content:center;
-  font-size:20px;
-}
+.cell{width:44px; height:44px; background:var(--panel2); border:1px solid var(--line); border-radius:8px; cursor:pointer; position:relative; display:flex;align-items:center;justify-content:center; font-size:20px;}
 .cell.obstacle{background:#28261f; cursor:default;}
 .cell.obstacle::after{content:"⛰"; color:#8a6d3b; font-size:22px;}
 .cell.void{background:#0c0e13; border-color:#1a1d26; cursor:default;}
 .cell.prey{outline:2px solid var(--gold); outline-offset:-2px;}
 .cell.player{background:#31403a;}
 .cell.enemyPick{outline:2px dashed var(--bad);}
-/* 技能范围 / 敌方攻击范围（仅视觉） */
 .cell.range-ally{box-shadow:inset 0 0 0 2px #ffa04a, inset 0 0 0 100px #ffa04a2a;}
 .cell.range-enemy{box-shadow:inset 0 0 0 2px #ff5a5a, inset 0 0 0 100px #ff5a5a2e;}
-/* 主角朝向（白色） */
 .facing-up::after{content:"▲"; color:#fff; position:absolute; top:2px; left:50%; transform:translateX(-50%); font-size:10px;}
 .facing-down::after{content:"▼"; color:#fff; position:absolute; bottom:2px; left:50%; transform:translateX(-50%); font-size:10px;}
 .facing-left::after{content:"◀"; color:#fff; position:absolute; left:2px; top:50%; transform:translateY(-50%); font-size:10px;}
 .facing-right::after{content:"▶"; color:#fff; position:absolute; right:2px; top:50%; transform:translateY(-50%); font-size:10px;}
-/* 敌人朝向（红色小三角） */
 .efacing-up::after{content:"▲"; color:#ff5a5a; position:absolute; top:2px; left:50%; transform:translateX(-50%); font-size:10px;}
 .efacing-down::after{content:"▼"; color:#ff5a5a; position:absolute; bottom:2px; left:50%; transform:translateX(-50%); font-size:10px;}
 .efacing-left::after{content:"◀"; color:#ff5a5a; position:absolute; left:2px; top:50%; transform:translateY(-50%); font-size:10px;}
 .efacing-right::after{content:"▶"; color:#ff5a5a; position:absolute; right:2px; top:50%; transform:translateY(-50%); font-size:10px;}
 .hpbar{position:absolute; left:3px; right:3px; bottom:2px; height:4px; background:#0006; border-radius:2px;}
 .hpbar i{display:block; height:100%; background:var(--bad); border-radius:2px;}
-#leftLog{
-  background:var(--panel); border:1px solid var(--line); border-radius:4px;
-  display:flex; flex-direction:column; min-height:0;
-}
+#leftLog{background:var(--panel); border:1px solid var(--line); border-radius:4px; display:flex; flex-direction:column; min-height:0;}
 .panel-title{padding:7px 9px; font-size:13px; color:var(--txt-dim); border-bottom:1px solid var(--line); flex:none; font-weight:600;}
 #logBody{flex:1; overflow-y:auto; padding:8px 10px; font-size:13.5px; line-height:1.65; min-height:0;}
 #logBody .logline{border-bottom:1px dashed #00000044; padding:3px 0;}
-#goBtn{
-  margin:8px; padding:9px; background:var(--gold); color:#241d05; font-weight:700;
-  border:none; border-radius:4px; cursor:pointer; display:none; font-size:14px; flex:none;
-}
+#goBtn{margin:8px; padding:9px; background:var(--gold); color:#241d05; font-weight:700; border:none; border-radius:4px; cursor:pointer; display:none; font-size:14px; flex:none;}
 #goBtn.disabled{background:#555;cursor:not-allowed;}
-#rightPanel{
-  background:var(--panel); border:1px solid var(--line); border-radius:4px;
-  display:flex; flex-direction:column; min-height:0;
-}
+#rightPanel{background:var(--panel); border:1px solid var(--line); border-radius:4px; display:flex; flex-direction:column; min-height:0;}
 #promptZone{flex:1; overflow-y:auto; padding:10px; font-size:14px; line-height:1.7; min-height:0;}
 #promptZone .opt{margin:6px 0; padding:10px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:4px;}
 #promptZone .opt:hover{background:#2c3040;}
 #promptZone .opt.sel{outline:2px solid var(--gold); background:#2c3040;}
-#bottom{
-  height:250px; background:var(--panel); border:1px solid var(--line); border-radius:4px;
-  margin:0 6px 6px; padding:6px; position:relative; min-height:0;
-}
+#bottom{height:250px; background:var(--panel); border:1px solid var(--line); border-radius:4px; margin:0 6px 6px; padding:6px; position:relative; min-height:0;}
 #storyBox, #combatZone{display:none; height:100%; flex-direction:column; min-height:0;}
 #bottom.mode-story #storyBox{display:flex;}
 #bottom.mode-combat #combatZone{display:flex;}
 #storyBody{flex:1; overflow-y:auto; padding:8px 10px; font-size:14.5px; line-height:1.8; min-height:0;}
 #storyBody .speaker{color:var(--gold); font-weight:700;}
 #combatZone h4, #storyBox h4{flex:none;}
-/* —— 战斗·角色技能区 —— */
 #combatMain{flex:1; display:flex; gap:8px; min-height:0; overflow:hidden; padding-top:2px;}
 #combatLeft{flex:1.35; display:flex; flex-direction:column; min-width:0; min-height:0;}
 #combatRight{flex:1; background:var(--panel2); border:1px solid var(--line); border-radius:4px; padding:8px; overflow-y:auto; min-width:0;}
 .panel-subtitle{padding:3px 2px; font-size:12px; color:var(--txt-dim); border-bottom:1px solid var(--line); margin-bottom:6px; font-weight:600;}
 #allyBar{display:flex; gap:8px; flex-wrap:wrap; margin:2px 0 8px;}
-.allyCard{
-  flex:1; min-width:110px; padding:9px 12px; background:var(--panel2); border:1px solid var(--line);
-  cursor:pointer; border-radius:6px; text-align:center;
-}
+.allyCard{flex:1; min-width:110px; padding:9px 12px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:6px; text-align:center;}
 .allyCard.active{outline:3px solid var(--gold); outline-offset:-1px; background:#2c3040;}
 .allyName{font-size:16px; font-weight:700; color:#fff; line-height:1.2; position:relative; z-index:1;}
 .allyElem{font-size:12px; color:var(--txt-dim); margin-top:3px;}
 #charAttrs{display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:0 0 6px; padding:0;}
 .attr{background:var(--panel2); border:1px solid var(--line); border-radius:4px; padding:3px 10px; font-size:13px;}
 .attr b{color:var(--gold); font-size:16px; margin-right:3px;}
-/* 状态栏（横向滚动，禁止上下滚动；加大显示） */
 #statusBar{margin-bottom:10px; flex:none;}
 .stbar{display:flex; gap:6px; overflow-x:auto; overflow-y:hidden; padding:4px 0; min-height:30px; align-items:center;}
 .stbar::-webkit-scrollbar{height:5px;}
@@ -127,35 +88,29 @@ body{
 .stlabel{flex:none; font-size:12px; color:var(--txt-dim); align-self:center; font-weight:600;}
 .stempty{flex:none; font-size:13px; color:var(--txt-dim);}
 #skillList{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;}
-.skillTag{
-  position:relative; padding:10px 16px 10px 14px; background:var(--panel2); border:2px solid var(--line);
-  cursor:pointer; border-radius:6px; font-size:15px; font-weight:600;
-}
+.skillTag{position:relative; padding:10px 16px 10px 14px; background:var(--panel2); border:2px solid var(--line); cursor:pointer; border-radius:6px; font-size:15px; font-weight:600;}
 .skillTag.attack{border-color:var(--fire); color:#ffd0d0;}
 .skillTag.skill{color:#9fd4ff; border-color:#4a9bff;}
 .skillTag.active{background:#4d4213; border-color:var(--gold);}
-.skillNum{display:inline-block; width:20px; height:20px; line-height:20px; text-align:center;
-  background:#000a; border-radius:50%; font-size:12px; margin-right:7px; color:var(--txt);}
+.skillNum{display:inline-block; width:20px; height:20px; line-height:20px; text-align:center; background:#000a; border-radius:50%; font-size:12px; margin-right:7px; color:var(--txt);}
 .usedMark{font-size:11px; color:var(--bad); margin-left:6px;}
 #talentBox{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:auto; padding-bottom:2px;}
 .talentLabel{font-size:12px; color:var(--txt-dim); font-weight:600;}
-.talentTag{padding:2px 8px; background:var(--panel2); border:1px solid var(--line); cursor:pointer;
-  border-radius:3px; font-size:12px; color:var(--txt-dim);}
+.talentTag{padding:2px 8px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:3px; font-size:12px; color:var(--txt-dim);}
 .talentTag:hover{background:#2c3040;}
+/* 技能/天赋分类徽章：天赋金、攻击红、辅助蓝 */
+.cat{display:inline-block; font-size:11px; line-height:1; padding:2px 5px; margin-right:6px; border:1px solid var(--line); border-radius:3px; vertical-align:1px; font-weight:600;}
+.cat.talent{color:var(--gold); border-color:var(--gold);}
+.cat.attack{color:var(--fire); border-color:var(--fire);}
+.cat.support{color:#4a9bff; border-color:#4a9bff;}
 #skillDetail{font-size:14px; color:var(--txt); line-height:1.7;}
 .skillDetailName{font-size:18px; font-weight:700; color:var(--gold); margin-bottom:6px;}
-/* 信息区：敌人两页 */
 .infotabs{display:flex; gap:6px; margin-bottom:8px;}
 .infotab{padding:4px 14px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:4px; font-size:13px; color:#fff;}
 .infotab.on{background:var(--gold); color:#fff; font-weight:700; border-color:var(--gold);}
 .sec{font-size:13px; color:var(--txt-dim); font-weight:600; margin:8px 0 4px; border-bottom:1px solid var(--line); padding-bottom:2px;}
 .eskill{margin:6px 0; padding:6px 8px; background:var(--panel2); border:1px solid var(--line); border-radius:4px; font-size:13px; line-height:1.6;}
-/* 天赋/状态附近弹窗 */
-#popover{
-  position:fixed; display:none; max-width:300px; background:#0e1016; color:#eee;
-  border:1px solid var(--line); padding:8px 10px; font-size:13px; border-radius:4px; z-index:120; line-height:1.6;
-}
-/* 角色页 / 技能管理 / 编队 */
+#popover{position:fixed; display:none; max-width:300px; background:#0e1016; color:#eee; border:1px solid var(--line); padding:8px 10px; font-size:13px; border-radius:4px; z-index:120; line-height:1.6;}
 .ctabs{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;}
 .ctab{padding:8px 18px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:6px; font-size:15px; color:#fff;}
 .ctab.on{background:var(--gold); color:#fff; font-weight:700; border-color:var(--gold);}
@@ -169,44 +124,30 @@ body{
 .fpos{font-size:14px; color:var(--txt-dim); width:60px;}
 .fname{font-size:17px; font-weight:700; flex:1;}
 .fbond{color:var(--gold); font-size:13px; font-weight:600;}
-.overlay{
-  position:fixed; inset:0; background:#000000c0; display:none; align-items:center; justify-content:center; z-index:50;
-}
+.overlay{position:fixed; inset:0; background:#000000c0; display:none; align-items:center; justify-content:center; z-index:50;}
 .overlay.show{display:flex;}
-.modal{
-  background:var(--panel); border:1px solid var(--line); border-radius:6px;
-  width:min(92vw, 1000px); max-height:92vh; overflow:auto; padding:16px;
-  display:flex; flex-direction:column;
-}
+.modal{background:var(--panel); border:1px solid var(--line); border-radius:6px; width:min(92vw, 1000px); max-height:92vh; overflow:auto; padding:16px; display:flex; flex-direction:column;}
 .modal h2{font-size:17px; margin-bottom:10px; color:var(--gold); flex:none;}
 #modalBody{flex:1; overflow-y:auto; min-height:0;}
 .modal.wide{width:min(96vw, 1200px);}
 .modal.full{width:min(97vw, 1600px); height:94vh; max-height:94vh;}
 .modal.small{width:min(420px,92vw); height:auto;}
-/* —— 主界面（未进入游戏前）：不透明全屏遮罩 + 大号选项 —— */
-#menuOverlay{background:#14161c;} /* 完全遮挡后方内容，避免透视 */
+#menuOverlay{background:#14161c;}
 #menuOverlay .modal.small{width:min(560px,94vw); height:auto;}
 #menuOverlay h2{font-size:30px; text-align:center; margin:6px 0 22px; letter-spacing:2px;}
 #menuOverlay .mbtn{text-align:center; padding:18px 0; font-size:20px; border-radius:8px; margin:10px 0;}
 #menuOverlay .mbtn:hover{background:#2c3040;}
-.mbtn{
-  display:block; width:100%; margin:6px 0; padding:11px; background:var(--panel2);
-  border:1px solid var(--line); color:var(--txt); cursor:pointer; border-radius:4px; font-size:14px; text-align:left;
-}
+.mbtn{display:block; width:100%; margin:6px 0; padding:11px; background:var(--panel2); border:1px solid var(--line); color:var(--txt); cursor:pointer; border-radius:4px; font-size:14px; text-align:left;}
 .mbtn:hover{background:#2c3040;}
 .mbtn.small{width:auto; display:inline-block; padding:6px 14px; font-size:13px;}
 .resRow{font-size:14px; line-height:2; color:#cfd4dc;}
 .term{color:var(--gold); text-decoration:underline; text-underline-offset:2px; cursor:help;}
-/* 可升级数值 / 暴击提示：黄色高亮 */
 .lvlup{color:#ffd23f; font-weight:700;}
 .crit-hint{color:#ffd23f; font-weight:700; margin-right:2px;}
-/* —— 合成系统 / 商店（左右两列） —— */
 .mhint{font-size:13px; color:var(--txt-dim); margin-bottom:12px; line-height:1.7;}
-.cwrapper{display:grid; grid-template-columns:1fr 1fr; gap:14px 16px; align-items:start;
-  max-height:66vh; overflow-y:auto; padding-right:6px;}
+.cwrapper{display:grid; grid-template-columns:1fr 1fr; gap:14px 16px; align-items:start; max-height:66vh; overflow-y:auto; padding-right:6px;}
 .cwrapper > div{min-width:0;}
-.recipe{background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:12px 14px;
-  display:flex; flex-direction:column; gap:8px;}
+.recipe{background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:12px 14px; display:flex; flex-direction:column; gap:8px;}
 .rcNeeds{font-size:15px; line-height:1.9; color:#dfe3ea; font-weight:600; display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
 .recipeArrow{color:var(--txt-dim);}
 .craftlink{padding:3px 9px; background:#000a; border:1px solid var(--line); border-radius:4px; cursor:pointer; font-weight:600; color:var(--gold);}
@@ -221,36 +162,25 @@ body{
 .nohint{font-size:13px; color:var(--bad);}
 .mbtn.tiny{padding:4px 9px; font-size:12px; border-radius:4px; display:inline-block; width:auto; margin:0;}
 .craftDo{background:var(--gold); color:#241d05; font-weight:700;}
-/* 商店卡片 */
-.sitem{background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:12px 14px;
-  display:flex; flex-direction:column; gap:8px;}
+.sitem{background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:12px 14px; display:flex; flex-direction:column; gap:8px;}
 .shead{display:flex; align-items:center; justify-content:space-between; gap:6px; font-size:15px; font-weight:700;}
 .sprice{font-size:13px; color:var(--txt-dim); font-weight:600;}
 .sown{font-size:13px; color:var(--txt-dim);}
-/* 商店即时提示（显示在店内） */
 .shopmsg{font-size:14px; margin:0 0 10px; color:var(--gold); font-weight:600; min-height:20px; line-height:1.5;}
-/* 背包：全屏格子化 */
 .invbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;}
 .invtitle{font-size:15px; color:var(--txt-dim); font-weight:600;}
 .invcoin{font-size:16px; font-weight:700; color:var(--gold);}
-.itile{display:flex; flex-direction:column; align-items:center; gap:6px; padding:16px 8px;
-  background:var(--panel2); border:1px solid var(--line); border-radius:8px; min-height:90px;}
+.itile{display:flex; flex-direction:column; align-items:center; gap:6px; padding:16px 8px; background:var(--panel2); border:1px solid var(--line); border-radius:8px; min-height:90px;}
 .itile .iname{font-size:14px; font-weight:700; cursor:pointer; line-height:1.4; text-align:center;}
 .itile .icount{font-size:18px; font-weight:700; color:#fff;}
-/* —— 载具系统（格子式逐一展示，每次移动消耗1个） —— */
 .vgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:12px; max-height:68vh; overflow-y:auto; padding-right:6px;}
-.vslot{display:flex; flex-direction:column; align-items:center; gap:6px; padding:16px 8px; background:var(--panel2);
-  border:1px solid var(--line); border-radius:8px; cursor:pointer; transition:background .15s;}
+.vslot{display:flex; flex-direction:column; align-items:center; gap:6px; padding:16px 8px; background:var(--panel2); border:1px solid var(--line); border-radius:8px; cursor:pointer; transition:background .15s;}
 .vslot:hover{background:#2c3040;}
 .vslot.sel{background:rgba(255,210,63,0.20); border-color:var(--gold); outline:2px solid var(--gold); outline-offset:-1px;}
 .vicon{font-size:40px; line-height:1;}
 .vname{font-size:15px; font-weight:700; color:#fff; text-align:center;}
 .vuses{font-size:12px; color:var(--bad); margin-top:2px;}
-#tooltip{
-  position:fixed; display:none; max-width:280px; background:#0e1016; color:#eee;
-  border:1px solid var(--line); padding:7px 9px; font-size:12.5px; border-radius:4px; z-index:100;
-  line-height:1.6;
-}
+#tooltip{position:fixed; display:none; max-width:280px; background:#0e1016; color:#eee; border:1px solid var(--line); padding:7px 9px; font-size:12.5px; border-radius:4px; z-index:100; line-height:1.6;}
 .statGrid{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; font-size:13px;}
 .e-fire{color:var(--fire)!important;} .e-water{color:var(--water)!important;} .e-grass{color:var(--grass)!important;}
 .e-thunder{color:var(--thunder)!important;} .e-ice{color:var(--ice)!important;} .e-wind{color:var(--wind)!important;} .e-rock{color:var(--rock)!important;}
