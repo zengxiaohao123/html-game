@@ -226,7 +226,7 @@ function bindCombatGo(x,y){
   go.disabled=false;
   go.onclick=confirmCombatMove;
 }
-/* 确认移动：目标为障碍/实体/地图外时只转向，均视为本回合已移动 */
+/* 确认移动：目标为障碍/实体/地图外时只转向，均视为本回合已移动；真实移动消耗载具 */
 function confirmCombatMove(){
   const cs=combatState; if(!cs) return;
   if(cs.playerMoved) return;
@@ -237,11 +237,9 @@ function confirmCombatMove(){
   $('#goBtn').style.display='none';
   const c=G.map.cells[y*G.map.n+x];
   cs.hero.facing=dirToFacing(dx,dy);
-  if(c.terrain==='ground' && !cs.enemies.some(en=>en.x===x&&en.y===y)){
-    cs.hero.x=x; cs.hero.y=y;
-  } else {
-    log('前方有阻挡，你只改变了朝向。');
-  }
+  const moved=(c.terrain==='ground' && !cs.enemies.some(en=>en.x===x&&en.y===y));
+  if(moved){ cs.hero.x=x; cs.hero.y=y; useVehicleOnMove(); }
+  else { log('前方有阻挡，你只改变了朝向。'); }
   cs.playerMoved=true;
   autoCastAll(); if(!combatState) return;
   endPlayerPhase();
@@ -255,11 +253,9 @@ function combatMove(dx,dy){
   if(nx<0||ny<0||nx>=G.map.n||ny>=G.map.n)return;
   const c=G.map.cells[ny*G.map.n+nx];
   cs.hero.facing=dirToFacing(dx,dy);
-  if(c.terrain==='ground' && !cs.enemies.some(en=>en.x===nx&&en.y===ny)){
-    cs.hero.x=nx; cs.hero.y=ny;
-  } else {
-    log('前方有阻挡，你只改变了朝向。');
-  }
+  const moved=(c.terrain==='ground' && !cs.enemies.some(en=>en.x===nx&&en.y===ny));
+  if(moved){ cs.hero.x=nx; cs.hero.y=ny; useVehicleOnMove(); }
+  else { log('前方有阻挡，你只改变了朝向。'); }
   cs.playerMoved=true; cs.infoCell={x:cs.hero.x,y:cs.hero.y}; cs.pendingTarget=null;
   autoCastAll(); if(!combatState) return;
   endPlayerPhase();
