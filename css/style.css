@@ -198,21 +198,32 @@ body{
 /* 可升级数值 / 暴击提示：黄色高亮 */
 .lvlup{color:#ffd23f; font-weight:700;}
 .crit-hint{color:#ffd23f; font-weight:700; margin-right:2px;}
-/* —— 合成系统 —— */
+/* —— 合成系统 / 商店（左右两列） —— */
 .mhint{font-size:13px; color:var(--txt-dim); margin-bottom:12px; line-height:1.7;}
-.craftList{display:flex; flex-direction:column; gap:12px; max-height:68vh; overflow-y:auto; padding-right:6px;}
-.recipe{background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:12px 14px;}
-.recipeNeeds{display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:15px; color:#dfe3ea; font-weight:600;}
+.cwrapper{display:grid; grid-template-columns:1fr 1fr; gap:14px 16px; align-items:start;
+  max-height:66vh; overflow-y:auto; padding-right:6px;}
+.cwrapper > div{min-width:0;}
+.recipe{background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:12px 14px;
+  display:flex; flex-direction:column; gap:8px;}
+.rcNeeds{font-size:15px; line-height:1.9; color:#dfe3ea; font-weight:600; display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
 .recipeArrow{color:var(--txt-dim);}
-.craftlink{padding:2px 8px; background:#000a; border:1px solid var(--line); border-radius:4px; cursor:pointer; font-weight:600; color:var(--gold);}
+.craftlink{padding:3px 9px; background:#000a; border:1px solid var(--line); border-radius:4px; cursor:pointer; font-weight:600; color:var(--gold);}
 .craftlink:hover{background:#2c3040;}
 .craftlink.noshort{color:var(--bad); border-color:var(--bad);}
+.noshort{color:var(--bad); font-size:12px; font-weight:400;}
 .plus{color:var(--txt-dim);}
-.recipeCtl{display:flex; align-items:center; gap:8px; margin-top:10px; flex-wrap:wrap;}
-.craftRange{flex:1; min-width:120px;}
-.craftQty{font-size:15px; font-weight:700; color:var(--txt); min-width:44px; text-align:center;}
+.rcCtl{display:flex; align-items:center; gap:6px;}
+.rcCtl .craftRange{flex:1; min-width:0; height:28px;}
+.craftQty{font-size:14px; font-weight:700; color:var(--txt); min-width:34px; text-align:center; flex:none;}
 .nohint{font-size:13px; color:var(--bad);}
+.mbtn.tiny{padding:4px 9px; font-size:12px; border-radius:4px; display:inline-block; width:auto; margin:0;}
 .craftDo{background:var(--gold); color:#241d05; font-weight:700;}
+/* 商店卡片 */
+.sitem{background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:12px 14px;
+  display:flex; flex-direction:column; gap:8px;}
+.shead{display:flex; align-items:center; justify-content:space-between; gap:6px; font-size:15px; font-weight:700;}
+.sprice{font-size:13px; color:var(--txt-dim); font-weight:600;}
+.sown{font-size:13px; color:var(--txt-dim);}
 /* —— 载具系统（格子式逐一展示，每次移动消耗1个） —— */
 .vgrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:12px; max-height:68vh; overflow-y:auto; padding-right:6px;}
 .vslot{display:flex; flex-direction:column; align-items:center; gap:6px; padding:16px 8px; background:var(--panel2);
