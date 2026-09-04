@@ -41,16 +41,19 @@ function renderVehicles(){
 window.selVehicle=function(i){
   if(!getVehicles()[i]) return;
   G.vehicleSel=i;
+  log(`当前装载了 <b>${vehicleDef(getVehicles()[i].key).name}</b>。`);
   renderVehicles();
 };
 
-/* 每次真实移动（探索/战斗）后调用：消耗 1 个已选载具，耗尽则切回徒步跋涉 */
+/* 每次真实移动（探索/战斗）后调用：消耗 1 个已选载具，耗尽则切回徒步跋涉。
+   无限次载具不提示使用/剩余。 */
 function useVehicleOnMove(){
   if(!G) return;
   const v=getSelVehicle(); if(!v) return;
   const def=vehicleDef(v.key);
   if(def.infinite || v.uses==null || v.uses===Infinity) return;
   v.uses-=1;
+  log(`使用了 <b>${def.name}</b> 移动，该载具剩余 ${Math.max(0,v.uses)} 次。`);
   if(v.uses<=0){
     const i=(G.vehicleSel||0), vs=getVehicles();
     vs.splice(i,1);

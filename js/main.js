@@ -19,7 +19,7 @@ function newGame(){
   return {
     day:1, region:'wild',
     hero:{atk:10,maxHp:100,hp:100,def:0,escapeSpeed:100,health:30,actionPoint:5,apCap:5,facing:'up'},
-    inventory:{wood:0,fruit:0,flax:0,rawMeat:0,coin:0,emptyBottle:0},
+    inventory:{wood:0,fruit:0,flax:0,rawMeat:0,coin:20,emptyBottle:0},
     records:{slain:{}, wins:0, losses:0},
     team:['pro','xiayang','luyouyou'],
     proLevels:{},  // 主角各可升级条目(天赋/技能)的等级库，初始缺省=1
