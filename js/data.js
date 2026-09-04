@@ -91,7 +91,7 @@ const PROTAGONIST = {
   passives:[
     {id:'tactic', name:'战术布置', desc:'攻击时设置【重点目标】，我方优先攻击该目标（持续至该敌人被击败）。'},
     {id:'crit', name:'暴击', level:1, scal:{atk:{base:10,grow:5}, crit:{base:3,grow:1,pct:true}},
-     desc:'攻击力+{atk}，暴击率+{crit}%。'},
+     desc:'攻击力+{atk}，暴击率+{crit}。'},
     {id:'blood', name:'嗜血', level:1, scal:{atk:{base:20,grow:4}},
      desc:'攻击力+{atk}，攻击型技能3%概率回复自身=本次伤害的50%。'},
     {id:'momentum', name:'起势', level:1, scal:{atk:{base:30,grow:5}},
@@ -154,7 +154,7 @@ const ALLIES = {
       {id:'flutter', name:'蹁跹', level:1, scal:{hp:{base:30,grow:6}},
        desc:'探索每移动后主角回复{hp}生命；战斗闪避时主角回复{hp}生命。'},
       {id:'wind', name:'风息', level:1, scal:{atk:{base:60,grow:6}, crit:{base:30,grow:2,pct:true}},
-       desc:'自身攻击力+{atk}，暴击率+{crit}%；暴击时本次技能伤害由物理转为风元素。'},
+       desc:'自身攻击力+{atk}，暴击率+{crit}；暴击时本次技能伤害由物理转为风元素。'},
       {id:'duo', name:'比翼', desc:'自身暴击后，其余我方角色下一次攻击暴击率+100%。'},
     ],
     skills:[

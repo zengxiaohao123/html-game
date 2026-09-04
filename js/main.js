@@ -33,7 +33,6 @@ function newGame(){
 
 /* 主界面菜单 */
 function showMenu(){
-  if(G) saveGame(0);
   $('#menuOverlay').classList.add('show');
   $('#menuBtns').innerHTML=
     `<button class="mbtn" onclick="startNew()">新的游戏</button>`+
@@ -66,9 +65,12 @@ function showGameOver(){
   $('#goMsg').innerHTML='你的健康已归零，流浪在此终结。你仍可读取存档重新开始。';
   $('#gameoverOverlay').classList.add('show');
 }
-/* 失败后读取存档 / 返回主界面 */
+/* 失败后读取存档 / 返回主界面（不存档） */
 function loadAfterGameOver(){ $('#gameoverOverlay').classList.remove('show'); openReadSaveMenu(); }
-function backToMenu(){ $('#gameoverOverlay').classList.remove('show'); showMenu(); }
+function backToMenu(){
+  combatState=null; // 返回主界面：清空任何进行中的战斗（不存档）
+  $('#gameoverOverlay').classList.remove('show'); showMenu();
+}
 
 /* 开始新游戏 */
 function startNew(){
@@ -79,19 +81,28 @@ function startNew(){
   loadIntoWorld();
 }
 
-/* 载入(新/旧)局并进入世界：刷 HUD / 图标行 / 地图 / 开场剧情 */
+/* 载入(新/旧)局并进入世界：刷 HUD / 图标行 / 地图 / 开场剧情。
+   若读回的是战斗存档（G.combat 非空），则按战斗开始直接进入战斗。 */
 function loadIntoWorld(){
   $('#menuOverlay').classList.remove('show');
+  combatState=null; // 无论何种读档，先清除旧战斗（下方若需重进战斗会重建）
   if(!G.map) G.map=generateMap(G.day);
   if(G.px===undefined||G.py===undefined){ G.px=G.map.px; G.py=G.map.py; }
+  refreshHUD(); renderIconbar();
+  if(G.combat){ // 战斗存档：直接重回本次战斗开始
+    const c=G.combat; G.combat=null;
+    reenterCombat(c);
+    return;
+  }
   switchMode('story');
-  refreshHUD(); renderIconbar(); renderMap();
+  renderMap();
   story('你又一次在异世界醒来。这一次，你决定无论如何都要活下去。');
 }
 
 /* 睡觉：二次确认 → 回满AP、进下一天、生成新地图、回血、自动存档 */
 function sleep(){
   if(!G) return;
+  if(combatState){ log('战斗中不能睡觉。'); return; }
   if(G.hero.actionPoint>0 && !confirm('行动力尚未耗尽，仍确定直接「睡觉」进入下一天吗？')) return;
   G.hero.actionPoint=G.hero.apCap;
   G.day+=1;

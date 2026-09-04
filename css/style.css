@@ -37,6 +37,8 @@ body{
 .icobtn:hover{background:#2c3040;}
 .icobtn.sleep{background:#3a2f12; color:var(--gold); font-weight:600;}
 .icobtn.hidden{display:none;}
+.icobtn.dis{opacity:.4; cursor:not-allowed;}
+.icobtn.dis:hover{background:var(--panel2);}
 #main{flex:1; display:grid; grid-template-columns:minmax(300px,4fr) minmax(220px,5fr) minmax(220px,3fr); gap:6px; padding:6px; min-height:0;}
 #mapWrap{position:relative; background:var(--panel); border:1px solid var(--line); border-radius:4px; min-height:0;}
 #mapViewport{position:absolute; inset:0; overflow:auto; cursor:grab;}

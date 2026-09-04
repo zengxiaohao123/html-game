@@ -39,12 +39,14 @@ function refreshHUD(){
     `<span class="stat">行动力 <b>${h.actionPoint}/${h.apCap}</b></span>`;
 }
 
-/* 刷新功能图标行（任务/编队/角色/背包/睡觉/设置/商店/合成/载具） */
+/* 刷新功能图标行（任务/编队/角色/背包/睡觉/设置/商店） */
 function renderIconbar(){
   if(!G) return;
   const show=[[ '任务',openTasks],['编队',openFormation],['角色',openCharacters],
     ['背包',openInventory],['睡觉',sleep],['设置',openSettings],['商店',openShop],['合成',openCraft],['载具',openVehicles]];
-  $('#iconbar').innerHTML=show.map(([t,f],i)=>`<button class="icobtn${t==='睡觉'?' sleep':''}" data-i="${i}">${t}</button>`).join('');
+  // 战斗中：禁止编队与睡觉（置灰）
+  const blocked = combatState ? new Set(['编队','睡觉']) : new Set();
+  $('#iconbar').innerHTML=show.map(([t,f],i)=>`<button class="icobtn${t==='睡觉'?' sleep':''}${blocked.has(t)?' dis':''}" data-i="${i}">${t}</button>`).join('');
   $('#iconbar').querySelectorAll('.icobtn').forEach(b=>b.onclick=()=>show[+b.dataset.i][1]());
   // 测试期间：商店按钮无视区域始终显示
 }
@@ -113,13 +115,15 @@ function renderCellContent(cell,c){
   }
 }
 
-/* —— 面板弹窗 —— */
-function openSettings(){ openModal('设置', `
-  <div style="display:flex;gap:14px;flex-wrap:wrap">
-    <button class="mbtn small" onclick="saveMenuOpen()">存档</button>
-    <button class="mbtn small" onclick="openReadSave()">读档</button>
-    <button class="mbtn small" onclick="closeModal();backToMenu()">返回主界面（不存档）</button>
-  </div>`, 'full'); }
+/* 面板弹窗 */
+function openSettings(){
+  const inFight=!!combatState; // 战斗中允许存档(以本次战斗开始为准)/读档/返回主界面
+  openModal('设置', `
+    <div style="display:flex;gap:14px;flex-wrap:wrap">
+      <button class="mbtn small" onclick="saveMenuOpen()">${inFight?'存档（回本次战斗开始时）':'存档'}</button>
+      <button class="mbtn small" onclick="openReadSave()">读档</button>
+      <button class="mbtn small" onclick="closeModal();backToMenu()">返回主界面（不存档）</button>
+    </div>`, 'full'); }
 function saveMenuOpen(){ openModal('选择存档位', buildSaveSlotHTML('save'), 'small'); }
 function openReadSave(){ openReadSaveMenu(); }
 function alertDialog(title,msg){
@@ -264,7 +268,7 @@ window.saveSkillManager=function(key){
 };
 
 /* —— 编队：调换一二三号位 —— */
-function openFormation(){ renderFormation(); }
+function openFormation(){ if(combatState){ log('战斗中无法调整编队。'); return; } renderFormation(); }
 function renderFormation(){
   const team=G.team.slice();
   const rows=team.map((k,i)=>{
