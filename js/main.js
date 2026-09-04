@@ -97,12 +97,62 @@ function loadIntoWorld(){
   switchMode('story');
   renderMap();
   story('你又一次在异世界醒来。这一次，你决定无论如何都要活下去。');
+  ensureKeyFocus(); // 确保页面持有键盘焦点，WASD 才可靠触发
 }
+
+/* 让页面持有键盘焦点（避免焦点被按钮/宿主/预览 iframe 抢走后键盘失效） */
+function ensureKeyFocus(){
+  try{
+    if(document.body) document.body.setAttribute('tabindex','-1');
+    window.focus();
+    if(document.body) document.body.focus({preventScroll:true});
+  }catch(e){}
+}
+
+/* 统一键盘处理（capture 阶段，最外层最可靠）：
+   探索：WASD 移动（弹窗打开时不误移）；战斗：WASD 移动 / Q 主动技能 / 1·2·3 选技能 / F1·F2·F3 切人。 */
+function handleKeys(ev){
+  // 主菜单 / 游戏结束 / 弹窗叠层是否打开（弹窗内仍允许 ESC 等由各处自行处理）
+  if($('#menuOverlay').classList.contains('show') || $('#gameoverOverlay').classList.contains('show')) return;
+  if(combatState){
+    const cs=combatState;
+    const k=ev.key.toLowerCase();
+    if(k==='q'){ castSkill(cs.currentChar, true); }
+    else if(k==='w'){ combatMove(0,-1); }
+    else if(k==='s'){ combatMove(0,1); }
+    else if(k==='a'){ combatMove(-1,0); }
+    else if(k==='d'){ combatMove(1,0); }
+    else if(ev.key==='1'||ev.key==='2'||ev.key==='3'){
+      const cur=getChar(cs.currentChar);
+      const skills=cur.skills.filter(s=>cur.selectedSkillIds.includes(s.id));
+      const idx=+ev.key-1;
+      if(skills[idx]) selectSkill(cs.currentChar, skills[idx].id);
+    }
+    else if(ev.key==='f1'||ev.key==='f2'||ev.key==='f3'){
+      const chars=getTeamChars();
+      const idx=+ev.key.slice(1)-1;
+      if(chars[idx]){ cs.currentChar=chars[idx].key; updateCombatUI(); renderCombatMap(); }
+    }
+    return;
+  }
+  // 探索态
+  if(!G||!G.map) return;
+  if($('#modalOverlay').classList.contains('show')) return; // 弹窗打开时不误移
+  if(ev.repeat) return; // 格子制：每次按键一步
+  const k=ev.key.toLowerCase();
+  let dx=0,dy=0;
+  if(k==='w'){dy=-1;} else if(k==='s'){dy=1;} else if(k==='a'){dx=-1;} else if(k==='d'){dx=1;} else return;
+  const nx=G.px+dx, ny=G.py+dy;
+  if(nx<0||ny<0||nx>=G.map.n||ny>=G.map.n) return;
+  moveExplore(nx,ny);
+}
+/* capture 阶段监听（在 bubble 的目标层之前触发，宿主/控件最不易拦截） */
+document.addEventListener('keydown', handleKeys, true);
 
 /* 睡觉：二次确认 → 回满AP、进下一天、生成新地图、回血、自动存档 */
 function sleep(){
   if(!G) return;
-  if(combatState){ log('战斗中不能睡觉。'); return; }
+  if(combatState){ log('战斗中无法使用该功能。'); return; }
   if(G.hero.actionPoint>0 && !confirm('行动力尚未耗尽，仍确定直接「睡觉」进入下一天吗？')) return;
   G.hero.actionPoint=G.hero.apCap;
   G.day+=1;

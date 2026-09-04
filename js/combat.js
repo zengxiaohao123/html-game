@@ -98,7 +98,8 @@ function enterCombatMode(){
   updateCombatUI();
   refreshHUD();
   renderCombatMap();
-  renderIconbar(); // 战斗态：图标行置灰「编队/睡觉」
+  renderIconbar(); // 战斗态：图标行置灰「编队/睡觉/商店/合成」
+  ensureKeyFocus(); // 确保战斗键盘（WASD/Q/数字/F键）可靠触发
 }
 
 /* 战斗地图渲染：主角 + 敌人(带朝向) + 障碍/地图外 + 范围指示 */
@@ -605,7 +606,10 @@ function enemyIntent(en){
   return {text:`意图：<b>移动</b>（向主角方向（${dir}）移动逼近，贴身后再攻击）`};
 }
 
-/* 战斗内键盘 */
+/* 键盘处理（探索 WASD / 战斗 移动/技能/切人）已统一移至 js/main.js 的 handleKeys
+   （capture 阶段监听，焦点更可靠，弹窗打开时不误移）。 */
+
+/* 战斗胜利 */
 function endCombat(victory){
   const cs=combatState;
   const [ex,ey]=cs.entryCell.split(',').map(Number);

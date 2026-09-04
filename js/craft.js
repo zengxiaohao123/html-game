@@ -20,7 +20,7 @@ const CRAFT_RECIPES = [
 let craftQty={};
 
 function openCraft(){
-  if(combatState){ log('战斗中无法合成。'); return; }
+  if(combatState){ log('战斗中无法使用该功能。'); return; }
   if(G) renderCrafting();
 }
 
@@ -38,7 +38,7 @@ function craftRecipeHTML(r){
   const needs=Object.entries(r.needs).map(([k,n])=>{
     const have=G.inventory[k]||0;
     const cls=have>=n?'craftlink':'craftlink noshort';
-    const short=have>=n?'':`&nbsp;<span class="noshort">(缺${n-have})</span>`;
+    const short=have>=n?'':`&nbsp;<span class=\"noshort\">(缺${n-have})</span>`;
     return `<span class="${cls}" data-key="${k}">${itemName(k)} ×${n}</span>${short}`;
   }).join('<span class="plus">＋</span>');
   const ctl = max<=0
@@ -73,7 +73,7 @@ function craftSet(id,v){ craftQty[id]=Math.max(1, (+v||1)); renderCrafting(); }
 
 function doCraft(id){
   const r=CRAFT_RECIPES.find(x=>x.id===id); if(!r) return;
-  if(combatState){ log('战斗中无法合成。'); return; }
+  if(combatState){ log('战斗中无法使用该功能。'); return; }
   let q=Math.max(1, craftQty[id]||1);
   for(const k in r.needs){ if((G.inventory[k]||0) < r.needs[k]*q){ log('材料不足，无法合成。'); return; } }
   for(const k in r.needs){ G.inventory[k]-=r.needs[k]*q; }

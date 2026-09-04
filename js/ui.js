@@ -44,8 +44,8 @@ function renderIconbar(){
   if(!G) return;
   const show=[[ '任务',openTasks],['编队',openFormation],['角色',openCharacters],
     ['背包',openInventory],['睡觉',sleep],['设置',openSettings],['商店',openShop],['合成',openCraft],['载具',openVehicles]];
-  // 战斗中：禁止编队与睡觉（置灰）
-  const blocked = combatState ? new Set(['编队','睡觉']) : new Set();
+  // 战斗中统一禁止：编队 / 睡觉 / 商店 / 合成（置灰，风格一致）
+  const blocked = combatState ? new Set(['编队','睡觉','商店','合成']) : new Set();
   $('#iconbar').innerHTML=show.map(([t,f],i)=>`<button class="icobtn${t==='睡觉'?' sleep':''}${blocked.has(t)?' dis':''}" data-i="${i}">${t}</button>`).join('');
   $('#iconbar').querySelectorAll('.icobtn').forEach(b=>b.onclick=()=>show[+b.dataset.i][1]());
   // 测试期间：商店按钮无视区域始终显示
@@ -155,7 +155,8 @@ function renderInventory(){
   const keys=Object.keys(G.inventory).filter(k=>k!=='coin' && (G.inventory[k]||0)>0);
   const tiles=keys.map(k=>{
     const n=G.inventory[k];
-    const useBtn = itemUsable(k) ? `<button class="mbtn tiny invUse" onclick="useInvItem('${k}')">使用</button>` : '';
+    // 战斗中可查看背包，但不允许主动使用（隐藏「使用」按钮；被动持续生效的物品不受影响）
+    const useBtn = (!combatState && itemUsable(k)) ? `<button class="mbtn tiny invUse" onclick="useInvItem('${k}')">使用</button>` : '';
     return `<div class="itile">
       <div class="iname craftlink" data-key="${k}">${itemName(k)}</div>
       <div class="icount">×${n}</div>
@@ -268,7 +269,7 @@ window.saveSkillManager=function(key){
 };
 
 /* —— 编队：调换一二三号位 —— */
-function openFormation(){ if(combatState){ log('战斗中无法调整编队。'); return; } renderFormation(); }
+function openFormation(){ if(combatState){ log('战斗中无法使用该功能。'); return; } renderFormation(); }
 function renderFormation(){
   const team=G.team.slice();
   const rows=team.map((k,i)=>{
@@ -301,7 +302,7 @@ function openTasks(){
 let shopQty={};
 let shopMsg=''; // 商店内即时提示（不足/超额等，直显在店内而非行动记录）
 function openShop(){
-  if(combatState){ log('战斗中无法访问商店。'); return; }
+  if(combatState){ log('战斗中无法使用该功能。'); return; }
   if(G){ shopMsg=''; renderShop(); }
 }
 function shopSellPrice(it){ return Math.floor(it.buy*0.5); }

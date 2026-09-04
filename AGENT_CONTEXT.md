@@ -37,7 +37,7 @@
 
 - **羁绊等级（09-04）**：除主角外每队友独立羁绊等级，技能/天赋等级=该角色羁绊等级；升级需10好感，测试期无好感来源，仅做框架、暂不升级。
 
-- **暴击（09-04）**：所有角色初始暴击率0，暴击伤害固定+100%（×2）；暴击率最终限幅0~100%；暂不做改暴击伤害的手段。「下一次攻击暴击率+100%」生效期间单位+100%暴击率，用了一次攻击型技能后提前失效。
+- **暴击（09-04）**：所有角色初始暴击率0，暴击伤害固定+100%（×2）；暴击率最终限幅0\~100%；暂不做改暴击伤害的手段。「下一次攻击暴击率+100%」生效期间单位+100%暴击率，用了一次攻击型技能后提前失效。
 
 - **地图边框（09-04）**：随机生成地图时，有效地图(内区)外围再包一圈「地图外」(void) 边框，不影响实际有效地图生成。
 
@@ -53,9 +53,15 @@
 
 - **背包（09-04）**：全屏格子化（同种自动合并显示数量、载具不在此）；点物品名可预览说明；部分物品（果子/绷带/风干肉/草药膏）有「使用」按钮，每次用1个，用尽该格消失、后续顶位；金币独立显示在顶部；战斗中不可使用物品。
 
-- **战斗存读档（09-04）**：战斗中<b>禁止编队、禁止睡觉</b>（图标行置灰 .dis）；但<b>允许存档/读档/返回主界面（不存档）</b>。战斗中存档一律以「本次战斗开始那一瞬间」为存档点：生命、装载载具都回到战斗开始，敌我状态全新（无状态/未用技能）。读回战斗存档 → <b>直接处于战斗中</b>，剧情区立即被角色技能区替换（mode=combat），敌我状态均按战斗开始。实现：`combatState.startSnapshot`（initCombatState 记录 heroHp/vehicles/vehicleSel/enemy）、saveGame 战斗分支回退并写 `snap.combat`、`reenterCombat()` 读档重回；返回主界面已移除 showMenu 的自动存槽0（不存档）。
+- **战斗存读档（09-04）**：战斗中<b>编队/睡觉/商店/合成均禁止</b>（图标行统一置灰 .dis，详见下方「战斗中统一禁开」）；但<b>允许存档/读档/返回主界面（不存档）</b>。战斗中存档一律以「本次战斗开始那一瞬间」为存档点：生命、装载载具都回到战斗开始，敌我状态全新（无状态/未用技能）。读回战斗存档 → <b>直接处于战斗中</b>，剧情区立即被角色技能区替换（mode=combat），敌我状态均按战斗开始。实现：`combatState.startSnapshot`（initCombatState 记录 heroHp/vehicles/vehicleSel/enemy）、saveGame 战斗分支回退并写 `snap.combat`、`reenterCombat()` 读档重回；返回主界面已移除 showMenu 的自动存槽0（不存档）。
 
 - **文本** **`%%`** **修正（09-04）**：描述模板已自带 `%` 的 pct 占位（主角·暴击、陆悠悠·风息）删除模板侧的多余 `%`，仅保留 `s.pct` 追加的单 `%`，不再出现 `%%`。
+
+- **战斗中统一禁开（09-04）**：战斗中编队/睡觉/商店/合成四项一律置灰 `.dis` 且守卫统一提示「战斗中无法使用该功能。」（`renderIconbar` blocked 集合含四项；openFormation/sleep/openShop/openCraft/doCraft 统一文案）。背包仍可打开**查看**。
+
+- **背包战斗态（09-04）**：战斗中可打开背包查看，但隐藏「使用」按钮（`renderInventory` 的 useBtn 只在非战斗且 itemUsable 时显示）；被动/持续生效的物品不受影响。useInvItem 仍有战斗守卫兜底。
+
+- **WASD/键盘修复（09-04）**：探索与战斗的键位处理原在 combat.js 单个 document bubble `keydown`，两态共用却因焦点/宿主吞键失效。已改为 main.js 的 `handleKeys`（**capture 阶段**监听，探索 WASD 在弹窗打开时不误移、每次一步 `ev.repeat` 守卫；战斗 WASD/Q/1·2·3选技能/F1·F2·F3切人）；`ensureKeyFocus()` 在进入世界与进入战斗时强制 `window.focus()`+`body.focus()`，确保页面持有键盘焦点。
 
 ## 三、连接状态（Agent 2026-09-01 实际测过）
 
@@ -65,7 +71,7 @@
 
 - [x] GitHub 仓库创建，Cloudflare Pages 绑定；MCP 读写链路实测通过；本锚点写入仓库
 
-- [x] 玩法机制文档**已拆分为多篇（docs/目录 01~06）**，为唯一权威来源（SSOT）。
+- [x] 玩法机制文档**已拆分为多篇（docs/目录 01\~06）**，为唯一权威来源（SSOT）。
 
 - [x] **游戏本体已实现并部署（可试玩）**
   - 核心循环：每天随机地图、WASD/点格+前往移动+朝向、资源递进采集、宝箱/事件、回合战斗(WASD/Q/点敌选目标)、主角5攻击技、敌人逼近/贴身攻击、基础元素反应、睡觉进下一天、8槽localStorage存档、健康归零GameOver、主菜单/背包/角色/编队/任务/商店
@@ -110,7 +116,7 @@
 
     - **羁绊**：`newGame()` 初始化 `G.bonds`（每队友 level1/affinity0）；编队页与角色页显示羁绊等级；技能区不显示羁绊。
 
-    - **暴击**：`baseCritRate()`（主角·暴击给人+3%、陆悠悠·风息给自身+30%，随等级）+ 临时 `charCritRate()`（含屏息/比翼+100%，限幅0~100%）；`resolveSkill` 里暴击→×2并记录「暴击！」；攻击技后 `consumeCritBuff()` 提前消耗；陆悠悠暴击触发 `triggerBiyi()`（比翼：其余我方下次攻击暴击率+100%）。`charAttrsHTML()` 数值行新增「暴击率」实时值。
+    - **暴击**：`baseCritRate()`（主角·暴击给人+3%、陆悠悠·风息给自身+30%，随等级）+ 临时 `charCritRate()`（含屏息/比翼+100%，限幅0\~100%）；`resolveSkill` 里暴击→×2并记录「暴击！」；攻击技后 `consumeCritBuff()` 提前消耗；陆悠悠暴击触发 `triggerBiyi()`（比翼：其余我方下次攻击暴击率+100%）。`charAttrsHTML()` 数值行新增「暴击率」实时值。
 
     - **地图边框**：`generateMap()` 有效尺寸=内区 n，总边长 n+2，外围一圈 `void`（不可通行），内区生成/出生/连通不变。
 
@@ -132,7 +138,11 @@
 
     - **商店**：`openShop`/`renderShop`+`SHOP_ITEMS`（data.js）实现左右两列购/售（`shopTrade`），`shopQty` 记录每物品交易数量（购/售共用），出售价=`Math.floor(buy*0.5)`，`campkit` 设为仅购不可售；`newGame` 初始金币改 20。
 
-    - **战斗存读档（09-04）**：本地补回缺失的 `js/save.js`（分支战斗存档，读回存档时 `G.combat` 携带战斗存档标记；`MAX_SAVES` 沿用 data.js 定义）。combat.js 抽 `initCombatState`/`reenterCombat`，`startSnapshot` 记录战斗开始瞬间（heroHp/vehicles/vehicleSel/enemyKey/enemyHp/enemyPos）；saveGame 战斗分支把生命与载具回退到战斗开始并写 `snap.combat`；loadIntoWorld 读到战斗存档即 `reenterCombat` 直接进入战斗（剧情区变角色技能区）。战斗中禁编队 & 禁睡觉（openFormation/sleep 守卫 + 图标行 `.dis` 置灰），设置面板战斗态文案「存档（回本次战斗开始时）」；`backToMenu` 清空战斗且不再自动存槽0。
+    - **战斗存读档（09-04）**：本地补回缺失的 `js/save.js`（分支战斗存档，读回存档时 `G.combat` 携带战斗存档标记；`MAX_SAVES` 沿用 data.js 定义）。combat.js 抽 `initCombatState`/`reenterCombat`，`startSnapshot` 记录战斗开始瞬间（heroHp/vehicles/vehicleSel/enemyKey/enemyHp/enemyPos）；saveGame 战斗分支把生命与载具回退到战斗开始并写 `snap.combat`；loadIntoWorld 读到战斗存档即 `reenterCombat` 直接进入战斗（剧情区变角色技能区）。战斗中禁编队/睡觉/商店/合成（openFormation/sleep/openShop/openCraft/doCraft 守卫统一文案 + 图标行 `.dis` 置灰四项），设置面板战斗态文案「存档（回本次战斗开始时）」；`backToMenu` 清空战斗且不再自动存槽0。
+
+    - **WASD/键盘修复（09-04）**：combat.js 原单一 document bubble keydown 两态共用，因焦点/宿主吞键导致探索+战斗 WASD 全失效。改为 main.js `handleKeys`（capture 阶段监听；探索 WASD 弹窗开不误移 + `ev.repeat` 一格；战斗 WASD/Q/1·2·3/F1·F2·F3）。新增 `ensureKeyFocus()`（window.focus+body.focus）在 `loadIntoWorld` 正常分支与 `enterCombatMode` 调用。
+
+    - **背包战斗态（09-04）**：`renderInventory` 战斗中隐藏「使用」按钮（`(!combatState && itemUsable(k))`），战斗仍可打开背包查看；useInvItem 战斗守卫兜底。
 
 - [ ] **未实现(见文档 01·总览)**：完整剧情线、图鉴、商店定价、更多敌人、完整伤害乘区、心理压力、剩余队友（许泠朦/叶唯安/潘天宇）数据
 
@@ -197,3 +207,4 @@ get_file_contents({ owner: "zengxiaohao123", repo: "html-game", path: "" })
 2. 如失败，查看构建日志错误（常见：路径写错、main 分支未选中、index.html 不在根目录）
 3. 修复后重新 commit 触发自动重部署
 4. **页面只显示标题、无主菜单按钮，且已确认线上 JS 就是新的（含** **`const $=id=>document.querySelector(id)`）→ 多为浏览器/边缘缓存命中旧 JS，提示用户 硬刷新(Ctrl+F5) 或 无痕窗口，或带唯一 query 参数访问。若线上 JS 仍是旧的** **`getElementById`** **版本 → 是旧部署，重新 commit 触发 CF 重部署。**
+
