@@ -213,6 +213,7 @@ body{
 .craftlink:hover{background:#2c3040;}
 .craftlink.noshort{color:var(--bad); border-color:var(--bad);}
 .noshort{color:var(--bad); font-size:12px; font-weight:400;}
+.rnote{font-size:12px; color:var(--txt-dim); line-height:1.6;}
 .plus{color:var(--txt-dim);}
 .rcCtl{display:flex; align-items:center; gap:6px;}
 .rcCtl .craftRange{flex:1; min-width:0; height:28px;}
