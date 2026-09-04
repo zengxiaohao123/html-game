@@ -621,7 +621,7 @@ function endCombat(victory){
   if(e.content&&e.content.type==='enemy'&&victory){ e.content={type:'empty'}; }
   switchMode('story');
   prompt(''); // 战斗结束时刷新（清空）信息区
-  renderMap(); refreshHUD();
+  renderMap(); refreshHUD(); renderIconbar(); // 战斗结束：恢复被置灰的 编队/睡觉/商店/合成
 }
 
 /* 战斗失败 */
@@ -642,7 +642,7 @@ function endCombatByDefeat(){
   }
   switchMode('story');
   prompt(''); // 战斗结束时刷新（清空）信息区
-  renderMap(); refreshHUD();
+  renderMap(); refreshHUD(); renderIconbar(); // 战斗结束：恢复被置灰的 编队/睡觉/商店/合成
   if(G.hero.health<=0){ showGameOver(); }
   else { alertDialog('战斗失败','你损失了部分健康。'); }
 }

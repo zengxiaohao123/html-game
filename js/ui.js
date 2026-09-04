@@ -168,19 +168,23 @@ function renderInventory(){
       invMsg?`<div class="shopmsg">${invMsg}</div>`:''}
      <div class="vgrid inv">${tiles||'<span class="stempty">背包空空如也</span>'}</div>`, 'full', {replace:true});
 }
-/* 使用背包物品：每次用 1 个；用尽该格自动消失、后续顶替 */
+/* 使用背包食物：每次用 1 个；用尽该格自动消失、后续顶替。
+   果子可额外 20% 概率 +1 健康；熟肉/生肉/果子的回血受篝火永久加成。 */
 window.useInvItem=function(k){
   if(combatState){ invMsg='战斗中无法使用物品。'; renderInventory(); return; }
   const n=G.inventory[k]||0; if(n<=0){ renderInventory(); return; }
-  const eff=USE_EFFECTS[k]; if(!eff){ renderInventory(); return; }
+  if(!FOOD[k]){ renderInventory(); return; } // 非食物（含永久物品）无「使用」效果
   G.inventory[k]-=1;
-  const heal=eff.heal||0;
+  const heal=foodHeal(k);
+  const before=G.hero.hp;
   if(heal && G.hero.hp<G.hero.maxHp){
     G.hero.hp=Math.min(G.hero.maxHp, G.hero.hp+heal);
-    if(combatState) combatState.hero.hp=G.hero.hp;
-    log(`使用了 <b>${itemName(k)}</b>，回复 ${heal} 点生命。`);
+    log(`使用了 <b>${itemName(k)}</b>，回复 ${G.hero.hp-before} 点生命。`);
   } else {
     log(`使用了 <b>${itemName(k)}</b>。`);
+  }
+  if(k==='fruit' && FOOD[k].healthChance && Math.random()<FOOD[k].healthChance){
+    G.hero.health+=1; log('果子蕴含生机，你的<b>健康</b>+1。');
   }
   refreshHUD(); renderInventory();
 };
@@ -310,14 +314,17 @@ function renderShop(){
   const list=SHOP_ITEMS.map(it=>{
     const have=G.inventory[it.key]||0;
     const q=Math.max(1, shopQty[it.key]||1); shopQty[it.key]=q;
+    const buy=itemBuyPrice(it.key);
     const sell=shopSellPrice(it);
     const sellBtn = it.sellable
       ? `<button class="mbtn tiny" onclick="shopTrade('${it.key}','sell')">卖出</button>`
       : `<span class="nohint">不可出售</span>`;
+    const growNote = it.priceGrow? `<span class="rnote">每获得1个，此物价+${it.priceGrow}</span>` : '';
     return `<div class="sitem">
       <div class="shead"><span class="craftlink" data-key="${it.key}">${itemName(it.key)}</span>
-        <span class="sprice">${it.sellable?`买入 <b>${it.buy}</b> · 卖出 <b>${sell}</b> 金币`:`买入 <b>${it.buy}</b> 金币（不可出售）`}</span></div>
+        <span class="sprice">${it.sellable?`买入 <b>${buy}</b> · 卖出 <b>${sell}</b> 金币`:`买入 <b>${buy}</b> 金币（不可出售）`}</span></div>
       <div class="sown">持有 <b>${have}</b> · 金币 <b>${G.inventory.coin}</b></div>
+      ${growNote}
       <div class="rcCtl">
         <span class="craftQty">×${q}</span>
         <input type="range" class="craftRange" min="1" max="99" value="${q}" oninput="shopSet('${it.key}',this.value)">
@@ -337,9 +344,15 @@ window.shopTrade=function(key,act){
   if(combatState){ log('战斗中无法访问商店。'); return; }
   const q=Math.max(1,shopQty[key]||1);
   if(act==='buy'){
-    const cost=it.buy*q;
+    const price=itemBuyPrice(key);
+    const cost=price*q;
     if(G.inventory.coin<cost){ shopMsg='金币不足，无法完成该笔购买。'; refreshHUD(); renderShop(); return; }
-    G.inventory.coin-=cost; G.inventory[key]=(G.inventory[key]||0)+q;
+    G.inventory.coin-=cost;
+    if(it.permanent){
+      for(let i=0;i<q;i++) grantPermanentItem(key); // 每次获得1个，售价随之+priceGrow
+    } else {
+      G.inventory[key]=(G.inventory[key]||0)+q;
+    }
     shopMsg=`已购买 <b>${itemName(key)} ×${q}</b>，花费 <b>${cost}</b> 金币。`;
   } else {
     if(!it.sellable){ shopMsg='该物品不可出售。'; refreshHUD(); renderShop(); return; }
