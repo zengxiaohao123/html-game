@@ -4,10 +4,8 @@
    ============================================================ */
 "use strict";
 
-/* 存档位上限 */
 const MAX_SAVES = 8;
 
-/* 元素枚举（着色 class 与中文名） */
 const ELEM = {fire:{c:'e-fire',zh:'火'},water:{c:'e-water',zh:'水'},grass:{c:'e-grass',zh:'草'},
   thunder:{c:'e-thunder',zh:'雷'},ice:{c:'e-ice',zh:'冰'},wind:{c:'e-wind',zh:'风'},rock:{c:'e-rock',zh:'岩'}};
 const AURA_ELEMS = ['fire','water','grass','thunder','ice'];
@@ -61,11 +59,9 @@ function foodHeal(k){
   const base=FOOD[k]? FOOD[k].heal : 0;
   const add = camp ? (k==='fruit'?1 : k==='rawMeat'?2 : k==='cookedMeat'?4 : 0) : 0;
   let v = base+add;
-  /* 烹饪：果子/生肉+25%，熟肉+75% */
   if(G && G.team && G.team.indexOf('luyouyou')>=0){ v = Math.round(v * (k==='cookedMeat'?1.75:1.25)); }
   return v;
 }
-
 function grantPermanentItem(key){
   G.inventory[key]=(G.inventory[key]||0)+1;
   switch(key){
@@ -75,18 +71,11 @@ function grantPermanentItem(key){
     case 'leather':   bumpPro('hold'); break;
     case 'ironSword': bumpPro('momentum'); break;
     case 'armor':     bumpPro('block'); bumpPro('hold'); break;
-    case 'tent':
-      G.hero.apCap=(G.hero.apCap||5)+1;
-      G.hero.actionPoint=(G.hero.actionPoint||0)+1;
-      break;
+    case 'tent': G.hero.apCap=(G.hero.apCap||5)+1; G.hero.actionPoint=(G.hero.actionPoint||0)+1; break;
   }
 }
-function bumpPro(talent){
-  G.proLevels=G.proLevels||{};
-  G.proLevels[talent]=(G.proLevels[talent]||1)+1;
-}
+function bumpPro(talent){ G.proLevels=G.proLevels||{}; G.proLevels[talent]=(G.proLevels[talent]||1)+1; }
 
-const TERRAIN_ZH = {ground:'空地', obstacle:'山脉', void:'不可通行'};
 const ST = {
   burn:{id:'burn', name:'燃烧', kind:'debuff', turns:3, desc:'每回合开始时流失2%生命值（可致死，无伤害来源）。持续3回合。'},
   bind:{id:'bind', name:'束缚', kind:'debuff', desc:'无法移动，但可以攻击。'},
@@ -100,18 +89,18 @@ const ST = {
   sleep:{id:'sleep', name:'睡眠', kind:'debuff', desc:'无法移动、无法攻击；受到伤害导致生命值降低时会提前醒来。'},
 };
 const TERMS = {
-  alert:'【重点目标】主角天赋【战术布置】产生。我方单位攻击时优先攻击该目标；场上至多存在1个；主角用单体攻击新敌人时覆盖旧目标。',
+  alert:'【重点目标】主角天赋【战术布置】产生。我方单位攻击时优先攻击该目标；场上至多存在1个。',
   charge:'【蓄力】敌人进行强力攻击前的准备状态。蓄力期间不移动、不改变朝向。受到我方任意攻击即被打断。',
   bind:'【束缚】无法移动，但可以攻击。',
   burn:'【燃烧】每回合开始时流失2%生命值（可致死，没有伤害来源）。持续3回合。',
   aggro:'【激化】攻击力+15%；受到的雷元素伤害与草元素伤害+25%。持续2回合。',
-  superconduct:'【超导】雷、冰、物理抗性均降低30%。持续3回合。抗性最终结算强制限定在0%~90%之间。',
-  frozen:'【冰冻】无法行动（包括移动、攻击、蓄力等一切主动行为，不包括被动效果）。持续1回合。',
+  superconduct:'【超导】雷、冰、物理抗性均降低30%。持续3回合。',
+  frozen:'【冰冻】无法行动（包括移动、攻击、蓄力）。持续1回合。',
   cage:'【禁锢】无法行动。',
-  zone:'【结界】技能形成的区域效果。持续时间内对范围内单位施加特定效果。',
-  extraTurn:'【额外回合】许泠朦【秋水澄心】天赋触发。仅泠朦能释放技能，无移动。各类增益减益不计时。冷却不减少。',
+  zone:'【结界】技能形成的区域效果。',
+  extraTurn:'【额外回合】许泠朦【秋水澄心】触发。仅泠朦能释放技能，无移动。各类增益减益不计时。',
   steal:'【偷取】对方的数值减少，自身的数值对应增加。',
-  dodge:'【闪避】受到攻击时有对应概率使本次所受伤害为0。对真实伤害、控制类/状态类效果以及生命流失类效果不生效；对反弹类伤害生效。多个同名闪避效果独立计算（趋近乘算）。多段伤害每次独立判断。',
+  dodge:'【闪避】受到攻击时有对应概率使本次所受伤害为0。对真实伤害、控制类/状态类效果以及生命流失类效果不生效；对反弹类伤害生效。多个同名闪避效果独立计算。多段伤害每次独立判断。',
 };
 function termHTML(key, zh){ return `<span class="term" data-term="${key}">【${zh}】</span>`; }
 const TERM_KEYS = {重点目标:'alert', 蓄力:'charge', 束缚:'bind', 燃烧:'burn', 激化:'aggro',
@@ -121,7 +110,7 @@ const PROTAGONIST = {
   key:'pro', name:'主角', element:null, color:null,
   base:{atk:10, maxHp:100, def:0, escapeSpeed:100, hp:100},
   passives:[
-    {id:'tactic', name:'战术布置', desc:'攻击时设置【重点目标】，我方优先攻击该目标（持续至该敌人被击败）。'},
+    {id:'tactic', name:'战术布置', desc:'攻击时设置【重点目标】，我方优先攻击该目标。'},
     {id:'crit', name:'暴击', level:1, scal:{atk:{base:10,grow:10}, crit:{base:3,grow:2,pct:true}}, desc:'攻击力+{atk}，暴击率+{crit}。'},
     {id:'blood', name:'嗜血', level:1, scal:{atk:{base:20,grow:20}, prob:{base:3,grow:3,pct:true}}, desc:'攻击力+{atk}，使用攻击型技能后有{prob}概率回复生命值，回复量相当于本次伤害的50%。'},
     {id:'momentum', name:'起势', level:1, scal:{atk:{base:30,grow:30}, dmg:{base:4,grow:4,pct:true}}, desc:'攻击力+{atk}，使用攻击型技能后获得{dmg}伤害加成。'},
@@ -151,7 +140,7 @@ const ALLIES = {
       {id:'quhuo', name:'淬火', kind:'attack', type:'fire', range:1, target:'adj', randTarget:true, effect:atk=>atk*1.20, formula:'攻击力×120%', desc:'对周围四格随机一名敌人造成{DMG}的火元素伤害。'},
       {id:'zhongyuan', name:'众愿', kind:'attack', type:'fire', range:1, target:'adj', randTarget:true, effect:atk=>atk*1.90, stealAtk:0.20, cd:2, formula:'攻击力×190%', desc:'【偷取】其余我方角色各20%的攻击力，然后对周围四格随机一名敌人造成{DMG}的火元素伤害。冷却：2回合。'},
       {id:'liaoyuan', name:'燎原', kind:'attack', type:'fire', range:4, target:'frontline', effect:atk=>atk*1.50, burn:3, cd:5, formula:'攻击力×150%', desc:'对前方一线四格内的所有敌人造成{DMG}的火元素伤害，并施加【燃烧】3回合。冷却：5回合。'},
-      {id:'guwu', name:'鼓舞', kind:'support', type:'buff', range:0, target:'self', effect:null, healPct:0.20, atkFlat:25, level:1, scal:{buff:{base:25,grow:15}, heal:{base:20,grow:10,pct:true}}, desc:'主角回复夏阳攻击力{heal}%的生命（约{Y}），并使攻击力最高的我方角色攻击力+{buff}（持续2回合）。'},
+      {id:'guwu', name:'鼓舞', kind:'support', type:'buff', range:0, target:'self', effect:null, healPct:0.20, atkFlat:25, level:1, scal:{buff:{base:25,grow:15}, heal:{base:20,grow:10,pct:true}}, desc:'主角回复夏阳攻击力{heal}的生命（约{Y}），并使攻击力最高的我方角色攻击力+{buff}（持续2回合）。'},
     ],
     selectedSkillIds:['quhuo','liaoyuan','guwu']
   },
@@ -159,7 +148,7 @@ const ALLIES = {
     passives:[
       {id:'skillful', name:'巧手', level:1, scal:{sleep:{base:40,grow:5,pct:true}, craft:{base:25,grow:5,pct:true}}, desc:'睡觉时有{sleep}概率获得1个随机资源；合成时有{craft}概率获得1个随机资源。'},
       {id:'cook', name:'烹饪', desc:'食物回复效果提升：果子/生肉+25%、熟肉+75%；主角最大生命值+100。'},
-      {id:'flutter', name:'蹁跹', level:1, scal:{dodge:{base:32}, move:{base:30,grow:10}, combat:{base:30,grow:20}}, desc:'主角获得{dodge}闪避；探索每次移动后主角回复{move}生命；战斗中主角每次【闪避】后回复{combat}生命。'},
+      {id:'flutter', name:'蹁跹', level:1, scal:{dodge:{base:32,pct:true}, move:{base:30,grow:10}, combat:{base:30,grow:20}}, desc:'主角获得{dodge}闪避；探索每次移动后主角回复{move}生命；战斗中主角每次【闪避】后回复{combat}生命。'},
       {id:'wind', name:'风息', level:1, scal:{atk:{base:60,grow:6}, crit:{base:30,grow:3,pct:true}}, desc:'自身攻击力+{atk}，暴击率+{crit}；暴击时本次技能伤害由物理转为风元素。'},
       {id:'duo', name:'比翼', desc:'自身暴击后，其余我方角色下一次攻击暴击率+100%。'},
     ],
@@ -176,98 +165,87 @@ const ALLIES = {
 const CHARACTERS = Object.assign({ pro:PROTAGONIST }, ALLIES);
 function getChar(key){ return CHARACTERS[key] || PROTAGONIST; }
 function getTeamChars(){ return (G&&G.team||['pro']).map(k=>getChar(k)).filter(Boolean); }
-function entryLevel(ownerKey, entry){
-  if(!entry || !entry.scal) return 1;
-  if(ownerKey==='pro'){ const m=(G&&G.proLevels); return (m && m[entry.id])? m[entry.id] : 1; }
-  const b=(G&&G.bonds&&G.bonds[ownerKey]); return b ? (b.level||1) : 1;
-}
+function entryLevel(ownerKey, entry){ if(!entry || !entry.scal) return 1; if(ownerKey==='pro'){ const m=(G&&G.proLevels); return (m && m[entry.id])? m[entry.id] : 1; } const b=(G&&G.bonds&&G.bonds[ownerKey]); return b ? (b.level||1) : 1; }
 function tierValue(entry, level, key){ const s=entry.scal[key]; if(!s) return 0; return s.base + (s.grow||0) * Math.max(0, (level||1)-1); }
-function lvDescText(entry, level, ext){
-  let d=entry.desc||'';
-  if(entry.scal){ for(const key in entry.scal){ const s=entry.scal[key]; const v=tierValue(entry, level, key); d=d.split('{'+key+'}').join(`<span class="lvlup">${v}${s.pct?'%':''}</span>`); } }
-  if(ext){ for(const key in ext){ d=d.split('{'+key+'}').join(`<span class="lvlup">${ext[key]}</span>`); } }
-  return terms(d);
-}
+function lvDescText(entry, level, ext){ let d=entry.desc||''; if(entry.scal){ for(const key in entry.scal){ const s=entry.scal[key]; const v=tierValue(entry, level, key); d=d.split('{'+key+'}').join(`<span class="lvlup">${v}${s.pct?'%':''}</span>`); } } if(ext){ for(const key in ext){ d=d.split('{'+key+'}').join(`<span class="lvlup">${ext[key]}</span>`); } } return terms(d); }
 
-/* 敌人库（全新设计 09-06）：name/icon/tier(普通/精英/boss)/atk/def/maxHp/speed/res/healthPenalty/reward/passives(天赋)/skills(move/attack/support) */
 const SLIME_TEMPLATE = {
   forwards12:{id:'newbie', name:'新手之友', desc:'前12天，最大生命值-60。'},
   jp:{id:'slimejp', name:'蹦蹦跳跳', kind:'move', desc:'向着目标，移动1格。'},
   bang:{id:'slimebang', name:'撞击', kind:'attack', type:'physical', target:'front', mult:1.0, formula:'攻击力×100%', desc:'对前方1格造成相当于100%攻击力的物理伤害。'},
 };
 const ENEMIES = {
-  slime:{ name:'草史莱姆', icon:'🟢', tier:'ordinary', atk:10, def:0, maxHp:100, speed:4,
-    res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:2}, bonus:'属性升级随机二选一'},
-    passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_grass', name:'草元素亲和', desc:'免疫草元素伤害。身上总是附着草元素（任意单位使用技能后重新附着）。'} ],
-    skills:[ SLIME_TEMPLATE.jp, SLIME_TEMPLATE.bang, {id:'slimeburst', name:'破土而出', kind:'attack', type:'grass', target:'self-area4', teleport:true, onlyTurn1:true, mult:1.0, formula:'攻击力×100%', desc:'只在战斗开始的第1回合使用：瞬移到目标周围4格随机1格，然后对周围4格造成相当于攻击力100%的草元素伤害。瞬移后本回合不再主动移动。'} ],
+  slime:{ name:'草史莱姆', icon:'🟢', tier:'ordinary', atk:10, def:0, maxHp:100, speed:4, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:2}, bonus:'属性升级随机二选一'},
+    passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_grass', name:'草元素亲和', desc:'免疫草元素伤害。身上总是附着草元素。'} ],
+    skills:[ SLIME_TEMPLATE.jp, SLIME_TEMPLATE.bang, {id:'slimeburst', name:'破土而出', kind:'attack', type:'grass', target:'self-area4', teleport:true, onlyTurn1:true, mult:1.0, desc:'只在战斗开始第1回合使用：瞬移到目标周围4格随机1格，然后对周围4格造成相当于攻击力100%的草元素伤害。'} ],
   },
   fireSlime:{ name:'火史莱姆', icon:'🔴', tier:'ordinary', atk:10, def:0, maxHp:100, speed:4, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:2}, bonus:'属性升级随机二选一'},
-    passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_fire', name:'火元素亲和', desc:'免疫火元素伤害。身上总是附着火元素（任意单位使用技能后重新附着）。'} ],
-    skills:[ SLIME_TEMPLATE.jp, SLIME_TEMPLATE.bang, {id:'firespit', name:'吐火', kind:'attack', type:'fire', target:'line', shots:2, cd:4, mult:0.5, formula:'攻击力×50%', desc:'对前方3格喷出2颗火球。火球对遇到的第一个我方单位造成相当于50%攻击力的火元素伤害后消失；遇到障碍或地图外直接消失。冷却：4回合。' } ],
+    passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_fire', name:'火元素亲和', desc:'免疫火元素伤害。身上总是附着火元素。'} ],
+    skills:[ SLIME_TEMPLATE.jp, SLIME_TEMPLATE.bang, {id:'firespit', name:'吐火', kind:'attack', type:'fire', target:'line', shots:2, cd:4, mult:0.5, desc:'对前方3格喷出2颗火球。对遇到的第一个我方单位造成50%攻击力火伤后消失；遇到障碍或地图外消失。冷却：4回合。'} ],
   },
   waterSlime:{ name:'水史莱姆', icon:'🔵', tier:'ordinary', atk:10, def:0, maxHp:100, speed:4, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:2}, bonus:'属性升级随机二选一'},
-    passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_water', name:'水元素亲和', desc:'免疫水元素伤害。身上总是附着水元素（任意单位使用技能后重新附着）。'} ],
-    skills:[ SLIME_TEMPLATE.jp, SLIME_TEMPLATE.bang, {id:'waterbubble', name:'水泡', kind:'support', target:'cell', cd:4, desc:'对目标当前所在位置投掷水泡。下一回合开始时，水泡落下，【禁锢】该格的单位2回合。冷却：4回合。'} ],
+    passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_water', name:'水元素亲和', desc:'免疫水元素伤害。身上总是附着水元素。'} ],
+    skills:[ SLIME_TEMPLATE.jp, SLIME_TEMPLATE.bang, {id:'waterbubble', name:'水泡', kind:'support', target:'cell', cd:4, desc:'对目标当前位置投掷水泡。2回合后落下，【禁锢】该格单位2回合。冷却：4回合。'} ],
   },
   thunderSlime:{ name:'雷史莱姆', icon:'🟣', tier:'ordinary', atk:10, def:0, maxHp:100, speed:4, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:2}, bonus:'属性升级随机二选一'},
-    passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_thunder', name:'雷元素亲和', desc:'免疫雷元素伤害。身上总是附着雷元素（任意单位使用技能后重新附着）。'}, {id:'conduct', name:'导电', desc:'每回合结束时，有10%概率对周围8格造成不分敌我的相当于40%攻击力的雷元素伤害（自身免于雷元素伤害）。'} ],
+    passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_thunder', name:'雷元素亲和', desc:'免疫雷元素伤害。身上总是附着雷元素。'}, {id:'conduct', name:'导电', desc:'每回合结束时，有10%概率对周围8格造成不分敌我的40%攻击力雷伤。'} ],
     skills:[ SLIME_TEMPLATE.jp, SLIME_TEMPLATE.bang ],
   },
   iceSlime:{ name:'冰史莱姆', icon:'🩵', tier:'ordinary', atk:10, def:0, maxHp:100, speed:4, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:2}, bonus:'属性升级随机二选一'},
-    passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_ice', name:'冰元素亲和', desc:'免疫冰元素伤害。身上总是附着冰元素（任意单位使用技能后重新附着）。'} ],
-    skills:[ SLIME_TEMPLATE.jp, SLIME_TEMPLATE.bang, {id:'icemist', name:'冰雾', kind:'attack', type:'ice', target:'line-multi', sustain:2, cd:5, mult:0.8, formula:'攻击力×80%', desc:'向前方3格所有我方单位喷射冰雾，造成相当于攻击力80%的冰元素伤害。该攻击持续2回合，期间无法移动或转向或使用其他攻击。冷却：5回合。'} ],
+    passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_ice', name:'冰元素亲和', desc:'免疫冰元素伤害。身上总是附着冰元素。'} ],
+    skills:[ SLIME_TEMPLATE.jp, SLIME_TEMPLATE.bang, {id:'icemist', name:'冰雾', kind:'attack', type:'ice', target:'line-multi', sustain:2, cd:5, mult:0.8, desc:'向前方3格所有我方单位喷射冰雾，造成80%攻击力冰伤。持续2回合。冷却：5回合。'} ],
   },
   windSlime:{ name:'风史莱姆', icon:'💨', tier:'ordinary', atk:10, def:0, maxHp:100, speed:4, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:2}, bonus:'属性升级随机二选一'},
-    passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_wind', name:'风元素亲和', desc:'免疫风元素伤害。'}, {id:'windswirl', name:'风旋', desc:'被击败时，若战斗还未结束，将2格距离内的随机1名单位传送至自身所在格；若选中我方单位，还会造成相当于攻击力40%的风元素伤害。战斗中只剩它一个敌人时此天赋不生效。'} ],
+    passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_wind', name:'风元素亲和', desc:'免疫风元素伤害。'}, {id:'windswirl', name:'风旋', desc:'被击败时，若战斗未结束，将2格内随机1单位传送至自身格；若是我方则造成40%攻击力风伤。'} ],
     skills:[ SLIME_TEMPLATE.jp, SLIME_TEMPLATE.bang ],
   },
   rockSlime:{ name:'岩史莱姆', icon:'🪨', tier:'ordinary', atk:10, def:0, maxHp:100, speed:4, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:2}, bonus:'属性升级随机二选一'},
-    passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_rock', name:'岩元素亲和', desc:'免疫岩元素伤害。'}, {id:'rockshield', name:'岩盾', desc:'最大生命值-10%，防御力+10。但每次被攻击无论是否受伤都会使自身防御力-1（防御力结算范围0~99999）。'} ],
+    passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_rock', name:'岩元素亲和', desc:'免疫岩元素伤害。'}, {id:'rockshield', name:'岩盾', desc:'最大生值-10%，防御力+10。每次被攻击防御力-1。'} ],
     skills:[ SLIME_TEMPLATE.jp, SLIME_TEMPLATE.bang ],
   },
   slimeSwarm:{ name:'史莱姆集群', icon:'🟩', tier:'elite', atk:0, def:0, maxHp:0, speed:12, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:3, wood:1, flax:1}, bonus:'属性升级随机二选一'},
-    passives:[ {id:'swarm', name:'集群行动', desc:'战斗开始时直接退场，在随机位置生成3个级别为普通的随机史莱姆（各最大生命值额外-20%）。击败3个史莱姆即胜利。'} ], skills:[] },
+    passives:[ {id:'swarm', name:'集群行动', desc:'战斗开始时直接退场，在随机位置生成3个级别的普通随机史莱姆（各最大生命值额外-20%）。'} ], skills:[] },
   chunibyo:{ name:'中二病男孩', icon:'🧒', tier:'ordinary', atk:15, def:0, maxHp:20, speed:10, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:0, reward:{items:{fruit:2, coin:1}, attrUp:2},
-    passives:[ {id:'comeback', name:'我一定会回来的', desc:'每次被击败后，攻击力永久+15、最大生命值永久+40、速度永久+5，至多叠加5次。'}, {id:'dodge', name:'帅气闪避', desc:'受到攻击时，有20%概率使本次伤害降为0。'}, {id:'amaterasu', name:'阿玛特拉斯', desc:'攻击命中时，有40%概率减少目标15点防御力，有20%概率对目标施加持续整场战斗的【燃烧】。'} ],
-    skills:[ {id:'cbyjp', name:'逼近', kind:'move', desc:'向着目标，移动1格。'}, {id:'cbyatk', name:'稻草剑法', kind:'attack', type:'physical', target:'adj-rand', mult:1.0, formula:'攻击力×100%', desc:'对周围8格的1名我方单位造成相当于攻击力100%的物理伤害。'} ],
+    passives:[ {id:'comeback', name:'我一定会回来的', desc:'每次被击败后，攻击力永久+15、最大生命永久+40、速度永久+5，至多叠加5次。'}, {id:'dodge', name:'帅气闪避', desc:'受到攻击时，有20%概率使本次伤害降为0。'}, {id:'amaterasu', name:'阿玛特拉斯', desc:'攻击命中时，40%概率减少目标15防御、20%概率整场燃烧。'} ],
+    skills:[ {id:'cbyjp', name:'逼近', kind:'move', desc:'向着目标，移动1格。'}, {id:'cbyatk', name:'稻草剑法', kind:'attack', type:'physical', target:'adj-rand', mult:1.0, desc:'对周围8格的1名我方单位造成100%攻击力物理伤害。'} ],
   },
   weirdSlime:{ name:'奇怪史莱姆', icon:'🟩', tier:'ordinary', atk:0, def:0, maxHp:599, speed:0, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:0, reward:{items:{}},
-    passives:[], skills:[ {id:'wjp', name:'蹦蹦跳跳', kind:'move', desc:'向着目标，移动1格。'}, {id:'woju', name:'吐果子', kind:'attack', type:'real', target:'front', healTarget:200, selfDrainAbs:200, desc:'使前方1格的我方单位回复200点生命值。自身流失200点生命值（可致死）。'} ],
+    passives:[], skills:[ {id:'wjp', name:'蹦蹦跳跳', kind:'move', desc:'向着目标，移动1格。'}, {id:'woju', name:'吐果子', kind:'attack', type:'real', target:'front', healTarget:200, selfDrainAbs:200, desc:'使前方1格的我方单位回复200点生命。自身流失200点生命（可致死）。'} ],
   },
   littleSnake:{ name:'小小蛇', icon:'🐍', tier:'ordinary', atk:15, def:0, maxHp:150, speed:4, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{rawMeat:1}, rate:{rawMeat:0.3}, attrUp:2},
     passives:[ {id:'scare', name:'恐吓', desc:'战斗第一回合开始时【束缚】主角并瞬移至主角周围4格随机1格。'} ],
-    skills:[ {id:'lsjp', name:'逼近', kind:'move', desc:'向着目标，移动1格。'}, {id:'snakebite', name:'蛇咬', kind:'attack', type:'physical', target:'front', mult:1.0, poison:14, formula:'攻击力×100%', desc:'对前方1格的我方单位造成相当于攻击力100%的物理伤害，有50%概率施加14层【中毒】。'} ],
+    skills:[ {id:'lsjp', name:'逼近', kind:'move', desc:'向着目标，移动1格。'}, {id:'snakebite', name:'蛇咬', kind:'attack', type:'physical', target:'front', mult:1.0, poison:14, desc:'对前方1格造成100%攻击力物理伤害，50%概率施加14层【中毒】。'} ],
   },
   bambooSnake:{ name:'竹叶青', icon:'🐍', tier:'elite', atk:20, def:0, maxHp:300, speed:13, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{rawMeat:2, flax:2}, rate:{fruit:2, prob:0.5}, attrUp:3},
     passives:[ {id:'scare2', name:'恐吓+', desc:'若本回合攻击未命中任何我方单位，则下一回合开始时【束缚】主角1回合。'} ],
-    skills:[ {id:'bsjp', name:'逼近', kind:'move', desc:'向着目标，移动1格。'}, {id:'snakebite2', name:'蛇咬+', kind:'attack', type:'physical', target:'front', mult:1.2, poison:19, formula:'攻击力×120%', desc:'对前方1格的我方单位造成相当于攻击力120%的物理伤害且施加19层【中毒】。'} ],
+    skills:[ {id:'bsjp', name:'逼近', kind:'move', desc:'向着目标，移动1格。'}, {id:'snakebite2', name:'蛇咬+', kind:'attack', type:'physical', target:'front', mult:1.2, poison:19, desc:'对前方1格造成120%攻击力物理伤害且施加19层【中毒】。'} ],
   },
   oldTree:{ name:'古树', icon:'🌳', tier:'ordinary', atk:20, def:0, maxHp:799, speed:0, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{fruitByHp:[800,600,400,200], bonusItems:{wood:4}, attrUp:3},
-    passives:[ {id:'counter', name:'反击', desc:'受到伤害时，对伤害来源造成相当于自身攻击力40%的真实伤害，并使攻击力+15%（至多叠加至+150%）。'}, {id:'runaway', name:'长脚就跑！', desc:'第8个回合结束时，自身逃跑（视为战斗胜利）。'} ], skills:[]
+    passives:[ {id:'counter', name:'反击', desc:'受到主角攻击的伤害时，对主角造成40%攻击力真实伤害，并使自身攻击力+15%（至多+150%）。'}, {id:'runaway', name:'长脚就跑！', desc:'第8个回合结束时，自身逃跑（视为战斗胜利）。'} ], skills:[]
   },
   hound:{ name:'猎犬', icon:'🐕', tier:'ordinary', atk:10, def:0, maxHp:60, speed:15, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{rawMeat:1}, attrUp:2},
-    passives:[ {id:'growth', name:'成长', desc:'每进入新的一天，该种敌人攻击力永久+5%、最大生命值永久+5%、速度永久+1。'}, {id:'dogpal', name:'狗友', desc:'战斗开始时，有80%/15%/5%概率在随机1/2/3格生成新的同属性的猎犬。'} ],
-    skills:[ {id:'hchase', name:'追逐', kind:'move', range2:true, desc:'向着目标，移动到2格距离内的一个格子。每次移动后速度+5。'}, {id:'hbite', name:'撕咬', kind:'attack', type:'physical', target:'front', mult:1.0, formula:'攻击力×100%', desc:'对前方1格造成相当于100%攻击力的物理伤害。'} ],
+    passives:[ {id:'growth', name:'成长', desc:'每进入新的一天，该种敌人攻击力永久+5%、最大生命永久+5%、速度永久+1。'}, {id:'dogpal', name:'狗友', desc:'战斗开始时，80%/15%/5%概率在随机1/2/3格生成新猎犬。'} ],
+    skills:[ {id:'hchase', name:'追逐', kind:'move', range2:true, desc:'向着目标，移动到2格距离内的一个格子。每次移动后速度+5。'}, {id:'hbite', name:'撕咬', kind:'attack', type:'physical', target:'front', mult:1.0, desc:'对前方1格造成100%攻击力物理伤害。'} ],
   },
   houndPro:{ name:'猎犬Pro', icon:'🐕‍🦺', tier:'elite', atk:35, def:0, maxHp:150, speed:25, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{rawMeat:2}, coin5:true, attrUp:3},
-    passives:[ {id:'growth2', name:'成长+', desc:'每进入新的一天，该种敌人攻击力永久+8%、最大生命值永久+10%、速度永久+1，至多叠加20次。'}, {id:'dogpal2', name:'狗友+', desc:'战斗开始时，有80%/20%概率在随机1格生成新的猎犬/猎犬Pro。'} ],
-    skills:[ {id:'hpchase', name:'追逐', kind:'move', range2:true, desc:'向着目标，移动到2格距离内的一个格子。每次移动后速度+5。'}, {id:'hpbite', name:'撕咬', kind:'attack', type:'physical', target:'front', mult:1.0, formula:'攻击力×100%', desc:'对前方1格造成相当于100%攻击力的物理伤害。'} ],
+    passives:[ {id:'growth2', name:'成长+', desc:'每进入新的一天，该种敌人攻击力永久+8%、最大生命永久+10%、速度永久+1，至多20次。'}, {id:'dogpal2', name:'狗友+', desc:'战斗开始时，80%/20%概率在随机1格生成猎犬/猎犬Pro。'} ],
+    skills:[ {id:'hpchase', name:'追逐', kind:'move', range2:true, desc:'向着目标，移动到2格距离内的一个格子。每次移动后速度+5。'}, {id:'hpbite', name:'撕咬', kind:'attack', type:'physical', target:'front', mult:1.0, desc:'对前方1格造成100%攻击力物理伤害。'} ],
   },
   blueRacer:{ name:'蓝羽镖客', icon:'🦤', tier:'ordinary', atk:12, def:0, maxHp:100, speed:4, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:1, rawMeat:1}, attrUp:2},
-    passives:[ {id:'drift', name:'飘忽不定', desc:'每进行3次攻击后，立即瞬移至周围3格距离内的随机1格空格子。'}, {id:'lethal', name:'致命节奏', desc:'每进行1次攻击后，攻击力+8，可叠加。'} ],
-    skills:[ {id:'brujp', name:'逼近', kind:'move', desc:'向着目标，移动1格。'}, {id:'feather', name:'飞羽', kind:'attack', type:'physical', target:'amid-2', mult:1.0, formula:'攻击力×100%', desc:'对2格距离内的随机1名我方单位造成相当于攻击力100%的物理伤害。'} ],
+    passives:[ {id:'drift', name:'飘忽不定', desc:'每3次攻击后，瞬移至周围3格随机空格。'}, {id:'lethal', name:'致命节奏', desc:'每攻击1次，攻击力+8。'} ],
+    skills:[ {id:'brujp', name:'逼近', kind:'move', desc:'向着目标，移动1格。'}, {id:'feather', name:'飞羽', kind:'attack', type:'physical', target:'amid-2', mult:1.0, desc:'对2格距离内随机1名我方单位造成100%攻击力物理伤害。'} ],
   },
   redRacer:{ name:'红羽镖客', icon:'🦃', tier:'elite', atk:16, def:0, maxHp:200, speed:12, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:2, rawMeat:1}, attrUp:3, doubleUp:true},
-    passives:[ {id:'drift2', name:'飘忽不定', desc:'每进行3次攻击后，立即瞬移至周围5格距离内的随机1格空格子。'}, {id:'lethal', name:'致命节奏', desc:'每进行1次攻击后，攻击力+8，可叠加。'} ],
-    skills:[ {id:'rrjp', name:'逼近', kind:'move', desc:'向着目标，移动1格。'}, {id:'feather', name:'飞羽', kind:'attack', type:'physical', target:'amid-2', mult:1.0, formula:'攻击力×100%', desc:'对2格距离内的随机1名我方单位造成相当于攻击力100%的物理伤害。'} ],
+    passives:[ {id:'drift2', name:'飘忽不定', desc:'每3次攻击后，瞬移至周围5格随机空格。'}, {id:'lethal', name:'致命节奏', desc:'每攻击1次，攻击力+8。'} ],
+    skills:[ {id:'rrjp', name:'逼近', kind:'move', desc:'向着目标，移动1格。'}, {id:'feather', name:'飞羽', kind:'attack', type:'physical', target:'amid-2', mult:1.0, desc:'对2格距离内随机1名我方单位造成100%攻击力物理伤害。'} ],
   },
   bear:{ name:'暴躁的熊', icon:'🐻', tier:'elite', atk:40, def:0, maxHp:800, speed:0, res:{physical:20,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{rawMeat:10}, attrUp:3},
-    passives:[ {id:'hiber', name:'冬眠', desc:'战斗开始时进入持续3回合的【睡眠】。'}, {id:'rage', name:'狂躁', desc:'战斗中首次从【睡眠】中醒来后，从下一回合开始：攻击力+80%、每回合额外攻击1次、速度+60，持续5回合。'}, {id:'rare', name:'稀有生物', desc:'如果本次战斗未被击败，该敌人不会回复生命值，可以多次战斗将其击败。'} ],
-    skills:[ {id:'bearjp', name:'逼近', kind:'move', desc:'向着目标，移动1格。'}, {id:'slap', name:'掌掴', kind:'attack', type:'physical', target:'front', mult:1.0, rageAoe:true, formula:'攻击力×100%', desc:'对前方1格的我方单位造成相当于攻击力100%的物理伤害。若处于天赋·狂躁期间，改为对周围8格的随机1名我方单位造成相当于攻击力100%的物理伤害。'} ],
+    passives:[ {id:'hiber', name:'冬眠', desc:'战斗开始时进入持续3回合的【睡眠】。'}, {id:'rage', name:'狂躁', desc:'首次从睡眠中醒来后，下一回合起：攻击+80%、每回合额外攻击1次、速度+60，持续5回合。'}, {id:'rare', name:'稀有生物', desc:'本次战斗如未被击败，不回复生命，可多次战斗击败。'} ],
+    skills:[ {id:'bearjp', name:'逼近', kind:'move', desc:'向着目标，移动1格。'}, {id:'slap', name:'掌掴', kind:'attack', type:'physical', target:'front', mult:1.0, rageAoe:true, desc:'对前方1格造成100%攻击力物理伤害。狂躁期间改为周围8格随机1名。'} ],
   },
   mechanism:{ name:'遗弃机关', icon:'🤖', tier:'elite', atk:40, def:10, maxHp:260, speed:4, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{coin:3}, rate:{iron:1, prob:0.25}, attrUp:3},
-    passives:[ {id:'patrol', name:'巡逻', desc:'生命值为满时，不会主动攻击，每回合向随机方向移动1格。'} ],
-    skills:[ {id:'mcjp', name:'逼近', kind:'move', desc:'生命值不为满时，向着主角移动1格。'}, {id:'trample', name:'践踏', kind:'attack', type:'physical', target:'front6', mult:1.0, formula:'攻击力×100%', desc:'对前方6格的我方单位造成相当于攻击力100%的物理伤害。'}, {id:'missile', name:'飞弹', kind:'attack', type:'physical', target:'missile', shots:3, mult:0.4, formula:'攻击力×40%', desc:'朝前方发射3枚飞弹。飞弹飞行距离无限，碰到我方单位时造成相当于攻击力40%的物理伤害并消失，碰到障碍或飞出地图后消失。'}, {id:'cleanse', name:'大清扫', kind:'attack', type:'physical', target:'adj8', mult:1.4, sustain:3, cd:6, formula:'攻击力×140%', desc:'对周围8格我方单位造成相当于攻击力140%的物理伤害。将会连续使用此技能3回合。冷却时间：6回合。'} ],
+    passives:[ {id:'patrol', name:'巡逻', desc:'生命值为满时，不主动攻击，每回合向随机方向移动1格。'} ],
+    skills:[ {id:'mcjp', name:'逼近', kind:'move', desc:'生命值不为满时，向着主角移动1格。'}, {id:'trample', name:'践踏', kind:'attack', type:'physical', target:'front6', mult:1.0, desc:'对前方6格造成100%攻击力物理伤害。'}, {id:'missile', name:'飞弹', kind:'attack', type:'physical', target:'missile', shots:3, mult:0.4, desc:'朝前方发射3枚飞弹，飞行无限远，碰到我方造成40%攻击力物理伤害并消失。'}, {id:'cleanse', name:'大清扫', kind:'attack', type:'physical', target:'adj8', mult:1.4, sustain:3, cd:6, desc:'对周围8格造成140%攻击力物理伤害。连续使用3回合。冷却：6回合。'} ],
   },
 };
 function statusMeta(id){ return ST[id]||{id, name:id, kind:'neutral', desc:''}; }

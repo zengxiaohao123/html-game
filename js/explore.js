@@ -1,9 +1,7 @@
 /* ============================================================
    js/explore.js —— 模块：地图与探索（探索交互）
-   点击预览 / 前往移动 / 战斗 / 事件 / 空地搜索 / 奖励格。
-   空地搜索：进入空地才触发；50%判定档位，每档+2个同种资源，至多3档=6个。
-   奖励格：不触发空地搜索，按新奖励表结算。
-   战斗格未前往前点击只显示"普通/艰难/boss战"，不显示敌人名。
+   点击预览 / 前往移动（载具规则）/ 战斗 / 事件 / 空地搜索 / 奖励格。
+   探索移动按当前载具计算可达与行动力消耗；不可前往显示「无法前往」。
    ============================================================ */
 "use strict";
 let optionSelectedIdx=-1;
@@ -12,28 +10,37 @@ function onCellClick(x,y){
   if(mapDragMoved) return;
   const m=G.map; const c=m.cells[y*m.n+x]; previewCell={x,y};
   let info=`<b>位置 (${x+1},${y+1})</b><br>`;
-  if(c.terrain==='void'){ info+='不可通行（地图之外）。'; prompt(info); $('#goBtn').style.display='none'; return; }
-  if(c.terrain==='obstacle'){ info+='山脉障碍，无法通行。'; prompt(info); $('#goBtn').style.display='none'; return; }
+  if(c.terrain==='void'){ info+='不可通行（地图之外）。'; prompt(info); goBtnDisabled(); return; }
+  if(c.terrain==='obstacle'){ info+='山脉障碍，无法通行。'; prompt(info); goBtnDisabled(); return; }
   const ct=c.content&&c.content.type;
   if(ct==='battle'){ const subTxt = c.content.sub==='hard' ? '一场艰难战斗' : (c.content.sub==='boss' ? '一场boss战' : '一场普通战斗'); info+=`前方遭遇${subTxt}<br>移动过去将进入战斗。`; }
   else if(ct==='loot' && !c.content.done) info+='此处有战利品可拾取。';
   else if(ct==='event' && !c.content.done) info+='此处有事件发生。';
   else if(ct==='loot'||ct==='event') info+='这里的东西已被取走，如今是空地。';
   else info+='空地。';
-  prompt(info); activateGo(x,y);
+  prompt(info);
+  goBtnForMove(x,y);
 }
-function activateGo(x,y){ const go=$('#goBtn'); go.style.display='block'; go.disabled=false; go.classList.remove('disabled'); go.onclick=()=>{ go.style.display='none'; moveExplore(x,y); }; }
-function moveExplore(x,y){
+function goBtnDisabled(){ const go=$('#goBtn'); go.style.display='block'; go.disabled=true; go.classList.add('disabled'); go.textContent='无法前往'; go.onclick=null; }
+function goBtnForMove(x,y){
+  const go=$('#goBtn');
+  const cost=exploreMoveHint(x,y);
+  if(cost===null || (G.hero.actionPoint||0)<cost){ goBtnDisabled(); return; }
+  go.style.display='block'; go.disabled=false; go.classList.remove('disabled'); go.textContent=`前往 · 消耗 ${cost} 行动力`; go.onclick=()=>{ go.style.display='none'; moveExplore(x,y,cost); };
+}
+function moveExplore(x,y,cost){
   if(combatState) return;
-  const m=G.map; const dx=x-G.px, dy=y-G.py;
-  if(Math.abs(dx)+Math.abs(dy)!==1){ log('只能移动到相邻一格（上下左右）。'); return; }
-  const target=m.cells[y*m.n+x];
-  if(target.terrain==='obstacle' || target.terrain==='void'){ G.hero.facing=dirToFacing(dx,dy); log('前方有阻挡，你转身面向那边，行动力并未消耗。'); $('#goBtn').style.display='none'; renderMap(); return; }
-  if(G.hero.actionPoint<1){ log('行动力不足，请先「睡觉」进入下一天。'); return; }
-  $('#goBtn').style.display='none'; G.hero.actionPoint-=1; G.hero.facing=dirToFacing(dx,dy); G.px=x; G.py=y;
-  useVehicleOnMove();
+  if(cost===null) return;
+  if(moveCostFor(x,y)===null){ goBtnDisabled(); return; }
+  if((G.hero.actionPoint||0)<cost){ log('行动力不足。'); $('#goBtn').style.display='none'; return; }
+  const m=G.map; const target=m.cells[y*m.n+x];
+  const ox=G.px, oy=G.py;
+  G.hero.facing=dirToFacing(x-ox, y-oy);
+  G.px=x; G.py=y; G.hero.actionPoint-=cost;
+  consumeVehicleForMove();
+  $('#goBtn').style.display='none'; renderMap();
   /* 蹁跹：探索每次移动后主角回复生命 */
-  if(G.team.indexOf('luyouyou')>=0){ const fl=getChar('luyouyou').passives.find(p=>p.id==='flutter'); const hv=vTier(fl,'move',entryLevel('luyouyou',fl)); const nx=Math.min(G.hero.maxHp,G.hero.hp+hv); if(nx>G.hero.hp){ const got=nx-G.hero.hp; G.hero.hp=nx; log(`【蹁跹】移动后回复 ${got} 点生命。`); } }
+  if(G.team.indexOf('luyouyou')>=0){ const fl=getChar('luyouyou').passives.find(p=>p.id==='flutter'); const hv=vTier(fl,'move',entryLevel('luyouyou',fl)); const cap=heroDisplayMaxHp()||G.hero.maxHp; const nx=Math.min(cap, G.hero.hp+hv); if(nx>G.hero.hp){ const got=nx-G.hero.hp; G.hero.hp=nx; log(`【蹁跹】移动后回复 ${got} 点生命。`); } }
   const ct=target.content&&target.content.type;
   if(ct==='battle'){ log('遭遇敌人！进入战斗。'); startCombat(target); }
   else if(ct==='loot' && !target.content.done){ openLoot(target); }
