@@ -39,7 +39,6 @@ function moveExplore(x,y,cost){
   G.px=x; G.py=y; G.hero.actionPoint-=cost;
   consumeVehicleForMove();
   $('#goBtn').style.display='none'; renderMap();
-  /* 蹁跹：探索每次移动后主角回复生命 */
   if(G.team.indexOf('luyouyou')>=0){ const fl=getChar('luyouyou').passives.find(p=>p.id==='flutter'); const hv=vTier(fl,'move',entryLevel('luyouyou',fl)); const cap=heroDisplayMaxHp()||G.hero.maxHp; const nx=Math.min(cap, G.hero.hp+hv); if(nx>G.hero.hp){ const got=nx-G.hero.hp; G.hero.hp=nx; log(`【蹁跹】移动后回复 ${got} 点生命。`); } }
   const ct=target.content&&target.content.type;
   if(ct==='battle'){ log('遭遇敌人！进入战斗。'); startCombat(target); }
@@ -71,7 +70,7 @@ function openLoot(target){
 function runEvent(target){
   target.content.done=true; const ev=Math.random();
   if(ev<0.28){ const g=2+Math.floor(Math.random()*3); G.inventory.coin+=g; log(`你遇到商人的遗落行囊，获得 <b>${g}</b> 金币。`); }
-  else if(ev<0.55){ if(G.hero.hp<G.hero.maxHp){ G.hero.hp=Math.min(G.hero.maxHp, G.hero.hp+Math.floor(G.hero.maxHp*0.15)+10); log('你在一处温泉旁歇脚，回复了部分生命。'); } else log('你在温泉旁歇脚，精神为之一振。'); }
+  else if(ev<0.55){ const cap=heroDisplayMaxHp(); if(G.hero.hp<cap){ G.hero.hp=Math.min(cap, G.hero.hp+Math.floor(cap*0.15)+10); log('你在一处温泉旁歇脚，回复了部分生命。'); } else log('你在温泉旁歇脚，精神为之一振。'); }
   else if(ev<0.78){ G.hero.health=Math.max(0,G.hero.health-1); log('一场虚惊让健康有所消耗。'); }
   else { log('你遇到一位迷路的旅人，他向你求助。'); renderEventOptions([ {text:'慷慨相助，分他一些干粮（获得旅人的谢礼：5 金币）', act:()=>{ G.inventory.coin+=5; log('旅人感激不尽，赠你 5 金币作谢礼。'); refreshHUD(); }}, {text:'婉言谢绝，独自离开', act:()=>{ log('你婉言谢绝了旅人，独自继续前行。'); }} ]); }
   refreshHUD(); renderMap();

@@ -9,7 +9,7 @@
 
 const VEHICLES = {
   walk:     {name:'徒步跋涉', icon:'🚶', infinite:true, cost:1, mode:{type:'step'}, desc:'徒步移动至相邻一格，如平日赶路一般。次数无限。每次消耗1行动力。'},
-  dash:     {name:'疾行',     icon:'💨', infinite:true, exploreOnly:true, cost:'steps', mode:{type:'line'}, desc:'一次性移动多格（每步消耗1行动力）。仅探索使用。次数无限。'},
+  dash:     {name:'疾行',     icon:'💨', infinite:true, exploreOnly:true, cost:'steps', mode:{type:'dash'}, desc:'一次性驰往任意一格（可越过途中格子），消耗等于移动距离的行动力。仅探索使用。次数无限。'},
   dragon:   {name:'地龙',     icon:'🐲', uses:3, cost:1, mode:{type:'axis',n:2}, desc:'移动至上下左右四个方向之一的直线 1~2 格（不可走斜线），可越过中间障碍。每次消耗1行动力。'},
   mushroom: {name:'会走路的蘑菇', icon:'🍄', uses:3, cost:1, mode:{type:'oct'}, desc:'移动至周围8格中任意1格。每次消耗1行动力。'},
   carriage: {name:'马车',     icon:'🛞', uses:2, cost:1, mode:{type:'m2'}, desc:'移动至2格距离内的任意1格。每次消耗1行动力。'},
@@ -41,6 +41,7 @@ function vehicleTargetCost(def, from, tx, ty){
   if(dx===0&&dy===0) return null;
   const m=def.mode;
   if(m.type==='step'){ if(Math.abs(dx)+Math.abs(dy)!==1) return null; return 1; }
+  if(m.type==='dash'){ return Math.abs(dx)+Math.abs(dy); }
   if(m.type==='line'){ if(dx!==0&&dy!==0) return null; const st=Math.abs(dx)+Math.abs(dy); const sx=dx===0?0:(dx>0?1:-1), sy=dy===0?0:(dy>0?1:-1); for(let k=1;k<=st;k++){ const nx=from.x+sx*k, ny=from.y+sy*k; if(!_free(nx,ny)) return null; } return st; }
   if(m.type==='axis'){ if((dx===0&&dy===0)||(dx!==0&&dy!==0)) return null; const d=Math.abs(dx)+Math.abs(dy); if(d<1||d>m.n) return null; return 1; }
   if(m.type==='oct'){ if(Math.max(Math.abs(dx),Math.abs(dy))!==1) return null; return 1; }
@@ -77,10 +78,11 @@ function renderVehicles(){
     const used = finite && v.uses<=0;
     const unusable = used || dailyPenalty;
     const usesTxt = finite ? `<div class="vuses">剩 ${v.uses} 次</div>` : (def.daily? `<div class="vuses">每天限1次</div>` : `<div class="vuses">无限</div>`);
-    return `<div class="vslot ${i===sel?'sel':''} ${unusable?'dis':''}" onclick="selVehicle(${i})">
+    return `<div class="vslot ${i===sel?'sel':''} ${unusable?'dis':''}" style="min-width:220px" onclick="selVehicle(${i})">
       <div class="vicon">${def.icon}</div>
       <div class="vname">${def.name}</div>
       ${usesTxt}
+      <div class="vdesc">${def.desc||''}</div>
     </div>`;
   }).join('');
   const selDef=curVehicleDef();
