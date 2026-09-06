@@ -10,6 +10,7 @@ function tickStatuses(statuses){ if(!statuses) return; for(const id of Object.ke
 function statusArr(statuses){ return Object.values(statuses||{}); }
 function hasStatus(statuses,id){ return !!(statuses&&statuses[id]); }
 function enemyNode(){ return combatState&&combatState.enemies[0]; }
+function lastLogLine(){ try{ const els=document.querySelectorAll('#logBody .logline'); const last=els[els.length-1]; return last? last.textContent : ''; }catch(e){ return ''; } }
 
 /* ---- 二批敌人 · 通用辅助 ---- */
 function hasP(e,id){ return !!(e&&e.def&&e.def.passives&&e.def.passives.some(p=>p.id===id)); }
@@ -17,11 +18,8 @@ function hasSkill(e,id){ return !!(e&&e.def&&e.def.skills&&e.def.skills.some(s=>
 function heroAt(x,y){ return !!(combatState&&combatState.hero.x===x&&combatState.hero.y===y); }
 function distCheb(a,b){ return Math.max(Math.abs(a.x-b.x),Math.abs(a.y-b.y)); }
 function rBuffs(){ if(!G.records) G.records={}; if(!G.records.buffs) G.records.buffs={}; return G.records.buffs; }
-/* 敌人被击败时：累计「我一定会回来的」，清除稀有熊的延续生命 */
 function onEnemyDefeated(enemy){ if(!enemy) return; if(hasP(enemy,'comeback')){ rBuffs()['chunibyo']=Math.min(5,(rBuffs()['chunibyo']||0)+1); } if(hasP(enemy,'rare') && G.records){ delete G.records.rareBearHp; } }
-/* 稀有生物：战斗结束时记录/清除熊的剩余生命（未击败→延续；击败→清除） */
 function persistRare(enemies, wasDefeated){ if(!enemies) return; const b=enemies.find(e=>hasP(e,'rare')); if(!b) return; if(!G.records) G.records={}; if(wasDefeated){ delete G.records.rareBearHp; } else { G.records.rareBearHp=Math.max(1,Math.round(b.hp)); } }
-/* 敌人每回合开始刻蚀【燃烧】：流失 2% 最大生命 */
 function applyBurnTick(node,who){
   if(!node||!node.statuses) return; if(!node.statuses.burn) return;
   const maxHp = who==='hero' ? (G?G.hero.maxHp:100) : node.maxHp;
@@ -29,7 +27,6 @@ function applyBurnTick(node,who){
   if(who==='hero'){ const nx=Math.max(0,(G.hero.hp||0)-lost); G.hero.hp=nx; if(combatState) combatState.hero.hp=nx; log(`【燃烧】流失 ${lost} 点生命。`); }
   else { node.hp=Math.max(0,node.hp-lost); log(`${node.name} 受【燃烧】流失 ${lost} 点生命。`); if(node.hp<=0 && combatState){ node.hp=0; log(`${node.name} 被【燃烧】击败。`); removeEnemy(node); checkCombatEnd(); } }
 }
-/* 对主角造成【中毒】层数 */
 function poisonHero(layers){ if(!combatState) return; addStatus(combatState.ally.pro.statuses,'poison',null,layers); }
 function dmgEnemy(enemy,dmg,type){ if(!enemy) return 0; if(type && AFFIN_IMMUNE[enemy.key]===type){ return 0; } enemy.hp-=dmg; return dmg; }
 function dmgHeroFlat(dmg,type){ return damageHero(dmg,type); }
@@ -42,10 +39,10 @@ function initCombatState(o){
   const ally={}; for(const k of G.team){ const c=getChar(k); ally[k]={statuses:{}, used:false, selSkill:c.selectedSkillIds[0]}; }
   combatState={ hero:{x:G.px,y:G.py,facing:G.hero.facing,hp:G.hero.hp,maxHp:G.hero.maxHp,shield:0,auras:[]}, enemies:[], ally, field:{},
     playerMoved:false, playerOver:false, currentChar:G.team[0]||'pro', selectedEnemy:null, infoCell:null, enemyPage:0, pendingTarget:null,
-    entryCell:G.px+','+G.py, day:G.day, turn:1, bubbles:[], focusEnemy:null,
+    entryCell:G.px+','+G.py, day:G.day, turn:1, bubbles:[], focusEnemy:null, defeated:[],
     startSnapshot:{ heroHp:G.hero.hp, vehicles:JSON.parse(JSON.stringify(G.vehicles||[])), vehicleSel:G.vehicleSel!=null?G.vehicleSel:0, enemyKey:o.enemyKey } };
   const e=spawnEnemy(o.enemyKey); combatState.enemies.push(e);
-  refreshHeroShield(); afterSpawnEnemy(e); planEnemyTurn();
+  refreshHeroShield(); afterSpawnEnemy(e);
 }
 function spawnEnemy(key){
   const def=ENEMIES[key]; const b=teamSizeBonus();
@@ -53,17 +50,14 @@ function spawnEnemy(key){
   let speed=def.speed||0;
   if(def.passives&&def.passives.find(p=>p.id==='newbie') && G.day<13){ maxHp=Math.max(1, maxHp-60); }
   if(def.passives&&def.passives.find(p=>p.id==='rockshield')){ maxHp=Math.floor(maxHp*0.9); defv+=10; }
-  /* 天赋·我一定会回来的（永久，跨战斗/跨天叠加，至多5次） */
   if(def.passives&&def.passives.find(p=>p.id==='comeback')){ const cnt=Math.min(5, rBuffs()['chunibyo']||0); if(cnt){ atk+=15*cnt; maxHp+=40*cnt; speed+=5*cnt; } }
-  /* 天赋·成长 / 成长+（按天数跨天生效，Pro 至多20次） */
   const growthP=def.passives&&(def.passives.find(p=>p.id==='growth')||def.passives.find(p=>p.id==='growth2'));
   if(growthP){ const isPro=!!def.passives.find(p=>p.id==='growth2'); const days=Math.max(0,(G.day||1)-1); const cap=isPro?20:Infinity; const n=Math.min(cap,days); if(n>0){ atk*=1+((isPro?0.08:0.05)*n); maxHp=Math.floor(maxHp*(1+((isPro?0.10:0.05)*n))); speed+=n; } }
-  /* 天赋·稀有生物：若上次战斗未击败，本次延续上次剩余生命（不回复） */
   let hpSet=null; if(def.passives&&def.passives.find(p=>p.id==='rare')){ const prev=(G.records&&G.records.rareBearHp)||0; if(prev>0) hpSet=Math.min(maxHp, Math.round(prev)); }
   const pos=randomEmptyCell();
   const e={ key, def, name:def.name, icon:def.icon, tier:def.tier, x:pos.x, y:pos.y, facing:dirToFacing(G.px-pos.x, G.py-pos.y),
     atk, maxHp, baseAtkAtSpawn:atk, hp: hpSet!=null? hpSet : maxHp, defv:defv, speed, res:def.res||{}, healthPenalty:def.healthPenalty||0,
-    statuses:{}, cooldowns:{}, sustain:-1, attacks:0, aura: (key==='slime')?'grass':(AFFIN_IMMUNE[key] || null) };
+    statuses:{}, cooldowns:{}, sustain:-1, attacks:0, chargingSkill:null, aura: (key==='slime')?'grass':(AFFIN_IMMUNE[key] || null) };
   return e;
 }
 function randomEmptyCell(){ const m=G.map; const cand=[]; for(let y=0;y<m.n;y++)for(let x=0;x<m.n;x++){ if(x===G.px&&y===G.py) continue; if(combatState&&combatState.enemies.some(en=>en.x===x&&en.y===y)) continue; if(m.cells[y*m.n+x].terrain==='ground') cand.push({x,y}); } return cand.length? cand[Math.floor(Math.random()*cand.length)] : {x:G.px,y:G.py}; }
@@ -83,13 +77,11 @@ function afterSpawnEnemy(e){
   }
   if(hasP(e,'dogpal')||hasP(e,'dogpal2')) spawnHoundPack(e);
 }
-/* 恐吓瞬移：把敌人放到主角周围4格随机一格（可走地），以便首回合咬到 */
 function placeEnemyNearHero(enemy){
   const cs=combatState; if(!cs) return null;
   const cand=[[1,0],[-1,0],[0,1],[0,-1]].map(([a,b])=>({x:cs.hero.x+a,y:cs.hero.y+b})).filter(p=>p.x>=0&&p.y>=0&&p.x<G.map.n&&p.y<G.map.n&&G.map.cells[p.y*G.map.n+p.x].terrain==='ground'&&!(p.x===enemy.x&&p.y===enemy.y)&&!combatState.enemies.some(o=>o!==enemy&&o.x===p.x&&o.y===p.y));
   return cand.length? cand[Math.floor(Math.random()*cand.length)] : null;
 }
-/* 狗友 / 狗友+：随机生成 1~3 只猎犬（不递归、不计入奖励/惩罚） */
 function spawnHoundPack(e){
   const cs=combatState; if(!cs) return;
   let n=0;
@@ -124,7 +116,6 @@ function charAtk(charKey){ const c=getChar(charKey); const base=charBaseAtk(char
 function baseCritRate(charKey){ const c=getChar(charKey); let crit=0; const pick=charKey==='pro'? c.passives.find(p=>p.id==='crit') : (charKey==='luyouyou'? c.passives.find(p=>p.id==='wind'):null); if(pick&&pick.scal&&pick.scal.crit) crit+=tierValue(pick,entryLevel(charKey,pick),'crit'); return crit; }
 function charCritRate(charKey){ let r=baseCritRate(charKey); const sts=combatState&&combatState.ally[charKey]&&combatState.ally[charKey].statuses; if(sts&&sts.crit) r+=100; return Math.max(0,Math.min(100,r)); }
 function totalHeroDefense(){ let d=G.hero.def||0; const pro=getChar('pro'); const hold=pro.passives.find(p=>p.id==='hold'); if(hold) d+=tierValue(hold,entryLevel('pro',hold),'def'); return Math.max(0,Math.min(99999,d)); }
-/* 基础属性（不含战斗内临时加成；天赋提升算入基础） */
 function heroTalentAtk(){ const pro=getChar('pro'); let a=0; for(const p of pro.passives){ if(p.scal&&p.scal.atk) a+=tierValue(p,entryLevel('pro',p),'atk'); } return a; }
 function heroTalentDef(){ const pro=getChar('pro'); const h=pro.passives.find(p=>p.id==='hold'); return (h&&h.scal&&h.scal.def)?tierValue(h,entryLevel('pro',h),'def'):0; }
 function heroTalentMaxHp(){ const pro=getChar('pro'); let m=0; for(const p of pro.passives){ if(p.scal&&p.scal.hp) m+=tierValue(p,entryLevel('pro',p),'hp'); } return m; }
@@ -137,7 +128,7 @@ function skillRangeCells(skill){ const pos=combatState.hero; const n=G.map.n; co
 function skillEnemies(skill){ const keys=new Set(skillRangeCells(skill).map(c=>c.x+','+c.y)); return combatState.enemies.filter(en=>keys.has(en.x+','+en.y)); }
 function hasValidTarget(skill){ if(!combatState) return false; if(skill.kind!=='attack') return true; return skillEnemies(skill).length>0; }
 function applyEnemyDamage(enemy,dmg,skill,type){ if(type && skill && skill.type && AFFIN_IMMUNE[enemy.key]===skill.type){ return {dmg:0,immune:true}; } enemy.hp-=dmg; return {dmg, immune:false}; }
-function damageEnemy(enemy, dmg, type){ if(enemy.def && enemy.def.passives && enemy.def.passives.find(p=>p.id==='rockshield')){ enemy.defv=Math.max(0,Math.min(99999,(enemy.defv||0)-1)); } if(enemy.def&&enemy.def.passives&&enemy.def.passives.find(p=>p.id==='dodge')&&Math.random()<0.20){ log(`${enemy.name} 帅气闪避，躲过了本次攻击！`); return 0; } if(type && AFFIN_IMMUNE[enemy.key]===type) return 0; enemy.hp-=dmg; if(hasStatus(enemy.statuses,'sleep') && dmg>0){ delete enemy.statuses.sleep; log(`${enemy.name} 被击醒！`); } if(dmg>0 && hasP(enemy,'counter')){ /* 古树·反击：来源40%真伤 + 自身atk+15% */ const rd=Math.max(1,Math.round(enemy.atk*0.4)); if(combatState){ damageHero(rd,'true'); log(`${enemy.name} 反击！造成 ${rd} 点${elemText('true')}。`); } if(!enemy.counterMult) enemy.counterMult=1.0; if(enemy.counterMult<2.5){ enemy.counterMult=Math.min(2.5,enemy.counterMult+0.15); enemy.atk=Math.round((enemy.baseAtkAtSpawn||enemy.atk)*enemy.counterMult); } } if(enemy.hp<=0){ enemy.hp=0; log(`${enemy.name} 被击败！`); onEnemyDefeated(enemy); removeEnemy(enemy); checkCombatEnd(); } return dmg; }
+function damageEnemy(enemy, dmg, type){ if(enemy.def && enemy.def.passives && enemy.def.passives.find(p=>p.id==='rockshield')){ enemy.defv=Math.max(0,Math.min(99999,(enemy.defv||0)-1)); } if(enemy.def&&enemy.def.passives&&enemy.def.passives.find(p=>p.id==='dodge')&&Math.random()<0.20){ log(`${enemy.name} 帅气闪避，躲过了本次攻击！`); return 0; } if(type && AFFIN_IMMUNE[enemy.key]===type) return 0; enemy.hp-=dmg; if(hasStatus(enemy.statuses,'sleep') && dmg>0){ delete enemy.statuses.sleep; if(hasP(enemy,'hiber')) enemy.justWoke=true; log(`${enemy.name} 被击醒！`); } if(dmg>0 && hasP(enemy,'counter')){ const rd=Math.max(1,Math.round(enemy.atk*0.4)); if(combatState){ damageHero(rd,'true'); log(`${enemy.name} 反击！造成 ${rd} 点${elemText('true')}。`); } if(!enemy.counterMult) enemy.counterMult=1.0; if(enemy.counterMult<2.5){ enemy.counterMult=Math.min(2.5,enemy.counterMult+0.15); enemy.atk=Math.round((enemy.baseAtkAtSpawn||enemy.atk)*enemy.counterMult); } } if(enemy.hp<=0){ enemy.hp=0; log(`${enemy.name} 被击败！`); onEnemyDefeated(enemy); removeEnemy(enemy); checkCombatEnd(); } return dmg; }
 function reapplyAura(enemy){ if(!enemy) return; const aff=AFFIN_IMMUNE[enemy.key]; if(aff) enemy.aura=aff; }
 function skillDamagePreview(charKey, skill){ if(!skill||!skill.effect) return null; return Math.max(1,Math.round(charAtk(charKey)*skill.effect(1))); }
 function describeSkill(charKey, skill){ if(!skill) return ''; let d=skill.desc||''; const dmg=skillDamagePreview(charKey, skill); if(skill.scal){ const level=entryLevel(charKey,skill); const ext={}; if(dmg!=null&&skill.formula) ext.DMG=`${skill.formula}（当前约${dmg}点）`; const hp=healPreview(charKey,skill); if(hp) ext.Y=hp; d=lvDescText(skill,level,ext); } else { if(dmg!=null&&skill.formula) d=d.replace(/\{DMG\}/g,`${skill.formula}（当前约${dmg}点）`); if(skill.healPct) d=d.replace(/\{Y\}/g,Math.round((getChar(charKey).atk||0)*skill.healPct)); } return terms(d); }
@@ -169,14 +160,18 @@ function runEnemyTurn(enemy){
   if(enemy.hp<=0 && cs.enemies.includes(enemy)){ enemy.hp=0; log(`${enemy.name} 被状态效果击败。`); removeEnemy(enemy); checkCombatEnd(); return; }
   if(hasStatus(enemy.statuses,'sleep')){ log(`${enemy.name} 处于【睡眠】中，一动不动。`); }
   else{
-    if(hasP(enemy,'hiber')&&!enemy.rageStarted){ startRage(enemy); }
+    let skip=false;
+    if(hasP(enemy,'hiber')){ if(enemy.justWoke){ enemy.justWoke=false; log(`${enemy.name} 醒了过来，打了个哈欠，本轮无法行动。`); skip=true; } else if(!enemy.rageStarted){ startRage(enemy); } }
     const alreadyFled = checkOldTreeFlee(enemy); if(alreadyFled) return;
-    enemy.plan = enemy.plan || resolveEnemyIntent(enemy);
-    enemy.facing = enemy.plan.facing || enemy.facing;
-    if(enemy.plan.step==='move'){ applyPlanMove(enemy); }
-    else if(enemy.plan.step==='face'){ log(`${enemy.name} 改变了朝向。`); }
-    if(enemy.plan.skill) castEnemySkill(enemy, enemy.plan.skill);
-    if(enemy.rageActive && enemy.plan.skill && enemy.plan.skill.kind==='attack' && cs.enemies.includes(enemy)){ castEnemySkill(enemy, enemy.plan.skill); }
+    if(!skip){
+      if(enemy.chargingSkill){ const s=(enemy.def.skills||[]).find(x=>x.id===enemy.chargingSkill); enemy.plan={step:'none', skill:s||null, facing:enemy.facing}; }
+      else enemy.plan = resolveEnemyIntent(enemy);
+      enemy.facing = enemy.plan.facing || enemy.facing;
+      if(enemy.plan.step==='move'){ applyPlanMove(enemy); }
+      else if(enemy.plan.step==='face'){ log(`${enemy.name} 改变了朝向。`); }
+      if(enemy.plan.skill){ castEnemySkill(enemy, enemy.plan.skill); if(enemy.chargingSkill===enemy.plan.skill.id) enemy.chargingSkill=null; }
+      if(enemy.rageActive && enemy.plan.skill && enemy.plan.skill.kind==='attack' && cs.enemies.includes(enemy)){ castEnemySkill(enemy, enemy.plan.skill); }
+    }
     enemy.plan=null;
     if(enemy.rageActive){ enemy.rageRounds=(enemy.rageRounds||0)-1; if(enemy.rageRounds<=0) endRage(enemy); }
   }
@@ -185,7 +180,7 @@ function runEnemyTurn(enemy){
 function startRage(enemy){ enemy.rageStarted=true; enemy.rageActive=true; enemy.baseAtk=enemy.atk; enemy.atk=Math.round(enemy.atk*1.8); enemy.speed=(enemy.speed||0)+60; enemy.rageRounds=5; log(`${enemy.name} 进入【狂躁】状态！攻击力+80%、速度+60，持续5回合。`); }
 function endRage(enemy){ enemy.rageActive=false; if(enemy.baseAtk!=null) enemy.atk=enemy.baseAtk; enemy.speed=Math.max(0,(enemy.speed||0)-60); enemy.rageRounds=0; log(`${enemy.name} 的【狂躁】结束了。`); }
 function checkOldTreeFlee(enemy){ if(hasP(enemy,'runaway') && (combatState.turn||1)>=8 && enemy.hp>0){ log('古树到了第8回合，撒腿就跑，战斗胜利！'); endCombat(true,'古树逃跑，但奖励按剩余果实结算。'); return true; } return false; }
-function resolveEnemyIntent(enemy){ const cs=combatState; const sk=(enemy.def.skills||[]).concat(); if(!cs.hero) return {step:'none',skill:null,facing:enemy.facing};
+function resolveEnemyIntent(enemy){ const cs=combatState; const sk=(enemy.def.skills||[]).concat(); const H=cs.hero; if(!H) return {step:'none',skill:null,facing:enemy.facing};
   if(enemy.sustain&&enemy.sustain>0){ const ss=sk.find(s=>s.id===enemy.sustainSkillId); if(ss) return {step:'none', skill:ss, facing:enemy.facing}; }
   if(hasP(enemy,'patrol') && enemy.hp>=enemy.maxHp){
     const mv=[[1,0],[-1,0],[0,1],[0,-1]].map(([a,b])=>({x:enemy.x+a,y:enemy.y+b})).filter(c=>passable(c.x,c.y)&&!cs.enemies.some(o=>o!==enemy&&o.x===c.x&&o.y===c.y));
@@ -193,26 +188,32 @@ function resolveEnemyIntent(enemy){ const cs=combatState; const sk=(enemy.def.sk
     return {step:'move', skill:null, facing:enemy.facing, moveTo: target, patrolMove:true};
   }
   if(hasStatus(enemy.statuses,'bind')){
-    const atk=sk.find(s=>s.kind==='attack'&&cdReady(enemy,s)&&!enemyOnlyTurn1Block(s,enemy)&&hitsFrom(enemy.x,enemy.y,s,enemy.facing,cs.hero));
-    const sup=!atk? sk.find(s=>s.kind==='support'&&cdReady(enemy,s)&&!enemyOnlyTurn1Block(s,enemy)&&hitsFrom(enemy.x,enemy.y,s,enemy.facing,cs.hero)) : null;
-    return {step:'none', skill:atk||sup||null, facing:enemy.facing};
+    const s=sk.find(x=>x.kind==='attack'&&cdReady(enemy,x)&&!enemyOnlyTurn1Block(x,enemy)&&hitsFrom(enemy.x,enemy.y,x,enemy.facing,H))||sk.find(x=>x.kind==='support'&&cdReady(enemy,x)&&!enemyOnlyTurn1Block(x,enemy)&&hitsFrom(enemy.x,enemy.y,x,enemy.facing,H));
+    return {step:'none', skill:s||null, facing:enemy.facing};
   }
-  const H=cs.hero; const budget=moveBudget(enemy); const reach=bfsReachable(enemy,budget,H);
-  const atks=sk.filter(s=>s.kind==='attack'&&cdReady(enemy,s)&&!enemyOnlyTurn1Block(s,enemy));
-  const sups=sk.filter(s=>s.kind==='support'&&cdReady(enemy,s)&&!enemyOnlyTurn1Block(s,enemy));
-  let best=null;
-  for(const cell of reach){ const facing=dirToFacing(H.x-cell.x,H.y-cell.y); for(const s of atks){ if(hitsFrom(cell.x,cell.y,s,facing,H)){ const score=-(Math.abs(cell.x-H.x)+Math.abs(cell.y-H.y)); if(!best||score>best.score) best={score,cell,facing,skill:s}; } } }
-  if(!best){ for(const cell of reach){ const facing=dirToFacing(H.x-cell.x,H.y-cell.y); for(const s of sups){ if(hitsFrom(cell.x,cell.y,s,facing,H)){ const score=-(Math.abs(cell.x-H.x)+Math.abs(cell.y-H.y)); if(!best||score>best.score) best={score,cell,facing,skill:s}; } } } }
-  if(best){ const moved=(best.cell.x!==enemy.x||best.cell.y!==enemy.y); return {step: moved?'move':'none', skill:best.skill, facing:best.facing, moveTo: moved?best.cell:null}; }
-  let closest=null; for(const cell of reach){ const d=Math.abs(cell.x-H.x)+Math.abs(cell.y-H.y); if(!closest||d<closest.d) closest={cell,d}; }
-  const cf = closest? dirToFacing(H.x-closest.cell.x,H.y-closest.cell.y) : enemy.facing;
-  const canMove = closest && (closest.cell.x!==enemy.x||closest.cell.y!==enemy.y);
-  return {step: canMove?'move':'none', skill:null, facing: cf, moveTo: canMove?closest.cell:null}; }
+  /* 本回合行动规划器：命中优先；不移动可命中→直接攻击；否则移动后命中；再不行就单纯移动 */
+  const FAC=['up','down','left','right'];
+  const readyA=sk.filter(s=>s.kind==='attack'&&cdReady(enemy,s)&&!enemyOnlyTurn1Block(s,enemy));
+  const readyS=sk.filter(s=>s.kind==='support'&&cdReady(enemy,s)&&!enemyOnlyTurn1Block(s,enemy));
+  for(const f of FAC) for(const s of readyA){ if(hitsFrom(enemy.x,enemy.y,s,f,H)) return maybeCharge(enemy,{step:'none',skill:s,facing:f}); }
+  for(const f of FAC) for(const s of readyS){ if(hitsFrom(enemy.x,enemy.y,s,f,H)) return {step:'none',skill:s,facing:f}; }
+  const budget=moveBudget(enemy); const reach=bfsReachable(enemy,budget,H);
+  let bestHit=null;
+  for(const B of reach){ if(B.x===enemy.x&&B.y===enemy.y) continue; for(const f of moveFacingCandidates(enemy,B)) for(const s of readyA){ if(hitsFrom(B.x,B.y,s,f,H)){ const d=Math.abs(B.x-H.x)+Math.abs(B.y-H.y); if(!bestHit||d>bestHit.d) bestHit={cell:B,facing:f,skill:s,d}; } } }
+  if(!bestHit){ for(const B of reach){ if(B.x===enemy.x&&B.y===enemy.y) continue; for(const f of moveFacingCandidates(enemy,B)) for(const s of readyS){ if(hitsFrom(B.x,B.y,s,f,H)){ const d=Math.abs(B.x-H.x)+Math.abs(B.y-H.y); if(!bestHit||d>bestHit.d) bestHit={cell:B,facing:f,skill:s,d}; } } } }
+  if(bestHit) return maybeCharge(enemy,{step:'move',skill:bestHit.skill,facing:bestHit.facing,moveTo:bestHit.cell});
+  let closest=null; for(const B of reach){ const d=Math.abs(B.x-H.x)+Math.abs(B.y-H.y); if(!closest||d<closest.d) closest={cell:B,d}; }
+  if(closest && (closest.cell.x!==enemy.x||closest.cell.y!==enemy.y)){ const f=(moveFacingCandidates(enemy,closest.cell)[0])||enemy.facing; return {step:'move',skill:null,facing:f,moveTo:closest.cell}; }
+  const cf=dirToFacing(H.x-enemy.x,H.y-enemy.y);
+  if(cf!==enemy.facing) return {step:'face',skill:null,facing:cf};
+  return {step:'none',skill:null,facing:enemy.facing}; }
+/* 移动起点→终点向量的朝向候选：斜向45°给两个相邻正方向，否则取主导轴 */
+function moveFacingCandidates(A,B){ const dx=B.x-A.x, dy=B.y-A.y; if(dx===0&&dy===0) return []; if(dx===0) return [dy>0?'down':'up']; if(dy===0) return [dx>0?'right':'left']; const hx=dx>0?'right':'left', hy=dy>0?'down':'up'; return (Math.abs(dx)===Math.abs(dy)) ? [hx,hy] : [Math.abs(dx)>Math.abs(dy)?hx:hy]; }
+/* 飞弹：先蓄力1回合再发射（蓄力回合不移动/不转向/不用其他技能） */
+function maybeCharge(enemy, act){ if(act&&act.skill&&act.skill.id==='missile'){ enemy.chargingSkill='missile'; log(`${enemy.name} 开始【蓄力】，下回合发射飞弹。`); return {step:'none', skill:null, facing:enemy.facing}; } return act; }
 function enemyOnlyTurn1Block(s,enemy){ return !!(s.onlyTurn1 && (combatState.turn||1)>1); }
 function moveBudget(enemy){ if(hasSkill(enemy,'hchase')||hasSkill(enemy,'hpchase')) return 2; if(enemy.def.skills.some(s=>s.kind==='move')) return 1; return 0; }
-/* BFS：返回移动预算内所有可达落点（含原地；不可穿过主角/敌人/障碍） */
 function bfsReachable(enemy,budget,H){ const n=G.map.n; const inb=(x,y)=>x>=0&&y>=0&&x<n&&y<n; const ok=(x,y)=> x===enemy.x&&y===enemy.y ? true : (inb(x,y)&&G.map.cells[y*n+x].terrain==='ground'&&!(x===H.x&&y===H.y)&&!combatState.enemies.some(o=>o!==enemy&&o.x===x&&o.y===y)); const out=[{x:enemy.x,y:enemy.y}]; const seen=new Set([enemy.x+','+enemy.y]); let frontier=[{x:enemy.x,y:enemy.y}]; for(let d=1;d<=budget;d++){ const nxt=[]; for(const c of frontier){ for(const [a,b] of [[1,0],[-1,0],[0,1],[0,-1]]){ const X=c.x+a,Y=c.y+b,k=X+','+Y; if(seen.has(k))continue; if(!ok(X,Y))continue; seen.add(k); out.push({x:X,y:Y}); nxt.push({x:X,y:Y}); } } frontier=nxt; if(!frontier.length)break; } return out; }
-/* 命中判定随落点参数化 */
 function hitsFrom(x,y,skill,facing,H){ if(!skill||!H) return false; if(skill.teleport) return true; if(skill.kind==='support') return true; const [dx,dy]=facingDir(facing); if(skill.target==='amid-2'||skill.id==='feather') return Math.abs(x-H.x)+Math.abs(y-H.y)<=2; if(skill.target==='adj-rand'||skill.id==='cbyatk') return Math.max(Math.abs(x-H.x),Math.abs(y-H.y))<=1; if(skill.target==='front6'||skill.id==='trample'){ for(let i=1;i<=6;i++){ const X=x+dx*i,Y=y+dy*i; if(!passable(X,Y)) break; if(X===H.x&&Y===H.y) return true; } return false; } if(skill.id==='missile'){ for(let i=1;i<=400;i++){ const X=x+dx*i,Y=y+dy*i; if(X<0||Y<0||X>=G.map.n||Y>=G.map.n) break; if(G.map.cells[Y*G.map.n+X].terrain==='obstacle') break; if(X===H.x&&Y===H.y) return true; } return false; } if(skill.target==='line'||skill.target==='line-multi'){ for(let i=1;i<=3;i++){ const X=x+dx*i,Y=y+dy*i; if(!passable(X,Y)) break; if(X===H.x&&Y===H.y) return true; } return false; } return (x+dx===H.x && y+dy===H.y); }
 function firstMoveStep(enemy,H){ if(!H) return null; const cs=combatState; const n=G.map.n; const inb=(x,y)=>x>=0&&y>=0&&x<n&&y<n; const startKey=enemy.x*100+enemy.y; const q=[[enemy.x,enemy.y]]; const prev={}; prev[startKey]=null; const seen=new Set([startKey]); let found=false; while(q.length){ const [cx,cy]=q.shift(); if(cx===H.x&&cy===H.y){ found=true; break; } for(const [a,b] of [[1,0],[-1,0],[0,1],[0,-1]]){ const nx=cx+a, ny=cy+b, key=nx*100+ny; if(seen.has(key)) continue; seen.add(key); if(!inb(nx,ny)) continue; if(G.map.cells[ny*n+nx].terrain!=='ground') continue; if((nx!==H.x||ny!==H.y) && cs.enemies.some(o=>o!==enemy&&o.x===nx&&o.y===ny)) continue; prev[key]=cx*100+cy; q.push([nx,ny]); } } if(!found) return null; let cur=H.x*100+H.y, first=cur; while(prev[cur]!=null){ first=cur; cur=prev[cur]; } if(first===startKey) return null; return {x:Math.floor(first/100), y:first%100}; }
 function pathStep(enemy, H, k){ if(!H) return null; const n=G.map.n; const inb=(x,y)=>x>=0&&y>=0&&x<n&&y<n; const startKey=enemy.x*100+enemy.y; const q=[[enemy.x,enemy.y,0]]; const prev={}; prev[startKey]=null; const seen=new Set([startKey]); let foundD=-1; while(q.length){ const [cx,cy,d]=q.shift(); if(d>k) break; if(cx===H.x&&cy===H.y){ foundD=d; break; } for(const [a,b] of [[1,0],[-1,0],[0,1],[0,-1]]){ const nx=cx+a, ny=cy+b, key=nx*100+ny; if(seen.has(key)) continue; seen.add(key); if(!inb(nx,ny)) continue; if(G.map.cells[ny*n+nx].terrain!=='ground') continue; if((nx!==H.x||ny!==H.y) && combatState.enemies.some(o=>o!==enemy&&o.x===nx&&o.y===ny)) continue; prev[key]=cx*100+cy; q.push([nx,ny,d+1]); } } if(foundD<0) return null; const back=foundD-k; if(back<1) return null; let cur=H.x*100+H.y, steps=0; while(prev[cur]!=null && steps<back){ cur=prev[cur]; steps++; } if(steps===0) return null; return {x:Math.floor(cur/100), y:cur%100}; }
@@ -231,7 +232,7 @@ function castEnemySkill(enemy, skill){ const cs=combatState; if(!cs) return; con
   if(skill.id==='slimebang'){ const f=front(); const dmg=dmgOf(skill.mult||1); if(hitHero(f.x,f.y)){ damageHero(dmg,'physical'); dealt=true; log(`${enemy.name} 使用 <b>撞击</b>，造成 ${dmg} 点${elemText('physical')}。`); } else log(`${enemy.name} 的撞击落空。`); }
   else if(skill.id==='slimeburst'){ enemy.noMoveThisTurn=true; const p=teleportNearHero(enemy); if(p){ enemy.x=p.x; enemy.y=p.y; enemy.facing=dirToFacing(cs.hero.x-p.x,cs.hero.y-p.y); } const dmg=dmgOf(skill.mult||1); let hit=false; for(const [a,b] of [[1,0],[-1,0],[0,1],[0,-1]]){ if(hitHero(enemy.x+a,enemy.y+b)){ damageHero(dmg,'grass'); hit=true; } } log(`${enemy.name} 破土而出，${hit?`造成 ${dmg} 点${elemText('grass')}`:'被躲开了'}。`); dealt=hit; }
   else if(skill.id==='firespit'){ const dmg=dmgOf(skill.mult||0.5); const shots=(skill.shots||2); let hits=0; for(let s=1;s<=3;s++){ const x=enemy.x+dxx*s,y=enemy.y+dyy*s; if(!passable(x,y)) break; if(hitHero(x,y)){ hits+=shots; break; } } if(hits>0){ damageHero(dmg*hits,'fire'); dealt=true; } log(`${enemy.name} 吐出火球，${hits>0?`造成 ${hits*dmg} 点${elemText('fire')}`:'全部射失'}。`); setCd(enemy,skill); }
-  else if(skill.id==='waterbubble'){ const t=combatState.turnStartHero||combatState.hero; const bx=t.x,by=t.y; cs.bubbles.push({x:bx,y:by}); log(`${enemy.name} 向你的位置投掷了水泡。`); setCd(enemy,skill); }
+  else if(skill.id==='waterbubble'){ const t=cs.turnStartHero||combatState.hero; cs.bubbles.push({x:t.x,y:t.y,fuse:2}); log(`${enemy.name} 向你的位置投掷了水泡（将在两个回合后落下）。`); setCd(enemy,skill); }
   else if(skill.id==='icemist'){ const dmg=dmgOf(skill.mult||0.8); let onLine=false; for(let s=1;s<=3;s++){ const x=enemy.x+dxx*s,y=enemy.y+dyy*s; if(hitHero(x,y)){onLine=true;break;} if(!passable(x,y))break; } if(onLine){ damageHero(dmg,'ice'); dealt=true; log(`${enemy.name} 喷射冰雾，造成 ${dmg} 点${elemText('ice')}(持续中)。`); } if(enemy.sustain<0){ enemy.sustain=(skill.sustain||2); enemy.sustainSkillId=skill.id; } }
   else if(skill.id==='hbite'||skill.id==='hpbite'||skill.id==='slap'||skill.id==='snakebite'||skill.id==='snakebite2'){
     const f=front();
@@ -257,14 +258,12 @@ function randomRelocate(enemy,r){ const cs=combatState; const m=G.map; const can
 function enemyFaceHero(enemy){ enemy.facing=dirToFacing(combatState.hero.x-enemy.x,combatState.hero.y-enemy.y); }
 function teleportNearHero(enemy){ const cs=combatState; const cand=[[1,0],[-1,0],[0,1],[0,-1]].map(([a,b])=>({x:cs.hero.x+a,y:cs.hero.y+b})).filter(p=>passable(p.x,p.y)&&!(p.x===enemy.x&&p.y===enemy.y)); return cand.length?cand[Math.floor(Math.random()*cand.length)]:null; }
 function damageHero(dmg, type){ const cs=combatState; const pro=getChar('pro'); const block=pro.passives.find(p=>p.id==='block'); if(block&&Math.random()*100<tierValue(block,entryLevel('pro',block),'prob')){ log('【格挡】触发，本次伤害降为0。'); return; } const real=(type==='true'||type==='real'); if(!real && cs.hero.shield>0){ const absorb=Math.min(cs.hero.shield,dmg); cs.hero.shield-=absorb; dmg-=absorb; } let d=Math.max(0,Math.round(dmg)); if(d>0){ cs.hero.hp-=d; G.hero.hp=cs.hero.hp; } const hold=pro.passives.find(p=>p.id==='hold'); if(hold&&!real&&d>0&&Math.random()*100<tierValue(hold,entryLevel('pro',hold),'prob')){ const got=Math.min(G.hero.maxHp-G.hero.hp,Math.round(G.hero.maxHp*0.12)); if(got>0){ cs.hero.hp+=got; G.hero.hp=cs.hero.hp; log(`【坚守】回复 ${got} 点生命。`); } } if(cs.hero.hp<=0){ cs.hero.hp=0; G.hero.hp=0; } checkCombatEnd(); }
-function removeEnemy(enemy){ const cs=combatState; if(!cs) return; const wind=enemy.def&&enemy.def.passives&&enemy.def.passives.find(p=>p.id==='windswirl'); if(wind && cs.enemies.filter(e=>e!==enemy).length>0){ if(dist(enemy,cs.hero)<=2){ cs.hero.x=enemy.x; cs.hero.y=enemy.y; const d=Math.max(1,Math.round(enemy.atk*0.4)); damageHero(d,'wind'); log(`${enemy.name} 的风旋把你卷到了它所在格，受到 ${d} 点${elemText('wind')}。`); } } cs.enemies=cs.enemies.filter(e=>e!==enemy); }
+function removeEnemy(enemy){ const cs=combatState; if(!cs) return; const wind=enemy.def&&enemy.def.passives&&enemy.def.passives.find(p=>p.id==='windswirl'); if(wind && cs.enemies.filter(e=>e!==enemy).length>0){ if(dist(enemy,cs.hero)<=2){ cs.hero.x=enemy.x; cs.hero.y=enemy.y; const d=Math.max(1,Math.round(enemy.atk*0.4)); damageHero(d,'wind'); log(`${enemy.name} 的风旋把你卷到了它所在格，受到 ${d} 点${elemText('wind')}。`); } } cs.defeated.push(enemy); cs.enemies=cs.enemies.filter(e=>e!==enemy); }
 function tryFlee(){ const cs=combatState; if(!cs) return; if(cs.playerMoved||cs.ally.pro.used){ prompt('本回合已使用技能或已移动，无法逃跑。'); return; } const enemy=cs.enemies[0]; const rate=calcEscapeRate(enemy); if(Math.random()*100<rate){ G.hero.escapeSpeed=(G.hero.escapeSpeed||100)+1; endCombat(false,'你成功逃跑了！逃跑速度永久+1。'); } else { log(`逃跑失败！你失去了本回合的行动。`); cs.playerMoved=true; cs.ally.pro.used=true; autoCastAll(); if(!combatState) return; endPlayerPhase(); } }
-function resolveBubbles(){ const cs=combatState; if(!cs) return; for(const b of cs.bubbles.slice()){ if(cs.hero.x===b.x&&cs.hero.y===b.y){ addStatus(cs.ally.pro.statuses,'cage',2); log('水泡砸下，你被【禁锢】2回合。'); } else { const en=cs.enemies.find(e=>e.x===b.x&&e.y===b.y); if(en){ addStatus(en.statuses,'cage',2); log(`${en.name} 被水泡【禁锢】2回合。`); } } } cs.bubbles=[]; }
-function endPlayerPhase(){ const cs=combatState; if(!cs) return; if(cs.enemies.length===0){ return; } enemyTurn(); if(!combatState) return; cs.turn++; applyBurnTick({statuses:cs.ally.pro.statuses},'hero'); applyPoisonTick({statuses:cs.ally.pro.statuses},'hero'); if(G.hero.hp<=0){ endCombatByDefeat(); return; } for(const k of G.team) tickStatuses(cs.ally[k].statuses); for(const e of cs.enemies.slice()){ tickStatuses(e.statuses); } tickStatuses(cs.field);
-  /* 竹叶青·恐吓+：失手→下回束缚主角1回合（在状态结算后施放，可持续到下一玩家回合） */
+function resolveBubbles(){ const cs=combatState; if(!cs) return; for(const b of cs.bubbles.slice()){ b.fuse=(b.fuse==null?1:b.fuse-1); if(b.fuse>0) continue; if(cs.hero.x===b.x&&cs.hero.y===b.y){ addStatus(cs.ally.pro.statuses,'cage',2); log('水泡落下，你被【禁锢】2回合。'); } else { const en=cs.enemies.find(e=>e.x===b.x&&e.y===b.y); if(en){ addStatus(en.statuses,'cage',2); log(`${en.name} 被水泡【禁锢】2回合。`); } } cs.bubbles=cs.bubbles.filter(x=>x!==b); } }
+function endPlayerPhase(){ const cs=combatState; if(!cs) return; if(cs.enemies.length===0){ return; } cs.turnStartHero={x:cs.hero.x,y:cs.hero.y}; enemyTurn(); if(!combatState) return; cs.turn++; applyBurnTick({statuses:cs.ally.pro.statuses},'hero'); applyPoisonTick({statuses:cs.ally.pro.statuses},'hero'); if(G.hero.hp<=0){ endCombatByDefeat(); return; } for(const k of G.team) tickStatuses(cs.ally[k].statuses); for(const e of cs.enemies.slice()){ const had=hasStatus(e.statuses,'sleep'); tickStatuses(e.statuses); if(had&&!hasStatus(e.statuses,'sleep')&&hasP(e,'hiber')) e.justWoke=true; } tickStatuses(cs.field);
   for(const e of cs.enemies.slice()){ if(e.bindNextRound){ addStatus(cs.ally.pro.statuses,'bind',1); log(`${e.name} 的恐吓锁定你，你被【束缚】1回合。`); e.bindNextRound=false; } }
-  endOfRoundEnemyEffects(); resolveBubbles(); cs.hero.shield=0; refreshHeroShield(); cs.playerMoved=false; cs.playerOver=false; for(const k of G.team) cs.ally[k].used=false; planEnemyTurn(); $('#goBtn').style.display='none'; renderCombatMap(); updateCombatUI(); refreshHUD(); checkCombatEnd(); }
-/* 回合末敌方效果：雷史莱姆·导电等 */
+  endOfRoundEnemyEffects(); resolveBubbles(); cs.hero.shield=0; refreshHeroShield(); cs.playerMoved=false; cs.playerOver=false; for(const k of G.team) cs.ally[k].used=false; $('#goBtn').style.display='none'; renderCombatMap(); updateCombatUI(); refreshHUD(); checkCombatEnd(); }
 function endOfRoundEnemyEffects(){ const cs=combatState; if(!cs) return; for(const e of cs.enemies.slice()){ if(hasP(e,'conduct') && Math.random()<0.10 && distCheb(e,cs.hero)<=1){ const d=Math.max(1,Math.round(e.atk*0.4)); damageHero(d,'thunder'); log(`${e.name} 的导电在四周放电！造成 ${d} 点${elemText('thunder')}。`); } } }
 function statusChipHTML(s){ const label = s.id==='poison' ? `中毒 ·${s.layers||0}层` : s.name; const safe=(s.desc||'').replace(/\"/g,'&quot;'); return `<span class="stchip st-${s.kind}" data-st="${s.id}" data-name="${s.id==='poison'?'中毒':s.name}" data-desc="${safe}">${label}${s.turns!=null?` ·${s.turns}回合`:''}</span>`; }
 function statusBarHTML(statuses, extraField){ let chips=''; chips+=statusArr(statuses).map(statusChipHTML).join(''); if(extraField&&Object.keys(extraField).length){ chips+=`<span class="stlabel">全场</span>`+statusArr(extraField).map(statusChipHTML).join(''); } return `<div class="stbar">${chips||'<span class="stempty">无状态</span>'}</div>`; }
@@ -277,8 +276,8 @@ function heroInfoHTML(){ const cs=combatState; return `<b>主角</b><br>攻击 $
 function resAdvice(en){ const high=[]; const map={physical:'物理',fire:'火',water:'水',grass:'草',thunder:'雷',ice:'冰',wind:'风',rock:'岩'}; for(const k in map){ const v=(en.res&&en.res[k])||0; if(v>=30) high.push(map[k]); } return high.length?`<div class="rnote">${high.join('、')}元素抗性较高。</div>`:''; }
 function enemyInfo(en){ const cs=combatState; const tierTxt = en.tier==='elite'?'精英':(en.tier==='boss'?'boss':'普通'); const tabs=`<div class="infotabs"><button class="infotab ${cs.enemyPage===0?'on':''}" onclick="switchEnemyPage(0)">属性</button><button class="infotab ${cs.enemyPage===1?'on':''}" onclick="switchEnemyPage(1)">详细技能</button></div>`; if(cs.enemyPage===1) return tabs+enemySkillsHTML(en); return `${tabs}<b>${en.name}</b>（${en.icon}）<span class="cat ${en.tier==='elite'?'support':'attack'}">${tierTxt}</span><br>攻击 ${en.atk} · 生命 ${Math.round(en.hp)}/${en.maxHp} · 防御 ${en.defv}<br>${enemyIntent(en)}<br>${resAdvice(en)}<div class="sec">状态</div>${statusBarHTML(en.statuses,null)}`; }
 function enemySkillsHTML(en){ const moveTxt=(en.def.skills||[]).filter(s=>s.kind==='move').map(s=>`<div class="eskill"><b>${s.name}</b>（移动）<br>${s.desc}</div>`).join(''); const skillTxt=(en.def.skills||[]).filter(s=>s.kind!=='move').map(s=>`<div class="eskill"><b>${s.name}</b>（${s.kind==='attack'?'攻击':'辅助'}）<br>${terms(s.desc)}</div>`).join(''); const passTxt=(en.def.passives||[]).map(s=>`<div class="eskill"><b>${s.name}</b>（天赋）<br>${terms(s.desc)}</div>`).join(''); return `<b>${en.name}</b> 的技能 / 特殊效果：${passTxt}${moveTxt}${skillTxt||'暂无'}`; }
-function enemyIntent(en){ if(!combatState||!en) return ''; const p=en.plan || resolveEnemyIntent(en); const castName = p.skill? `【${p.skill.kind==='attack'?'攻击':'辅助'}·${p.skill.name}】` : ''; const mv=(en.def.skills||[]).find(s=>s.kind==='move'); const mvName = p.patrolMove ? '移动·巡逻' : (mv?`移动·${mv.name}`:''); const seg=[]; if(p.step==='move' && mvName) seg.push(`【${mvName}】`); if(p.step==='face') seg.push('改变朝向'); if(castName) seg.push(castName); return `意图：${seg.join('＋')}`; }
+function enemyIntent(en){ if(!en) return ''; const sk=en.def.skills||[]; if(hasP(en,'patrol') && en.hp>=en.maxHp) return '意图：移动（巡逻）'; const parts=[]; if(sk.some(s=>s.kind==='attack')) parts.push('攻击'); if(sk.some(s=>s.kind==='support')){ const sup=sk.find(s=>s.kind==='support'); parts.push((sup.target==='self'||sup.healPct)?'强化自身':'施加削弱'); } if(en.def.passives&&en.def.passives.some(p=>p.id==='runaway')) parts.push('逃跑'); if(!parts.length) parts.push('移动'); return `意图：${parts.join('/')}`; }
 window.switchEnemyPage=function(p){ if(combatState){ combatState.enemyPage=p; updateCombatInfo(); } };
-function endCombat(victory, resultTxt){ const cs=combatState; const [ex,ey]=cs.entryCell.split(',').map(Number); G.px=ex; G.py=ey; G.hero.hp=Math.max(1,Math.round(cs.hero.hp||1)); G.hero.facing='up'; const enemies=cs.enemies.slice(); combatState=null; persistRare(enemies, victory); clearLog(); if(victory) grantVictoryRewards(enemies); if(resultTxt) log(resultTxt); const e=G.map.cells[ey*G.map.n+ex]; if(e.content&&e.content.type==='battle'){ e.content={type:'empty'}; } switchMode('story'); prompt(''); renderMap(); refreshHUD(); renderIconbar(); }
+function endCombat(victory, resultTxt){ const cs=combatState; const [ex,ey]=cs.entryCell.split(',').map(Number); G.px=ex; G.py=ey; G.hero.hp=Math.max(1,Math.round(cs.hero.hp||1)); G.hero.facing='up'; const all=[...cs.enemies,...cs.defeated]; const last=lastLogLine(); combatState=null; persistRare(all, victory); clearLog(); if(last) log(last); if(victory) grantVictoryRewards(all); if(resultTxt) log(resultTxt); const e=G.map.cells[ey*G.map.n+ex]; if(e.content&&e.content.type==='battle'){ e.content={type:'empty'}; } switchMode('story'); prompt(''); renderMap(); refreshHUD(); renderIconbar(); }
 function grantVictoryRewards(enemies){ for(const en of (enemies||[])){ if(en.fromSwarm||en.fromPack) continue; const rw=en.def.reward; if(!rw) continue; const parts=[]; if(rw.fruitByHp){ let got=0; const tr=rw.fruitByHp; for(let i=0;i<tr.length;i++){ if(en.hp < tr[i]){ got=i+1; } } if(got>0){ G.inventory.fruit=(G.inventory.fruit||0)+got; parts.push(`果子×${got}`); } if(en.hp<=0 && rw.bonusItems){ for(const k in rw.bonusItems){ G.inventory[k]=(G.inventory[k]||0)+rw.bonusItems[k]; parts.push(`${RES_ZH[k]}×${rw.bonusItems[k]}`); } } const n = en.hp<=0 ? (rw.attrUp||0) : 0; for(let i=0;i<n;i++){ let pick=Math.floor(Math.random()*3); if(pick===0){ G.hero.atk+=1; parts.push('属性升级：攻击+1'); } else if(pick===1){ G.hero.def+=1; parts.push('属性升级：防御+1'); } else { G.hero.maxHp+=5; parts.push('属性升级：最大生命+5'); } } } else { if(rw.items){ for(const k in rw.items){ G.inventory[k]=(G.inventory[k]||0)+rw.items[k]; parts.push(`${RES_ZH[k]}×${rw.items[k]}`); } } if(rw.rate){ for(const k in rw.rate){ if(k!=='prob' && Math.random()<(rw.rate.prob||1)){ G.inventory[k]=(G.inventory[k]||0)+rw.rate[k]; parts.push(`${RES_ZH[k]}×${rw.rate[k]}`); } } } if(rw.coin5 && Math.random()<0.5){ G.inventory.coin+=5; parts.push('金币×5'); } let upTimes=(rw.attrUp||2)*(rw.doubleUp?2:1); for(let i=0;i<upTimes;i++){ let pick = (rw.attrUp===3||rw.doubleUp) ? Math.floor(Math.random()*3) : (Math.random()<0.5?0:1); if(pick===0){ G.hero.atk+=1; parts.push('属性升级：攻击+1'); } else if(pick===1){ G.hero.def+=1; parts.push('属性升级：防御+1'); } else { G.hero.maxHp+=5; parts.push('属性升级：最大生命+5'); } } } if(parts.length) log(`战斗奖励：${parts.join('，')}。`); } }
-function endCombatByDefeat(){ const cs=combatState; const enemy=cs.enemies[0]; const pen=(enemy&&enemy.healthPenalty)||0; G.hero.health=Math.max(0,G.hero.health-pen); G.hero.hp=1; const list=cs.enemies.slice(); combatState=null; persistRare(list,false); const [ex,ey]=cs.entryCell.split(',').map(Number); G.px=ex; G.py=ey; clearLog(); log(`战斗失败，健康值 -${pen}。`); const entry=G.map.cells[ey*G.map.n+ex]; if(entry&&entry.content&&entry.content.type==='battle'){ entry.content={type:'empty'}; } switchMode('story'); prompt(''); renderMap(); refreshHUD(); renderIconbar(); if(G.hero.health<=0){ showGameOver(); } else { alertDialog('战斗失败','你损失了部分健康。'); } }
+function endCombatByDefeat(){ const cs=combatState; const enemy=cs.enemies[0]; const pen=(enemy&&enemy.healthPenalty)||0; G.hero.health=Math.max(0,G.hero.health-pen); G.hero.hp=1; const list=cs.enemies.slice(); const last=lastLogLine(); combatState=null; persistRare(list,false); const [ex,ey]=cs.entryCell.split(',').map(Number); G.px=ex; G.py=ey; clearLog(); if(last) log(last); log(`战斗失败，健康值 -${pen}。`); const entry=G.map.cells[ey*G.map.n+ex]; if(entry&&entry.content&&entry.content.type==='battle'){ entry.content={type:'empty'}; } switchMode('story'); prompt(''); renderMap(); refreshHUD(); renderIconbar(); if(G.hero.health<=0){ showGameOver(); } else { alertDialog('战斗失败','你损失了部分健康。'); } }
