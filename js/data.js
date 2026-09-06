@@ -60,7 +60,10 @@ function foodHeal(k){
   const camp=G && G.inventory && G.inventory.campfire>0;
   const base=FOOD[k]? FOOD[k].heal : 0;
   const add = camp ? (k==='fruit'?1 : k==='rawMeat'?2 : k==='cookedMeat'?4 : 0) : 0;
-  return base+add;
+  let v = base+add;
+  /* 烹饪：果子/生肉+25%，熟肉+75% */
+  if(G && G.team && G.team.indexOf('luyouyou')>=0){ v = Math.round(v * (k==='cookedMeat'?1.75:1.25)); }
+  return v;
 }
 
 function grantPermanentItem(key){
@@ -91,7 +94,7 @@ const ST = {
   shield:{id:'shield', name:'护盾', kind:'buff', desc:'抵消等量伤害（不抵流失类效果），每回合刷新。'},
   alert:{id:'alert', name:'重点目标', kind:'debuff', desc:'我方单位攻击时优先攻击该目标；场上至多存在1个。持续整场战斗。'},
   dr:{id:'dr', name:'伤害减免', kind:'buff', turns:1, desc:'本回合受到的伤害减少40%。'},
-  crit:{id:'crit', name:'屏息', kind:'buff', turns:2, desc:'下一次攻击的暴击率提升100%。'},
+  crit:{id:'crit', name:'屏息瞄准', kind:'buff', turns:null, desc:'下一次攻击的暴击率提升100%（未被消耗前持续整场）。'},
   cage:{id:'cage', name:'禁锢', kind:'debuff', turns:2, desc:'无法行动。主角被禁锢时可移动但移动无实际效果（仅用于结束我方回合）。'},
   poison:{id:'poison', name:'中毒', kind:'debuff', desc:'回合开始时，流失等同层数的生命值（可致死，可叠加）。'},
   sleep:{id:'sleep', name:'睡眠', kind:'debuff', desc:'无法移动、无法攻击；受到伤害导致生命值降低时会提前醒来。'},
@@ -108,7 +111,7 @@ const TERMS = {
   zone:'【结界】技能形成的区域效果。持续时间内对范围内单位施加特定效果。',
   extraTurn:'【额外回合】许泠朦【秋水澄心】天赋触发。仅泠朦能释放技能，无移动。各类增益减益不计时。冷却不减少。',
   steal:'【偷取】对方的数值减少，自身的数值对应增加。',
-  dodge:'【闪避】在敌人即将攻击前从攻击范围内撤出。',
+  dodge:'【闪避】受到攻击时有对应概率使本次所受伤害为0。对真实伤害、控制类/状态类效果以及生命流失类效果不生效；对反弹类伤害生效。多个同名闪避效果独立计算（趋近乘算）。多段伤害每次独立判断。',
 };
 function termHTML(key, zh){ return `<span class="term" data-term="${key}">【${zh}】</span>`; }
 const TERM_KEYS = {重点目标:'alert', 蓄力:'charge', 束缚:'bind', 燃烧:'burn', 激化:'aggro',
@@ -136,35 +139,38 @@ const PROTAGONIST = {
 };
 
 const ALLIES = {
-  xiayang:{ key:'xiayang', name:'夏阳', element:'fire', atk:70,
+  xiayang:{ key:'xiayang', name:'夏阳', element:'fire', atk:10,
     passives:[
-      {id:'fearless', name:'无所畏惧', level:1, scal:{pro:{base:30,grow:5}, self:{base:45,grow:5}}, desc:'主角攻击力+{pro}，自身攻击力+{self}。'},
-      {id:'vigor', name:'活力满满', desc:'睡觉时回复的生命值和健康值翻倍。'},
-      {id:'curious', name:'好奇心', desc:'战斗胜利30%概率额外获一次奖励，50%概率额外获1金币。'},
-      {id:'lucky', name:'心想事成', desc:'可切换行动方式为【巧遇】，移动至场上任意一格，每天限1次。'},
-      {id:'rebirth', name:'涅槃', desc:'战斗中主角受致命伤时不倒下，回复50%生命并使全体我方攻击+25%（每天限1次）。'},
+      {id:'fearless', name:'无所畏惧', level:1, scal:{pro:{base:25,grow:15}, self:{base:35,grow:20}}, desc:'主角攻击力+{pro}，自身攻击力+{self}。'},
+      {id:'vigor', name:'活力满满', desc:'睡觉时回复的生命值和健康值翻倍（本天赋不提供回复，本身不具备回复）。'},
+      {id:'curious', name:'好奇心', desc:'战斗胜利时有30%概率额外获得1次本场战斗的奖励（仅复制物品与金钱，不含属性升级），有50%概率额外获得1金币。'},
+      {id:'lucky', name:'心想事成', desc:'可在载具页切换为【巧遇】，移动至场上任意一格，每天限1次。'},
+      {id:'rebirth', name:'涅槃', desc:'战斗中主角受到致命伤害时不倒下，回复50%生命值并使所有我方角色攻击力+25%。每天限1次。'},
     ],
     skills:[
-      {id:'quhuo', name:'淬火', kind:'attack', type:'fire', range:1, target:'adj', effect:atk=>atk*1.20, formula:'攻击力×120%', desc:'对周围四格随机一名敌人造成{DMG}的火元素伤害。'},
-      {id:'liaoyuan', name:'燎原', kind:'attack', type:'fire', range:4, target:'frontline', effect:atk=>atk*1.50, burn:3, formula:'攻击力×150%', desc:'对前方一线四格内的所有敌人造成{DMG}的火元素伤害，并施加【燃烧】3回合。'},
-      {id:'guwu', name:'鼓舞', kind:'support', type:'buff', range:0, target:'self', effect:null, atkBuffPct:0.25, healPct:0.15, level:1, scal:{buff:{base:25,grow:2,pct:true}, heal:{base:15,grow:1,pct:true}}, desc:'主角回复夏阳攻击力{heal}的生命（约{Y}点），并使攻击力最高的我方角色攻击力+{buff}（持续2回合）。'},
+      {id:'quhuo', name:'淬火', kind:'attack', type:'fire', range:1, target:'adj', randTarget:true, effect:atk=>atk*1.20, formula:'攻击力×120%', desc:'对周围四格随机一名敌人造成{DMG}的火元素伤害。'},
+      {id:'zhongyuan', name:'众愿', kind:'attack', type:'fire', range:1, target:'adj', randTarget:true, effect:atk=>atk*1.90, stealAtk:0.20, cd:2, formula:'攻击力×190%', desc:'【偷取】其余我方角色各20%的攻击力，然后对周围四格随机一名敌人造成{DMG}的火元素伤害。冷却：2回合。'},
+      {id:'liaoyuan', name:'燎原', kind:'attack', type:'fire', range:4, target:'frontline', effect:atk=>atk*1.50, burn:3, cd:5, formula:'攻击力×150%', desc:'对前方一线四格内的所有敌人造成{DMG}的火元素伤害，并施加【燃烧】3回合。冷却：5回合。'},
+      {id:'guwu', name:'鼓舞', kind:'support', type:'buff', range:0, target:'self', effect:null, healPct:0.20, atkFlat:25, level:1, scal:{buff:{base:25,grow:15}, heal:{base:20,grow:10,pct:true}}, desc:'主角回复夏阳攻击力{heal}%的生命（约{Y}），并使攻击力最高的我方角色攻击力+{buff}（持续2回合）。'},
     ],
     selectedSkillIds:['quhuo','liaoyuan','guwu']
   },
-  luyouyou:{ key:'luyouyou', name:'陆悠悠', element:'wind', atk:75,
+  luyouyou:{ key:'luyouyou', name:'陆悠悠', element:'wind', atk:10,
     passives:[
-      {id:'skillful', name:'巧手', level:1, scal:{wood:{base:1,grow:1}}, desc:'睡觉40%概率获{wood}随机资源；合成25%概率获{wood}随机资源。'},
-      {id:'cook', name:'烹饪', desc:'食物效果更好；主角最大生命+100。'},
-      {id:'flutter', name:'蹁跹', level:1, scal:{hp:{base:30,grow:6}}, desc:'探索每移动后主角回复{hp}生命；战斗闪避时主角回复{hp}生命。'},
-      {id:'wind', name:'风息', level:1, scal:{atk:{base:60,grow:6}, crit:{base:30,grow:2,pct:true}}, desc:'自身攻击力+{atk}，暴击率+{crit}；暴击时本次技能伤害由物理转为风元素。'},
+      {id:'skillful', name:'巧手', level:1, scal:{sleep:{base:40,grow:5,pct:true}, craft:{base:25,grow:5,pct:true}}, desc:'睡觉时有{sleep}概率获得1个随机资源；合成时有{craft}概率获得1个随机资源。'},
+      {id:'cook', name:'烹饪', desc:'食物回复效果提升：果子/生肉+25%、熟肉+75%；主角最大生命值+100。'},
+      {id:'flutter', name:'蹁跹', level:1, scal:{dodge:{base:32}, move:{base:30,grow:10}, combat:{base:30,grow:20}}, desc:'主角获得{dodge}闪避；探索每次移动后主角回复{move}生命；战斗中主角每次【闪避】后回复{combat}生命。'},
+      {id:'wind', name:'风息', level:1, scal:{atk:{base:60,grow:6}, crit:{base:30,grow:3,pct:true}}, desc:'自身攻击力+{atk}，暴击率+{crit}；暴击时本次技能伤害由物理转为风元素。'},
       {id:'duo', name:'比翼', desc:'自身暴击后，其余我方角色下一次攻击暴击率+100%。'},
     ],
     skills:[
-      {id:'jingqiao', name:'精巧射击', kind:'attack', type:'physical', range:3, target:'nearest', effect:atk=>atk*1.00, formula:'攻击力×100%', desc:'对三格距离内最近的一名敌人造成{DMG}的物理伤害。'},
-      {id:'qiangli', name:'强力射击', kind:'attack', type:'physical', range:2, target:'frontline', effect:atk=>atk*0.90, formula:'攻击力×90%', desc:'对前方一线两格内的所有敌人造成{DMG}的物理伤害。'},
-      {id:'bixi', name:'屏息瞄准', kind:'support', type:'buff', range:0, target:'self', effect:null, critBuff:1, desc:'陆悠悠下一次攻击的暴击率+100%（不可叠加）。'},
+      {id:'jingqiao', name:'精巧射击', kind:'attack', type:'physical', range:3, target:'nearest', randTarget:true, effect:atk=>atk*0.90, formula:'攻击力×90%', desc:'对三格距离内的随机一名敌人造成{DMG}的物理伤害。'},
+      {id:'tuoshen', name:'脱身矢', kind:'attack', type:'physical', range:3, target:'frontline', effect:atk=>atk*1.00, knockback:1, cd:4, formula:'攻击力×100%', desc:'对前方三格内的所有敌人造成{DMG}的物理伤害，并将其击退1格。冷却：4回合。'},
+      {id:'bixi', name:'屏息瞄准', kind:'support', type:'buff', range:0, target:'self', effect:null, critBuff:1, desc:'屏息瞄准：下一次攻击的暴击率+100%（不可叠加，未被消耗前持续整场）。'},
+      {id:'fengzhi', name:'风止', kind:'attack', type:'physical', range:3, target:'nearest', multTarget:2, effect:atk=>atk*0.70, bindTurns:1, cd:3, formula:'攻击力×70%', desc:'对三格距离内随机2名敌人造成{DMG}的物理伤害，并施加【束缚】1回合。冷却：3回合。'},
+      {id:'ruodian', name:'弱点击破', kind:'attack', type:'physical', range:3, target:'nearest', effect:atk=>atk*1.30, burstBias:true, cd:5, formula:'攻击力×130%', desc:'对三格距离内随机1名敌人造成{DMG}的物理伤害，优先选择正处于【蓄力】的敌人；若目标处于【蓄力】，则本次攻击暴击率+100%并【束缚】3回合。冷却：5回合。'},
     ],
-    selectedSkillIds:['jingqiao','qiangli','bixi']
+    selectedSkillIds:['jingqiao','tuoshen','bixi']
   }
 };
 const CHARACTERS = Object.assign({ pro:PROTAGONIST }, ALLIES);
