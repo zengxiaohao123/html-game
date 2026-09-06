@@ -4,8 +4,10 @@
    ============================================================ */
 "use strict";
 
+/* 存档位上限 */
 const MAX_SAVES = 8;
 
+/* 元素枚举（着色 class 与中文名） */
 const ELEM = {fire:{c:'e-fire',zh:'火'},water:{c:'e-water',zh:'水'},grass:{c:'e-grass',zh:'草'},
   thunder:{c:'e-thunder',zh:'雷'},ice:{c:'e-ice',zh:'冰'},wind:{c:'e-wind',zh:'风'},rock:{c:'e-rock',zh:'岩'}};
 const AURA_ELEMS = ['fire','water','grass','thunder','ice'];
@@ -59,9 +61,11 @@ function foodHeal(k){
   const base=FOOD[k]? FOOD[k].heal : 0;
   const add = camp ? (k==='fruit'?1 : k==='rawMeat'?2 : k==='cookedMeat'?4 : 0) : 0;
   let v = base+add;
+  /* 烹饪：果子/生肉+25%，熟肉+75% */
   if(G && G.team && G.team.indexOf('luyouyou')>=0){ v = Math.round(v * (k==='cookedMeat'?1.75:1.25)); }
   return v;
 }
+
 function grantPermanentItem(key){
   G.inventory[key]=(G.inventory[key]||0)+1;
   switch(key){
@@ -71,11 +75,18 @@ function grantPermanentItem(key){
     case 'leather':   bumpPro('hold'); break;
     case 'ironSword': bumpPro('momentum'); break;
     case 'armor':     bumpPro('block'); bumpPro('hold'); break;
-    case 'tent': G.hero.apCap=(G.hero.apCap||5)+1; G.hero.actionPoint=(G.hero.actionPoint||0)+1; break;
+    case 'tent':
+      G.hero.apCap=(G.hero.apCap||5)+1;
+      G.hero.actionPoint=(G.hero.actionPoint||0)+1;
+      break;
   }
 }
-function bumpPro(talent){ G.proLevels=G.proLevels||{}; G.proLevels[talent]=(G.proLevels[talent]||1)+1; }
+function bumpPro(talent){
+  G.proLevels=G.proLevels||{};
+  G.proLevels[talent]=(G.proLevels[talent]||1)+1;
+}
 
+const TERRAIN_ZH = {ground:'空地', obstacle:'山脉', void:'不可通行'};
 const ST = {
   burn:{id:'burn', name:'燃烧', kind:'debuff', turns:3, desc:'每回合开始时流失2%生命值（可致死，无伤害来源）。持续3回合。'},
   bind:{id:'bind', name:'束缚', kind:'debuff', desc:'无法移动，但可以攻击。'},
@@ -83,24 +94,25 @@ const ST = {
   shield:{id:'shield', name:'护盾', kind:'buff', desc:'抵消等量伤害（不抵流失类效果），每回合刷新。'},
   alert:{id:'alert', name:'重点目标', kind:'debuff', desc:'我方单位攻击时优先攻击该目标；场上至多存在1个。持续整场战斗。'},
   dr:{id:'dr', name:'伤害减免', kind:'buff', turns:1, desc:'本回合受到的伤害减少40%。'},
-  crit:{id:'crit', name:'屏息瞄准', kind:'buff', turns:null, desc:'下一次攻击的暴击率提升100%（未被消耗前持续整场）。'},
+  crit:{id:'crit', name:'屏息', kind:'buff', turns:2, desc:'下一次攻击的暴击率提升100%。'},
+  rage:{id:'rage', name:'狂躁', kind:'buff', turns:5, desc:'攻击力+80%、速度+60，每回合额外攻击1次，掌掴改为攻击周围8格。'},
   cage:{id:'cage', name:'禁锢', kind:'debuff', turns:2, desc:'无法行动。主角被禁锢时可移动但移动无实际效果（仅用于结束我方回合）。'},
   poison:{id:'poison', name:'中毒', kind:'debuff', desc:'回合开始时，流失等同层数的生命值（可致死，可叠加）。'},
   sleep:{id:'sleep', name:'睡眠', kind:'debuff', desc:'无法移动、无法攻击；受到伤害导致生命值降低时会提前醒来。'},
 };
 const TERMS = {
-  alert:'【重点目标】主角天赋【战术布置】产生。我方单位攻击时优先攻击该目标；场上至多存在1个。',
+  alert:'【重点目标】主角天赋【战术布置】产生。我方单位攻击时优先攻击该目标；场上至多存在1个；主角用单体攻击新敌人时覆盖旧目标。',
   charge:'【蓄力】敌人进行强力攻击前的准备状态。蓄力期间不移动、不改变朝向。受到我方任意攻击即被打断。',
   bind:'【束缚】无法移动，但可以攻击。',
   burn:'【燃烧】每回合开始时流失2%生命值（可致死，没有伤害来源）。持续3回合。',
   aggro:'【激化】攻击力+15%；受到的雷元素伤害与草元素伤害+25%。持续2回合。',
-  superconduct:'【超导】雷、冰、物理抗性均降低30%。持续3回合。',
-  frozen:'【冰冻】无法行动（包括移动、攻击、蓄力）。持续1回合。',
+  superconduct:'【超导】雷、冰、物理抗性均降低30%。持续3回合。抗性最终结算强制限定在0%~90%之间。',
+  frozen:'【冰冻】无法行动（包括移动、攻击、蓄力等一切主动行为，不包括被动效果）。持续1回合。',
   cage:'【禁锢】无法行动。',
-  zone:'【结界】技能形成的区域效果。',
-  extraTurn:'【额外回合】许泠朦【秋水澄心】触发。仅泠朦能释放技能，无移动。各类增益减益不计时。',
+  zone:'【结界】技能形成的区域效果。持续时间内对范围内单位施加特定效果。',
+  extraTurn:'【额外回合】许泠朦【秋水澄心】天赋触发。仅泠朦能释放技能，无移动。各类增益减益不计时。冷却不减少。',
   steal:'【偷取】对方的数值减少，自身的数值对应增加。',
-  dodge:'【闪避】受到攻击时有对应概率使本次所受伤害为0。对真实伤害、控制类/状态类效果以及生命流失类效果不生效；对反弹类伤害生效。多个同名闪避效果独立计算。多段伤害每次独立判断。',
+  dodge:'【闪避】受到攻击时有对应概率使本次所受伤害为0。对真实伤害、控制类/状态类效果以及生命流失类效果不生效；对反弹类伤害生效。多个同名闪避效果独立计算（趋近乘算）。多段伤害每次独立判断。',
 };
 function termHTML(key, zh){ return `<span class="term" data-term="${key}">【${zh}】</span>`; }
 const TERM_KEYS = {重点目标:'alert', 蓄力:'charge', 束缚:'bind', 燃烧:'burn', 激化:'aggro',
@@ -110,7 +122,7 @@ const PROTAGONIST = {
   key:'pro', name:'主角', element:null, color:null,
   base:{atk:10, maxHp:100, def:0, escapeSpeed:100, hp:100},
   passives:[
-    {id:'tactic', name:'战术布置', desc:'攻击时设置【重点目标】，我方优先攻击该目标。'},
+    {id:'tactic', name:'战术布置', desc:'攻击时设置【重点目标】，我方优先攻击该目标（持续至该敌人被击败）。'},
     {id:'crit', name:'暴击', level:1, scal:{atk:{base:10,grow:10}, crit:{base:3,grow:2,pct:true}}, desc:'攻击力+{atk}，暴击率+{crit}。'},
     {id:'blood', name:'嗜血', level:1, scal:{atk:{base:20,grow:20}, prob:{base:3,grow:3,pct:true}}, desc:'攻击力+{atk}，使用攻击型技能后有{prob}概率回复生命值，回复量相当于本次伤害的50%。'},
     {id:'momentum', name:'起势', level:1, scal:{atk:{base:30,grow:30}, dmg:{base:4,grow:4,pct:true}}, desc:'攻击力+{atk}，使用攻击型技能后获得{dmg}伤害加成。'},
@@ -165,10 +177,20 @@ const ALLIES = {
 const CHARACTERS = Object.assign({ pro:PROTAGONIST }, ALLIES);
 function getChar(key){ return CHARACTERS[key] || PROTAGONIST; }
 function getTeamChars(){ return (G&&G.team||['pro']).map(k=>getChar(k)).filter(Boolean); }
-function entryLevel(ownerKey, entry){ if(!entry || !entry.scal) return 1; if(ownerKey==='pro'){ const m=(G&&G.proLevels); return (m && m[entry.id])? m[entry.id] : 1; } const b=(G&&G.bonds&&G.bonds[ownerKey]); return b ? (b.level||1) : 1; }
+function entryLevel(ownerKey, entry){
+  if(!entry || !entry.scal) return 1;
+  if(ownerKey==='pro'){ const m=(G&&G.proLevels); return (m && m[entry.id])? m[entry.id] : 1; }
+  const b=(G&&G.bonds&&G.bonds[ownerKey]); return b ? (b.level||1) : 1;
+}
 function tierValue(entry, level, key){ const s=entry.scal[key]; if(!s) return 0; return s.base + (s.grow||0) * Math.max(0, (level||1)-1); }
-function lvDescText(entry, level, ext){ let d=entry.desc||''; if(entry.scal){ for(const key in entry.scal){ const s=entry.scal[key]; const v=tierValue(entry, level, key); d=d.split('{'+key+'}').join(`<span class="lvlup">${v}${s.pct?'%':''}</span>`); } } if(ext){ for(const key in ext){ d=d.split('{'+key+'}').join(`<span class="lvlup">${ext[key]}</span>`); } } return terms(d); }
+function lvDescText(entry, level, ext){
+  let d=entry.desc||'';
+  if(entry.scal){ for(const key in entry.scal){ const s=entry.scal[key]; const v=tierValue(entry, level, key); d=d.split('{'+key+'}').join(`<span class="lvlup">${v}${s.pct?'%':''}</span>`); } }
+  if(ext){ for(const key in ext){ d=d.split('{'+key+'}').join(`<span class="lvlup">${ext[key]}</span>`); } }
+  return terms(d);
+}
 
+/* 敌人库 */
 const SLIME_TEMPLATE = {
   forwards12:{id:'newbie', name:'新手之友', desc:'前12天，最大生命值-60。'},
   jp:{id:'slimejp', name:'蹦蹦跳跳', kind:'move', desc:'向着目标，移动1格。'},
@@ -176,8 +198,8 @@ const SLIME_TEMPLATE = {
 };
 const ENEMIES = {
   slime:{ name:'草史莱姆', icon:'🟢', tier:'ordinary', atk:10, def:0, maxHp:100, speed:4, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:2}, bonus:'属性升级随机二选一'},
-    passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_grass', name:'草元素亲和', desc:'免疫草元素伤害。身上总是附着草元素。'} ],
-    skills:[ SLIME_TEMPLATE.jp, SLIME_TEMPLATE.bang, {id:'slimeburst', name:'破土而出', kind:'attack', type:'grass', target:'self-area4', teleport:true, onlyTurn1:true, mult:1.0, desc:'只在战斗开始第1回合使用：瞬移到目标周围4格随机1格，然后对周围4格造成相当于攻击力100%的草元素伤害。'} ],
+    passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_grass', name:'草元素亲和', desc:'免疫草元素伤害。身上总是附着草元素（任意单位使用技能后重新附着）。'} ],
+    skills:[ SLIME_TEMPLATE.jp, SLIME_TEMPLATE.bang, {id:'slimeburst', name:'破土而出', kind:'attack', type:'grass', target:'self-area4', teleport:true, onlyTurn1:true, mult:1.0, desc:'只在战斗开始的第1回合使用：瞬移到目标周围4格随机1格，然后对周围4格造成相当于攻击力100%的草元素伤害。瞬移后本回合不再主动移动。'} ],
   },
   fireSlime:{ name:'火史莱姆', icon:'🔴', tier:'ordinary', atk:10, def:0, maxHp:100, speed:4, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:2}, bonus:'属性升级随机二选一'},
     passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_fire', name:'火元素亲和', desc:'免疫火元素伤害。身上总是附着火元素。'} ],
@@ -196,7 +218,7 @@ const ENEMIES = {
     skills:[ SLIME_TEMPLATE.jp, SLIME_TEMPLATE.bang, {id:'icemist', name:'冰雾', kind:'attack', type:'ice', target:'line-multi', sustain:2, cd:5, mult:0.8, desc:'向前方3格所有我方单位喷射冰雾，造成80%攻击力冰伤。持续2回合。冷却：5回合。'} ],
   },
   windSlime:{ name:'风史莱姆', icon:'💨', tier:'ordinary', atk:10, def:0, maxHp:100, speed:4, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:2}, bonus:'属性升级随机二选一'},
-    passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_wind', name:'风元素亲和', desc:'免疫风元素伤害。'}, {id:'windswirl', name:'风旋', desc:'被击败时，若战斗未结束，将2格内随机1单位传送至自身格；若是我方则造成40%攻击力风伤。'} ],
+    passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_wind', name:'风元素亲和', desc:'免疫风元素伤害。'}, {id:'windswirl', name:'风旋', desc:'被击败时，若战斗未结束，将2格内随机1单传送至自身格；若是我方则造成40%攻击力风伤。'} ],
     skills:[ SLIME_TEMPLATE.jp, SLIME_TEMPLATE.bang ],
   },
   rockSlime:{ name:'岩史莱姆', icon:'🪨', tier:'ordinary', atk:10, def:0, maxHp:100, speed:4, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:2}, bonus:'属性升级随机二选一'},
