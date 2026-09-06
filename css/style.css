@@ -1,6 +1,7 @@
 /* ============================================================
    异世界流浪日记 · 全站样式（模块：界面与UI / css/style.css）
-   文字一律浅色（白/灰白/红/黄/金）。
+   布局：左侧行动记录(约1/3) / 中地图 / 右侧信息区；底部剧情或战斗角色技能区。
+   文字一律浅色（白/灰白/红/黄/金），不在深色背景上用深色字。
    ============================================================ */
 :root{
   --bg:#14161c; --panel:#1c1f27; --panel2:#222533; --line:#33384a;
@@ -92,13 +93,14 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 .skillTag.attack{border-color:var(--fire); color:#ffd0d0;}
 .skillTag.skill{color:#9fd4ff; border-color:#4a9bff;}
 .skillTag.active{background:#4d4213; border-color:var(--gold);}
+.skillTag.escape{border-color:#2fd47a; color:#a9f0c9;}
+.skillTag.escape.active{background:#17452c; border-color:#2fd47a;}
 .skillNum{display:inline-block; width:20px; height:20px; line-height:20px; text-align:center; background:#000a; border-radius:50%; font-size:12px; margin-right:7px; color:var(--txt);}
 .usedMark{font-size:11px; color:var(--bad); margin-left:6px;}
 #talentBox{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:auto; padding-bottom:2px;}
 .talentLabel{font-size:12px; color:var(--txt-dim); font-weight:600;}
 .talentTag{padding:2px 8px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:3px; font-size:12px; color:var(--txt-dim);}
 .talentTag:hover{background:#2c3040;}
-/* 技能/天赋分类徽章：天赋金、攻击红、辅助蓝 */
 .cat{display:inline-block; font-size:11px; line-height:1; padding:2px 5px; margin-right:6px; border:1px solid var(--line); border-radius:3px; vertical-align:1px; font-weight:600;}
 .cat.talent{color:var(--gold); border-color:var(--gold);}
 .cat.attack{color:var(--fire); border-color:var(--fire);}
