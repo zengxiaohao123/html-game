@@ -23,7 +23,6 @@ const CRAFT_RECIPES = [
   {id:'armor',      out:'armor',      outN:1, needs:{iron:14},  scale:{iron:3}},
 ];
 
-/* 各配方当前待合成数量 */
 let craftQty={};
 
 function openCraft(){
@@ -31,15 +30,12 @@ function openCraft(){
   if(G) renderCrafting();
 }
 
-/* 合成下一个1件的单项耗材（当前已拥有 out 数量 c） */
 function recipeNextNeed(r){
   const c=G.inventory[r.out]||0;
   const need={};
   for(const k in r.needs){ need[k]=r.needs[k] + ((r.scale&&r.scale[k])? r.scale[k]*c : 0); }
   return need;
 }
-
-/* 一次合成 q 件的总耗材：第 i 件（在已合成 c 件之后）耗 base + scale*(c+i) */
 function recipeNeedTotal(r, q, c){
   const need={};
   for(const k in r.needs){
@@ -49,12 +45,10 @@ function recipeNeedTotal(r, q, c){
   }
   return need;
 }
-
-/* 当前最多还能合成几件（若 fill 传 true，则返回恰好耗尽材料件数的上限） */
 function craftMax(r){
   const c=G.inventory[r.out]||0;
-  if(r.max && c>=r.max) return 0;            // 已到全局上限
-  const qCap = r.max? (r.max-c) : 99;        // 件数上限（篝火=1，其余至多99）
+  if(r.max && c>=r.max) return 0;
+  const qCap = r.max? (r.max-c) : 99;
   let q=1;
   for(;q<=qCap;q++){
     const need=recipeNeedTotal(r,q,c);
@@ -62,8 +56,6 @@ function craftMax(r){
   }
   return qCap;
 }
-
-/* 渲染单个配方卡片 */
 function craftRecipeHTML(r){
   const max=Math.max(0,craftMax(r));
   let q=craftQty[r.id]||1; q=Math.max(1, Math.min(q, Math.max(1,max)));
@@ -92,14 +84,12 @@ function craftRecipeHTML(r){
     ${ctl}
   </div>`;
 }
-
 function renderCrafting(){
   const list=CRAFT_RECIPES.map(r=>craftRecipeHTML(r)).join('');
   openModal('合成',
     `<p class="mhint">点击配方中的资源或物品可查看说明。每个配方独立「合成」按钮。</p><div class="cwrapper craft">${list}</div>`,
     'full', {replace:true});
 }
-
 function craftStep(id,d){
   const r=CRAFT_RECIPES.find(x=>x.id===id); if(!r) return;
   const max=Math.max(1,craftMax(r));
@@ -107,7 +97,6 @@ function craftStep(id,d){
   craftQty[id]=q; renderCrafting();
 }
 function craftSet(id,v){ craftQty[id]=Math.max(1, (+v||1)); renderCrafting(); }
-
 function doCraft(id){
   const r=CRAFT_RECIPES.find(x=>x.id===id); if(!r) return;
   if(combatState){ log('战斗中无法使用该功能。'); return; }
@@ -120,16 +109,16 @@ function doCraft(id){
   for(const k in need){ if((G.inventory[k]||0) < need[k]){ log('材料不足，无法合成。'); return; } }
   for(const k in need){ G.inventory[k]-=need[k]; }
   if(ITEMS[r.out] && ITEMS[r.out].permanent){
-    // 永久物品：逐件生效（每件递增耗材、效果叠加、不可消耗）
     for(let i=0;i<q;i++) grantPermanentItem(r.out);
   } else {
     G.inventory[r.out]=(G.inventory[r.out]||0)+r.outN*q;
   }
   craftQty[id]=Math.max(1, craftMax(r)) || 1;
   log(`合成了 <b>${itemName(r.out)} ×${r.outN*q}</b>。`);
+  /* 巧手：合成时有概率额外获得1随机资源 */
+  if(G.team.indexOf('luyouyou')>=0){ const sk=getChar('luyouyou').passives.find(p=>p.id==='skillful'); const pr=vTier(sk,'craft',entryLevel('luyouyou',sk)); if(Math.random()*100<pr){ const k=NATURAL_RESOURCES[Math.floor(Math.random()*NATURAL_RESOURCES.length)]; G.inventory[k]=(G.inventory[k]||0)+1; log(`巧手：额外获得 ${RES_ZH[k]}×1。`); } }
   refreshHUD(); renderCrafting();
 }
-
 document.addEventListener('keydown', ev=>{
   if(ev.key.toLowerCase()==='e' && !ev.repeat){
     if($('#menuOverlay').classList.contains('show')) return;

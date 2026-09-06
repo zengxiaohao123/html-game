@@ -40,15 +40,24 @@ document.addEventListener('keydown', handleKeys, true);
 function sleep(){
   if(!G) return; if(combatState){ log('战斗中无法使用该功能。'); return; }
   if(G.hero.actionPoint>0 && !confirm('行动力尚未耗尽，仍确定直接「睡觉」进入下一天吗？')) return;
+  const inTeam=k=>G.team.indexOf(k)>=0;
   G.hero.actionPoint=G.hero.apCap; G.day+=1;
   const nm=generateMap(G.day); G.map=nm; G.px=nm.px; G.py=nm.py; G.hero.facing='up';
-  G.hero.hp=Math.max(1, Math.min(G.hero.maxHp, Math.round(G.hero.hp+G.hero.maxHp*0.2)));
-  let quiltHeal=0; const quiltN=G.inventory.quilt||0; if(quiltN>0){ const before=G.hero.hp; G.hero.hp=Math.min(G.hero.maxHp, G.hero.hp+30*quiltN); quiltHeal=G.hero.hp-before; }
+  const lines=[`你睡了一觉，进入第 ${G.day} 天。`];
+  /* 睡觉期间的回复/健康来源（本体不再回血）：被子等 */
+  let healGain=0, healthGain=0;
+  if((G.inventory.quilt||0)>0) healGain += 30*(G.inventory.quilt||0);
+  /* 活力满满：睡眠期间回复与健康提升翻倍 */
+  if(inTeam('xiayang')){ healGain*=2; healthGain*=2; }
+  if(healGain>0){ const before=G.hero.hp; G.hero.hp=Math.min(G.hero.maxHp, G.hero.hp+healGain); const got=G.hero.hp-before; if(got>0) lines.push(`被子为你<span class="lvlup">回复 ${got}</span> 点生命。`); }
+  if(healthGain>0){ G.hero.health+=healthGain; lines.push(`健康 +${healthGain}。`); }
   const trapN=G.inventory.trap||0; const trapGain={};
   for(let i=0;i<trapN;i++){ if(Math.random()<0.5){ const k=NATURAL_RESOURCES[Math.floor(Math.random()*NATURAL_RESOURCES.length)]; G.inventory[k]=(G.inventory[k]||0)+1; trapGain[k]=(trapGain[k]||0)+1; } }
+  if(trapN>0){ const keys=Object.keys(trapGain); lines.push(keys.length? `陷阱收获自然资源：${keys.map(k=>RES_ZH[k]+'×'+trapGain[k]).join('，')}。` : '陷阱一无所获，风平浪静。'); }
+  /* 巧手：睡觉时概率获得1随机资源 */
+  if(inTeam('luyouyou')){ const sk=getChar('luyouyou').passives.find(p=>p.id==='skillful'); const pr=vTier(sk,'sleep',entryLevel('luyouyou',sk)); if(Math.random()*100<pr){ const k=NATURAL_RESOURCES[Math.floor(Math.random()*NATURAL_RESOURCES.length)]; G.inventory[k]=(G.inventory[k]||0)+1; lines.push(`巧手：获得 ${RES_ZH[k]}×1。`); } }
   saveGame(2); clearLog(); clearStory(); prompt('');
-  log(`你睡了一觉，进入第 ${G.day} 天。`); if(quiltHeal>0) log(`被子为你<span class="lvlup">回复 ${quiltHeal}</span> 点生命。`);
-  if(trapN>0){ const keys=Object.keys(trapGain); log(keys.length? `陷阱收获自然资源：${keys.map(k=>RES_ZH[k]+'×'+trapGain[k]).join('，')}。` : '陷阱一无所获，风平浪静。'); }
+  for(const l of lines) log(l);
   story(`夜色褪去，新的一天开始了。今天是第 ${G.day} 天。`); refreshHUD(); renderMap(); renderIconbar();
 }
 function bindTooltip(){

@@ -32,6 +32,8 @@ function moveExplore(x,y){
   if(G.hero.actionPoint<1){ log('行动力不足，请先「睡觉」进入下一天。'); return; }
   $('#goBtn').style.display='none'; G.hero.actionPoint-=1; G.hero.facing=dirToFacing(dx,dy); G.px=x; G.py=y;
   useVehicleOnMove();
+  /* 蹁跹：探索每次移动后主角回复生命 */
+  if(G.team.indexOf('luyouyou')>=0){ const fl=getChar('luyouyou').passives.find(p=>p.id==='flutter'); const hv=vTier(fl,'move',entryLevel('luyouyou',fl)); const nx=Math.min(G.hero.maxHp,G.hero.hp+hv); if(nx>G.hero.hp){ const got=nx-G.hero.hp; G.hero.hp=nx; log(`【蹁跹】移动后回复 ${got} 点生命。`); } }
   const ct=target.content&&target.content.type;
   if(ct==='battle'){ log('遭遇敌人！进入战斗。'); startCombat(target); }
   else if(ct==='loot' && !target.content.done){ openLoot(target); }
