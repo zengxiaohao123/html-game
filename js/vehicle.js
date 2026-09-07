@@ -46,7 +46,7 @@ function vehicleTargetCost(def, from, tx, ty){
   if(m.type==='axis'){ if((dx===0&&dy===0)||(dx!==0&&dy!==0)) return null; const d=Math.abs(dx)+Math.abs(dy); if(d<1||d>m.n) return null; return 1; }
   if(m.type==='oct'){ if(Math.max(Math.abs(dx),Math.abs(dy))!==1) return null; return 1; }
   if(m.type==='m2'){ const d=Math.abs(dx)+Math.abs(dy); if(d<1||d>2) return null; return 1; }
-  if(m.type==='any'){ return 1; }
+  if(m.type==='any'){ return (def.cost!=null?def.cost:1); }
   return null;
 }
 function moveCostFor(tx,ty){
@@ -78,7 +78,7 @@ function renderVehicles(){
     const used = finite && v.uses<=0;
     const unusable = used || dailyPenalty;
     const usesTxt = finite ? `<div class="vuses">剩 ${v.uses} 次</div>` : (def.daily? `<div class="vuses">每天限1次</div>` : `<div class="vuses">无限</div>`);
-    return `<div class="vslot ${i===sel?'sel':''} ${unusable?'dis':''}" style="display:flex;align-items:center;gap:10px;padding:8px;border:1px solid var(--border,#333);border-radius:8px;min-height:92px;cursor:pointer" onclick="selVehicle(${i})">
+    return `<div class="vslot ${i===sel?'sel':''} ${unusable?'dis':''}" style="display:flex;flex-direction:row;align-items:center;gap:10px;padding:8px;border:1px solid var(--border,#333);border-radius:8px;min-height:92px;cursor:pointer" onclick="selVehicle(${i})">
       <div style="width:33%;text-align:center">
         <div style="font-size:30px">${def.icon}</div>
         <div class="vname" style="font-weight:bold;margin-top:4px">${def.name}</div>
