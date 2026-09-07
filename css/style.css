@@ -188,3 +188,26 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 .e-thunder{color:var(--thunder)!important;} .e-ice{color:var(--ice)!important;} .e-wind{color:var(--wind)!important;} .e-rock{color:var(--rock)!important;}
 .kbd{background:#000a; border:1px solid var(--line); border-radius:3px; padding:0 5px; font-size:11px;}
 .btn-row{display:flex; gap:8px; flex-wrap:wrap;}
+
+/* ===== 事件系统 ===== */
+#storyBody{font-size:15.5px;}
+#storyBody .ev-card{margin:4px 0; padding:14px 16px; border:1px solid var(--line); border-radius:8px; background:linear-gradient(180deg,#23273a,#1b1e2d); position:relative;}
+#storyBody .ev-card::before{content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--gold); border-radius:2px;}
+#storyBody .ev-title{font-size:22px; font-weight:800; color:var(--gold); margin-bottom:6px; text-align:left;}
+#storyBody .ev-body p{margin:0 0 6px; text-indent:2em; text-align:left; color:#dfe2ec; line-height:1.85;}
+#storyBody .ev-body{text-align:left;}
+#promptZone .ev-opt{margin:10px 0; border:1px solid var(--line); border-radius:6px; overflow:hidden; background:#14171f; cursor:pointer; transition:transform .08s, background .12s;}
+#promptZone .ev-opt:hover{border-color:var(--gold);}
+#promptZone .ev-opt .ev-opt-name{background:#f5f2e8; color:#111; font-size:16px; font-weight:700; padding:7px 10px;}
+#promptZone .ev-opt .ev-opt-desc{background:#050505; color:#b8b8b8; font-size:12.5px; padding:6px 10px;}
+#promptZone .ev-opt .ev-confirm{background:transparent; color:var(--gold); font-size:12px; padding:4px 10px 7px;}
+#promptZone .ev-opt.sel{border-color:#fffbd0; background:#fdf9c4; box-shadow:0 0 8px rgba(255,245,120,.35); transform:scale(1.02);}
+#promptZone .ev-opt.sel .ev-opt-name{background:#fffdee;}
+#promptZone .ev-opt.sel .ev-opt-desc{background:#3a3614; color:#e8e4c0;}
+#promptZone .ev-opt.confirmed{border-color:var(--gold); background:#e8c24a; box-shadow:0 0 12px rgba(255,208,60,.6);}
+#promptZone .ev-opt.confirmed .ev-opt-name{background:#e8c24a; color:#4a3a00;}
+#promptZone .ev-opt.confirmed .ev-opt-desc{background:#5a4a12; color:#fff6d0;}
+#promptZone .ev-opt.dim{opacity:.45; filter:grayscale(.6);}
+#promptZone .ev-opt.dis{cursor:not-allowed; opacity:.4; filter:grayscale(.8);}
+#promptZone .ev-opt.dis .ev-opt-name{background:#4a4a4a; color:#bbb;}
+#promptZone .ev-opt.dis .ev-opt-desc{background:#0c0c0c; color:#777;}

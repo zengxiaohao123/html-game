@@ -4,9 +4,9 @@
    探索移动按当前载具计算可达与行动力消耗；不可前往显示「无法前往」。
    ============================================================ */
 "use strict";
-let optionSelectedIdx=-1;
 function onCellClick(x,y){
   if(combatState){ combatCellClick(x,y); return; }
+  if(eventState){ return; }   // 事件中不可移动至新格（地图缩放/拖拽仍可用）
   if(mapDragMoved) return;
   const m=G.map; const c=m.cells[y*m.n+x]; previewCell={x,y};
   let info=`<b>位置 (${x+1},${y+1})</b><br>`;
@@ -30,6 +30,7 @@ function goBtnForMove(x,y){
 }
 function moveExplore(x,y,cost){
   if(combatState) return;
+  if(eventState) return;
   if(cost===null) return;
   if(moveCostFor(x,y)===null){ goBtnDisabled(); return; }
   if((G.hero.actionPoint||0)<cost){ log('行动力不足。'); $('#goBtn').style.display='none'; return; }
@@ -41,9 +42,9 @@ function moveExplore(x,y,cost){
   $('#goBtn').style.display='none'; renderMap();
   if(G.team.indexOf('luyouyou')>=0){ const fl=getChar('luyouyou').passives.find(p=>p.id==='flutter'); const hv=vTier(fl,'move',entryLevel('luyouyou',fl)); const cap=heroDisplayMaxHp()||G.hero.maxHp; const nx=Math.min(cap, G.hero.hp+hv); if(nx>G.hero.hp){ const got=nx-G.hero.hp; G.hero.hp=nx; log(`【蹁跹】移动后回复 ${got} 点生命。`); } }
   const ct=target.content&&target.content.type;
-  if(ct==='battle'){ log('遭遇敌人！进入战斗。'); startCombat(target); }
+  if(ct==='battle'){ log('遭遇敌人！进入战斗。'); markRareConsume(target); startCombat(target); }
   else if(ct==='loot' && !target.content.done){ openLoot(target); }
-  else if(ct==='event' && !target.content.done){ runEvent(target); }
+  else if(ct==='event' && !target.content.done){ startEvent(target); }
   else if(ct==='empty'){ const got=searchEmpty(); if(got) log(`在空地搜到 <b>${got}</b>。`); else log('空地空空如也，一无所获。'); }
   else { log('这里没有什么特别的。'); }
   if(!combatState){ refreshHUD(); renderMap(); }
@@ -67,19 +68,13 @@ function openLoot(target){
   else { const k=Math.random()<0.5?'dagger':'leather'; grantPermanentItem(k); txt=itemName(k)+'×1'; }
   log(`拾取战利品：<b>${txt}</b>。`); refreshHUD(); renderMap();
 }
-function runEvent(target){
-  target.content.done=true; const ev=Math.random();
-  if(ev<0.28){ const g=2+Math.floor(Math.random()*3); G.inventory.coin+=g; log(`你遇到商人的遗落行囊，获得 <b>${g}</b> 金币。`); }
-  else if(ev<0.55){ const cap=heroDisplayMaxHp(); if(G.hero.hp<cap){ G.hero.hp=Math.min(cap, G.hero.hp+Math.floor(cap*0.15)+10); log('你在一处温泉旁歇脚，回复了部分生命。'); } else log('你在温泉旁歇脚，精神为之一振。'); }
-  else if(ev<0.78){ G.hero.health=Math.max(0,G.hero.health-1); log('一场虚惊让健康有所消耗。'); }
-  else { log('你遇到一位迷路的旅人，他向你求助。'); renderEventOptions([ {text:'慷慨相助，分他一些干粮（获得旅人的谢礼：5 金币）', act:()=>{ G.inventory.coin+=5; log('旅人感激不尽，赠你 5 金币作谢礼。'); refreshHUD(); }}, {text:'婉言谢绝，独自离开', act:()=>{ log('你婉言谢绝了旅人，独自继续前行。'); }} ]); }
-  refreshHUD(); renderMap();
-}
-function renderEventOptions(options){
-  optionSelectedIdx=-1;
-  let html='<div style="margin-bottom:6px"><b>分歧选项：</b></div>';
-  options.forEach((o,i)=>{ html+=`<div class="opt" data-i="${i}">${o.text}</div>`; });
-  html+='<div style="margin-top:6px;color:var(--txt-dim);font-size:12px">单击选中，再单击同一选项确认。</div>';
-  $('#promptZone').innerHTML=html;
-  $('#promptZone').querySelectorAll('.opt').forEach(b=>b.onclick=()=>{ const i=+b.dataset.i; if(optionSelectedIdx===i){ optionSelectedIdx=-1; options[i].act(); $('#promptZone').innerHTML=''; $('#goBtn').style.display='none'; } else { optionSelectedIdx=i; renderEventOptions(options); } });
+function runEvent(target){}
+function renderEventOptions(options){}
+function markRareConsume(target){
+  if((G.inventory.roadmap||0)<=0 || !target.content || !ENEMIES[target.content.key]) return;
+  const def=ENEMIES[target.content.key];
+  if(def.passives && def.passives.some(p=>p.id==='rare')){
+    G.inventory.roadmap=(G.inventory.roadmap||0)-1;
+    log(`进入了标记格，消耗了 <b>路线图×1</b>。`);
+  }
 }

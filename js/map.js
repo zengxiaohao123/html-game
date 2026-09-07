@@ -20,7 +20,9 @@ function generateMap(day){
   const n=inner+2; const off=1;
   const cells=[];
   for(let i=0;i<n*n;i++) cells.push({terrain:'void', content:'empty', idx:i});
-  for(let y=0;y<inner;y++)for(let x=0;x<inner;x++){ const ci=(y+off)*n+(x+off); cells[ci]=rollCell(day); cells[ci].idx=ci; }
+  for(let y=0;y<inner;y++)for(let x=0;x<inner;x++){ const ci=(y+off)*n+(x+off); cells[ci]=rollCell(day); cells[ci].idx=ci;
+    if(cells[ci].content&&cells[ci].content.type==='battle' && isRareEnemy(cells[ci].content.key)){ cells[ci].content.rare=true; }
+  }
   ensureConnectivity(cells,n);
   let start=null; const allGround=[];
   for(let y=off;y<off+inner;y++)for(let x=off;x<off+inner;x++){ if(cells[y*n+x].terrain==='ground') allGround.push({x,y}); }

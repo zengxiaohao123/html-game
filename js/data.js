@@ -34,6 +34,7 @@ const ITEMS = {
   leather:{name:'皮衣', desc:'使主角的【天赋·坚守】提升1级。可叠加', permanent:true},
   ironSword:{name:'铁剑', desc:'使主角的【天赋·起势】提升1级。可叠加', permanent:true},
   armor:{name:'盔甲', desc:'使主角的【天赋·格挡】和【天赋·坚守】各提升1级。可叠加', permanent:true},
+  roadmap:{name:'路线图', desc:'探索中，若地图上有稀有动物，会将其所在格用特殊颜色标记。每次进入被标记的格子后，消耗1张路线图', permanent:true},
 };
 function itemName(k){ return RES_ZH[k] || (ITEMS[k]&&ITEMS[k].name) || k; }
 function itemDesc(k){ return ITEMS[k]? ITEMS[k].desc : (RES_DESC[k]||''); }
@@ -175,4 +176,5 @@ const ENEMIES = {
 function statusMeta(id){ return ST[id]||{id, name:id, kind:'neutral', desc:''}; }
 function randEnemyKey(){ const pool=Object.keys(ENEMIES); return pool[Math.floor(Math.random()*pool.length)]; }
 function rollCombatEvent(day){ const hard=Math.random()<0.30; const tier=hard?'elite':'ordinary'; const pool=Object.keys(ENEMIES).filter(k=>ENEMIES[k].tier===tier); const key=pool.length? pool[Math.floor(Math.random()*pool.length)] : Object.keys(ENEMIES)[0]; return {type:'battle', sub:hard?'hard':'normal', key}; }
+function isRareEnemy(key){ const e=ENEMIES[key]; return !!(e&&e.passives&&e.passives.some(p=>p.id==='rare')); }
 function isSlimeKey(k){ return ['slime','fireSlime','waterSlime','thunderSlime','iceSlime','windSlime','rockSlime'].includes(k); }

@@ -20,7 +20,7 @@ function showGameOver(){ $('#goMsg').innerHTML='你的健康已归零，流浪�
 function loadAfterGameOver(){ $('#gameoverOverlay').classList.remove('show'); openReadSaveMenu(); }
 function backToMenu(){ combatState=null; $('#gameoverOverlay').classList.remove('show'); showMenu(); }
 function startNew(){ $('#menuOverlay').classList.remove('show'); G=newGame(); G.map=generateMap(G.day); G.px=G.map.px; G.py=G.map.py; loadIntoWorld(); }
-function loadIntoWorld(){ $('#menuOverlay').classList.remove('show'); combatState=null; if(!G.map) G.map=generateMap(G.day); if(G.px===undefined||G.py===undefined){ G.px=G.map.px; G.py=G.map.py; } if(!G.vehicles||!G.vehicles.some(v=>v&&v.key==='dash')){ G.vehicles=standardVehicles(); G.vehicleSel=0; } refreshHUD(); renderIconbar(); if(G.combat){ const c=G.combat; G.combat=null; reenterCombat(c); return; } switchMode('story'); renderMap(); story('你又一次在异世界醒来。这一次，你决定无论如何都要活下去。'); ensureKeyFocus(); }
+function loadIntoWorld(){ $('#menuOverlay').classList.remove('show'); combatState=null; if(!G.map) G.map=generateMap(G.day); if(G.px===undefined||G.py===undefined){ G.px=G.map.px; G.py=G.map.py; } if(!G.vehicles||!G.vehicles.some(v=>v&&v.key==='dash')){ G.vehicles=standardVehicles(); G.vehicleSel=0; } refreshHUD(); renderIconbar(); if(G.combat){ const c=G.combat; G.combat=null; reenterCombat(c); return; } const cur=G.map.cells[G.py*G.map.n+G.px]; if(cur && cur.content && cur.content.type==='event' && !cur.content.done){ switchMode('story'); renderMap(); startEvent(cur); return; } switchMode('story'); renderMap(); story('你又一次在异世界醒来。这一次，你决定无论如何都要活下去。'); ensureKeyFocus(); }
 function ensureKeyFocus(){ try{ if(document.body) document.body.setAttribute('tabindex','-1'); window.focus(); if(document.body) document.body.focus({preventScroll:true}); }catch(e){} }
 function handleKeys(ev){
   if($('#menuOverlay').classList.contains('show') || $('#gameoverOverlay').classList.contains('show')) return;
@@ -33,13 +33,14 @@ function handleKeys(ev){
     return;
   }
   if(!G||!G.map) return; if($('#modalOverlay').classList.contains('show')) return; if(ev.repeat) return;
+  if(eventState) return;   // 事件中不可移动
   const k=ev.key.toLowerCase(); let dx=0,dy=0;
   if(k==='w'){dy=-1;} else if(k==='s'){dy=1;} else if(k==='a'){dx=-1;} else if(k==='d'){dx=1;} else return;
   const nx=G.px+dx, ny=G.py+dy; if(nx<0||ny<0||nx>=G.map.n||ny>=G.map.n) return; moveExplore(nx,ny,1);
 }
 document.addEventListener('keydown', handleKeys, true);
 function sleep(){
-  if(!G) return; if(combatState){ log('战斗中无法使用该功能。'); return; }
+  if(!G) return; if(combatState||eventState){ log('事件中无法使用该功能。'); return; }
   if(G.hero.actionPoint>0 && !confirm('行动力尚未耗尽，仍确定直接「睡觉」进入下一天吗？')) return;
   const inTeam=k=>G.team.indexOf(k)>=0;
   G.hero.actionPoint=G.hero.apCap; G.day+=1;

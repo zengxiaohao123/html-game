@@ -26,7 +26,7 @@ const CRAFT_RECIPES = [
 let craftQty={};
 
 function openCraft(){
-  if(combatState){ log('战斗中无法使用该功能。'); return; }
+  if(combatState||eventState){ log('事件中无法使用该功能。'); return; }
   if(G) renderCrafting();
 }
 
