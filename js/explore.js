@@ -44,7 +44,7 @@ function moveExplore(x,y,cost){
   const ct=target.content&&target.content.type;
   if(ct==='battle'){ log('遭遇敌人！进入战斗。'); markRareConsume(target); startCombat(target); }
   else if(ct==='loot' && !target.content.done){ openLoot(target); }
-  else if(ct==='event' && !target.content.done){ startEvent(target); }
+  else if(ct==='event' && !target.content.done){ startEvent(x,y); }
   else if(ct==='empty'){ const got=searchEmpty(); if(got) log(`在空地搜到 <b>${got}</b>。`); else log('空地空空如也，一无所获。'); }
   else { log('这里没有什么特别的。'); }
   if(!combatState){ refreshHUD(); renderMap(); }

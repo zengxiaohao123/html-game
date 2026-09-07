@@ -112,20 +112,22 @@ const EVENTS = [
   },
 ];
 
-function startEvent(cell){
-  const cs=cell.content;
-  let slot=cs.slot;
-  if(!slot){ slot={}; cs.slot=slot; }
+function startEvent(x, y, slotOverride){
+  // 需求1：进入事件格即把该格变为空地（防止事件内战斗结束后格子残留）
+  const gcell=G.map.cells[y*G.map.n+x];
+  if(gcell && gcell.content) gcell.content={type:'empty'};
+  let slot = slotOverride || (gcell && gcell.content.slot) || {};
   let ev;
   if(slot.evId){ ev=EVENTS.find(e=>e.id===slot.evId)||null; }
   else { ev=EVENTS[Math.floor(Math.random()*EVENTS.length)]; }
   if(!ev) ev=EVENTS[0];
   slot.evId=ev.id;
-  cs.done=false; cs.type='event';
   // 先求值 body（内部会初始化随机值），再求值 options
   const body=typeof ev.getBody==='function' ? ev.getBody(slot) : ev.getBody;
   const options=typeof ev.options==='function' ? ev.options(slot) : ev.options;
-  eventState={ ev, slot, body, options, selected:-1, resolving:false, cell, phase:'body' };
+  eventState={ ev, slot, body, options, selected:-1, resolving:false, cell:{x,y}, phase:'body' };
+  // 事件状态存到 G.activeEvent，供读档恢复（格子已清空不影响重开）
+  if(G){ G.activeEvent={ x, y, slot }; }
   lockEventUI();
   showEventBody();
 }
@@ -218,12 +220,12 @@ function confirmEventOption(i){
   setTimeout(()=>{ finishEvent(s.result); }, 2000);
 }
 
-/* 事件结束：结果打字机显示，事件格变空地，恢复交互 */
+/* 事件结束：结果打字机显示，清空活动事件，恢复交互（格子已在进入时变空地） */
 function finishEvent(result){
   const s=eventState; if(!s) return;
-  const cell=s.cell;
-  if(cell){ const c=cell.content; if(c){ c.type='empty'; c.done=false; delete c.slot; } }
   const title=s.ev.title;
+  // 格子进入事件时已清空；这里仅清除活动事件状态
+  if(G) delete G.activeEvent;
   eventState=null;
   unlockEventUI();
   prompt('');
@@ -248,7 +250,9 @@ function enterEventBattle(enemyKey){
   const s=eventState;
   const cell=s? s.cell : null;
   const x=cell?cell.x:G.px, y=cell?cell.y:G.py;
+  // 该格已为空地，转为战斗格；战斗结束 endCombat 会清空 entryCell(=当前格)
   if(G.map.cells[y*G.map.n+x]) G.map.cells[y*G.map.n+x].content={type:'battle', sub:'event', key:enemyKey};
+  if(G) delete G.activeEvent;
   eventState=null;
   unlockEventUI();
   startCombat({ content:{ key:enemyKey } });

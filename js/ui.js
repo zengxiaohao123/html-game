@@ -88,7 +88,7 @@ function itemDetailHTML(key){
     return `回复 <span class="lvlup">${foodHeal(key)}</span> 点生命${add}（已计入篝火、烹饪天赋加成）。`;
   }
   const map={club:'crit',cloth:'block',dagger:'blood',leather:'hold',ironSword:'momentum'};
-  if(map[key]){ const lv=(G&&G.proLevels&&G.proLevels[map[key]])||1; return `使主角【天赋·${map[key]}】升为 <span class="lvlup">${lv+1}</span> 级（当前 ${lv} 级）。`; }
+  if(map[key]){ const tid=map[key]; const tname=(PROTAGONIST.passives.find(p=>p.id===tid)||{}).name || tid; const lv=(G&&G.proLevels&&G.proLevels[tid])||1; return `使主角【天赋·${tname}】升为 <span class="lvlup">${lv+1}</span> 级（当前 ${lv} 级）。`; }
   if(key==='armor'){ const lv=(G&&G.proLevels&&G.proLevels.block)||1; return `使【格挡】升为 <span class="lvlup">${lv+2}</span> 级、【坚守】升为 <span class="lvlup">${((G&&G.proLevels&&G.proLevels.hold)||1)+1}</span> 级。`; }
   return itemDesc(key)||'（暂无说明）';
 }
