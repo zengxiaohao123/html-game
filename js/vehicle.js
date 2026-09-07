@@ -1,6 +1,6 @@
 /* ============================================================
    js/vehicle.js —— 模块：载具系统
-   探索/战斗均可打开；选择当前移动方式；格子式展示每个载具。
+   探索/战斗均可打开；选择当前移动方式；三列排版展示每个载具。
    默认「徒步跋涉」无限次；同种载具可多个；每次移动消耗次数/规则；
    次数耗尽自动切回徒步跋涉。快捷键 T 打开。
    载具均用「点击格子 + 点前往」移动（WASD 仅徒步）。
@@ -78,17 +78,19 @@ function renderVehicles(){
     const used = finite && v.uses<=0;
     const unusable = used || dailyPenalty;
     const usesTxt = finite ? `<div class="vuses">剩 ${v.uses} 次</div>` : (def.daily? `<div class="vuses">每天限1次</div>` : `<div class="vuses">无限</div>`);
-    return `<div class="vslot ${i===sel?'sel':''} ${unusable?'dis':''}" style="min-width:220px" onclick="selVehicle(${i})">
-      <div class="vicon">${def.icon}</div>
-      <div class="vname">${def.name}</div>
-      ${usesTxt}
-      <div class="vdesc">${def.desc||''}</div>
+    return `<div class="vslot ${i===sel?'sel':''} ${unusable?'dis':''}" style="display:flex;align-items:center;gap:10px;padding:8px;border:1px solid var(--border,#333);border-radius:8px;min-height:92px;cursor:pointer" onclick="selVehicle(${i})">
+      <div style="width:33%;text-align:center">
+        <div style="font-size:30px">${def.icon}</div>
+        <div class="vname" style="font-weight:bold;margin-top:4px">${def.name}</div>
+        ${usesTxt}
+      </div>
+      <div style="width:67%;font-size:13px;line-height:1.55;color:var(--txt-dim,#aaa)">${def.desc||''}</div>
     </div>`;
   }).join('');
   const selDef=curVehicleDef();
   openModal('载具',
     `<p class="mhint">点击选择当前移动方式。载具移动需先<i>点击目标格子</i>再点「前往」。探索按各载具规则消耗行动力；战斗中视为一次移动。${selDef.exploreOnly?'当前「疾行」仅探索可用。':''}</p>`+
-    `<div class="vgrid">${grid||'<span class="stempty">暂无载具</span>'}</div>`, 'full', {replace:true});
+    `<div class="vgrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;align-items:stretch">${grid||'<span class="stempty">暂无载具</span>'}</div>`, 'full', {replace:true});
 }
 window.selVehicle=function(i){
   const vs=getVehicles(); if(!vs[i]) return;
