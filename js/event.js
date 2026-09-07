@@ -1,7 +1,8 @@
 /* ============================================================
    js/event.js —— 模块：随机事件系统
-   真正可选择的选项交互（选中→确认→延迟→结果）。
-   事件标题/正文放剧情区，选项放信息区，结果回剧情区。
+   真正可选择的选项交互（选中→确认→2s淡出→结果）。
+   事件标题/正文按自然段打字机逐段显示，段间点击剧情区推进；
+   打完最后一段才显示选项。结果同样打字机显示。
    事件激活时：地图可缩放平移但不可移动；编队/商店/睡觉/合成禁用。
    随机值在事件生成时（进入事件格）决定并存于格子，读档不变。
    ============================================================ */
@@ -11,7 +12,6 @@ let eventState = null;
 
 /* 基准售价（非商店品的参考价，用于流浪商人）。商店品直接用 SHOP_ITEMS 的买入价。 */
 const TRADER_REF_PRICE = { club:12, cloth:14, wood:2, flax:3, dagger:32, leather:20 };
-/* 流浪商人可选商品：每项 [inventoryKey, 数量, 标题] */
 const TRADER_GOODS = [
   { key:'wood',   n:4, label:'木材×4' },
   { key:'flax',   n:4, label:'麻布×4' },
@@ -21,7 +21,6 @@ const TRADER_GOODS = [
   { key:'leather',n:1, label:'皮衣'    },
 ];
 
-/* 事件定义。body 支持 {全参} 占位；options 在事件生成时动态求值。 */
 const EVENTS = [
   {
     id:'coin', title:'无主之物',
@@ -113,38 +112,69 @@ const EVENTS = [
   },
 ];
 
-/* 从 grid 事件格开始事件（格子必须 content.type==='event' 且未完成）。
-   若格子已生成过事件（slot.evId 存在），则复用其随机值，保证读档不影响本次值。 */
 function startEvent(cell){
   const cs=cell.content;
   let slot=cs.slot;
   if(!slot){ slot={}; cs.slot=slot; }
   let ev;
-  if(slot.evId){
-    ev=EVENTS.find(e=>e.id===slot.evId)||null;
-  } else {
-    const pool=EVENTS.slice(); ev=pool[Math.floor(Math.random()*pool.length)];
-  }
-  if(!ev){ ev=EVENTS[0]; }
+  if(slot.evId){ ev=EVENTS.find(e=>e.id===slot.evId)||null; }
+  else { ev=EVENTS[Math.floor(Math.random()*EVENTS.length)]; }
+  if(!ev) ev=EVENTS[0];
   slot.evId=ev.id;
-  cs.done=false;
-  cs.type='event';
-  eventState={ ev, slot, selected:-1, resolving:false, cell };
-  renderEvent();
+  cs.done=false; cs.type='event';
+  // 先求值 body（内部会初始化随机值），再求值 options
+  const body=typeof ev.getBody==='function' ? ev.getBody(slot) : ev.getBody;
+  const options=typeof ev.options==='function' ? ev.options(slot) : ev.options;
+  eventState={ ev, slot, body, options, selected:-1, resolving:false, cell, phase:'body' };
+  lockEventUI();
+  showEventBody();
 }
 
-/* 在当前事件格渲染标题到剧情区、选项到信息区 */
-function renderEvent(){
-  const s=eventState; if(!s) return;
-  const options=typeof s.ev.options==='function' ? s.ev.options(s.slot) : s.ev.options;
-  s.options=options;
-  const body=typeof s.ev.getBody==='function' ? s.ev.getBody(s.slot) : s.ev.getBody;
-  clearStory();
+function lockEventUI(){
   $('#bottom').classList.add('mode-event-lock');
   $('#goBtn').style.display='none';
   renderIconbar();
-  $('#storyBody').insertAdjacentHTML('beforeend', `<div class="ev-card"><div class="ev-title">${s.ev.title}</div><div class="ev-body">${body}</div></div>`);
-  renderEventOptions();
+}
+function unlockEventUI(){
+  $('#bottom').classList.remove('mode-event-lock');
+  renderIconbar();
+}
+
+/* 事件正文：按自然段打字机逐段，段间点击剧情区推进；打完最后一段才显示选项 */
+function showEventBody(){
+  const s=eventState; if(!s) return;
+  storyClear();
+  // 标题单独一行（不参与打字机，直接显示），正文随后逐段打字
+  const box=$('#storyBody');
+  box.insertAdjacentHTML('beforeend', `<div class="ev-title">${s.ev.title}</div>`);
+  const paras=splitParas(s.body);
+  s.bodyParas=paras;
+  s.bodyIdx=0;
+  typeNextBodyPara();
+}
+function typeNextBodyPara(){
+  const s=eventState; if(!s) return;
+  if(s.bodyIdx>=s.bodyParas.length){ s.phase='choose'; renderEventOptions(); return; }
+  const seg=s.bodyParas[s.bodyIdx]; s.bodyIdx++;
+  s.phase='body';
+  // 段打完：若还有下一段，等待点击推进；若是最后一段，直接进入选择
+  const isLast = s.bodyIdx>=s.bodyParas.length;
+  storyPush(seg, ()=>{ if(eventState && isLast){ eventState.phase='choose'; renderEventOptions(); } });
+}
+function splitParas(html){
+  const clean=String(html).trim();
+  // 以 </p> 或 <br> 为段落结束，保留完整标签
+  const paras=clean.split(/(?=<\/?p>|<br\s*\/?>)/).filter(x=>x&&x.trim());
+  // 合并：将 "<p>正文" 与 "</p>" 重新拼成完整 "<p>正文</p>"
+  const merged=[];
+  for(let i=0;i<paras.length;i++){
+    let seg=paras[i];
+    if(/^<p[^>]*>/.test(seg) && !/<\/p>$/.test(seg) && i+1<paras.length){
+      seg += paras[i+1]; i++;
+    }
+    if(seg && seg.trim()) merged.push(seg);
+  }
+  return merged.length? merged : [clean];
 }
 
 /* 渲染信息区选项 */
@@ -152,71 +182,102 @@ function renderEventOptions(){
   const s=eventState; if(!s||!s.options) return;
   const html=s.options.map((o,i)=>{
     const usable=o.req();
-    const sel = i===s.selected;
+    const sel=i===s.selected;
+    const descHtml = (o.desc==null||o.desc===''||o.desc==='无') ? '' : `<div class="ev-opt-desc">${o.desc}</div>`;
+    const confirm = sel? '<span class="ev-confirm">你确定这么做？</span>' : '';
     return `<div class="ev-opt ${sel?'sel':''} ${usable?'':'dis'}" data-i="${i}">
-      <div class="ev-opt-name">${o.name}</div>
-      <div class="ev-opt-desc">${o.desc}</div>
-      ${sel?'<div class="ev-confirm">你确定这么做？</div>':''}
+      <div class="ev-opt-name"><span>${o.name}</span>${confirm}</div>
+      ${descHtml}
     </div>`;
   }).join('');
-  prompt(html);
+  prompt(`<div class="ev-opt-wrap">${html}</div>`);
   $('#promptZone').querySelectorAll('.ev-opt').forEach(b=>{
-    b.onclick=()=>{ if(s.resolving) return; const i=+b.dataset.i; const usable=s.options[i].req(); if(!usable){ log('当前无法选择该选项。'); return; } selectEventOption(i); };
+    b.onclick=()=>{ if(s.resolving) return; const i=+b.dataset.i; if(!s.options[i].req()){ log('当前无法选择该选项。'); return; } selectEventOption(i); };
   });
 }
 
 function selectEventOption(i){
   const s=eventState; if(!s||s.resolving) return;
-  if(s.selected===i){
-    confirmEventOption(i);
-  } else {
-    s.selected=i; renderEventOptions();
-  }
+  if(s.selected===i){ confirmEventOption(i); }
+  else { s.selected=i; renderEventOptions(); }
 }
 
 function confirmEventOption(i){
   const s=eventState; if(!s) return;
   const opt=s.options[i]; if(!opt) return;
   s.resolving=true;
-  // 确认：选项变金
-  prompt(s.options.map((o,j)=> j===i
-    ? `<div class="ev-opt confirmed"><div class="ev-opt-name">${o.name}</div><div class="ev-opt-desc">${o.desc}</div></div>`
-    : `<div class="ev-opt dim"><div class="ev-opt-name">${o.name}</div><div class="ev-opt-desc">${o.desc}</div></div>`
-  ).join(''));
-  // 短暂延迟后应用结果、清空选项、事件结束
-  setTimeout(()=>{
-    if(!eventState) return;
-    const result=opt.resolve(s.slot) || '（事件继续……）';
-    finishEvent(result);
-  }, 600);
+  // 确认：选中项变金，其余淡化；整体 2s 内淡出
+  const wrap=$('#promptZone .ev-opt-wrap');
+  $('#promptZone').querySelectorAll('.ev-opt').forEach((el,j)=>{
+    if(j===i) el.classList.add('confirmed');
+    else el.classList.add('dim');
+  });
+  const result=opt.resolve(s.slot) || '';
+  s.result=result;
+  if(wrap) wrap.style.opacity='0';
+  setTimeout(()=>{ finishEvent(s.result); }, 2000);
 }
 
-/* 事件结束：结果写入剧情区，事件格变空地，恢复交互 */
+/* 事件结束：结果打字机显示，事件格变空地，恢复交互 */
 function finishEvent(result){
-  const s=eventState;
-  if(!s) return;
-  const body='<div class="ev-card"><div class="ev-title">'+s.ev.title+'</div><div class="ev-body">'+result+'</div></div>';
-  clearStory(); $('#storyBody').insertAdjacentHTML('beforeend', body);
-  // 事件格变空地
-  const c=s.cell&&s.cell.content;
-  if(c){ c.type='empty'; c.done=false; delete c.slot; }
+  const s=eventState; if(!s) return;
+  const cell=s.cell;
+  if(cell){ const c=cell.content; if(c){ c.type='empty'; c.done=false; delete c.slot; } }
+  const title=s.ev.title;
   eventState=null;
-  $('#bottom').classList.remove('mode-event-lock');
+  unlockEventUI();
   prompt('');
   $('#goBtn').style.display='none';
-  renderMap(); refreshHUD(); renderIconbar();
+  renderMap(); refreshHUD();
+  // 结果打字机显示；标题保留，正文为结果
+  storyClear();
+  const box=$('#storyBody');
+  box.insertAdjacentHTML('beforeend', `<div class="ev-title">${title}</div>`);
+  const paras=splitParas(result);
+  let idx=0;
+  const typeNext=()=>{
+    if(idx>=paras.length){ /* 全部结果段打完，等点击清空 */ return; }
+    const seg=paras[idx]; idx++;
+    storyPush(seg, ()=>{ /* 段打完 */ if(idx<paras.length){ typeNext(); } });
+  };
+  typeNext();
 }
 
-/* 事件内进入战斗（讨伐熊 / 穷追不舍）：把事件格转为战斗格再进入，战斗结束自动清空为空地 */
+/* 事件内进入战斗：把事件格转为战斗格再进入，战斗结束自动清空为空地 */
 function enterEventBattle(enemyKey){
   const s=eventState;
   const cell=s? s.cell : null;
   const x=cell?cell.x:G.px, y=cell?cell.y:G.py;
   if(G.map.cells[y*G.map.n+x]) G.map.cells[y*G.map.n+x].content={type:'battle', sub:'event', key:enemyKey};
   eventState=null;
-  $('#bottom').classList.remove('mode-event-lock');
+  unlockEventUI();
   startCombat({ content:{ key:enemyKey } });
 }
 
-/* 事件是否激活（供 UI/存档/输入判定） */
 function inEvent(){ return !!eventState; }
+
+/* 剧情区点击（全局，由 ui.js 绑定）：
+   1) 正在打字 → 立即显示本段全部文字（不推进，符合要求10情况1）
+   2) 已打完且事件正文还有下一段 → 推进到下一段（要求8：快速跳下一段）
+   3) 已打完且是事件正文最后一段 / 结果 → 剧情区清空（要求8） */
+function onStoryClick(){
+  if(storyIsTyping()){ storySkipToEnd(); return; }
+  // 已打完
+  const s=eventState;
+  if(s && s.phase==='body' && s.bodyIdx < s.bodyParas.length){
+    typeNextBodyPara();
+    return;
+  }
+  if(s && s.phase==='choose') return; // 等待选择，不可跳过（点击不处理）
+  // 非事件普通剧情 / 结果：若有待打段落→推进到下一段；否则（最后一段）→清空
+  if(storyHasMore()){ storyAdvance(); return; }
+  storyClear();
+}
+document.addEventListener('click', ev=>{
+  if(ev.target.closest('#storyBody')) onStoryClick();
+  // 选中某选项后点击别处（非选项）→ 取消选中（要求3）
+  const s=eventState;
+  if(s && s.phase==='choose' && !s.resolving && s.selected>=0 && !ev.target.closest('.ev-opt')){
+    s.selected=-1; renderEventOptions();
+  }
+});

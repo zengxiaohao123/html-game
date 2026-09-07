@@ -6,7 +6,82 @@ const $=id=>document.querySelector(id);
 function el(html){const d=document.createElement('div'); d.innerHTML=html; return d.firstElementChild;}
 function switchMode(m){ gameMode=m; $('#bottom').classList.toggle('mode-story', m==='story'); $('#bottom').classList.toggle('mode-combat', m==='combat'); $('#rightTitle').textContent='信息'; if(m==='story') $('#goBtn').style.display='none'; }
 function clearLog(){ $('#logBody').innerHTML=''; }
-function clearStory(){ $('#storyBody').innerHTML=''; }
+function clearStory(){ storyClear(); }
+/* ---- 打字机剧情引擎 ----
+   规则：storyPush 追加一段并开始打字。段打字完成后触发 storyOnDone（不自动连打）。
+   点击剧情区：打字中→storySkipToEnd 立即显示整段；已打完→storyAdvance 推进到下一段
+   （若有多段则打下一段；若已是最后一段则交由调用方 storyOnEnd 处理，如清空剧情区）。
+   注：段间推进依赖外部调用 storyAdvance，引擎不自动连打，以支持“段间点击推进”。 */
+let storyQueue=[];
+let storyTimer=null;
+let storyTyping=false;
+let storyIdx=0;
+let storyCurrent=null;
+let storyOnDone=null;   // 当前段打完后的回调（用于事件：非末段时留待点击，末段时显示选项）
+let storyOnEnd=null;    // 全部段都打完后的回调（结果最后一段点击清空等）
+function storyClear(){ storyQueue=[]; if(storyTimer){clearInterval(storyTimer);storyTimer=null;} storyTyping=false; storyCurrent=null; storyOnDone=null; storyOnEnd=null; $('#storyBody').innerHTML=''; }
+function storyPush(html, onDone, onEnd){
+  const clean=String(html).trim();
+  const paras=clean.split(/(?=<\/?p>|<br\s*\/?>)/).filter(s=>s&&s.trim());
+  const merged=[];
+  for(let i=0;i<paras.length;i++){
+    let seg=paras[i];
+    if(/^<p[^>]*>/.test(seg) && !/<\/p>$/.test(seg) && i+1<paras.length){ seg += paras[i+1]; i++; }
+    if(seg&&seg.trim()) merged.push(seg);
+  }
+  const list=merged.length?merged:[clean];
+  for(const p of list){ if(p&&p.trim()) storyQueue.push(p); }
+  if(onDone) storyOnDone=onDone;
+  if(onEnd) storyOnEnd=onEnd;
+  storyRunNext();
+}
+function storyRunNext(){
+  if(storyTyping||storyTimer) return;
+  if(!storyQueue.length){ const e=storyOnEnd; storyOnEnd=null; if(e) e(); return; }
+  storyCurrent=storyQueue.shift();
+  storyTyping=true; storyIdx=0;
+  const plain=storyCurrent.replace(/<[^>]+>/g,'');
+  const box=$('#storyBody');
+  const para=document.createElement('div'); para.className='story-para';
+  box.appendChild(para);
+  storyTimer=setInterval(()=>{
+    storyIdx=Math.min(storyIdx+1, plain.length);
+    para.innerHTML=escapeHtml(plain.slice(0,storyIdx)) + (storyIdx<plain.length?'<span class="story-caret"></span>':'');
+    box.scrollTop=box.scrollHeight;
+    if(storyIdx>=plain.length){
+      if(storyTimer){clearInterval(storyTimer);storyTimer=null;}
+      storyTyping=false;
+      para.innerHTML=storyCurrent;
+      box.scrollTop=box.scrollHeight;
+      storyCurrent=null;
+      const d=storyOnDone; storyOnDone=null;
+      if(d) d();   // 段打完回调（不再自动连打）
+    }
+  }, 1000/30);
+}
+function storySkipToEnd(){ // 点击时打字中：立即显示本段全部文字（不推进）
+  if(!storyTyping) return false;
+  const box=$('#storyBody'); const para=box.lastElementChild;
+  if(para&&para.classList.contains('story-para')&&storyCurrent){
+    para.innerHTML=storyCurrent;
+    if(storyTimer){clearInterval(storyTimer);storyTimer=null;}
+    storyTyping=false; storyCurrent=null;
+    box.scrollTop=box.scrollHeight;
+    const d=storyOnDone; storyOnDone=null;
+    if(d) d();
+    return true;
+  }
+  return false;
+}
+function storyAdvance(){ // 已打完且有待打段落时：推进到下一段
+  if(storyTyping) return;
+  if(storyQueue.length){ storyRunNext(); return true; }
+  return false;
+}
+function storyIsTyping(){ return storyTyping; }
+function storyHasMore(){ return storyQueue.length>0; }
+function escapeHtml(t){ return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function story(html){ storyPush(html); }
 function itemDetailHTML(key){
   if(FOOD[key] || key==='cookedMeat'){
     let add = FOOD[key]&&FOOD[key].healthChance ? '，有20%概率健康+1' : '';
