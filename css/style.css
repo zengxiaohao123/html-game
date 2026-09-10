@@ -174,6 +174,11 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 .invbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;}
 .invtitle{font-size:15px; color:var(--txt-dim); font-weight:600;}
 .invcoin{font-size:16px; font-weight:700; color:var(--gold);}
+/* 任务9：背包分类 tab 按钮居中排列在同一行 */
+.inv-tabs{display:flex; gap:8px; justify-content:center; margin-bottom:12px;}
+.inv-tab{padding:6px 18px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:5px; font-size:14px; color:#fff;}
+.inv-tab:hover{background:#2c3040;}
+.inv-tab.on{background:var(--gold); color:#241d05; font-weight:700; border-color:var(--gold);}
 .itile{display:flex; flex-direction:column; align-items:center; gap:6px; padding:16px 8px; background:var(--panel2); border:1px solid var(--line); border-radius:8px; min-height:90px;}
 .itile .iname{font-size:14px; font-weight:700; cursor:pointer; line-height:1.4; text-align:center;}
 .itile .icount{font-size:18px; font-weight:700; color:#fff;}
@@ -251,6 +256,25 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 
 /* ===== 角色详情二级页面 ===== */
 .cbond{margin-left:12px; font-size:14px; color:var(--gold); font-weight:600; white-space:nowrap;}
+/* 任务5：角色按钮行改为居中 */
+.ctabs{display:flex; gap:8px; flex-wrap:wrap; margin:0 auto 14px; justify-content:center;}
+.ctab{padding:8px 18px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:6px; font-size:15px; color:#fff;}
+.ctab.on{background:var(--gold); color:#fff; font-weight:700; border-color:var(--gold);}
+/* 任务5：角色页左右分栏 —— 右侧 1/5 */
+.char-layout{display:grid; grid-template-columns:4fr 1fr; gap:12px; min-height:55vh;}
+.char-main{min-width:0; overflow-y:auto; padding-right:4px;}
+.char-side{border-left:1px solid var(--line); padding-left:12px; display:flex; flex-direction:column; gap:10px; flex:none;}
+.csname{font-size:20px; font-weight:800; color:var(--gold); padding-bottom:6px; border-bottom:1px solid var(--line);}
+.csbond{font-size:14px; color:var(--gold); line-height:1.6;}
+.csbond b{font-size:16px; color:#fff;}
+.csbtns{display:flex; flex-direction:column; gap:6px; margin-top:4px;}
+.csidebtn{padding:12px 14px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:6px; font-size:15px; font-weight:600; color:#fff; text-align:left; line-height:1.4;}
+.csidebtn:hover:not(.dis){background:#2c3040;}
+.csidebtn.on{background:var(--gold); color:#241d05; font-weight:700; border-color:var(--gold);}
+.csidebtn.dis, .csidebtn:disabled{opacity:.4; cursor:not-allowed; background:var(--panel2); color:#888;}
+/* 任务6：技能展示页属性行字体略大 */
+.statGrid.char-attrs{font-size:15px; gap:10px; margin-bottom:12px;}
+.statGrid.char-attrs span{background:var(--panel2); border:1px solid var(--line); border-radius:4px; padding:5px 12px; color:#fff;}
 .csubnav{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; border-bottom:1px solid var(--line); padding-bottom:8px;}
 .csub{padding:6px 16px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:5px; font-size:14px; color:#fff;}
 .csub:hover{background:#2c3040;}
