@@ -6,7 +6,7 @@
 "use strict";
 let G=null; let combatState=null; let gameMode='story'; let previewCell=null;
 function newGame(){
-  const bonds={}; for(const k in ALLIES){ bonds[k]={level:1, affinity:0}; }
+  const bonds={}; for(const k in ALLIES){ bonds[k]={level:1, affinity:10}; }
   return { day:1, region:'wild', hero:{atk:10,maxHp:100,hp:100,def:0,escapeSpeed:100,health:30,actionPoint:5,apCap:5,facing:'up'},
     inventory:{wood:0,fruit:0,flax:0,rawMeat:0,coin:20,emptyBottle:0,iron:0}, records:{slain:{}, wins:0, losses:0},
     team:['pro','xiayang','luyouyou'], proLevels:{}, bonds,
@@ -57,6 +57,7 @@ function sleep(){
   for(let i=0;i<trapN;i++){ if(Math.random()<0.5){ const k=NATURAL_RESOURCES[Math.floor(Math.random()*NATURAL_RESOURCES.length)]; G.inventory[k]=(G.inventory[k]||0)+1; trapGain[k]=(trapGain[k]||0)+1; } }
   if(trapN>0){ const keys=Object.keys(trapGain); lines.push(keys.length? `陷阱收获自然资源：${keys.map(k=>RES_ZH[k]+'×'+trapGain[k]).join('，')}。` : '陷阱一无所获，风平浪静。'); }
   if(inTeam('luyouyou')){ const sk=getChar('luyouyou').passives.find(p=>p.id==='skillful'); const pr=vTier(sk,'sleep',entryLevel('luyouyou',sk)); if(Math.random()*100<pr){ const k=NATURAL_RESOURCES[Math.floor(Math.random()*NATURAL_RESOURCES.length)]; G.inventory[k]=(G.inventory[k]||0)+1; lines.push(`巧手：获得 ${RES_ZH[k]}×1。`); } }
+  if((G.inventory.goodCard||0)>0){ const gc=G.inventory.goodCard||0; G.inventory.coin=(G.inventory.coin||0)+gc; lines.push(`好人卡：睡觉时获得 <b>${gc}</b> 金币。`); }
   saveGame(2); clearLog(); clearStory(); prompt('');
   for(const l of lines) log(l);
   story(`夜色褪去，新的一天开始了。今天是第 ${G.day} 天。`); refreshHUD(); renderMap(); renderIconbar();
