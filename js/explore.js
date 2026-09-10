@@ -28,16 +28,16 @@ function goBtnForMove(x,y){
   if(cost===null || (G.hero.actionPoint||0)<cost){ goBtnDisabled(); return; }
   go.style.display='block'; go.disabled=false; go.classList.remove('disabled'); go.textContent=`前往 · 消耗 ${cost} 行动力`; go.onclick=()=>{ go.style.display='none'; moveExplore(x,y,cost); };
 }
-function moveExplore(x,y,cost){
+function moveExplore(x,y, cost){
   if(combatState) return;
   if(eventState) return;
-  if(cost===null) return;
-  if(moveCostFor(x,y)===null){ goBtnDisabled(); return; }
-  if((G.hero.actionPoint||0)<cost){ log('行动力不足。'); $('#goBtn').style.display='none'; return; }
+  const c = moveCostFor(x,y);          // 以当前载具规则计算真实消耗
+  if(c===null){ log('当前移动方式无法到达该格，未消耗载具次数。'); $('#goBtn').style.display='none'; renderMap(); return; }
+  if((G.hero.actionPoint||0) < c){ log('行动力不足。'); $('#goBtn').style.display='none'; return; }
   const m=G.map; const target=m.cells[y*m.n+x];
   const ox=G.px, oy=G.py;
   G.hero.facing=dirToFacing(x-ox, y-oy);
-  G.px=x; G.py=y; G.hero.actionPoint-=cost;
+  G.px=x; G.py=y; G.hero.actionPoint-=c;
   consumeVehicleForMove();
   $('#goBtn').style.display='none'; renderMap();
   if(G.team.indexOf('luyouyou')>=0){ const fl=getChar('luyouyou').passives.find(p=>p.id==='flutter'); const hv=vTier(fl,'move',entryLevel('luyouyou',fl)); const cap=heroDisplayMaxHp()||G.hero.maxHp; const nx=Math.min(cap, G.hero.hp+hv); if(nx>G.hero.hp){ const got=nx-G.hero.hp; G.hero.hp=nx; log(`【蹁跹】移动后回复 ${got} 点生命。`); } }
