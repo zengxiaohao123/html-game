@@ -102,10 +102,9 @@ window.selVehicle=function(i){
   renderVehicles();
 };
 function exploreMoveHint(tx,ty){
-  if(G.hero.actionPoint<1){ return null; }
   const c=moveCostFor(tx,ty);
   if(c===null) return null;
-  if(c>G.hero.actionPoint){ return null; }
+  if((G.hero.actionPoint||0) < c){ return null; }
   return c;
 }
 document.addEventListener('keydown', ev=>{
