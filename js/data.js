@@ -156,10 +156,22 @@ function getBond(key){ if(!G) return {level:1,affinity:0}; if(!G.bonds) G.bonds=
 function bondLevel(key){ return (getBond(key).level)||0; }
 function gainAffinity(key, amount){
   const b=getBond(key); if(!b) return;
-  const before=b.affinity; b.affinity=Math.max(-999, Math.min(999, (b.affinity||0)+amount));
+  b.affinity=Math.max(-999, Math.min(999, (b.affinity||0)+amount));
   const target=Math.floor((b.affinity||0)/10);
-  if(target>b.level){ const old=b.level; b.level=Math.max(0,Math.min(10,target)); if(G&&old!==b.level) log(`${getChar(key).name} 好感度提升，羁绊等级升到 <b>${b.level}</b> 级！`); }
+  if(target>b.level){ const old=b.level; b.level=Math.max(0,Math.min(10,target)); if(G&&old!==b.level){ log(`${getChar(key).name} 好感度提升，羁绊等级升到 <b>${b.level}</b> 级！`); } }
   if(amount!==0 && G) log(`${getChar(key).name} 好感度 ${amount>0?`+${amount}`:amount}（当前 ${b.affinity}）。`);
+  // 任务2 + 问题1修复：只做轻量级 DOM 更新（直接改羁绊文字），不重绘整个角色页面（否则会把交互对话销毁）
+  try{
+    if(typeof charPageKey !== 'undefined' && charPageKey===key
+       && document.querySelector('#modalOverlay.show')
+       && document.querySelector('#modalTitle')
+       && document.querySelector('#modalTitle').textContent==='角色'){
+      const side = document.querySelector('.char-side .csbond');
+      if(side && key!=='pro'){
+        side.innerHTML = `羁绊 <b>${b.level}</b> 级<br>好感度 <b>${b.affinity}</b>`;
+      }
+    }
+  }catch(e){}
 }
 function entryLevel(ownerKey, entry){ if(!entry || !entry.scal) return 1; if(ownerKey==='pro'){ const m=(G&&G.proLevels); return (m && m[entry.id])? m[entry.id] : 1; } const b=(G&&G.bonds&&G.bonds[ownerKey]); return b ? (b.level||1) : 1; }
 function tierValue(entry, level, key){ const s=entry.scal[key]; if(!s) return 0; return s.base + (s.grow||0) * Math.max(0, (level||1)-1); }
