@@ -19,7 +19,8 @@ window.addEventListener('load',()=>{ bindTooltip(); switchMode('story'); if(load
 function showGameOver(){ $('#goMsg').innerHTML='你的健康已归零，流浪在此终结。你仍可读取存档重新开始。'; $('#gameoverOverlay').classList.add('show'); }
 function loadAfterGameOver(){ $('#gameoverOverlay').classList.remove('show'); openReadSaveMenu(); }
 function backToMenu(){ combatState=null; $('#gameoverOverlay').classList.remove('show'); showMenu(); }
-function startNew(){ $('#menuOverlay').classList.remove('show'); G=newGame(); G.map=generateMap(G.day); G.px=G.map.px; G.py=G.map.py; loadIntoWorld(); }
+function startNew(){ $('#menuOverlay').classList.remove('show'); G=newGame(); G.map=generateMap(G.day); G.px=G.map.px; G.py=G.map.py; // 问题3：按最新定义，初始 hp 等于 heroDisplayMaxHp()（天赋+队友已计入）
+  G.hero.hp = heroDisplayMaxHp(); loadIntoWorld(); }
 function loadIntoWorld(){ $('#menuOverlay').classList.remove('show'); combatState=null; if(!G.map) G.map=generateMap(G.day); if(G.px===undefined||G.py===undefined){ G.px=G.map.px; G.py=G.map.py; } if(!G.vehicles||!G.vehicles.some(v=>v&&v.key==='dash')){ G.vehicles=standardVehicles(); G.vehicleSel=0; } refreshHUD(); renderIconbar(); if(G.combat){ const c=G.combat; G.combat=null; reenterCombat(c); return; } const cur=G.map.cells[G.py*G.map.n+G.px]; if(cur && cur.content && cur.content.type==='event' && !cur.content.done){ switchMode('story'); renderMap(); startEvent(G.px,G.py); return; }
   if(G.activeEvent && G.px===G.activeEvent.x && G.py===G.activeEvent.y){ switchMode('story'); renderMap(); startEvent(G.activeEvent.x, G.activeEvent.y, G.activeEvent.slot); return; }
   switchMode('story'); renderMap(); story('你又一次在异世界醒来。这一次，你决定无论如何都要活下去。'); ensureKeyFocus(); }
