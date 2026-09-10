@@ -37,7 +37,7 @@ const EVENTS = [
     getBody:(slot)=>{ if(slot.case==null){ slot.case=Math.random()<0.85; const pool=['wood','flax','fruit','rawMeat']; slot.giftKey=slot.case? pool[Math.floor(Math.random()*pool.length)] : null; slot.giftN=slot.case? {wood:3,flax:3,fruit:3,rawMeat:2}[slot.giftKey] : 0; } return '<p>你见到一位跌倒在地的老奶奶。</p>'; },
     options:[
       { name:'扶', desc:'无', req:()=>true,
-        resolve:(slot)=>{ if(slot.case){ const k=slot.giftKey, n=slot.giftN; G.inventory[k]=(G.inventory[k]||0)+n; return `老奶奶十分感激，送给你<b>${RES_ZH[k]}×${n}</b>。`; } G.inventory.coin=Math.floor((G.inventory.coin||0)/2); return '你被老奶奶摸走了一半的钱！你的金币减半。'; } },
+        resolve:(slot)=>{ G.records=G.records||{}; G.records.oldLadyHelped=(G.records.oldLadyHelped||0)+1; if(typeof afterQuestProgress==='function') afterQuestProgress(); if(slot.case){ const k=slot.giftKey, n=slot.giftN; G.inventory[k]=(G.inventory[k]||0)+n; return `老奶奶十分感激，送给你<b>${RES_ZH[k]}×${n}</b>。`; } G.inventory.coin=Math.floor((G.inventory.coin||0)/2); return '你被老奶奶摸走了一半的钱！你的金币减半。'; } },
       { name:'不扶', desc:'多一事不如少一事', req:()=>true,
         resolve:()=>'你离开了此地。' },
     ],
@@ -59,7 +59,7 @@ const EVENTS = [
     getBody:(slot)=>{ const started=!!(G.records&&G.records.bearQuestStarted); slot.started=started;
       return started ? '<p>你再次从村民处听说了狗熊最近的行踪。你决定。</p>' : '<p>从附近村民的描述中，你得知附近山中蛰居着一头狗熊，此熊力大无穷且狂躁无比，让村民们十分头疼。好消息是，它最近在冬眠，稍微安分了点。</p>'; },
     options:(slot)=> slot.started ? [
-      { name:'请村民领路找到狗熊', desc:'你在山洞里睡懒觉的日记结束了！', req:()=>true,
+      { name:'请村民领路找到狗熊', desc:'你在山洞里睡懒觉的日子结束了！', req:()=>true,
         resolve:()=>{ enterEventBattle('bear'); return ''; } },
       { name:'请村民标注地点但暂不前往', desc:'小心为上', req:()=>true,
         resolve:()=>{ G.inventory.roadmap=(G.inventory.roadmap||0)+1; return '村民给了你一张路线图，上面标注着狗熊最近栖息的位置。获得<b>路线图×1</b>。'; } },
