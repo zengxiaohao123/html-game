@@ -95,7 +95,7 @@ const EVENTS = [
       return `<p>走在前面的路人，裤袋露出了钱袋（装有<b>${x}</b>金币），他似乎没注意到，你决定。</p>`; },
     options:(slot)=>[
       { name:`偷偷拿走（成功率${slot.y}%）`, desc:'这也是生存所迫……', req:()=>true,
-        resolve:()=>{ if(Math.random()*100<slot.y){ G.inventory.coin=(G.inventory.coin||0)+slot.x; return `你拿到了钱，但良心上受到了谴责，金币+<b>${slot.x}</b>，心理压力+1，所有同伴好感度-2。`; } G.hero.hp=1; return '你被发现了！被围观群众痛殴一顿，生命值降为1。'; } },
+        resolve:()=>{ if(Math.random()*100<slot.y){ G.inventory.coin=(G.inventory.coin||0)+slot.x; for(const k in ALLIES) gainAffinity(k,-2); return `你拿到了钱，但良心上受到了谴责，金币+<b>${slot.x}</b>，所有同伴好感度-2。`; } G.hero.hp=1; return '你被发现了！被围观群众痛殴一顿，生命值降为1。'; } },
       { name:'算了', desc:'多一事不如少一事', req:()=>true,
         resolve:()=>'你离开了此地。' },
     ],
@@ -105,7 +105,7 @@ const EVENTS = [
     getBody:(slot)=>{ if(slot.y==null){ slot.y=10+Math.floor(Math.random()*86); } return '<p>走在前面的小孩手里攥着一长条面包，你决定。</p>'; },
     options:(slot)=>[
       { name:`抢了（成功率${slot.y}%）`, desc:'这也是生存所迫……', req:()=>true,
-        resolve:()=>{ if(Math.random()*100<slot.y){ G.hero.actionPoint=(G.hero.actionPoint||0)+4; return '你拿到了面包，但良心上受到了谴责，行动力+<b>4</b>，心理压力+1，所有同伴好感度-2。'; } G.hero.hp=1; return '你被发现了！被围观群众痛殴一顿，生命值降为1。'; } },
+        resolve:()=>{ if(Math.random()*100<slot.y){ G.hero.actionPoint=(G.hero.actionPoint||0)+4; for(const k in ALLIES) gainAffinity(k,-2); return '你拿到了面包，但良心上受到了谴责，行动力+<b>4</b>，所有同伴好感度-2。'; } G.hero.hp=1; return '你被发现了！被围观群众痛殴一顿，生命值降为1。'; } },
       { name:'算了', desc:'多一事不如少一事', req:()=>true,
         resolve:()=>'你离开了此地。' },
     ],
