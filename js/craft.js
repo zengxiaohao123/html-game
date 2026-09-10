@@ -115,8 +115,8 @@ function doCraft(id){
   }
   craftQty[id]=Math.max(1, craftMax(r)) || 1;
   log(`合成了 <b>${itemName(r.out)} ×${r.outN*q}</b>。`);
-  /* 巧手：合成时有概率额外获得1随机资源 */
-  if(G.team.indexOf('luyouyou')>=0){ const sk=getChar('luyouyou').passives.find(p=>p.id==='skillful'); const pr=vTier(sk,'craft',entryLevel('luyouyou',sk)); if(Math.random()*100<pr){ const k=NATURAL_RESOURCES[Math.floor(Math.random()*NATURAL_RESOURCES.length)]; G.inventory[k]=(G.inventory[k]||0)+1; log(`巧手：额外获得 ${RES_ZH[k]}×1。`); } }
+  /* 巧手：每合成 1 件独立判定，成功额外获得 1 个随机自然资源 */
+  if(q>=1 && G.team.indexOf('luyouyou')>=0){ const sk=getChar('luyouyou').passives.find(p=>p.id==='skillful'); const pr=vTier(sk,'craft',entryLevel('luyouyou',sk)); let got=0; const gained={}; for(let i=0;i<q;i++){ if(Math.random()*100<pr){ const k=NATURAL_RESOURCES[Math.floor(Math.random()*NATURAL_RESOURCES.length)]; G.inventory[k]=(G.inventory[k]||0)+1; gained[k]=(gained[k]||0)+1; got++; } } if(got>0){ const detail=Object.keys(gained).map(k=>`${RES_ZH[k]}×${gained[k]}`).join('、'); log(`巧手：${got} 件合成额外获得 ${detail}。`); } }
   refreshHUD(); renderCrafting();
 }
 document.addEventListener('keydown', ev=>{
