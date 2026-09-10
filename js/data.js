@@ -35,6 +35,8 @@ const ITEMS = {
   ironSword:{name:'铁剑', desc:'使主角的【天赋·起势】提升1级。可叠加', permanent:true},
   armor:{name:'盔甲', desc:'使主角的【天赋·格挡】和【天赋·坚守】各提升1级。可叠加', permanent:true},
   roadmap:{name:'路线图', desc:'探索中，若地图上有稀有动物，会将其所在格用特殊颜色标记。每次进入被标记的格子后，消耗1张路线图', permanent:true},
+  caiyunPendant:{name:'裁云挂件', desc:'半透晶石制成的薄片挂件，内部封存着被风儿裁出的浅白云纹，常作为赠予珍视之人的饰物。可赠予同伴，使其好感度+10', permanent:true},
+  goodCard:{name:'好人卡', desc:'勿以善小而不为。睡觉时获得1金币。可叠加', permanent:true},
 };
 function itemName(k){ return RES_ZH[k] || (ITEMS[k]&&ITEMS[k].name) || k; }
 function itemDesc(k){ return ITEMS[k]? ITEMS[k].desc : (RES_DESC[k]||''); }
@@ -70,6 +72,9 @@ const ST = {
   cage:{id:'cage', name:'禁锢', kind:'debuff', turns:2, desc:'无法行动。主角被禁锢时可移动但移动无实际效果（仅用于结束我方回合）。'},
   poison:{id:'poison', name:'中毒', kind:'debuff', desc:'回合开始时，流失等同层数的生命值（可致死，可叠加）。'},
   sleep:{id:'sleep', name:'睡眠', kind:'debuff', desc:'无法移动、无法攻击；受到伤害导致生命值降低时会提前醒来。'},
+  frozen:{id:'frozen', name:'冰冻', kind:'debuff', turns:1, desc:'无法行动（包括移动、攻击等一切主动行为）。持续1回合。'},
+  aggro:{id:'aggro', name:'激化', kind:'buff', turns:2, desc:'攻击力+15%，受到的雷元素伤害与草元素伤害+25%。持续2回合。'},
+  superconduct:{id:'superconduct', name:'超导', kind:'debuff', turns:3, desc:'雷、冰、物理抗性均降低30%（最终结算限0%~90%）。持续3回合。'},
 };
 const TERMS = {
   alert:'【重点目标】主角天赋【战术布置】产生。我方单位攻击时优先攻击该目标；场上至多存在1个；主角用单体攻击新敌人时覆盖旧目标。',
@@ -147,9 +152,60 @@ const ALLIES = {
 const CHARACTERS = Object.assign({ pro:PROTAGONIST }, ALLIES);
 function getChar(key){ return CHARACTERS[key] || PROTAGONIST; }
 function getTeamChars(){ return (G&&G.team||['pro']).map(k=>getChar(k)).filter(Boolean); }
+function getBond(key){ if(!G) return {level:1,affinity:0}; if(!G.bonds) G.bonds={}; if(!G.bonds[key]) G.bonds[key]={level:0,affinity:0}; return G.bonds[key]; }
+function bondLevel(key){ return (getBond(key).level)||0; }
+function gainAffinity(key, amount){
+  const b=getBond(key); if(!b) return;
+  const before=b.affinity; b.affinity=Math.max(-999, Math.min(999, (b.affinity||0)+amount));
+  const target=Math.floor((b.affinity||0)/10);
+  if(target>b.level){ const old=b.level; b.level=Math.max(0,Math.min(10,target)); if(G&&old!==b.level) log(`${getChar(key).name} 好感度提升，羁绊等级升到 <b>${b.level}</b> 级！`); }
+  if(amount!==0 && G) log(`${getChar(key).name} 好感度 ${amount>0?`+${amount}`:amount}（当前 ${b.affinity}）。`);
+}
 function entryLevel(ownerKey, entry){ if(!entry || !entry.scal) return 1; if(ownerKey==='pro'){ const m=(G&&G.proLevels); return (m && m[entry.id])? m[entry.id] : 1; } const b=(G&&G.bonds&&G.bonds[ownerKey]); return b ? (b.level||1) : 1; }
 function tierValue(entry, level, key){ const s=entry.scal[key]; if(!s) return 0; return s.base + (s.grow||0) * Math.max(0, (level||1)-1); }
 function lvDescText(entry, level, ext){ let d=entry.desc||''; if(entry.scal){ for(const key in entry.scal){ const s=entry.scal[key]; const v=tierValue(entry, level, key); d=d.split('{'+key+'}').join(`<span class="lvlup">${v}${s.pct?'%':''}</span>`); } } if(ext){ for(const key in ext){ d=d.split('{'+key+'}').join(`<span class="lvlup">${ext[key]}</span>`); } } return terms(d); }
+
+/* ===== 任务系统数据（id 作存档键，记录进度与奖励发放状态） ===== */
+/* rewards：{key,text} 为可点击查看的物品奖励；{simple} 为纯文本奖励（不显示为可点击物品）。
+   hook：接取钩子，对应 G.records 中的字段名，为真后才在任务界面显示（如讨伐熊需先遇事件）。 */
+const TASKS = [
+  { id:'m1', cat:'main', name:'第一幕·分道扬镳', goals:['存活下去，保证自己的健康大于 0','探索野外，推进剧情'], last:null, rewards:[{key:'caiyunPendant', text:'裁云挂件×1'}] },
+  { id:'s1', cat:'side', name:'讨伐任务·暴躁的熊', goals:['击败一头暴躁的熊'], last:1, hook:'bearQuestStarted', rewards:[{simple:'金币+5'},{simple:'主角防御力+10'}] },
+  { id:'s2', cat:'side', name:'日常任务·日行一善', goals:['累计扶起摔倒的老奶奶'], last:10, rewards:[{key:'goodCard', text:'好人卡×1'}] },
+];
+function taskVisible(t){ if(t.hook && !(G&&G.records&&G.records[t.hook])) return false; return true; }
+function taskProgress(t){ if(t.last==null) return null; if(t.id==='s1') return Math.min((G&&G.records&&G.records.bearSlain)||0, t.last); if(t.id==='s2') return Math.min((G&&G.records&&G.records.oldLadyHelped)||0, t.last); return null; }
+function taskDone(t){ const p=taskProgress(t); if(p==null) return false; return p>=t.last; }
+function taskDoneMarked(t){ return !!(G&&G.records&&G.records.questDone&&G.records.questDone[t.id]); }
+function taskRewardHTML(rw){ if(rw.key) return `<span class="craftlink" data-key="${rw.key}">${rw.text||itemName(rw.key)}</span>`; return `<span>${rw.simple||''}</span>`; }
+
+/* ===== 羁绊等级效果（预设文本，测试期仍全解锁） ===== */
+const BOND_TEXT = {
+  xiayang:{
+    0:'不可入队', 1:'可以加入编队，解锁技能【攻击·淬火】【辅助·鼓舞】【天赋·无所畏惧】',
+    2:'解锁技能【天赋·活力满满】', 3:'解锁技能【攻击·燎原】', 4:'解锁技能【天赋·好奇心】',
+    5:'解锁技能【攻击·众愿】', 6:'攻击力+25', 7:'解锁技能【天赋·心想事成】',
+    8:'攻击力+25', 9:'攻击力+25', 10:'解锁技能【天赋·涅槃】',
+  },
+  luyouyou:{
+    0:'不可入队', 1:'可以加入编队，解锁技能【攻击·精准射击】【辅助·屏息瞄准】【天赋·烹饪】',
+    2:'解锁技能【天赋·巧手】', 3:'解锁技能【攻击·脱身矢】【攻击·弱点击破】', 4:'解锁技能【天赋·蹁跹】',
+    5:'解锁技能【攻击·风止】', 6:'解锁技能【天赋·风息】', 7:'解锁技能【天赋·比翼】',
+    8:'攻击力+25', 9:'攻击力+25', 10:'攻击力+25',
+  },
+};
+
+/* ===== 物品喜好度（隐藏属性，玩家不可见） =====
+   0级=大部分未说明物品(-1)；1级=one列表(+1)；2级=two映射(按物品描述增加值)；3级=three映射(按描述值再加+5)。 */
+const ITEM_LOVE = {
+  xiayang:{ one:['cookedMeat','roadmap'], two:{caiyunPendant:10}, three:{} },
+  luyouyou:{ one:['cookedMeat','roadmap'], two:{}, three:{caiyunPendant:10} },
+};
+const GIFT_TALK = {
+  xiayang:{ lv0:'夏阳：“啊哈哈……快点交代，这是啥新型冷笑话？”', lv1:'夏阳：“谢啦，这玩意有点意思。”', lv2:'夏阳：“哇，你怎么知道我想要这个？！”' },
+  luyouyou:{ lv0:'陆悠悠：“我要把这个做到今天的晚饭里，你不会介意的吧～”', lv1:'陆悠悠：“不错不错，未来应该能派上用场。那我就不客气了。”', lv2:'陆悠悠：“啊……看着它，突然灵感涌现啊。得赶快记下来……”', lv3_caiyun:'陆悠悠：“据说远古的魔法师在万米高空之上的云雾中穿行，地上的人们见了，纷纷以为天上的飓刃裁断了云朵，还制作了饰品祈求云层不要砸下来。但云不会掉下来，这里面只是棉絮做成的云团——很失望？恰恰相反，我很喜欢。云无定踪风无定向，若是被捉进瓶子里反而无趣了。带上这个挂饰，坐在最高的悬崖边上，听风铃声声，看云卷云舒……现在就去如何？”' },
+};
+function itemLoveLevel(ck, itemKey){ const L=ITEM_LOVE[ck]||{}; if(L.three&&L.three[itemKey]!=null) return 3; if(L.two&&L.two[itemKey]!=null) return 2; if(L.one&&L.one.includes(itemKey)) return 1; return 0; }
 
 const SLIME_TEMPLATE = { forwards12:{id:'newbie', name:'新手之友', desc:'前12天，最大生命值-60。'}, jp:{id:'slimejp', name:'蹦蹦跳跳', kind:'move', desc:'向着目标，移动1格。'}, bang:{id:'slimebang', name:'撞击', kind:'attack', type:'physical', target:'front', mult:1.0, formula:'攻击力×100%', desc:'对前方1格造成相当于100%攻击力的物理伤害。'} };
 const ENEMIES = {
@@ -160,7 +216,7 @@ const ENEMIES = {
   iceSlime:{ name:'冰史莱姆', icon:'🩵', tier:'ordinary', atk:10, def:0, maxHp:100, speed:4, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:2}, bonus:'属性升级随机二选一'}, passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_ice', name:'冰元素亲和', desc:'免疫冰元素伤害。身上总是附着冰元素。'} ], skills:[ SLIME_TEMPLATE.jp, SLIME_TEMPLATE.bang, {id:'icemist', name:'冰雾', kind:'attack', type:'ice', target:'line-multi', sustain:2, cd:5, mult:0.8, desc:'向前方3格所有我方单位喷射冰雾，造成80%攻击力冰伤。持续2回合。冷却：5回合。'} ] },
   windSlime:{ name:'风史莱姆', icon:'💨', tier:'ordinary', atk:10, def:0, maxHp:100, speed:4, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:2}, bonus:'属性升级随机二选一'}, passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_wind', name:'风元素亲和', desc:'免疫风元素伤害。'}, {id:'windswirl', name:'风旋', desc:'被击败时，若战斗未结束，将2格内随机1单位传送至自身格；若是我方则造成40%攻击力风伤。'} ], skills:[ SLIME_TEMPLATE.jp, SLIME_TEMPLATE.bang ] },
   rockSlime:{ name:'岩史莱姆', icon:'🪨', tier:'ordinary', atk:10, def:0, maxHp:100, speed:4, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:2}, bonus:'属性升级随机二选一'}, passives:[ SLIME_TEMPLATE.forwards12, {id:'affin_rock', name:'岩元素亲和', desc:'免疫岩元素伤害。'}, {id:'rockshield', name:'岩盾', desc:'最大生值-10%，防御力+10。每次被攻击防御力-1。'} ], skills:[ SLIME_TEMPLATE.jp, SLIME_TEMPLATE.bang ] },
-  slimeSwarm:{ name:'史莱姆集群', icon:'🟩', tier:'elite', atk:0, def:0, maxHp:0, speed:12, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:3, wood:1, flax:1}, bonus:'属性升级随机二选一'}, passives:[ {id:'swarm', name:'集群行动', desc:'战斗开始时直接退场，在随机位置生成3个级别的普通随机史莱姆（各最大生命值额外-20%）。'} ], skills:[] },
+  slimeSwarm:{ name:'史莱姆集群', icon:'🟩', tier:'elite', atk:0, def:0, maxHp:0, speed:12, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:3, wood:1, flax:1}, bonus:'属性升级随机二选一', attrChoices:2}, passives:[ {id:'swarm', name:'集群行动', desc:'战斗开始时直接退场，在随机位置生成3个级别的普通随机史莱姆。'} ], skills:[] },
   chunibyo:{ name:'中二病男孩', icon:'🧒', tier:'ordinary', atk:15, def:0, maxHp:20, speed:10, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:0, reward:{items:{fruit:2, coin:1}, attrUp:2}, passives:[ {id:'comeback', name:'我一定会回来的', desc:'每次被击败后，攻击力永久+15、最大生命永久+40、速度永久+5，至多叠加5次。'}, {id:'dodge', name:'帅气闪避', desc:'受到攻击时，有20%概率使本次伤害降为0。'}, {id:'amaterasu', name:'阿玛特拉斯', desc:'攻击命中时，40%概率减少目标15防御、20%概率整场燃烧。'} ], skills:[ {id:'cbyjp', name:'逼近', kind:'move', desc:'向着目标，移动1格。'}, {id:'cbyatk', name:'稻草剑法', kind:'attack', type:'physical', target:'adj-rand', mult:1.0, desc:'对周围8格的1名我方单位造成100%攻击力物理伤害。'} ] },
   weirdSlime:{ name:'奇怪史莱姆', icon:'🟩', tier:'ordinary', atk:0, def:0, maxHp:599, speed:0, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:0, reward:{items:{}}, passives:[], skills:[ {id:'wjp', name:'蹦蹦跳跳', kind:'move', desc:'向着目标，移动1格。'}, {id:'woju', name:'吐果子', kind:'attack', type:'real', target:'front', healTarget:200, selfDrainAbs:200, desc:'使前方1格的我方单位回复200点生命。自身流失200点生命（可致死）。'} ] },
   littleSnake:{ name:'小小蛇', icon:'🐍', tier:'ordinary', atk:15, def:0, maxHp:150, speed:4, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{rawMeat:1}, rate:{rawMeat:0.3}, attrUp:2}, passives:[ {id:'scare', name:'恐吓', desc:'战斗第一回合开始时【束缚】主角并瞬移至主角周围4格随机1格。'} ], skills:[ {id:'lsjp', name:'逼近', kind:'move', desc:'向着目标，移动1格。'}, {id:'snakebite', name:'蛇咬', kind:'attack', type:'physical', target:'front', mult:1.0, poison:14, desc:'对前方1格造成100%攻击力物理伤害，50%概率施加14层【中毒】。'} ] },
