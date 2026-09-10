@@ -62,10 +62,18 @@ function consumeVehicleForMove(){
   if(def.daily && G){ G.qiaoyuUsedDay=G.day||1; }
   if(!(def.infinite||v.uses==null||v.uses===Infinity)){
     v.uses-=1;
-    log(`使用了 <b>${def.name}</b>（剩余 ${Math.max(0,v.uses)} 次）。`);
-    if(v.uses<=0){ const vs=getVehicles(); vs.splice(G.vehicleSel,1); G.vehicleSel=0; log(`<b>${def.name}</b> 次数耗尽，已自动切回徒步跋涉。`); }
+    // 任务8：使用次数耗尽时，自动切换回徒步跋涉并在行动记录提醒（剩余次数不再每条都 log）
+    if(v.uses<=0){
+      const vs=getVehicles();
+      const defName = def.name;
+      // 若原位置刚好是 0，那 splice 后自动就是 0（walk 位置）；否则回绕
+      vs.splice(G.vehicleSel,1);
+      G.vehicleSel = 0; // 保证选回徒步
+      log(`<b>${defName}</b> 使用次数耗尽，已自动切换回徒步跋涉。`);
+      renderVehicles(); // 同步刷新载具 UI（如果正开着）
+    }
   }
-  if(def.key!=='walk') G.vehicleSel=0;
+  // 任务8：不再每次使用后强制切回 walk；让载具保持选中直到次数耗尽
 }
 function openVehicles(){ if(G) renderVehicles(); }
 function renderVehicles(){
