@@ -13,7 +13,7 @@ const ELEM = {fire:{c:'e-fire',zh:'火'},water:{c:'e-water',zh:'水'},grass:{c:'
 const AURA_ELEMS = ['fire','water','grass','thunder','ice'];
 
 const RES_ZH = {wood:'木材', fruit:'果子', flax:'亚麻', rawMeat:'生肉', coin:'金币', emptyBottle:'空瓶子', iron:'铁块',
-  blueStar:'蓝星石', blueStarPowder:'蓝星粉末', amethyst:'紫水晶', clearMind:'明心浆'};
+  blueStar:'蓝星石', blueStarPowder:'蓝星粉末', amethyst:'紫水晶', clearMind:'明心浆', diamond:'钻石'};
 const RES_DESC = {wood:'基础材料。可用于合成、交易',
   fruit:'可食用的野果。可用于合成、交易，可直接使用回复20生命值且有20%概率增加1点健康',
   flax:'基础材料。可用于合成、交易',
@@ -24,7 +24,8 @@ const RES_DESC = {wood:'基础材料。可用于合成、交易',
   blueStar:'偶尔能捡到的矿石。可用于合成。',
   blueStarPowder:'随处可见的一种带有药效的粉末。可用于合成。',
   amethyst:'非常漂亮的宝石。可用于赠礼，使角色好感度+3',
-  clearMind:'游戏中重要的软货币。也可自行使用：心理压力+4，立即回满生命值与行动力并解除【抑郁】状态，本日内主角攻击力+25%、受到的伤害-25%'};
+  clearMind:'游戏中重要的软货币。也可自行使用：心理压力+4，立即回满生命值与行动力并解除抑郁状态，本日内主角攻击力+25%、受到的伤害-25%',
+  diamond:'极其稀有的宝石，在废弃矿洞深处偶尔能挖到。'};
 const NATURAL_RESOURCES = ['wood','flax','fruit','rawMeat','blueStar'];
 const CITY_RESOURCES = ['coin','emptyBottle','blueStarPowder'];
 
