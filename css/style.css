@@ -339,3 +339,21 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 .selem{font-size:12px; color:var(--txt-dim);}
 .sbond{font-size:11px; color:var(--gold);}
 .swap-foot{margin-top:12px; text-align:center; position:sticky; bottom:0;}
+
+/* ===== 背包改版：左侧物品网格 + 右侧1/4描述栏 ===== */
+.inv-layout{display:flex; gap:12px; margin-top:8px; min-height:40vh;}
+.inv-grid-left{flex:3; overflow-y:auto;}
+.inv-detail-right{flex:1; min-width:200px; max-width:32%; background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:14px; display:flex; flex-direction:column; gap:10px;}
+.dr-name{font-size:16px; font-weight:700; color:#fff; border-bottom:1px solid var(--line); padding-bottom:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+.dr-desc{font-size:13px; color:var(--txt-dim); line-height:1.6;}
+.dr-empty{color:var(--txt-dim); font-style:italic; padding:40px 0; text-align:center;}
+.itile.inv-cell{cursor:pointer; transition:all .15s; border:2px solid transparent;}
+.itile.inv-cell:hover{border-color:#4a9bff55; background:#1f2433;}
+.itile.inv-cell.on{border-color:var(--good); background:#1a3a22; box-shadow:0 0 0 1px var(--good);}
+/* lore 蓝色文学描述 */
+.item-lore{color:#4a9bff; font-style:italic; margin-top:8px; font-size:12px; border-top:1px dashed var(--line); padding-top:8px; line-height:1.5;}
+/* HUD 抑郁状态样式 */
+.stat.depress-stat{color:#d9534f; font-weight:700; animation:depress-pulse 1.5s ease-in-out infinite;}
+@keyframes depress-pulse{ 0%,100%{opacity:1;} 50%{opacity:.6;} }
+/* 词条 tooltip 样式 */
+.term{border-bottom:1px dashed #4a9bff55; color:#4a9bff; cursor:help;}

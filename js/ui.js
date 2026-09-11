@@ -83,18 +83,37 @@ function storyHasMore(){ return storyQueue.length>0; }
 function escapeHtml(t){ return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function story(html){ storyPush(html); }
 function itemDetailHTML(key){
+  let body='';
   if(FOOD[key] || key==='cookedMeat'){
     let add = FOOD[key]&&FOOD[key].healthChance ? '，有20%概率健康+1' : '';
-    return `回复 <span class="lvlup">${foodHeal(key)}</span> 点生命${add}（已计入篝火、烹饪天赋加成）。`;
-  }
-  const map={club:'crit',cloth:'block',dagger:'blood',leather:'hold',ironSword:'momentum'};
-  if(map[key]){ const tid=map[key]; const tname=(PROTAGONIST.passives.find(p=>p.id===tid)||{}).name || tid; const lv=(G&&G.proLevels&&G.proLevels[tid])||1; return `使主角【天赋·${tname}】升为 <span class="lvlup">${lv+1}</span> 级（当前 ${lv} 级）。`; }
-  if(key==='armor'){ const lv=(G&&G.proLevels&&G.proLevels.block)||1; return `使【格挡】升为 <span class="lvlup">${lv+2}</span> 级、【坚守】升为 <span class="lvlup">${((G&&G.proLevels&&G.proLevels.hold)||1)+1}</span> 级。`; }
-  return itemDesc(key)||'（暂无说明）';
+    body = `回复 <span class="lvlup">${foodHeal(key)}</span> 点生命${add}（已计入篝火、烹饪天赋加成）。`;
+  } else if(key==='clearMind'){
+    body = `心理压力<span style="color:#d9534f">+4</span>，立即回满生命值与行动力并解除 ${termHTML('depress','抑郁')} 状态，本日内主角攻击力+25%、受到的伤害-25%。`;
+  } else if(ITEMS[key] && ITEMS[key].permanent && (ITEMS[key].desc||'').indexOf('天赋')>=0){
+    const map={club:'crit',cloth:'block',dagger:'blood',leather:'hold',ironSword:'momentum'};
+    if(map[key]){ const tid=map[key]; const tname=(PROTAGONIST.passives.find(p=>p.id===tid)||{}).name || tid; const lv=(G&&G.proLevels&&G.proLevels[tid])||1; body=`使主角【天赋·${tname}】升为 <span class="lvlup">${lv+1}</span> 级（当前 ${lv} 级）。`; }
+    else body = ITEMS[key].desc || '';
+  } else if(key==='armor'){ const lv=(G&&G.proLevels&&G.proLevels.block)||1; body=`使【格挡】升为 <span class="lvlup">${lv+2}</span> 级、【坚守】升为 <span class="lvlup">${((G&&G.proLevels&&G.proLevels.hold)||1)+1}</span> 级。`; }
+  else { body = itemDesc(key)||'（暂无说明）'; }
+  /* === lore 蓝色文学描述 === */
+  const lore = (ITEMS[key] && ITEMS[key].lore) || '';
+  return lore ? `${body}<div class="item-lore">${lore}</div>` : body;
 }
-function refreshHUD(){ if(!G) return; const h=G.hero; const mHp=heroDisplayMaxHp(); const hpCls=h.hp< mHp*0.3?'hpfill low':'hpfill'; $('#hud').innerHTML=`<span class="stat">健康 <b>${h.health}</b></span>`+`<span class="stat">天数 <b>${G.day}</b></span>`+`<span class="stat">区域 <b>${G.region==='wild'?'野外':'城市'}</b></span>`+`<span class="stat">攻击 <b>${heroDisplayAtk()}</b></span>`+`<span class="stat">防御 <b>${heroDisplayDef()}</b></span>`+`<span class="stat">生命 <b class="${hpCls}">${h.hp}/${mHp}</b></span>`+`<span class="stat">金币 <b>${G.inventory.coin}</b></span>`+`<span class="stat">行动力 <b>${h.actionPoint}/${h.apCap}</b></span>`; }
+function itemUsable(k){ if(FOOD[k] || k==='clearMind') return !!FOOD[k] || k==='clearMind'; return false; }
+function refreshHUD(){ if(!G) return;
+  /* === 首次获得 hook 兜底检查 === */
+  G.records=G.records||{};
+  if(!G.records.fruitFirstOwned && (G.inventory.fruit||0)>0) G.records.fruitFirstOwned=true;
+  if(!G.records.cookedMeatFirstOwned && (G.inventory.cookedMeat||0)>0) G.records.cookedMeatFirstOwned=true;
+  if(!G.records.nonWalkVehicleOwned){ if((G.vehicles||[]).some(v=>v.key&&!['walk','dash'].includes(v.key))){ G.records.nonWalkVehicleOwned=true; } }
+  /* === HUD === */
+  const h=G.hero; const mHp=heroDisplayMaxHp(); const hpCls=h.hp< mHp*0.3?'hpfill low':'hpfill';
+  const depress = h.depress ? `<span class="stat depress-stat">${termHTML('depress','抑郁')}</span>` : '';
+  const psy = Math.max(-100, Math.min(100, (h.psyStress||0)));
+  $('#hud').innerHTML=`<span class="stat">健康 <b>${h.health}</b></span>`+`<span class="stat">天数 <b>${G.day}</b></span>`+`<span class="stat">区域 <b>${G.region==='wild'?'野外':'城市'}</b></span>`+`<span class="stat">攻击 <b>${heroDisplayAtk()}</b></span>`+`<span class="stat">防御 <b>${heroDisplayDef()}</b></span>`+`<span class="stat">生命 <b class="${hpCls}">${h.hp}/${mHp}</b></span>`+`<span class="stat">金币 <b>${G.inventory.coin}</b></span>`+`<span class="stat">行动力 <b>${h.actionPoint}/${h.apCap}</b></span>`+`<span class="stat">心理压力 <b>${psy}</b></span>`+depress;
+}
 function renderIconbar(){ if(!G) return; const show=[[ '任务',openTasks],['编队',openFormation],['角色',openCharacters],['背包',openInventory],['睡觉',sleep],['设置',openSettings],['商店',openShop],['合成',openCraft],['载具',openVehicles]]; const blocked = (combatState||eventState) ? new Set(['编队','睡觉','商店','合成']) : new Set(); $('#iconbar').innerHTML=show.map(([t,f],i)=>`<button class="icobtn${t==='睡觉'?' sleep':''}${blocked.has(t)?' dis':''}" data-i="${i}">${t}</button>`).join(''); $('#iconbar').querySelectorAll('.icobtn').forEach(b=>b.onclick=()=>show[+b.dataset.i][1]()); }
-function log(msg){ const d=el(`<div class="logline">${msg}</div>`); $('#logBody').appendChild(d); $('#logBody').scrollTop=$('#logBody').scrollHeight; }
+function log(msg){ const d=el(`<div class="logline">${msg}</div>`); const body=$('#logBody'); body.appendChild(d); body.scrollTop=body.scrollHeight; /* === 最多保留 5 条 === */ while(body.childElementCount>5){ body.removeChild(body.firstElementChild); } }
 function story(html){$('#storyBody').insertAdjacentHTML('beforeend',`<div>${html}</div>`); $('#storyBody').scrollTop=$('#storyBody').scrollHeight;}
 function prompt(msg){$('#promptZone').innerHTML=msg;}
 function terms(txt){ if(typeof txt!=='string') return txt; return txt.replace(/【([^】]+)】/g, (m,zh)=> TERM_KEYS[zh]? termHTML(TERM_KEYS[zh], zh) : `<b>${m}</b>`); }
@@ -112,29 +131,89 @@ window.doLoad=function(i){ if(loadGame(i)){ loadIntoWorld(); } else{ alert('该�
 function openReadSaveMenu(){ openModal('读取存档', buildSaveSlotHTML('load'), 'small'); }
 let invMsg='';
 let invTab='consumable';
-const INV_CATS=[{id:'consumable',label:'消耗品'},{id:'permanent',label:'永久物品'},{id:'quest',label:'任务道具'}];
+let invSelKey=null;
+const INV_CATS=[{id:'consumable',label:'消耗品'},{id:'permanent',label:'永久物品'},{id:'misc',label:'杂物'},{id:'quest',label:'任务道具'}];
 function invClassify(key){
-  if(FOOD[key]) return 'consumable';
-  if(RES_ZH[key]) return 'consumable';
-  if(ITEMS[key]) return ITEMS[key].permanent ? 'permanent' : 'consumable';
+  /* 杂物：新功能物品归类 */
+  if(['kuiZuo','deadwoodSprout','windChime','luckyCoin'].includes(key)) return 'misc';
+  if(ITEMS[key] && ITEMS[key].permanent){
+    /* 永久物品：原有（club/cloth/quilt/tent/campfire/trap/leather/ironSword/armor/roadmap/goodCard/caiyunPendant/dagger）+ broom/clearMind永久也归 permanent */
+    return 'permanent';
+  }
+  /* 使用消耗/资源 */
+  if(RES_ZH[key] && key!=='amethyst') return 'consumable';
+  if(ITEMS[key]) return ITEMS[key].vehicle ? 'misc' : 'consumable';
   return 'consumable';
 }
-function openInventory(){ if(G){ invMsg=''; invTab='consumable'; renderInventory(); } }
+function openInventory(){
+  if(G){ invMsg=''; invTab='consumable'; invSelKey=null; renderInventory(); }
+}
 function renderInventory(){
   const allKeys=Object.keys(G.inventory).filter(k=>k!=='coin' && (G.inventory[k]||0)>0);
-  const byCat={consumable:[], permanent:[], quest:[]};
+  const byCat={consumable:[], permanent:[], misc:[], quest:[]};
   for(const k of allKeys){ const c=invClassify(k); if(byCat[c]) byCat[c].push(k); }
-  // 问题5：不再自动切换空分类，允许点击查看空分类
-  const tiles=byCat[invTab].map(k=>{ const n=G.inventory[k]; const useBtn = (!combatState && !eventState && itemUsable(k)) ? `<button class="mbtn tiny invUse" onclick="useInvItem('${k}')">使用</button>` : ''; return `<div class="itile"><div class="iname craftlink" data-key="${k}">${itemName(k)}</div><div class="icount">×${n}</div>${useBtn}</div>`; }).join('');
-  const tabBtns=INV_CATS.map(t=>`<button class="inv-tab ${invTab===t.id?'on':''}" data-id="${t.id}">${t.label}</button>`).join('');
+  const currentKeys = byCat[invTab]||[];
+  /* 选中检查 */
+  if(!currentKeys.includes(invSelKey)) invSelKey = currentKeys[0] || null;
+  /* 左侧网格 */
+  const tiles = currentKeys.map(k=>{
+    const n=G.inventory[k];
+    const sel=(k===invSelKey)?' on':'';
+    return `<div class="itile inv-cell${sel}" data-k="${k}"><div class="iname craftlink" data-key="${k}">${itemName(k)}</div><div class="icount">×${n}</div></div>`;
+  }).join('');
+  /* 右侧描述栏 */
+  let rightHTML='';
+  if(invSelKey){
+    const k=invSelKey; const n=G.inventory[k];
+    const useBtn = (!combatState && !eventState && itemUsable(k)) ? `<button class="mbtn tiny invUse" onclick="useInvItem('${k}')">使用</button>` : '';
+    rightHTML = `<div class="inv-detail-right">
+      <div class="dr-name">${itemName(k)} ×${n} ${useBtn}</div>
+      <div class="dr-desc">${terms(itemDetailHTML(k))}</div>
+    </div>`;
+  } else {
+    rightHTML = `<div class="inv-detail-right"><div class="dr-empty">请点击左侧物品查看描述</div></div>`;
+  }
+  const tabBtns=INV_CATS.map(t=>`<button class="inv-tab ${invTab===t.id?'on':''}" data-id="${t.id}">${t.label}${byCat[t.id]&&byCat[t.id].length?` (${byCat[t.id].length})`:''}</button>`).join('');
   openModal('背包',
     `<div class="invbar"><span class="invtitle">随身物品</span><span class="invcoin">金币 <b>${G.inventory.coin}</b></span></div>`+
     `<div class="inv-tabs">${tabBtns}</div>`+
     (invMsg?`<div class="shopmsg">${invMsg}</div>`:'')+
-    `<div class="vgrid inv">${tiles||'<span class="stempty">此类下没有物品</span>'}</div>`, 'full', {replace:true});
-  $('#modalBody').querySelectorAll('.inv-tab').forEach(b=>b.onclick=()=>{ invTab=b.dataset.id; renderInventory(); });
+    `<div class="inv-layout"><div class="inv-grid-left"><div class="vgrid inv">${tiles||'<span class="stempty">此类下没有物品</span>'}</div></div>${rightHTML}</div>`, 'full', {replace:true});
+  $('#modalBody').querySelectorAll('.inv-tab').forEach(b=>b.onclick=()=>{ invTab=b.dataset.id; invSelKey=null; renderInventory(); });
+  /* 点击物品选中/取消 */
+  $('#modalBody').querySelectorAll('.inv-cell').forEach(t=>{
+    t.onclick=ev=>{
+      if(ev.target.classList.contains('craftlink')){ if(window.openItemHelp) openItemHelp(t.dataset.k); return; }
+      if(invSelKey===t.dataset.k) invSelKey=null; else invSelKey=t.dataset.k;
+      renderInventory();
+    };
+  });
 }
-window.useInvItem=function(k){ if(combatState||eventState){ invMsg='事件中无法使用背包物品。'; renderInventory(); return; } const n=G.inventory[k]||0; if(n<=0){ renderInventory(); return; } if(!FOOD[k]){ renderInventory(); return; } G.inventory[k]-=1; const heal=foodHeal(k); const before=G.hero.hp; if(heal && G.hero.hp<heroineMaxHp()){ G.hero.hp=Math.min(heroineMaxHp(), G.hero.hp+heal); log(`使用了 <b>${itemName(k)}</b>，回复 ${G.hero.hp-before} 点生命。`); } else { log(`使用了 <b>${itemName(k)}</b>。`); } if(k==='fruit' && FOOD[k].healthChance && Math.random()<FOOD[k].healthChance){ G.hero.health+=1; log('果子蕴含生机，你的<b>健康</b>+1。'); } refreshHUD(); renderInventory(); };
+window.useInvItem=function(k){ if(combatState||eventState){ invMsg='事件中无法使用背包物品。'; renderInventory(); return; } const n=G.inventory[k]||0; if(n<=0){ renderInventory(); return; }
+  /* === 明心浆 === */
+  if(k==='clearMind'){
+    G.inventory[k]-=1;
+    G.hero.psyStress = Math.max(-100, Math.min(100, (G.hero.psyStress||0)+4));
+    G.hero.hp = heroDisplayMaxHp();
+    G.hero.actionPoint = G.hero.apCap;
+    if(G.hero.depress){ G.hero.depress=false; log(`使用了 <b>${itemName(k)}</b>，解除了${termHTML('depress','抑郁')}状态！`); }
+    /* 当日 buff */
+    G.hero.clearMindBuff = { day:G.day, atkUp:25, dr:25 };
+    log(`使用了 <b>${itemName(k)}</b>：生命值与行动力回满，心理压力+4。本日内主角攻击力+25%、受到的伤害-25%。`);
+    refreshHUD(); renderInventory(); return;
+  }
+  /* === 食物 === */
+  if(!FOOD[k]){ renderInventory(); return; }
+  G.inventory[k]-=1;
+  const heal=foodHeal(k); const before=G.hero.hp;
+  if(heal && G.hero.hp<heroineMaxHp()){ G.hero.hp=Math.min(heroineMaxHp(), G.hero.hp+heal); }
+  log(`使用了 <b>${itemName(k)}</b>，回复 ${G.hero.hp-before} 点生命。`);
+  if(k==='fruit' && FOOD[k].healthChance && Math.random()<FOOD[k].healthChance){ G.hero.health+=1; log('果子蕴含生机，你的<b>健康</b>+1。'); }
+  /* === 启程任务挂钩：果腹 / 大口吃肉 === */
+  if(k==='fruit'){ G.records.qFruitCount = (G.records.qFruitCount||0)+1; }
+  if(k==='cookedMeat'){ G.records.qMeatCount = (G.records.qMeatCount||0)+1; }
+  refreshHUD(); renderInventory();
+};
 let modalStack=[];
 function openModal(title,html,size,opt){ const ov=$('#modalOverlay'); if(ov.classList.contains('show') && !(opt&&opt.replace)){ const m=ov.querySelector('.modal'); const sz=m.classList.contains('small')?'small':m.classList.contains('wide')?'wide':m.classList.contains('full')?'full':''; modalStack.push({title:$('#modalTitle').textContent, html:$('#modalBody').innerHTML, size:sz}); } const br=ov.querySelector('.btn-row'); if(br){ br.style.display=''; } $('#modalTitle').textContent=title; const modal=ov.querySelector('.modal'); modal.className='modal'+(size==='small'?' small':(size==='wide'?' wide':(size==='full'?' full':''))); $('#modalBody').innerHTML=html; const mx=document.getElementById('modalX'); if(mx) mx.style.display=(opt&&opt.noCloseX)?'none':'block'; ov.classList.add('show'); }
 function closeModal(){
@@ -207,7 +286,8 @@ function charInteractTab(key,c){ c=c||getChar(key); if(key==='pro') return '<p>�
 const INTER_MAX=40;
 let interHist={}, interTyping={}, interTick={};
 let giftOpenKey=null, giftSelItem=null, giftJustOpened=false;
-const GIFT_EXCLUDE=['coin','campfire','club','cloth','tent','trap','quilt','dagger','leather','ironSword','armor','goodCard'];
+const GIFT_EXCLUDE=['coin','campfire','club','cloth','tent','trap','quilt','dagger','leather','ironSword','armor','goodCard',
+  /* === 新物品 === */ 'broom','clearMind','luckyCoin','deadwoodSprout','kuiZuo','windChime','roadmap'];
 function interactInit(){ const wrap=$('#interactWrap'); if(!wrap) return; if(charPageTab!=='interact') return; giftOpenKey=null; giftSelItem=null; giftJustOpened=false; renderInteractBody(charPageKey); }
 function interactButtons(key){ if(key==='xiayang'){ return [['chat','聊天（成功率 50%）'],['feed','投喂'],['gift','送礼']]; } if(key==='luyouyou'){ const st=lyChatState(); return [['chat',`聊天（成功率 ${Math.round(st.cur)}%）`],['gift','送礼']]; } return []; }
 function renderInteractBody(key){
@@ -268,7 +348,7 @@ function openGift(key){ giftOpenKey=key; giftSelItem=null; giftJustOpened=true; 
 /* 问题1修复：礼物点击不再重绘整个面板，只切换 class；避免每点一次就闪 */
 function decorateGiftCells(){ const box=$('#giftOverlay'); if(!box) return; if(giftCooldownLeft(giftOpenKey)>0) return; box.querySelectorAll('.gift-cell').forEach(c=>{ c.onclick=()=>{ const k=c.dataset.k; const wasSel = c.classList.contains('sel'); box.querySelectorAll('.gift-cell.sel').forEach(x=>x.classList.remove('sel')); if(!wasSel){ c.classList.add('sel'); giftSelItem=k; } else { giftSelItem=null; } }; }); }
 /* 问题1修复：确认送出后先 remove gift overlay DOM，再 interactSay，避免对话被重绘清掉 */
-function confirmGift(){ const key=giftOpenKey; if(!key||!giftSelItem) return; if(giftCooldownLeft(key)>0) return; const it=giftSelItem; const lv=itemLoveLevel(key,it); const L=(ITEM_LOVE[key]||{}); let delta=0, talk=''; if(lv===0){ delta=-1; talk=GIFT_TALK[key].lv0; } else if(lv===1){ delta=1; talk=GIFT_TALK[key].lv1; } else if(lv===2){ delta=L.two[it]; talk=GIFT_TALK[key].lv2; } else { delta=(L.three[it]||0)+5; talk=(GIFT_TALK[key]['lv3_'+it])||''; } G.inventory[it]--; G.records=G.records||{}; if(!G.records.giftDay) G.records.giftDay={}; G.records.giftDay[key]=G.day||1;
+function confirmGift(){ const key=giftOpenKey; if(!key||!giftSelItem) return; if(giftCooldownLeft(key)>0) return; const it=giftSelItem; const lv=itemLoveLevel(key,it); const L=(ITEM_LOVE[key]||{}); let delta=0, talk=''; if(lv===0){ /* === giftValue 物品（如 amethyst）优先使用 giftValue === */ const gv = (ITEMS[it]&&ITEMS[it].giftValue) || 0; if(gv>0){ delta=gv; talk='（物品自带赠礼价值）'; } else { delta=-1; talk=GIFT_TALK[key].lv0; } } else if(lv===1){ delta=1; talk=GIFT_TALK[key].lv1; } else if(lv===2){ delta=L.two[it]; talk=GIFT_TALK[key].lv2; } else { delta=(L.three[it]||0)+5; talk=(GIFT_TALK[key]['lv3_'+it])||''; } G.inventory[it]--; G.records=G.records||{}; if(!G.records.giftDay) G.records.giftDay={}; G.records.giftDay[key]=G.day||1;
   // 先移除 DOM 里的送礼面板（避免重绘交互区时把刚要写入的对话清掉）
   const overlay=document.getElementById('giftOverlay'); if(overlay && overlay.parentNode){ overlay.parentNode.removeChild(overlay); }
   giftOpenKey=null; giftSelItem=null;

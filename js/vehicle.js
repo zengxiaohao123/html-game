@@ -13,6 +13,7 @@ const VEHICLES = {
   dragon:   {name:'地龙',     icon:'🐲', uses:3, cost:1, mode:{type:'axis',n:2}, desc:'移动至上下左右四个方向之一的直线 1~2 格（不可走斜线），可越过中间障碍。每次消耗1行动力。'},
   mushroom: {name:'会走路的蘑菇', icon:'🍄', uses:3, cost:1, mode:{type:'oct'}, desc:'移动至周围8格中任意1格。每次消耗1行动力。'},
   carriage: {name:'马车',     icon:'🛞', uses:2, cost:1, mode:{type:'m2'}, desc:'移动至2格距离内的任意1格。每次消耗1行动力。'},
+  broom:    {name:'魔法扫帚', icon:'🧹', uses:2, cost:1, mode:{type:'line',n:3}, desc:'移动至直线3格内的任意1格。可越过障碍。每次消耗1行动力。'},
   carpet:   {name:'魔法飞毯', icon:'🪄', uses:1, cost:0, mode:{type:'any'}, desc:'移动至地图上任意1格。探索中不消耗行动力。'},
   qiaoyu:   {name:'巧遇',     icon:'✨', daily:true, cost:1, mode:{type:'any'}, desc:'夏阳天赋【心想事成】赋予。移动至地图上任意1格。每天限1次。每次消耗1行动力。'},
 };
@@ -42,7 +43,7 @@ function vehicleTargetCost(def, from, tx, ty){
   const m=def.mode;
   if(m.type==='step'){ if(Math.abs(dx)+Math.abs(dy)!==1) return null; return 1; }
   if(m.type==='dash'){ return Math.abs(dx)+Math.abs(dy); }
-  if(m.type==='line'){ if(dx!==0&&dy!==0) return null; const st=Math.abs(dx)+Math.abs(dy); const sx=dx===0?0:(dx>0?1:-1), sy=dy===0?0:(dy>0?1:-1); for(let k=1;k<=st;k++){ const nx=from.x+sx*k, ny=from.y+sy*k; if(!_free(nx,ny)) return null; } return st; }
+  if(m.type==='line'){ if(dx!==0&&dy!==0) return null; const st=Math.abs(dx)+Math.abs(dy); const maxN=m.n||99; if(st<1||st>maxN) return null; const sx=dx===0?0:(dx>0?1:-1), sy=dy===0?0:(dy>0?1:-1); for(let k=1;k<=st;k++){ const nx=from.x+sx*k, ny=from.y+sy*k; if(!_free(nx,ny)) return null; } return 1; }
   if(m.type==='axis'){ if((dx===0&&dy===0)||(dx!==0&&dy!==0)) return null; const d=Math.abs(dx)+Math.abs(dy); if(d<1||d>m.n) return null; return 1; }
   if(m.type==='oct'){ if(Math.max(Math.abs(dx),Math.abs(dy))!==1) return null; return 1; }
   if(m.type==='m2'){ const d=Math.abs(dx)+Math.abs(dy); if(d<1||d>2) return null; return 1; }
@@ -60,20 +61,19 @@ function consumeVehicleForMove(){
   const v=getSelVehicle(); if(!v) return;
   const def=vehicleDef(v.key);
   if(def.daily && G){ G.qiaoyuUsedDay=G.day||1; }
+  /* === 启程任务·便捷出行：徒步跋涉不计入 === */
+  if(G && v.key!=='walk' && v.key!=='dash'){ G.records=G.records||{}; G.records.qCarCount=(G.records.qCarCount||0)+1; }
   if(!(def.infinite||v.uses==null||v.uses===Infinity)){
     v.uses-=1;
-    // 任务8：使用次数耗尽时，自动切换回徒步跋涉并在行动记录提醒（剩余次数不再每条都 log）
     if(v.uses<=0){
       const vs=getVehicles();
       const defName = def.name;
-      // 若原位置刚好是 0，那 splice 后自动就是 0（walk 位置）；否则回绕
       vs.splice(G.vehicleSel,1);
-      G.vehicleSel = 0; // 保证选回徒步
+      G.vehicleSel = 0;
       log(`<b>${defName}</b> 使用次数耗尽，已自动切换回徒步跋涉。`);
-      renderVehicles(); // 同步刷新载具 UI（如果正开着）
+      renderVehicles();
     }
   }
-  // 任务8：不再每次使用后强制切回 walk；让载具保持选中直到次数耗尽
 }
 function openVehicles(){ if(G) renderVehicles(); }
 function renderVehicles(){

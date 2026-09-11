@@ -12,15 +12,21 @@ const ELEM = {fire:{c:'e-fire',zh:'火'},water:{c:'e-water',zh:'水'},grass:{c:'
   thunder:{c:'e-thunder',zh:'雷'},ice:{c:'e-ice',zh:'冰'},wind:{c:'e-wind',zh:'风'},rock:{c:'e-rock',zh:'岩'}};
 const AURA_ELEMS = ['fire','water','grass','thunder','ice'];
 
-const RES_ZH = {wood:'木材', fruit:'果子', flax:'亚麻', rawMeat:'生肉', coin:'金币', emptyBottle:'空瓶子', iron:'铁块'};
+const RES_ZH = {wood:'木材', fruit:'果子', flax:'亚麻', rawMeat:'生肉', coin:'金币', emptyBottle:'空瓶子', iron:'铁块',
+  blueStar:'蓝星石', blueStarPowder:'蓝星粉末', amethyst:'紫水晶', clearMind:'明心浆'};
 const RES_DESC = {wood:'基础材料。可用于合成、交易',
   fruit:'可食用的野果。可用于合成、交易，可直接使用回复20生命值且有20%概率增加1点健康',
   flax:'基础材料。可用于合成、交易',
   rawMeat:'未处理的肉块。可用于合成、交易，可直接使用回复20生命值',
   coin:'通行的钱币，可在商店使用。',
   emptyBottle:'随处可见的空瓶子，可用于交易',
-  iron:'相对罕见的基础材料。可用于合成、交易'};
-const NATURAL_RESOURCES = ['wood','flax','fruit','rawMeat'];
+  iron:'相对罕见的基础材料。可用于合成、交易',
+  blueStar:'偶尔能捡到的矿石。可用于合成。',
+  blueStarPowder:'随处可见的一种带有药效的粉末。可用于合成。',
+  amethyst:'非常漂亮的宝石。可用于赠礼，使角色好感度+3',
+  clearMind:'游戏中重要的软货币。也可自行使用：心理压力+4，立即回满生命值与行动力并解除【抑郁】状态，本日内主角攻击力+25%、受到的伤害-25%'};
+const NATURAL_RESOURCES = ['wood','flax','fruit','rawMeat','blueStar'];
+const CITY_RESOURCES = ['coin','emptyBottle','blueStarPowder'];
 
 const ITEMS = {
   cookedMeat:{name:'熟肉', desc:'香喷喷的肉排。可用于交易，可直接使用回复70点生命值'},
@@ -37,6 +43,14 @@ const ITEMS = {
   roadmap:{name:'路线图', desc:'探索中，若地图上有稀有动物，会将其所在格用特殊颜色标记。每次进入被标记的格子后，消耗1张路线图', permanent:true},
   caiyunPendant:{name:'裁云挂件', desc:'半透晶石制成的薄片挂件，内部封存着被风儿裁出的浅白云纹，常作为赠予珍视之人的饰物。可赠予同伴，使其好感度+10', permanent:true},
   goodCard:{name:'好人卡', desc:'勿以善小而不为。睡觉时获得1金币。可叠加', permanent:true},
+  /* === 新物品 === */
+  luckyCoin:{name:'幸运硬币', desc:'战斗胜利时，有2%概率额外获得1次战斗奖励。可叠加。叠加时，每一层概率+2%，只判定1次。', permanent:true, lore:'永远会停留在你想要的那一面'},
+  deadwoodSprout:{name:'枯木新枝', desc:'探索中，每次移动后回复12点生命值。可叠加。叠加时，回血量取总和。', permanent:true, lore:'无论折断多少次，它总会长出新的枝丫'},
+  kuiZuo:{name:'《愧怍》', desc:'探索空地时，若什么也没有找到，则有50%概率获得补偿。可叠加。叠加时每个独立判定。', permanent:true, lore:'一幅含义深刻的肖像画'},
+  windChime:{name:'风铃', desc:'每日与陆悠悠聊天的成功率+2%。可叠加。叠加时，每次在基础成功率上+2%。', permanent:true, lore:'风吹过时有悦耳的声音，某人会特别喜欢'},
+  broom:{name:'魔法扫帚', desc:'移动至直线3格内的任意1格。可使用2次。每次消耗1行动力。', vehicle:true},
+  clearMind:{name:'明心浆', desc:'心理压力+4，立即回满生命值与行动力并解除【抑郁】状态，本日内主角攻击力+25%、受到的伤害-25%。', lore:'饮料？毒药？兴奋剂？若你心已明，便不会纠结它的用途', usable:true},
+  amethyst:{name:'紫水晶', desc:'可用于赠礼，使角色好感度+3', giftValue:3},
 };
 function itemName(k){ return RES_ZH[k] || (ITEMS[k]&&ITEMS[k].name) || k; }
 function itemDesc(k){ return ITEMS[k]? ITEMS[k].desc : (RES_DESC[k]||''); }
@@ -57,7 +71,22 @@ const FOOD = { fruit:{heal:20, healthChance:0.2}, rawMeat:{heal:20}, cookedMeat:
 function itemUsable(k){ return !!FOOD[k]; }
 function foodHeal(k){ const camp=G && G.inventory && G.inventory.campfire>0; const base=FOOD[k]? FOOD[k].heal : 0; const add = camp ? (k==='fruit'?1 : k==='rawMeat'?2 : k==='cookedMeat'?4 : 0) : 0; let v = base+add; if(G && G.team && G.team.indexOf('luyouyou')>=0){ v = Math.round(v * (k==='cookedMeat'?1.75:1.25)); } return v; }
 
-function grantPermanentItem(key){ G.inventory[key]=(G.inventory[key]||0)+1; switch(key){ case 'club':bumpPro('crit');break; case 'cloth':bumpPro('block');break; case 'dagger':bumpPro('blood');break; case 'leather':bumpPro('hold');break; case 'ironSword':bumpPro('momentum');break; case 'armor':bumpPro('block');bumpPro('hold');break; case 'tent':G.hero.apCap=(G.hero.apCap||5)+1;G.hero.actionPoint=(G.hero.actionPoint||0)+1;break; } }
+function grantPermanentItem(key){ G.inventory[key]=(G.inventory[key]||0)+1; switch(key){
+  case 'club': bumpPro('crit'); break;
+  case 'cloth': bumpPro('block'); break;
+  case 'dagger': bumpPro('blood'); break;
+  case 'leather': bumpPro('hold'); break;
+  case 'ironSword': bumpPro('momentum'); break;
+  case 'armor': bumpPro('block'); bumpPro('hold'); break;
+  case 'tent': G.hero.apCap=(G.hero.apCap||5)+1; G.hero.actionPoint=(G.hero.actionPoint||0)+1; break;
+  case 'broom': G.vehicles=G.vehicles||[]; G.vehicles.push({key:'broom', uses:(VEHICLES.broom&&VEHICLES.broom.uses)||2}); break;
+}
+/* === 首次获得任务 hook === */
+G.records=G.records||{};
+if(key==='fruit' && !G.records.fruitFirstOwned){ G.records.fruitFirstOwned=true; }
+if(key==='cookedMeat' && !G.records.cookedMeatFirstOwned){ G.records.cookedMeatFirstOwned=true; }
+if(key==='broom' && !G.records.nonWalkVehicleOwned){ G.records.nonWalkVehicleOwned=true; }
+}
 function bumpPro(talent){ G.proLevels=G.proLevels||{}; G.proLevels[talent]=(G.proLevels[talent]||1)+1; }
 
 const ST = {
@@ -75,6 +104,8 @@ const ST = {
   frozen:{id:'frozen', name:'冰冻', kind:'debuff', turns:1, desc:'无法行动（包括移动、攻击等一切主动行为）。持续1回合。'},
   aggro:{id:'aggro', name:'激化', kind:'buff', turns:2, desc:'攻击力+15%，受到的雷元素伤害与草元素伤害+25%。持续2回合。'},
   superconduct:{id:'superconduct', name:'超导', kind:'debuff', turns:3, desc:'雷、冰、物理抗性均降低30%（最终结算限0%~90%）。持续3回合。'},
+  /* === 非战斗状态（存 G.hero.st） === */
+  depress:{id:'depress', name:'抑郁', kind:'debuff', daily:true, desc:'心理压力过高所致。攻击力、防御力强制归零。持续一整天（非战斗时仍显示于角色技能区及状态栏，行动记录区有强烈提示）。'},
 };
 const TERMS = {
   alert:'【重点目标】主角天赋【战术布置】产生。我方单位攻击时优先攻击该目标；场上至多存在1个；主角用单体攻击新敌人时覆盖旧目标。',
@@ -89,9 +120,10 @@ const TERMS = {
   extraTurn:'【额外回合】许泠朦【秋水澄心】天赋触发。仅泠朦能释放技能，无移动。各类增益减益不计时。冷却不减少。',
   steal:'【偷取】对方的数值减少，自身的数值对应增加。',
   dodge:'【闪避】受到攻击时有概率使本次所受伤害降为0。对真实伤害、控制/状态类效果及生命流失类效果不生效。',
+  depress:'【抑郁】心理压力过高所致。以心理压力/100为概率每日判定。攻击力、防御力强制归零。持续一整天。',
 };
 function termHTML(key, zh){ return `<span class="term" data-term="${key}">【${zh}】</span>`; }
-const TERM_KEYS = {重点目标:'alert', 蓄力:'charge', 束缚:'bind', 燃烧:'burn', 激化:'aggro', 超导:'superconduct', 冰冻:'frozen', 禁锢:'cage', 结界:'zone', 额外回合:'extraTurn', 偷取:'steal', 闪避:'dodge'};
+const TERM_KEYS = {重点目标:'alert', 蓄力:'charge', 束缚:'bind', 燃烧:'burn', 激化:'aggro', 超导:'superconduct', 冰冻:'frozen', 禁锢:'cage', 结界:'zone', 额外回合:'extraTurn', 偷取:'steal', 闪避:'dodge', 抑郁:'depress'};
 
 const PROTAGONIST = {
   key:'pro', name:'主角', element:null, color:null,
@@ -184,9 +216,36 @@ const TASKS = [
   { id:'m1', cat:'main', name:'第一幕·分道扬镳', goals:['存活下去，保证自己的健康大于 0','探索野外，推进剧情'], last:null, rewards:[{key:'caiyunPendant', text:'裁云挂件×1'}] },
   { id:'s1', cat:'side', name:'讨伐任务·暴躁的熊', goals:['击败一头暴躁的熊'], last:1, hook:'bearQuestStarted', rewards:[{simple:'金币+5'},{simple:'主角防御力+10'}] },
   { id:'s2', cat:'side', name:'日常任务·日行一善', goals:['累计扶起摔倒的老奶奶'], last:10, rewards:[{key:'goodCard', text:'好人卡×1'}] },
+  /* === 新启程任务 === */
+  { id:'qMental', cat:'side', name:'启程任务·心理健康', goals:['保持心理压力在20及以下，连续30天'], last:30, rewards:[{simple:'金币+10'}],
+    auto:true, trackField:'mentalGoodDays', onDayHook:true, breakOnHighStress:true },
+  { id:'qCraft',  cat:'side', name:'启程任务·合成台', goals:['进入合成界面，合成任意1个物品'], last:1, rewards:[{key:'wood',text:'木材×1'},{key:'flax',text:'亚麻×1'}],
+    hook:'qCraftAvail', auto:true, trackField:'qCraftDone' },
+  { id:'qFruit',  cat:'side', name:'启程任务·果腹', goals:['累计使用果子回复生命值'], last:50, rewards:[{simple:'主角最大生命值+50'}],
+    hook:'fruitFirstOwned', auto:true, trackField:'qFruitCount' },
+  { id:'qMeat',   cat:'side', name:'启程任务·大口吃肉', goals:['累计使用熟肉回复生命值'], last:30, rewards:[{simple:'行动力上限+2'}],
+    hook:'cookedMeatFirstOwned', auto:true, trackField:'qMeatCount' },
+  { id:'qCar',    cat:'side', name:'启程任务·便捷出行', goals:['累计使用载具（徒步跋涉除外）'], last:6, rewards:[{key:'broom',text:'载具·魔法扫帚×1'}],
+    hook:'nonWalkVehicleOwned', auto:true, trackField:'qCarCount' },
+  { id:'qFriend', cat:'side', name:'启程任务·友谊的再开始', goals:['任意角色好感度达到10'], last:10, rewards:[{key:'amethyst',text:'紫水晶×1'}],
+    auto:true, trackField:'qFriendMaxAff', noCountUp:true },
 ];
 function taskVisible(t){ if(t.hook && !(G&&G.records&&G.records[t.hook])) return false; return true; }
-function taskProgress(t){ if(t.last==null) return null; if(t.id==='s1') return Math.min((G&&G.records&&G.records.bearSlain)||0, t.last); if(t.id==='s2') return Math.min((G&&G.records&&G.records.oldLadyHelped)||0, t.last); return null; }
+function taskProgress(t){ if(t.last==null) return null; if(t.id==='s1') return Math.min((G&&G.records&&G.records.bearSlain)||0, t.last); if(t.id==='s2') return Math.min((G&&G.records&&G.records.oldLadyHelped)||0, t.last);
+  /* 新启程任务 */
+  if(t.id==='qMental'){ return Math.min((G&&G.records&&G.records.mentalGoodDays)||0, t.last); }
+  if(t.id==='qCraft'){ return Math.min((G&&G.records&&G.records.qCraftDone)?1:0, t.last); }
+  if(t.id==='qFruit'){ return Math.min((G&&G.records&&G.records.qFruitCount)||0, t.last); }
+  if(t.id==='qMeat'){ return Math.min((G&&G.records&&G.records.qMeatCount)||0, t.last); }
+  if(t.id==='qCar'){ return Math.min((G&&G.records&&G.records.qCarCount)||0, t.last); }
+  if(t.id==='qFriend'){
+    let maxAff=0;
+    if(G&&G.bonds){ for(const k in G.bonds){ if(G.bonds[k].affinity>maxAff) maxAff=G.bonds[k].affinity; } }
+    // 已达成则返回 last，未达成则当前 maxAff（不累计）
+    return maxAff>=10 ? t.last : Math.min(maxAff, t.last);
+  }
+  return null;
+}
 function taskDone(t){ const p=taskProgress(t); if(p==null) return false; return p>=t.last; }
 function taskDoneMarked(t){ return !!(G&&G.records&&G.records.questDone&&G.records.questDone[t.id]); }
 function taskRewardHTML(rw){ if(rw.key) return `<span class="craftlink" data-key="${rw.key}">${rw.text||itemName(rw.key)}</span>`; return `<span>${rw.simple||''}</span>`; }

@@ -41,6 +41,9 @@ function moveExplore(x,y, cost){
   consumeVehicleForMove();
   $('#goBtn').style.display='none'; renderMap();
   if(G.team.indexOf('luyouyou')>=0){ const fl=getChar('luyouyou').passives.find(p=>p.id==='flutter'); const hv=vTier(fl,'move',entryLevel('luyouyou',fl)); const cap=heroDisplayMaxHp()||G.hero.maxHp; const nx=Math.min(cap, G.hero.hp+hv); if(nx>G.hero.hp){ const got=nx-G.hero.hp; G.hero.hp=nx; log(`【蹁跹】移动后回复 ${got} 点生命。`); } }
+  /* === 枯木新枝：每次移动后回复12生命（可叠加） === */
+  const deadwoodN = (G.inventory.deadwoodSprout||0);
+  if(deadwoodN>0){ const cap=heroDisplayMaxHp()||G.hero.maxHp; const got=12*deadwoodN; const nx=Math.min(cap, G.hero.hp+got); if(nx>G.hero.hp){ const real=nx-G.hero.hp; G.hero.hp=nx; log(`【枯木新枝】回复 ${real} 点生命。`); } }
   const ct=target.content&&target.content.type;
   if(ct==='battle'){ log('遭遇敌人！进入战斗。'); markRareConsume(target); startCombat(target); }
   else if(ct==='loot' && !target.content.done){ openLoot(target); }
@@ -51,14 +54,36 @@ function moveExplore(x,y, cost){
 }
 function dirToFacing(dx,dy){ if(dx>0)return 'right'; if(dx<0)return 'left'; if(dy>0)return 'down'; return 'up'; }
 function searchEmpty(){
-  const pool = G.region==='wild'? ['wood','fruit','flax','rawMeat'] : ['coin','emptyBottle'];
+  const pool = G.region==='wild'? NATURAL_RESOURCES.slice() : CITY_RESOURCES.slice();
   const items={};
-  for(let i=0;i<3;i++){ if(Math.random()<0.5){ const kind=pool[Math.floor(Math.random()*pool.length)]; items[kind]=(items[kind]||0)+2; } else { break; } }
-  const keys=Object.keys(items); if(!keys.length) return null;
-  for(const k of keys){ G.inventory[k]=(G.inventory[k]||0)+items[k]; }
-  return keys.map(k=>`${RES_ZH[k]}×${items[k]}`).join('，');
+  let found=false;
+  for(let i=0;i<3;i++){ if(Math.random()<0.5){ const kind=pool[Math.floor(Math.random()*pool.length)]; items[kind]=(items[kind]||0)+2; found=true; } else { break; } }
+  const keys=Object.keys(items);
+  /* === 正常搜到了：直接返回 === */
+  if(keys.length){ for(const k of keys){ G.inventory[k]=(G.inventory[k]||0)+items[k]; } return keys.map(k=>`${RES_ZH[k]}×${items[k]}`).join('，'); }
+  /* === 没搜到：判定《愧怍》补偿 === */
+  const kuiZuoN = (G.inventory.kuiZuo||0);
+  if(kuiZuoN>0){
+    const report=[];
+    for(let i=0;i<kuiZuoN;i++){
+      const r=Math.random();
+      if(r<0.5){ /* 50% 不获得 */ continue; }
+      const regionPool = G.region==='wild' ? NATURAL_RESOURCES.slice() : CITY_RESOURCES.slice();
+      const kind = regionPool[Math.floor(Math.random()*regionPool.length)];
+      if(r<0.75){ /* 25% 获得 1 个 */
+        G.inventory[kind]=(G.inventory[kind]||0)+1; report.push(`${RES_ZH[kind]}×1`);
+      } else { /* 25% 获得 2 个同种 */
+        G.inventory[kind]=(G.inventory[kind]||0)+2; report.push(`${RES_ZH[kind]}×2`);
+      }
+    }
+    if(report.length){
+      log('【《愧怍》补偿】你从空地翻出了一些东西：'+report.join('，')+'。');
+      return '(《愧怍》)';
+    }
+  }
+  return null;
 }
-function gainRandomResource(n){ const pool = G.region==='wild'? ['wood','fruit','flax','rawMeat'] : ['coin','emptyBottle']; const k=pool[Math.floor(Math.random()*pool.length)]; G.inventory[k]=(G.inventory[k]||0)+n; return `${RES_ZH[k]}×${n}`; }
+function gainRandomResource(n){ const pool = G.region==='wild'? NATURAL_RESOURCES.slice() : CITY_RESOURCES.slice(); const k=pool[Math.floor(Math.random()*pool.length)]; G.inventory[k]=(G.inventory[k]||0)+n; return `${RES_ZH[k]}×${n}`; }
 function openLoot(target){
   target.content.done=true; const r=Math.random(); let txt='';
   if(r<0.40){ txt=gainRandomResource(2); }

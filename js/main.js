@@ -7,8 +7,11 @@
 let G=null; let combatState=null; let gameMode='story'; let previewCell=null;
 function newGame(){
   const bonds={}; for(const k in ALLIES){ bonds[k]={level:1, affinity:10}; }
-  return { day:1, region:'wild', hero:{atk:10,maxHp:100,hp:100,def:0,escapeSpeed:100,health:30,actionPoint:5,apCap:5,facing:'up'},
-    inventory:{wood:0,fruit:0,flax:0,rawMeat:0,coin:20,emptyBottle:0,iron:0}, records:{slain:{}, wins:0, losses:0},
+  return { day:1, region:'wild', hero:{atk:10,maxHp:100,hp:100,def:0,escapeSpeed:100,health:30,actionPoint:5,apCap:5,facing:'up',
+      psyStress:0, depress:false, clearMindBuff:{day:0, atkUp:0, dr:0}},
+    inventory:{wood:0,fruit:0,flax:0,rawMeat:0,coin:20,emptyBottle:0,iron:0,blueStar:0,blueStarPowder:0,amethyst:0,clearMind:0},
+    records:{slain:{}, wins:0, losses:0, mentalGoodDays:0, qCraftDone:false, qFruitCount:0, qMeatCount:0, qCarCount:0,
+      fruitFirstOwned:false, cookedMeatFirstOwned:false, qCraftAvail:false, nonWalkVehicleOwned:true},
     team:['pro','xiayang','luyouyou'], proLevels:{}, bonds,
     vehicles:[{key:'walk'},{key:'dash'},{key:'dragon',uses:3},{key:'mushroom',uses:3},{key:'carriage',uses:2},{key:'carpet',uses:1},{key:'qiaoyu'}], vehicleSel:0, map:null, px:0, py:0, st:null, lootLog:[] };
 }
@@ -46,9 +49,32 @@ function sleep(){
   if(!G) return; if(combatState||eventState){ log('事件中无法使用该功能。'); return; }
   if(G.hero.actionPoint>0 && !confirm('行动力尚未耗尽，仍确定直接「睡觉」进入下一天吗？')) return;
   const inTeam=k=>G.team.indexOf(k)>=0;
-  G.hero.actionPoint=G.hero.apCap; G.day+=1;
+  /* === 前一天的心理健康判定 === */
+  const prevDay = G.day;
+  const wasDepressed = G.hero.depress;
+  G.day+=1;
+  /* === 清除前一天的抑郁状态 === */
+  G.hero.depress=false;
+  /* === 明心浆 buff 当日生效、次日清除 === */
+  if(G.hero.clearMindBuff && G.hero.clearMindBuff.day===prevDay){
+    G.hero.clearMindBuff={day:0, atkUp:0, dr:0};
+  }
+  /* === 心理健康任务：前一天压力<=20 且没有抑郁，计数+1；否则清零 === */
+  G.records = G.records || {};
+  const stressNow = G.hero.psyStress||0;
+  if(stressNow<=20){ G.records.mentalGoodDays = (G.records.mentalGoodDays||0)+1; }
+  else { G.records.mentalGoodDays = 0; }
+  /* === 抑郁判定：以 max(0, psyStress)/100 为概率 === */
+  const pct = Math.max(0, stressNow)/100;
+  let depressThisDay = false;
+  if(Math.random() < pct){ depressThisDay=true; G.hero.depress=true; }
+  /* === 新一天的初始化 === */
+  G.hero.actionPoint=G.hero.apCap;
   const nm=generateMap(G.day); G.map=nm; G.px=nm.px; G.py=nm.py; G.hero.facing='up';
   const lines=[`你睡了一觉，进入第 ${G.day} 天。`];
+  if(depressThisDay){
+    lines.push(`<span style="color:#d9534f;font-weight:bold;line-height:1.6">&#x26A0; 你感到心中沉重无比，浑身的力气都像被抽空了。今日你处于 ${termHTML('depress','抑郁')} 状态！攻击、防御强制归零。</span>`);
+  }
   let healGain=0, healthGain=0;
   if((G.inventory.quilt||0)>0) healGain += 30*(G.inventory.quilt||0);
   if(inTeam('xiayang')){ healGain*=2; healthGain*=2; }

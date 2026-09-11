@@ -11,7 +11,8 @@
 let eventState = null;
 
 /* 基准售价（非商店品的参考价，用于流浪商人）。商店品直接用 SHOP_ITEMS 的买入价。 */
-const TRADER_REF_PRICE = { club:12, cloth:14, wood:2, flax:3, dagger:32, leather:20 };
+const TRADER_REF_PRICE = { club:12, cloth:14, wood:2, flax:3, dagger:32, leather:20,
+  luckyCoin:40, deadwoodSprout:30, kuiZuo:35, windChime:25, broom:60, clearMind:15, amethyst:20 };
 const TRADER_GOODS = [
   { key:'wood',   n:4, label:'木材×4' },
   { key:'flax',   n:4, label:'麻布×4' },
@@ -19,6 +20,13 @@ const TRADER_GOODS = [
   { key:'cloth',  n:1, label:'布衣'    },
   { key:'dagger', n:1, label:'匕首'    },
   { key:'leather',n:1, label:'皮衣'    },
+  /* === 新物品 === */
+  { key:'clearMind', n:1, label:'明心浆' },
+  { key:'amethyst', n:1, label:'紫水晶' },
+  { key:'luckyCoin', n:1, label:'幸运硬币' },
+  { key:'deadwoodSprout', n:1, label:'枯木新枝' },
+  { key:'kuiZuo', n:1, label:'《愧怍》' },
+  { key:'broom', n:1, label:'魔法扫帚' },
 ];
 
 const EVENTS = [
@@ -84,7 +92,13 @@ const EVENTS = [
     options:(slot)=>{ if(!slot.good){ const g=TRADER_GOODS[Math.floor(Math.random()*TRADER_GOODS.length)]; const base=TRADER_REF_PRICE[g.key]; const total=Math.round(base*Math.max(0.2,Math.min(1.6,(0.2+Math.random()*1.4)))*g.n); slot.good=g; slot.price=total; } const g=slot.good, total=slot.price;
       return [
         { name:'看看货', desc:`花费<b>${total}</b>金币，购买<b>${g.label}</b>`, req:()=>(G.inventory.coin||0)>=total,
-          resolve:()=>{ G.inventory.coin-=slot.price; if(g.n===1&&(g.key==='club'||g.key==='cloth'||g.key==='dagger'||g.key==='leather'||g.key==='ironSword')){ grantPermanentItem(g.key); } else { G.inventory[g.key]=(G.inventory[g.key]||0)+g.n; } return '“欢迎下次再来！”流浪商人笑眯眯地对你说。'; } },
+          resolve:()=>{ G.inventory.coin-=slot.price;
+            /* broom/luckyCoin/deadwoodSprout/kuiZuo/windChime 走 grantPermanentItem 让它们生效 */
+            const goGrant = ['club','cloth','dagger','leather','ironSword','broom','luckyCoin','deadwoodSprout','kuiZuo','windChime'].includes(g.key);
+            if(g.n===1 && goGrant){ grantPermanentItem(g.key); }
+            else if(g.key==='clearMind'){ G.inventory.clearMind=(G.inventory.clearMind||0)+1; }
+            else { G.inventory[g.key]=(G.inventory[g.key]||0)+g.n; }
+            return '“欢迎下次再来！”流浪商人笑眯眯地对你说。'; } },
         { name:'不感兴趣', desc:'路边摊不可信', req:()=>true,
           resolve:()=>{ G.hero.actionPoint=(G.hero.actionPoint||0)+1; return '你没有理会。趁此时间休息了会，行动力+<b>1</b>。'; } },
       ]; },
@@ -108,6 +122,96 @@ const EVENTS = [
         resolve:()=>{ if(Math.random()*100<slot.y){ G.hero.actionPoint=(G.hero.actionPoint||0)+4; for(const k in ALLIES) gainAffinity(k,-2); return '你拿到了面包，但良心上受到了谴责，行动力+<b>4</b>，所有同伴好感度-2。'; } G.hero.hp=1; return '你被发现了！被围观群众痛殴一顿，生命值降为1。'; } },
       { name:'算了', desc:'多一事不如少一事', req:()=>true,
         resolve:()=>'你离开了此地。' },
+    ],
+  },
+  /* === 新事件 === */
+  {
+    id:'nun', title:'山间修女',
+    getBody:(slot)=>{ if(slot.b==null){ slot.b=100; } return `<p>一位穿着素衣的修女在山间修行，她看了你一眼，目光温柔。</p>`; },
+    options:[
+      { name:'忏悔', desc:'倾诉内心的压力', req:()=>true,
+        resolve:(slot)=>{
+          const pct=Math.max(50, slot.b);
+          slot.b=Math.max(50, slot.b-5);
+          if(Math.random()*100 < pct){
+            G.hero.psyStress=Math.max(-100, (G.hero.psyStress||0)-15);
+            return `修女静静地听你诉说，你感到心中负担减轻了许多。心理压力 <span style="color:#2e9b40">-15</span>（下一次忏悔成功率 <b>${slot.b}%</b>）。`;
+          }
+          G.hero.psyStress=Math.max(-100, (G.hero.psyStress||0)-5);
+          return `你欲言又止，修女只是微笑。心理压力 <span style="color:#2e9b40">-5</span>（下一次忏悔成功率 <b>${slot.b}%</b>）。`;
+        } },
+      { name:'求助（消耗空瓶子×2）', desc:'需要空瓶子×2', req:()=>(G.inventory.emptyBottle||0)>=2,
+        resolve:()=>{ G.inventory.emptyBottle-=2;
+          if(Math.random()<0.5){ G.inventory.clearMind=(G.inventory.clearMind||0)+1; return '修女递给你一瓶<b>明心浆</b>。'; }
+          return '修女分给你一些面包。获得<b>熟肉×2</b>。'; } },
+      { name:'告辞', desc:'多一事不如少一事', req:()=>true,
+        resolve:()=>'你礼貌地告辞离开了。' },
+    ],
+  },
+  {
+    id:'fallIntoRiver', title:'翻车',
+    getBody:(slot)=>{ if(slot.case==null){ slot.case=Math.random()<0.5; }
+      if(slot.case) return `<p>前方的路泥泞不堪，你一脚踏空摔进了河里。</p>`;
+      return `<p>前方的路看似有些泥泞，但你运气还不错。</p>`; },
+    options:(slot)=> slot.case ? [
+      { name:'爬起来（硬吃）', desc:'生命值下降', req:()=>true,
+        resolve:()=>{ G.hero.hp=Math.max(1, G.hero.hp-30); G.hero.psyStress=Math.max(-100, (G.hero.psyStress||0)-3);
+          return `你浑身湿透地爬起来，狼狈不堪。生命 -30，心理压力 <span style="color:#2e9b40">-3</span>。`; } },
+      { name:'先看看河底', desc:'也许河底有什么', req:()=>true,
+        resolve:()=>{ G.hero.hp=Math.max(1, G.hero.hp-15);
+          if(Math.random()<0.3){ G.inventory.coin=(G.inventory.coin||0)+12; return '你在河底摸到了一些掉落的<b>12金币</b>！生命 -15。'; }
+          G.inventory.emptyBottle=(G.inventory.emptyBottle||0)+3; return '你在河底摸到了<b>3个空瓶子</b>。生命 -15。'; } },
+    ] : [
+      { name:'继续赶路', desc:'无', req:()=>true,
+        resolve:()=>'你顺利走过了那段泥泞的路。' },
+    ],
+  },
+  {
+    id:'garden', title:'废弃菜园',
+    getBody:(slot)=>{ if(slot.f==null){ slot.f=['wood','flax','fruit','rawMeat','blueStar'][Math.floor(Math.random()*5)]; slot.fn=2+Math.floor(Math.random()*3); }
+      return `<p>你路过一片废弃的菜园，里面似乎还残留着一些东西。</p>`; },
+    options:(slot)=>[
+      { name:'仔细搜索', desc:'消耗行动力', req:()=>(G.hero.actionPoint||0)>=1,
+        resolve:()=>{ G.hero.actionPoint-=1; G.inventory[slot.f]=(G.inventory[slot.f]||0)+slot.fn;
+          return `你翻了翻这片菜园，找到了 <b>${RES_ZH[slot.f]||itemName(slot.f)}×${slot.fn}</b>。`; } },
+      { name:'算了', desc:'多一事不如少一事', req:()=>true,
+        resolve:()=>'你没有在荒废的菜园前停留太久。' },
+    ],
+  },
+  {
+    id:'mine', title:'废弃矿洞',
+    getBody:(slot)=>{ if(slot.loot==null){ slot.loot=Math.random()<0.5 ? 'iron' : 'blueStar'; slot.n=2+Math.floor(Math.random()*4); }
+      return `<p>山壁上有一个半塌的矿洞入口，黑暗中似乎能看到矿石的微光。</p>`; },
+    options:(slot)=>[
+      { name:'进去看看', desc:'消耗行动力', req:()=>(G.hero.actionPoint||0)>=2,
+        resolve:()=>{ G.hero.actionPoint-=2; G.inventory[slot.loot]=(G.inventory[slot.loot]||0)+slot.n;
+          return `你从矿洞里挖出了 <b>${RES_ZH[slot.loot]}×${slot.n}</b>。`; } },
+      { name:'算了', desc:'太危险了', req:()=>true,
+        resolve:()=>'你没有进入这个看起来就不太安全的矿洞。' },
+    ],
+  },
+  {
+    id:'poker', title:'路边赌局',
+    getBody:()=>`<p>路边的一个赌徒朝你招手：“来玩一把？猜大小，赌注 <b>10 金币</b>，赢了 <b>20 金币</b>！”</p>`,
+    options:[
+      { name:'猜大（下注10金币）', desc:'需要10金币', req:()=>(G.inventory.coin||0)>=10,
+        resolve:()=>{ G.inventory.coin-=10; if(Math.random()<0.5){ G.inventory.coin+=20; return '你猜对了！赢得<b>20金币</b>。'; } G.inventory.psyStress=Math.max(-100,(G.hero.psyStress||0)+2);
+          return '你猜错了，下注的10金币没了。心理压力 <span style="color:#d9534f">+2</span>。'; } },
+      { name:'猜小（下注10金币）', desc:'需要10金币', req:()=>(G.inventory.coin||0)>=10,
+        resolve:()=>{ G.inventory.coin-=10; if(Math.random()<0.5){ G.inventory.coin+=20; return '你猜对了！赢得<b>20金币</b>。'; } G.hero.psyStress=Math.max(-100,(G.hero.psyStress||0)+2);
+          return '你猜错了，下注的10金币没了。心理压力 <span style="color:#d9534f">+2</span>。'; } },
+      { name:'算了', desc:'别惹事', req:()=>true,
+        resolve:()=>'你摇了摇头，离开了。' },
+    ],
+  },
+  {
+    id:'windChime', title:'风铃',
+    getBody:()=>`<p>你在一棵树下发现了一个随风轻响的<b>风铃</b>，它的声音有一种说不清的魔力。</p>`,
+    options:[
+      { name:'收下', desc:'获得风铃', req:()=>true,
+        resolve:()=>{ G.inventory.windChime=(G.inventory.windChime||0)+1; return '你把风铃挂在了腰间，心里好像轻快了一些。获得<b>风铃×1</b>。'; } },
+      { name:'算了', desc:'多一事不如少一事', req:()=>true,
+        resolve:()=>'你听着风铃的声音走远了。' },
     ],
   },
 ];
