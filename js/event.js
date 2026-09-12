@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
    js/event.js —— 模块：随机事件系统
    真正可选择的选项交互（选中→确认→2s淡出→结果）。
    事件标题/正文按自然段打字机逐段显示，段间点击剧情区推进；
@@ -128,24 +128,24 @@ const EVENTS = [
   /* 翻车现场 */
   {
     id:'flipCart', title:'翻车现场',
-    getBody:()=>`<p>你遇见一位摔得人仰车翻的男人。将他救起后，他自称是售卖载具的商人。"这是个意外中的意外。这些家伙平时吃的不多，干活又卖力。您是我的恩人，就打5折，不，2折，卖给您如何？"</p>`,
+    getBody:()=>`<p>你遇见一位摔得人仰车翻的男人。将他救起后，他自称是售卖载具的商人。</p><p>"这是个意外中的意外。这些家伙平时吃的不多，干活又卖力。您是我的恩人，就打5折，不，2折，卖给您如何？"</p>`,
     options:(slot)=>{
       if(slot.show===undefined){ slot.show2=Math.random()<0.5; slot.show3=Math.random()<0.5; slot.show4=Math.random()<0.5; slot.show=true; }
       const list=[];
       list.push({ name:'花费3金币，买下地龙', desc:'', req:()=>(G.inventory.coin||0)>=3,
         resolve:()=>{ G.inventory.coin-=3; G.vehicles=G.vehicles||[]; G.vehicles.push({key:'dragon', uses:(VEHICLES.dragon&&VEHICLES.dragon.uses)||3});
-          return '买下了地龙。希望下一个翻车的人不会是自己。（载具·地龙+1）'; } });
+          return '<p>买下了地龙。</p><p>希望下一个翻车的人不会是自己。（载具·地龙+1）</p>'; } });
       if(slot.show2) list.push({ name:'花费3金币，买下马车', desc:'', req:()=>(G.inventory.coin||0)>=3,
         resolve:()=>{ G.inventory.coin-=3; G.vehicles=G.vehicles||[]; G.vehicles.push({key:'carriage', uses:(VEHICLES.carriage&&VEHICLES.carriage.uses)||2});
-          return '买下了马车。希望下一个翻车的人不会是自己。（载具·马车+1）'; } });
+          return '<p>买下了马车。</p><p>希望下一个翻车的人不会是自己。（载具·马车+1）</p>'; } });
       if(slot.show3) list.push({ name:'花费3金币，买下魔法扫帚', desc:'', req:()=>(G.inventory.coin||0)>=3,
         resolve:()=>{ G.inventory.coin-=3; G.vehicles=G.vehicles||[]; G.vehicles.push({key:'broom', uses:(VEHICLES.broom&&VEHICLES.broom.uses)||2});
-          return '买下了魔法扫帚。希望下一个从天上摔下来的人不会是自己。（载具·魔法扫帚+1）'; } });
+          return '<p>买下了魔法扫帚。</p><p>希望下一个从天上摔下来的人不会是自己。（载具·魔法扫帚+1）</p>'; } });
       if(slot.show4) list.push({ name:'花费5金币，买下魔法飞毯', desc:'', req:()=>(G.inventory.coin||0)>=5,
         resolve:()=>{ G.inventory.coin-=5; G.vehicles=G.vehicles||[]; G.vehicles.push({key:'carpet', uses:(VEHICLES.carpet&&VEHICLES.carpet.uses)||1});
-          return '买下了魔法飞毯。希望下一个从天上摔下来的人不会是自己。（载具·魔法飞毯+1）'; } });
+          return '<p>买下了魔法飞毯。</p><p>希望下一个从天上摔下来的人不会是自己。（载具·魔法飞毯+1）</p>'; } });
       list.push({ name:'我暂时用不上载具', desc:'刚翻车的人推销的载具，我可不敢买', req:()=>true,
-        resolve:()=>'你离开了此地，留下男人在原处训斥着他的坐骑们' });
+        resolve:()=>'<p>你离开了此地。</p><p>留下男人在原处训斥着他的坐骑们。</p>' });
       return list;
     },
   },
@@ -177,7 +177,7 @@ const EVENTS = [
   /* 一塌糊涂的菜园 */
   {
     id:'messyGarden', title:'一塌糊涂的菜园',
-    getBody:()=>`<p>村子边缘，一户人家的围栏被野猪撞塌，菜园被翻得一塌糊涂。主人蹲在田边，垂头丧气。他看见你，开口求助：能不能帮忙把倒塌的木栅栏重新搭好。</p>`,
+    getBody:()=>`<p>村子边缘，一户人家的围栏被野猪撞塌，菜园被翻得一塌糊涂。</p><p>主人蹲在田边，垂头丧气。他看见你，开口求助：能不能帮忙把倒塌的木栅栏重新搭好。</p>`,
     options:[
       { name:'帮忙修补围栏', desc:'看着这片被毁的田地，实在没法视而不见', req:()=>true,
         resolve:()=>{
@@ -185,21 +185,21 @@ const EVENTS = [
           if(Math.random()<0.85){
             G.inventory.fruit=(G.inventory.fruit||0)+6; G.inventory.coin=(G.inventory.coin||0)+6;
             const cap=heroDisplayMaxHp(); G.hero.hp=cap;
-            return '耗费了一天时间修理栅栏，行动力-3。村民送给你果子×6、金币×6，并邀你留下吃晚饭，回复全部生命值。';
+            return '<p>你花了一整天修理栅栏。行动力-3。</p><p>村民送给你果子×6、金币×6，并邀你留下吃晚饭，回复全部生命值。</p>';
           }
           const cap=heroDisplayMaxHp(); G.hero.hp=cap;
-          return '耗费了一天时间修理栅栏，行动力-3。村民家中本就拮据，拿不出像样报酬，但执意邀你留下吃晚饭，回复全部生命值。';
+          return '<p>你花了一整天修理栅栏。行动力-3。</p><p>村民家中本就拮据，拿不出像样报酬，但执意邀你留下吃晚饭，回复全部生命值。</p>';
         } },
       { name:'建议他设置陷阱', desc:'教他布置捕兽夹来防范野猪', req:()=>true,
         resolve:()=>{ G.hero.actionPoint=Math.max(0, (G.hero.actionPoint||0)-1); G.inventory.coin=(G.inventory.coin||0)+6;
-          return '花费了少许时间讲解技巧，行动力-1。获得金币×6。'; } },
-      { name:'多一事不如少一事', desc:'', req:()=>true, resolve:()=>'你离开了此地' },
+          return '<p>你花了少许时间讲解布置捕兽夹的技巧。行动力-1。</p><p>获得金币×6。</p>'; } },
+      { name:'多一事不如少一事', desc:'', req:()=>true, resolve:()=>'<p>你离开了此地。</p>' },
     ],
   },
   /* 废弃矿洞 */
   {
     id:'abandonMine', title:'废弃矿洞',
-    getBody:()=>`<p>山坡上出现一处被碎石半掩埋的废弃矿洞入口，黑暗的洞口隐隐能听见滴水声。</p>`,
+    getBody:()=>`<p>山坡上出现一处被碎石半掩埋的废弃矿洞入口。</p><p>黑暗的洞口隐隐能听见滴水声。</p>`,
     options:[
       { name:'进去简单探查一番', desc:'碰碰运气，或许有矿石', req:()=>true,
         resolve:()=>{
@@ -209,14 +209,14 @@ const EVENTS = [
             if(pick<0.33){ G.inventory.iron=(G.inventory.iron||0)+2; txt='挖到了铁块×2'; }
             else if(pick<0.66){ G.inventory.amethyst=(G.inventory.amethyst||0)+1; txt='挖到了紫水晶×1'; }
             else { G.inventory.diamond=(G.inventory.diamond||0)+1; txt='挖到了钻石×1'; }
-            return txt;
+            return `<p>${txt}。</p>`;
           } else if(r<0.9){
             const dmg=Math.floor(G.hero.hp*0.4); G.hero.hp=Math.max(1, G.hero.hp-dmg);
-            return `探索山洞时，一个趔趄，脚下碎石滑落，触发小型塌方，失去${dmg}点生命值`;
+            return `<p>探索山洞时，一个趔趄，脚下碎石滑落，触发小型塌方。</p><p>失去 ${dmg} 点生命值。</p>`;
           } else { enterEventBattle('ironClump'); return ''; }
         } },
       { name:'仅在洞口张望，不深入', desc:'看看情况就走', req:()=>true,
-        resolve:()=>{ G.inventory.blueStar=(G.inventory.blueStar||0)+2; return '你在洞口捡到几块碎矿石，获得蓝星石×2'; } },
+        resolve:()=>{ G.inventory.blueStar=(G.inventory.blueStar||0)+2; return '<p>你在洞口捡到几块碎矿石。</p><p>获得蓝星石×2。</p>'; } },
     ],
   },
   /* 道旁的修女 */
@@ -240,7 +240,7 @@ const EVENTS = [
         } },
       { name:'心生疑虑，转身离开', desc:'在野外遇到修女十分可疑', req:()=>true,
         resolve:()=>{ G.hero.actionPoint=(G.hero.actionPoint||0)+1;
-          return '你径直离开了。用这段时间在树林中小憩了一会，行动力+1'; } },
+          return '<p>你径直离开了。</p><p>用这段时间在树林中小憩了一会，行动力+1。</p>'; } },
     ],
   },
   /* 蘑菇迷境 */
@@ -289,19 +289,37 @@ const EVENTS = [
       { name:'有个蘑菇在动？', desc:'还没吃蘑菇就已经出幻觉了？', req:()=>true,
         resolve:()=>{ G.vehicles=G.vehicles||[];
           G.vehicles.push({key:'mushroom', uses:(VEHICLES.mushroom&&VEHICLES.mushroom.uses)||3});
-          return '你捉住了那只打算悄悄逃跑的大蘑菇。获得载具·会走路的蘑菇×1'; } },
+          return '<p>你捉住了那只打算悄悄逃跑的大蘑菇。</p><p>获得载具·会走路的蘑菇×1。</p>'; } },
       { name:'明眼人都能看出来有毒', desc:'找点别的能吃的好了', req:()=>true,
         resolve:()=>{ G.inventory.fruit=(G.inventory.fruit||0)+2;
-          return '你离开了此地。在树林里找到了果子×2'; } },
+          return '<p>你离开了此地。</p><p>在树林里找到了果子×2。</p>'; } },
     ],
   },
 ];
 
 /* 常乐辅助函数 */
+function changleCardHTML(type){
+  // S=小(1~5) B=大(6~40) K=王(JQK)
+  const icon = type==='S' ? '🂡' : (type==='B' ? '🃞' : '🃏');
+  const label = type==='S' ? '小' : (type==='B' ? '大' : '王');
+  return `<div style="display:flex;flex-direction:column;align-items:center;width:32px;margin:0 1px;">
+    <div style="width:30px;height:42px;border:1px solid #aaa;border-radius:3px;background:#fff;color:#222;font-size:16px;display:flex;align-items:center;justify-content:center;">${icon}</div>
+    <span style="font-size:10px;color:#bbb;">${label}</span></div>`;
+}
+function changleCardsBlockHTML(picks){
+  const cardsHTML = picks.map(c=>changleCardHTML(c)).join('');
+  const s=picks.filter(c=>c==='S').length, b=picks.filter(c=>c==='B').length, k=picks.filter(c=>c==='K').length;
+  // 用 float:right 独立卡片区块，紧贴剧情区右侧；不撑高正文
+  return `<div style="float:right;width:96px;margin:-4px 0 6px 10px;padding:6px 4px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:4px;text-align:center;">
+    <div style="font-size:11px;color:#bbb;margin-bottom:4px;">抽牌结果</div>
+    <div style="display:flex;justify-content:center;">${cardsHTML}</div>
+    <div style="font-size:10px;color:#aaa;margin-top:4px;">${s}小 · ${b}大 · ${k}王</div>
+  </div>`;
+}
 function changleRound2(slot){
   const x=slot.x, y=slot.y, z=slot.z;
   return { __continue:true,
-    body:'<p>他们给你讲了规则：1到5点是小，6到40点为大，JQK代表王。每轮从12张牌中抽取3张牌，如果你预测对了结果，就能获得对应的奖励。你观察到桌上摆着'+x+'张小牌，'+y+'张大牌，'+z+'张王牌。</p>',
+    body:`<p>他们给你讲了规则：1到5点是小，6到40点为大，JQK代表王。</p><p>每轮从12张牌中抽取3张，如果你预测对了结果，就能获得对应的奖励。</p><p>你观察到桌上摆着 ${x} 张小牌，${y} 张大牌，${z} 张王牌。</p><p>现在，请押一把：</p>`,
     options:[
       { name:'稳一手', desc:'结果中将至少有1张小牌', req:()=>true, resolve:()=> changleResolve(slot, 'atLeast1Small') },
       { name:'以小博大', desc:'结果中将至少有2张大牌', req:()=>true, resolve:()=> changleResolve(slot, 'atLeast2Big') },
@@ -310,44 +328,74 @@ function changleRound2(slot){
   };
 }
 function changleResolve(slot, predType){
+  const x=slot.x, y=slot.y, z=slot.z;
+  // 玩家选完后才抽牌（关键：结果在选择后才生成）
   const pool=[];
-  for(let i=0;i<slot.x;i++) pool.push('S');
-  for(let i=0;i<slot.y;i++) pool.push('B');
-  for(let i=0;i<slot.z;i++) pool.push('K');
+  for(let i=0;i<x;i++) pool.push('S');
+  for(let i=0;i<y;i++) pool.push('B');
+  for(let i=0;i<z;i++) pool.push('K');
   const picks=[]; const p=pool.slice();
   for(let i=0;i<3;i++){ const idx=Math.floor(Math.random()*p.length); picks.push(p.splice(idx,1)[0]); }
-  const s=picks.filter(c=>c==='S').length, b=picks.filter(c=>c==='B').length, k=picks.filter(c=>c==='K').length;
+
   let hit=false;
-  if(predType==='atLeast1Small') hit = s>=1;
-  else if(predType==='atLeast2Big') hit = b>=2;
-  else if(predType==='atLeast2King') hit = k>=2;
-  if(!hit){ return '<p>你输了，什么也没有获得。</p><p>晦气！早知道不该来的！</p>'; }
+  if(predType==='atLeast1Small') hit = picks.filter(c=>c==='S').length>=1;
+  else if(predType==='atLeast2Big') hit = picks.filter(c=>c==='B').length>=2;
+  else if(predType==='atLeast2King') hit = picks.filter(c=>c==='K').length>=2;
+
+  const cardBlock = changleCardsBlockHTML(picks);
+
+  if(!hit){ return `${cardBlock}<p>很遗憾，没中。</p><p>晦气！早知道不该来的！</p>`; }
   const a=slot.a;
-  if(predType==='atLeast1Small'){ G.inventory.coin=(G.inventory.coin||0)+Math.round(1.4*a);
-    return '<p>金币+'+Math.round(1.4*a)+'</p><p>盆满钵满，是时候离开了</p>'; }
+  const mult = Math.max(1, Math.round(a/5));
+
+  if(predType==='atLeast1Small'){
+    const winCoin = Math.round(1.4*a);
+    G.inventory.coin=(G.inventory.coin||0)+winCoin;
+    return `${cardBlock}<p>中了！稳一手！</p><p>金币+${winCoin}。盆满钵满，是时候离开了。</p>`;
+  }
   if(predType==='atLeast2Big'){
     const itemPool=['club','cloth','dagger','leather','deadwoodSprout','luckyCoin','kuiZuo','windChime'];
     const pickKey=itemPool[Math.floor(Math.random()*itemPool.length)];
     const n=Math.max(1, Math.round(0.2*a));
     if(['club','cloth','dagger','leather','ironSword','broom','luckyCoin','deadwoodSprout','kuiZuo','windChime'].includes(pickKey)&&n===1){ grantPermanentItem(pickKey); }
     else { G.inventory[pickKey]=(G.inventory[pickKey]||0)+n; }
-    return '<p>流浪汉们没有钱，只能将随身物品给你。获得了'+itemName(pickKey)+'×'+n+'</p><p>盆满钵满，是时候离开了</p>'; }
+    return `${cardBlock}<p>以小博大，成了！</p><p>流浪汉们没有钱，只能将随身物品给你。</p><p>获得了 ${itemName(pickKey)}×${n}。盆满钵满，是时候离开了。</p>`;
+  }
   if(predType==='atLeast2King'){
     return { __continue:true,
-      body:'<p>流浪汉们怔怔的望着桌上的几张王牌。他们不知道将什么物品抵给你了，干脆让你自己许愿。你选择：</p>',
+      body:`${cardBlock}<p>卧槽，真抽到了两张王！</p><p>流浪汉们怔怔的望着桌上的几张王牌。他们不知道将什么物品抵给你了，干脆让你自己许愿。</p><p>你选择：</p>`,
       options:[
         { name:'要魔法秘籍', desc:'', req:()=>true,
-          resolve:()=>{ G.hero.atk=(G.hero.atk||0)+20;
-            for(const k of G.team){ if(ALLIES[k]){ ALLIES[k].baseAtk=(ALLIES[k].baseAtk||0)+20; } }
-            return '<p>魔法啥子的俺们不会咧，干架本事倒是有点。你学习了战斗技巧，你和编队中的队友各自基础攻击力+20。</p><p>盆满钵满，是时候离开了</p>'; } },
+          resolve:()=>{
+            const atkGain = Math.round(1.2*a);
+            G.hero.atk=(G.hero.atk||0)+atkGain;
+            for(const k of G.team){ if(ALLIES[k]){ ALLIES[k].baseAtk=(ALLIES[k].baseAtk||0)+atkGain; } }
+            return `<p>魔法啥子的俺们不会咧，干架本事倒是有点。</p><p>你学习了战斗技巧，你和编队中的队友各自基础攻击力+${atkGain}。</p><p>盆满钵满，是时候离开了。</p>`; } },
         { name:'要生存物资', desc:'', req:()=>true,
-          resolve:()=>{ G.inventory.wood=(G.inventory.wood||0)+6; G.inventory.flax=(G.inventory.flax||0)+6;
-            G.inventory.fruit=(G.inventory.fruit||0)+6; G.inventory.rawMeat=(G.inventory.rawMeat||0)+3;
-            G.inventory.coin=(G.inventory.coin||0)+6; G.inventory.iron=(G.inventory.iron||0)+2;
-            return '<p>流浪汉把近日翻找到的东西交给了你。获得木材×6，亚麻×6，果子×6，生肉×3，金币×6，铁块×2</p><p>盆满钵满，是时候离开了</p>'; } },
+          resolve:()=>{
+            const m = mult * 3;
+            G.inventory.wood=(G.inventory.wood||0)+m; G.inventory.flax=(G.inventory.flax||0)+m;
+            G.inventory.fruit=(G.inventory.fruit||0)+m; G.inventory.rawMeat=(G.inventory.rawMeat||0)+m;
+            G.inventory.coin=(G.inventory.coin||0)+m;
+            G.inventory.iron=(G.inventory.iron||0)+Math.max(1,Math.floor(m/3));
+            G.inventory.blueStar=(G.inventory.blueStar||0)+m;
+            return `<p>流浪汉把近日翻找到的东西交给了你。</p><p>获得：木材×${m}、亚麻×${m}、果子×${m}、生肉×${m}、金币×${m}、蓝星石×${m}、铁块×${Math.max(1,Math.floor(m/3))}。</p><p>盆满钵满，是时候离开了。</p>`; } },
         { name:'要远行装备', desc:'', req:()=>true,
-          resolve:()=>{ G.hero.apCap=(G.hero.apCap||5)+1; G.hero.actionPoint=(G.hero.actionPoint||0)+5;
-            return '<p>流浪汉把几人手头的帐篷、家具凑了凑，交给了你。行动力上限+1。本日行动力额外+5</p><p>盆满钵满，是时候离开了</p>'; } },
+          resolve:()=>{
+            let txt='';
+            if(a<=5){
+              G.hero.actionPoint=(G.hero.actionPoint||0)+6;
+              txt='本日行动力额外+6';
+            } else if(a<=10){
+              G.hero.apCap=(G.hero.apCap||5)+1;
+              G.hero.actionPoint=(G.hero.actionPoint||0)+5;
+              txt='行动力上限+1，本日行动力额外+5';
+            } else {
+              G.hero.apCap=(G.hero.apCap||5)+2;
+              G.hero.actionPoint=(G.hero.actionPoint||0)+4;
+              txt='行动力上限+2，本日行动力额外+4';
+            }
+            return `<p>流浪汉把几人手头的帐篷、家具凑了凑，交给了你。</p><p>${txt}。</p><p>盆满钵满，是时候离开了。</p>`; } },
       ],
     };
   }

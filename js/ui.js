@@ -39,11 +39,20 @@ function storyRunNext(){
   if(storyTyping||storyTimer) return;
   if(!storyQueue.length){ const e=storyOnEnd; storyOnEnd=null; if(e) e(); return; }
   storyCurrent=storyQueue.shift();
-  storyTyping=true; storyIdx=0;
-  const plain=storyCurrent.replace(/<[^>]+>/g,'');
   const box=$('#storyBody');
   const para=document.createElement('div'); para.className='story-para';
   box.appendChild(para);
+  // 非 <p> 开头的段（如 float div 等独立块）直接 innerHTML 输出，不打字机
+  if(!/^\s*<p/i.test(storyCurrent)){
+    para.innerHTML=storyCurrent;
+    box.scrollTop=box.scrollHeight;
+    storyCurrent=null;
+    const d=storyOnDone; storyOnDone=null;
+    if(d) d();
+    return;
+  }
+  storyTyping=true; storyIdx=0;
+  const plain=storyCurrent.replace(/<[^>]+>/g,'');
   storyTimer=setInterval(()=>{
     storyIdx=Math.min(storyIdx+1, plain.length);
     para.innerHTML=escapeHtml(plain.slice(0,storyIdx)) + (storyIdx<plain.length?'<span class="story-caret"></span>':'');
@@ -55,7 +64,7 @@ function storyRunNext(){
       box.scrollTop=box.scrollHeight;
       storyCurrent=null;
       const d=storyOnDone; storyOnDone=null;
-      if(d) d();   // 段打完回调（不再自动连打）
+      if(d) d();
     }
   }, 1000/30);
 }
@@ -106,6 +115,9 @@ function refreshHUD(){ if(!G) return;
   if(!G.records.fruitFirstOwned && (G.inventory.fruit||0)>0) G.records.fruitFirstOwned=true;
   if(!G.records.cookedMeatFirstOwned && (G.inventory.cookedMeat||0)>0) G.records.cookedMeatFirstOwned=true;
   if(!G.records.nonWalkVehicleOwned){ if((G.vehicles||[]).some(v=>v.key&&!['walk','dash'].includes(v.key))){ G.records.nonWalkVehicleOwned=true; } }
+  /* === 任务自动接取提醒：新变为可见的任务立即 log === */
+  if(!G.records.questNotified) G.records.questNotified={};
+  for(const t of TASKS){ if(taskVisible(t) && !G.records.questNotified[t.id]){ G.records.questNotified[t.id]=true; log(`📋 已接取 ${t.cat==='main'?'主线':'支线'}任务「${t.name}」，请前往任务界面查看。`); } }
   /* === HUD === */
   const h=G.hero; const mHp=heroDisplayMaxHp(); const hpCls=h.hp< mHp*0.3?'hpfill low':'hpfill';
   const depress = h.depress ? `<span class="stat depress-stat">${termHTML('depress','抑郁')}</span>` : '';
@@ -308,15 +320,11 @@ function renderInteractBody(key){
 }
 function interactAction(key,act){ if(act==='chat') interactChat(key); else if(act==='feed') interactFeed(key); else if(act==='gift') openGift(key); }
 /* 打字机：把一段文本打进右侧对话区 */
-function startInterType(key,html){ const dlg=$('#interactDlg_'+key); if(!dlg) return; if(interTick['t'+key]) clearInterval(interTick['t'+key]); const plain=html.replace(/<[^>]+>/g,''); const node=document.createElement('div'); node.className='iline typing'; dlg.appendChild(node); dlg.scrollTop=dlg.scrollHeight; let i=0; interTick['t'+key]=setInterval(()=>{ i=Math.min(i+1,plain.length); node.innerHTML=escapeHtml(plain.slice(0,i))+(i<plain.length?'<span class="story-caret"></span>':''); dlg.scrollTop=dlg.scrollHeight; if(i>=plain.length){ clearInterval(interTick['t'+key]); interTick['t'+key]=null; node.innerHTML=html; node.classList.remove('typing'); interTyping[key]=null; interHist[key]=interHist[key]||[]; interHist[key].push(html);
-      // 聊天历史上限：按字符总长度删最早消息，**同时同步删 DOM 节点**（否则对话框会一直累积变滚动区）
-      const MAX_TOTAL_LEN = 3000;
-      let totalLen = interHist[key].join('').length;
-      while(totalLen>MAX_TOTAL_LEN && interHist[key].length>1){
-        const old = interHist[key].shift(); totalLen -= old.length;
-        // 同步删除对话 DOM 里最早的 .iline（跳过 typing 状态的那个，那个就是当前 node，我们从最前删）
-        const firstLine = dlg.querySelector('.iline:not(.typing)');
-        if(firstLine && firstLine!==node){ if(firstLine.parentNode){ firstLine.parentNode.removeChild(firstLine); } }
+function startInterType(key,html){ const dlg=$('#interactDlg_'+key); if(!dlg) return; if(interTick['t'+key]) clearInterval(interTick['t'+key]); const plain=html.replace(/<[^>]+>/g,''); const node=document.createElement('div'); node.className='iline typing'; dlg.appendChild(node); dlg.scrollTop=dlg.scrollHeight; let i=0; interTick['t'+key]=setInterval(()=>{ i=Math.min(i+1,plain.length); node.innerHTML=escapeHtml(plain.slice(0,i))+(i<plain.length?'<span class="story-caret"></span>':''); dlg.scrollTop=dlg.scrollHeight; if(i>=plain.length){ clearInterval(interTick['t'+key]); interTick['t'+key]=null; node.innerHTML=html; node.classList.remove('typing'); interTyping[key]=null; interHist[key]=interHist[key]||[]; interHist[key].push({el:node,html});
+      // 交互文本区严格限 5 条：超出时立即删除最早那条的 DOM
+      while(interHist[key].length>5){
+        const oldest = interHist[key].shift();
+        if(oldest && oldest.el && oldest.el.parentNode) oldest.el.parentNode.removeChild(oldest.el);
       }
     } },1000/40); }
 /* 问题1：若上一段未打完，立即把它显示完全（保留），再在下一行开始新的文本 */
@@ -368,8 +376,8 @@ function renderSwapPanel(){ const cells=eligibleSwapChars().map(k=>{ const c=get
 function renderFormation(){ const slots=['1','2','3']; const teamView = swapOpen? swapTeam : G.team; const cols=slots.map((label,i)=>{ const k=teamView[i]; if(!k) return `<div class="fcol"><div class="fcol-head">${label}号位</div><div class="fcol-empty">空缺</div><button class="mbtn small" onclick="openSwap()">替换</button></div>`; const c=getChar(k); const ele=k==='pro'?'无属性':ELEM[c.element].zh; const skills=c.skills.filter(s=>c.selectedSkillIds.includes(s.id)).map(s=>`<span class="fskill ${s.kind==='attack'?'attack':'support'}">${s.kind==='attack'?'攻击':'辅助'}·${s.name}</span>`).join(''); const tals=c.passives.map((p,ti)=>`<span class="talentTag" data-k="${k}" data-i="${ti}"><span class="cat talent">天赋</span>${p.name}</span>`).join(''); return `<div class="fcol"><div class="fcol-head">${label}号位</div><div class="fcol-name">${c.name}</div><div class="fcol-ele">${ele}</div><div class="fcol-skills">${skills||'<span class="nohint">未携带技能</span>'}</div><div class="fcol-talents">${tals}</div><button class="mbtn small" onclick="openSwap()">替换</button></div>`; }).join(''); openModal('编队', `<div class="form-head"><span class="form-title">当前编队</span><button class="mbtn small" onclick="openSwap()">快捷编队</button></div><div class="form-wrap"><div class="form-cols">${cols}</div></div>${swapOpen?renderSwapPanel():''}`, 'full', {replace:true}); }
 let taskSel='m1';
 function afterQuestProgress(){} /* 进度变化钩子：发放改为在任务界面手动领取（claimTask）。 */
-function grantTaskReward(rw){ if(rw.key){ const n=rw.n||1; G.inventory[rw.key]=(G.inventory[rw.key]||0)+n; return `${rw.text||itemName(rw.key)}×${n}`; } if(rw.simple){ let m=rw.simple.match(/^金币\+(\d+)$/); if(m){ G.inventory.coin=(G.inventory.coin||0)+ +m[1]; return `金币+${+m[1]}`; } m=rw.simple.match(/^主角防御力\+(\d+)$/); if(m){ G.hero.def=(G.hero.def||0)+ +m[1]; return `主角防御力+${+m[1]}`; } return rw.simple; } return ''; }
-window.claimTask=function(id){ const t=TASKS.find(x=>x.id===id); if(!t) return; if(!taskDone(t)){ log('该任务的完成条件尚未达成。'); openTasks(); return; } if(taskDoneMarked(t)){ log('该任务的奖励已领取过。'); openTasks(); return; } G.records=G.records||{}; if(!G.records.questDone||typeof G.records.questDone!=='object') G.records.questDone={}; const parts=[]; for(const rw of (t.rewards||[])){ const s=grantTaskReward(rw); if(s) parts.push(s); } G.records.questDone[t.id]=true; refreshHUD(); if(parts.length){ log(`已手动领取「${t.name}」奖励：${parts.join('、')}。`); } openTasks(); };
+function grantTaskReward(rw){ if(rw.key){ const n=rw.n||1; G.inventory[rw.key]=(G.inventory[rw.key]||0)+n; const name=rw.text||itemName(rw.key); return `${name}×${n}`; } if(rw.simple){ let m=rw.simple.match(/^金币\+(\d+)$/); if(m){ G.inventory.coin=(G.inventory.coin||0)+ +m[1]; return `金币+${+m[1]}`; } m=rw.simple.match(/^主角防御力\+(\d+)$/); if(m){ G.hero.def=(G.hero.def||0)+ +m[1]; return `主角防御力+${+m[1]}`; } return rw.simple; } return ''; }
+window.claimTask=function(id){ const t=TASKS.find(x=>x.id===id); if(!t) return; if(!taskDone(t)){ log('该任务的完成条件尚未达成。'); openTasks(); return; } if(taskDoneMarked(t)){ log('该任务的奖励已领取过。'); openTasks(); return; } G.records=G.records||{}; if(!G.records.questDone||typeof G.records.questDone!=='object') G.records.questDone={}; const parts=[]; for(const rw of (t.rewards||[])){ const s=grantTaskReward(rw); if(s) parts.push(s); } G.records.questDone[t.id]=true; refreshHUD(); if(parts.length){ log(`已领取「${t.name}」奖励：${parts.join('、')}。`); } openTasks(); };
 function taskGoalText(t,g){ const p=taskProgress(t); if(t.id==='m1'){ if(g.indexOf('健康')>=0) return `${g}（当前 ${G.hero.health}）`; return `${g}（进行中）`; } if(p!=null) return `${g}（${p}/${t.last}）`; return g; }
 function renderTasksHTML(){
   const sel = TASKS.find(t=>t.id===taskSel && taskVisible(t)) || TASKS.find(taskVisible) || TASKS[0];

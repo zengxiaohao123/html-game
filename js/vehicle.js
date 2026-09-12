@@ -71,7 +71,7 @@ function consumeVehicleForMove(){
       vs.splice(G.vehicleSel,1);
       G.vehicleSel = 0;
       log(`<b>${defName}</b> 使用次数耗尽，已自动切换回徒步跋涉。`);
-      renderVehicles();
+      // 不调用 renderVehicles()，切换是自动完成的，不应强制打开载具页面
     }
   }
 }
