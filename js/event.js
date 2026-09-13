@@ -339,14 +339,7 @@ function changleCardsBlockHTML(picks){
     <div style="display:flex;justify-content:center;gap:4px;">${cardsHTML}</div>
   </div>`;
 }
-function changleCardsBlockHTML(picks){
-  const cardsHTML = picks.map(c=>changleCardHTML(c)).join('');
-  /* 整体上移；完全去掉所有文字（标题、底部统计、卡片下方标签），只保留三张扑克牌本身；
-     卡片适度放大，整个浮层更紧凑地贴在右上角 */
-  return `<div style="position:absolute;top:-10px;right:6px;z-index:5;padding:3px;background:rgba(30,32,45,.92);border:1px solid rgba(232,216,164,.5);border-radius:6px;box-shadow:2px 4px 14px rgba(0,0,0,.6);pointer-events:none;">
-    <div style="display:flex;justify-content:center;gap:4px;">${cardsHTML}</div>
-  </div>`;
-}
+
 function changleRound2(slot){
   const x=slot.x, y=slot.y, z=slot.z;
   return { __continue:true,
