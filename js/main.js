@@ -90,8 +90,11 @@ function sleep(){
   story(`夜色褪去，新的一天开始了。今天是第 ${G.day} 天。`); refreshHUD(); renderMap(); renderIconbar();
 }
 function bindTooltip(){
-  document.addEventListener('mouseover',ev=>{ const t=ev.target.closest('.term'); if(!t)return; const tip=$('#tooltip'); tip.style.display='block'; tip.textContent=t.title||TERMS[t.dataset.term]||''; positionTip(tip,ev); });
+  document.addEventListener('mouseover',ev=>{ const t=ev.target.closest('.term'); if(!t)return; const tip=$('#tooltip'); tip.style.display='block'; tip.textContent=t.title||TERMS[t.dataset.term]||''; bringToFront(tip); positionTip(tip,ev); });
   document.addEventListener('mouseout',ev=>{ if(ev.target.closest('.term')) $('#tooltip').style.display='none'; });
   document.addEventListener('mousemove',ev=>{ positionTip($('#tooltip'),ev); });
 }
+/* 问题6修复：全局递增 z-index，后显示的悬浮层永远在上 */
+let __topZ=500;
+function bringToFront(el){ if(!el) return; __topZ++; el.style.zIndex=__topZ; }
 function positionTip(tip,ev){ const x=Math.min(ev.clientX+14, window.innerWidth-300); const y=ev.clientY+14; tip.style.left=x+'px'; tip.style.top=y+'px'; }

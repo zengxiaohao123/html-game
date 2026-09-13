@@ -25,7 +25,14 @@ const RES_DESC = {wood:'基础材料。可用于合成、交易',
   blueStarPowder:'随处可见的一种带有药效的粉末。可用于合成。',
   amethyst:'非常漂亮的宝石。可用于赠礼，使角色好感度+3',
   clearMind:'游戏中重要的软货币。也可自行使用：心理压力+4，立即回满生命值与行动力并解除抑郁状态，本日内主角攻击力+25%、受到的伤害-25%',
-  diamond:'极其稀有的宝石，在废弃矿洞深处偶尔能挖到。'};
+  diamond:'闪闪发亮，十分珍稀。可用于赠礼，使角色好感度+8。',
+};
+/* 资源的文学性描述（蓝色斜体）——与 ITEMS.lore 格式一致 */
+const RES_LORE = {
+  blueStar:'表面黯黑，但遇光或被研磨时，会分解出蓝色的粉末，犹如蓝色星光，因而得名。蓝色粉末有安神效果，熬制成浆后效果会进一步增强',
+  blueStarPowder:'由蓝星石遇光或被研磨而得，具有安神效果。许多人将其作为熏香随身携带，但时间长了会失效，被随手抛弃。熬制成浆后效果会进一步增强',
+  diamond:'钻石', /* 钻石暂不需要额外 lore（任务9的赠礼信息已在 desc 里） */
+};
 const NATURAL_RESOURCES = ['wood','flax','fruit','rawMeat','blueStar'];
 const CITY_RESOURCES = ['coin','emptyBottle','blueStarPowder'];
 
@@ -52,6 +59,7 @@ const ITEMS = {
   broom:{name:'魔法扫帚', desc:'移动至直线3格内的任意1格。可使用2次。每次消耗1行动力。', vehicle:true},
   clearMind:{name:'明心浆', desc:'心理压力+4，立即回满生命值与行动力并解除【抑郁】状态，本日内主角攻击力+25%、受到的伤害-25%。', lore:'饮料？毒药？兴奋剂？若你心已明，便不会纠结它的用途', usable:true},
   amethyst:{name:'紫水晶', desc:'可用于赠礼，使角色好感度+3', giftValue:3},
+  diamond:{name:'钻石', desc:'闪闪发亮，十分珍稀。可用于赠礼，使角色好感度+8。', giftValue:8},
 };
 function itemName(k){ return RES_ZH[k] || (ITEMS[k]&&ITEMS[k].name) || k; }
 function itemDesc(k){ return ITEMS[k]? ITEMS[k].desc : (RES_DESC[k]||''); }
@@ -270,8 +278,8 @@ const BOND_TEXT = {
 /* ===== 物品喜好度（隐藏属性，玩家不可见） =====
    0级=大部分未说明物品(-1)；1级=one列表(+1)；2级=two映射(按物品描述增加值)；3级=three映射(按描述值再加+5)。 */
 const ITEM_LOVE = {
-  xiayang:{ one:['cookedMeat','roadmap'], two:{caiyunPendant:10}, three:{} },
-  luyouyou:{ one:['cookedMeat','roadmap'], two:{}, three:{caiyunPendant:10} },
+  xiayang:{ one:['cookedMeat','roadmap'], two:{caiyunPendant:10, diamond:8}, three:{} },
+  luyouyou:{ one:['cookedMeat','roadmap'], two:{diamond:8}, three:{caiyunPendant:10} },
 };
 const GIFT_TALK = {
   xiayang:{ lv0:'夏阳：“啊哈哈……快点交代，这是啥新型冷笑话？”', lv1:'夏阳：“谢啦，这玩意有点意思。”', lv2:'夏阳：“哇，你怎么知道我想要这个？！”' },
@@ -300,7 +308,7 @@ const ENEMIES = {
   redRacer:{ name:'红羽镖客', icon:'🦃', tier:'elite', atk:16, def:0, maxHp:200, speed:12, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{fruit:2, rawMeat:1}, attrUp:3, doubleUp:true}, passives:[ {id:'drift2', name:'飘忽不定', desc:'每3次攻击后，瞬移至周围5格随机空格。'}, {id:'lethal', name:'致命节奏', desc:'每攻击1次，攻击力+8。'} ], skills:[ {id:'rrjp', name:'逼近', kind:'move', desc:'向着目标，移动1格。'}, {id:'feather', name:'飞羽', kind:'attack', type:'physical', target:'amid-2', mult:1.0, desc:'对2格距离内随机1名我方单位造成100%攻击力物理伤害。'} ] },
   bear:{ name:'暴躁的熊', icon:'🐻', tier:'elite', atk:40, def:0, maxHp:800, speed:0, res:{physical:20,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{rawMeat:10}, attrUp:3}, passives:[ {id:'hiber', name:'冬眠', desc:'战斗开始时进入持续3回合的【睡眠】。若被攻击导致生命降低则立即醒来，但本回合无法行动（打哈欠）；未被攻击则睡眠3回合后醒来，下一回合直接行动。'}, {id:'rage', name:'狂躁', desc:'在【睡眠】首次结束后的下一回合开始时，攻击力+80%、每回合额外攻击1次、速度+60，持续5回合。攻击力与状态栏同步显示。'}, {id:'rare', name:'稀有生物', desc:'本次战斗如未被击败，不回复生命，可多次战斗击败。'} ], skills:[ {id:'bearjp', name:'逼近', kind:'move', desc:'向着目标，移动1格。'}, {id:'slap', name:'掌掴', kind:'attack', type:'physical', target:'front', mult:1.0, rageAoe:true, desc:'对前方1格造成100%攻击力物理伤害。狂躁期间改为周围8格随机1名。'} ] },
   mechanism:{ name:'遗弃机关', icon:'🤖', tier:'elite', atk:40, def:10, maxHp:260, speed:4, res:{physical:0,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{coin:3}, rate:{iron:1, prob:0.25}, attrUp:3}, passives:[ {id:'patrol', name:'巡逻', desc:'生命值为满时，不主动攻击，每回合向随机方向移动1格。'} ], skills:[ {id:'mcjp', name:'逼近', kind:'move', desc:'生命值不为满时，向着主角移动1格。'}, {id:'trample', name:'践踏', kind:'attack', type:'physical', target:'front6', mult:1.0, desc:'对前方6格造成100%攻击力物理伤害。'}, {id:'missile', name:'飞弹', kind:'attack', type:'physical', target:'missile', shots:3, mult:0.4, desc:'朝前方发射3枚飞弹，飞行无限远，碰到我方造成40%攻击力物理伤害并消失。'}, {id:'cleanse', name:'大清扫', kind:'attack', type:'physical', target:'adj8', mult:1.4, sustain:3, cd:6, desc:'对周围8格造成140%攻击力物理伤害。连续使用3回合。冷却：6回合。'} ] },
-  ironClump:{ name:'铁疙瘩', icon:'🔩', tier:'ordinary', atk:40, def:20, maxHp:500, speed:10, res:{physical:100,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{iron:2}, rate:{iron:1, prob:0.5}, attrUp:2}, passives:[ {id:'selfReinforce', name:'自我加固', desc:'每回合开始时，防御力+5；每次攻击后，攻击力+10。无论攻击是否命中，只要使用了攻击就触发效果。'} ], skills:[ {id:'icjp', name:'逼近', kind:'move', desc:'向着目标，移动1格。'}, {id:'icSlam', name:'重砸', kind:'attack', type:'physical', target:'adj8', mult:1.0, desc:'对周围8格造成相当于100%攻击力的物理伤害。'} ] },
+  ironClump:{ name:'铁疙瘩', icon:'🔩', tier:'ordinary', atk:40, def:20, maxHp:500, speed:10, res:{physical:100,fire:0,water:0,grass:0,thunder:0,ice:0,wind:0,rock:0}, healthPenalty:1, reward:{items:{iron:2}, rate:{iron:1, prob:0.5}, attrUp:2}, passives:[ {id:'selfReinforce', name:'自我加固', desc:'每回合开始时，防御力+5；每次攻击后，攻击力+10。'} ], skills:[ {id:'icjp', name:'逼近', kind:'move', desc:'向着目标，移动1格。'}, {id:'icSlam', name:'重砸', kind:'attack', type:'physical', target:'adj8', mult:1.0, desc:'对周围8格造成相当于100%攻击力的物理伤害。'} ] },
 };
 function statusMeta(id){ return ST[id]||{id, name:id, kind:'neutral', desc:''}; }
 function randEnemyKey(){ const pool=Object.keys(ENEMIES); return pool[Math.floor(Math.random()*pool.length)]; }
