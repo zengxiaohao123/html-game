@@ -126,9 +126,4 @@ function doCraft(id){
   if(q>=1 && G.team.indexOf('luyouyou')>=0){ const sk=getChar('luyouyou').passives.find(p=>p.id==='skillful'); const pr=vTier(sk,'craft',entryLevel('luyouyou',sk)); let got=0; const gained={}; for(let i=0;i<q;i++){ if(Math.random()*100<pr){ const k=NATURAL_RESOURCES[Math.floor(Math.random()*NATURAL_RESOURCES.length)]; G.inventory[k]=(G.inventory[k]||0)+1; gained[k]=(gained[k]||0)+1; got++; } } if(got>0){ const detail=Object.keys(gained).map(k=>`${RES_ZH[k]}×${gained[k]}`).join('、'); log(`巧手：${got} 件合成额外获得 ${detail}。`); } }
   refreshHUD(); renderCrafting();
 }
-document.addEventListener('keydown', ev=>{
-  if(ev.key.toLowerCase()==='e' && !ev.repeat){
-    if($('#menuOverlay').classList.contains('show')) return;
-    openCraft();
-  }
-});
+/* E 键快捷键已统一移到 js/main.js HOTKEY_MODAL.e */

@@ -314,23 +314,29 @@ const EVENTS = [
    K=王(JQK)  → J♠（黑桃 J，没有大小王）
    整体仅保留三张卡面，完全去掉「小/大/王」标签、去掉底部「X小·Y大·Z王」统计文字，
    卡片尺寸适度放大以利用删除文字后腾出的空间，但整体上移避免剧情区变滚动模式。 */
+/* 常乐抽牌卡面（2026-09-13 改用真实扑克牌图片，不再手绘 SVG）：
+   S=小(1~5 点) → 黑桃 2  (cardslib CDN /cards/S2.png)
+   B=大(6~10 点) → 黑桃 10 (cardslib CDN /cards/S10.png)
+   K=王(JQK)    → 黑桃 J  (cardslib CDN /cards/SJ.png)
+   没有大小王，完全按「点数 1~5=小、6~10=大、JQK=王」规则。
+   卡面图片来自 https://unpkg.com/cardslib/ （开源扑克牌素材库，支持热链）。 */
+/* 真实扑克牌卡面图片源：Deck of Cards API 静态图（https://deckofcardsapi.com/static/img/）。
+   命名规则：点数+花色，花色 S=♠, H=♥, D=♦, C=♣；10 写成 0（单字符）。 */
+const CHANGLE_CARD_IMG = {
+  S:'https://deckofcardsapi.com/static/img/2S.png',   // 黑桃 2（小 / 1~5 点）
+  B:'https://deckofcardsapi.com/static/img/0S.png',   // 黑桃 10（大 / 6~10 点）
+  K:'https://deckofcardsapi.com/static/img/JS.png',   // 黑桃 J（王 / JQK，没有大小王）
+};
 function changleCardHTML(type){
-  // 黑桃 2（小 / 1~5 点）、黑桃 10（大 / 6~10 点）、黑桃 J（王 / JQK）
-  const face = type==='S' ? '2' : (type==='B' ? '10' : 'J');
-  const suit = '♠';
-  const isFace = type==='K'; // J 牌面稍大更有质感
-  const bg = '#fff';
-  const fg = '#111';
-  return `<div style="width:84px;height:118px;background:${bg};border-radius:8px;border:1px solid #555;box-shadow:2px 2px 6px rgba(0,0,0,.5),inset 0 0 0 1px rgba(0,0,0,.04);padding:6px;display:flex;flex-direction:column;justify-content:space-between;color:${fg};font-family:'Times New Roman',serif;">
-    <div style="display:flex;flex-direction:column;line-height:1;text-align:left;">
-      <span style="font-size:20px;font-weight:bold;">${face}</span>
-      <span style="font-size:18px;line-height:1;">${suit}</span>
-    </div>
-    <div style="text-align:center;font-size:44px;line-height:1;">${suit}</div>
-    <div style="display:flex;flex-direction:column;line-height:1;text-align:right;transform:rotate(180deg);">
-      <span style="font-size:20px;font-weight:bold;">${face}</span>
-      <span style="font-size:18px;line-height:1;">${suit}</span>
-    </div>
+  const src = CHANGLE_CARD_IMG[type];
+  return `<img src="${src}" style="width:78px;height:110px;display:block;border-radius:6px;box-shadow:1px 2px 5px rgba(0,0,0,.5);user-select:none;" alt="${type}"/>`;
+}
+function changleCardsBlockHTML(picks){
+  const cardsHTML = picks.map(c=>changleCardHTML(c)).join('');
+  /* 整体上移；完全去掉所有文字（标题、底部统计、卡片下方标签），只保留三张牌本身；
+     用一个紧凑的浮层贴在剧情区右上角，避免剧情正文变滚动模式。 */
+  return `<div style="position:absolute;top:-10px;right:6px;z-index:5;padding:3px;background:rgba(30,32,45,.92);border:1px solid rgba(232,216,164,.5);border-radius:6px;box-shadow:2px 4px 14px rgba(0,0,0,.6);pointer-events:none;">
+    <div style="display:flex;justify-content:center;gap:4px;">${cardsHTML}</div>
   </div>`;
 }
 function changleCardsBlockHTML(picks){

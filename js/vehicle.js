@@ -123,9 +123,4 @@ function exploreMoveHint(tx,ty){
   if((G.hero.actionPoint||0) < c){ return null; }
   return c;
 }
-document.addEventListener('keydown', ev=>{
-  if(ev.key.toLowerCase()==='t' && !ev.repeat){
-    if($('#menuOverlay').classList.contains('show')) return;
-    openVehicles();
-  }
-});
+/* T 键快捷键已统一移到 js/main.js HOTKEY_MODAL.t */

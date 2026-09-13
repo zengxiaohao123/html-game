@@ -66,8 +66,13 @@ function handleHotkeyToggle(k){
 function handleKeys(ev){
   if($('#menuOverlay').classList.contains('show') || $('#gameoverOverlay').classList.contains('show')) return;
   const k=ev.key.toLowerCase();
-  /* 所有热键都先过 handleHotkeyToggle 统一守卫 */
-  if(HOTKEY_MODAL[k] || HOTKEY_ACTION[k]){ handleHotkeyToggle(k); return; }
+  /* 所有热键都先过 handleHotkeyToggle 统一守卫；处理完后立刻吞掉事件，
+     防止它继续冒泡被 craft.js/vehicle.js 等其他文件里遗留的 keydown 监听器抢走 */
+  if(HOTKEY_MODAL[k] || HOTKEY_ACTION[k]){
+    handleHotkeyToggle(k);
+    try{ ev.preventDefault(); ev.stopPropagation(); }catch(e){}
+    return;
+  }
   if(combatState){
     const cs=combatState;
     if(k==='q'){ if(cs.ally[cs.currentChar] && cs.ally[cs.currentChar].selSkill==='flee'){ tryFlee(); } else { castSkill(cs.currentChar, true); } }

@@ -353,23 +353,20 @@ function interactSay(key,html){
   } else {
     if(interTick['t'+key]){ clearInterval(interTick['t'+key]); interTick['t'+key]=null; }
   }
-  /* 防御：若 dlg 里已经有 >=5 条已完成的 iline（没有 typing 类），先删除最早的那几条，确保下一条加进去不会超过 5 条的历史上限；
-     这样无论何时 interactSay 被调用，DOM 都是实时正确的，不需要等切换页面才刷新 */
-  let doneCount = 0;
-  for(const c of dlg.children){
-    if(c.classList && c.classList.contains('iline') && !c.classList.contains('typing')){
-      doneCount++;
-    }
-  }
-  /* 已完成条目达到 5 条时，再删最早的那条（保证「保留 5 条，第 6 条出现才挤掉最早」） */
-  while(doneCount >= 5){
-    for(const c of dlgChildren){
+  /* 防御性 trim：若 dlg 里已完成的 iline 已经有 >=5 条，则删掉最早的那条，
+     保证下一条进来时仍然不超过 5 条历史上限。
+     每次都用 dlg.children（活 NodeList）重新遍历，避免边删边遍历导致的迭代问题。 */
+  while(true){
+    let doneCount = 0;
+    let firstDone = null;
+    for(const c of dlg.children){
       if(c.classList && c.classList.contains('iline') && !c.classList.contains('typing')){
-        c.parentNode && c.parentNode.removeChild(c);
-        doneCount--;
-        break;
+        doneCount++;
+        if(!firstDone) firstDone = c;
       }
     }
+    if(doneCount < 5) break;
+    if(firstDone) firstDone.parentNode.removeChild(firstDone);
   }
   interTyping[key]=html; startInterType(key,html);
   // 问题3：陆悠悠聊天成功率——每次交互完后刷新按钮上显示的整数成功率（直接改 DOM 文字，避免整页重绘）
