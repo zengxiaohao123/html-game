@@ -303,7 +303,6 @@ function renderInteractBody(key){
   const btns=interactButtons(key).map(([id,label])=>`<button class="csub ilbtn" data-act="${id}">${label}</button><br>`).join('');
   const hints = key==='xiayang'? '<div class="interact-hint">聊天消耗 1 行动力；投喂每天仅第一次提升好感度；每 3 天可送礼 1 次。</div>' : '<div class="interact-hint">聊天消耗 1 行动力（每日成功率随机）；每 3 天可送礼 1 次。</div>';
   let html=`<div class="interact-box"><div class="interact-left"><div class="interact-left-head">${c.name}</div>${btns}${hints}</div><div class="interact-right"><div class="interact-dlg" id="interactDlg_${key}"></div><div class="interact-opt" id="interactOpt_${key}"></div></div></div>`;
-  // 仅当送礼面板打开且 DOM 里还没时才注入（避免每次 render 都闪）
   if(giftOpenKey===key && !$('#giftOverlay')) html = `<div class="gift-overlay" id="giftOverlay">${renderGiftGrid(key)}</div>` + html;
   wrap.innerHTML=html;
   const dlg=$('#interactDlg_'+key);
@@ -311,10 +310,9 @@ function renderInteractBody(key){
   const hist = interHist[key] || [];
   const trimmed = hist.length > 5 ? hist.slice(-5) : hist;
   interHist[key] = trimmed;
-  trimmed.forEach(m=>{ const d=document.createElement('div'); d.className='iline'; d.innerHTML=m; dlg.appendChild(d); });
-  // 不滚到底，不允许滚动
+  /* 关键修复：interHist 存的是 {el, html} 对象，要取 .html 字段！ */
+  trimmed.forEach(m=>{ const d=document.createElement('div'); d.className='iline'; d.innerHTML=m.html; dlg.appendChild(d); });
   wrap.querySelectorAll('.ilbtn').forEach(b=>b.onclick=()=>interactAction(key,b.dataset.act));
-  // 送礼面板的点击事件（如果当前打开）
   if(giftOpenKey===key){ decorateGiftCells(); }
   if(interTyping[key]!=null) startInterType(key,interTyping[key]);
 }
@@ -327,11 +325,34 @@ function startInterType(key,html){ const dlg=$('#interactDlg_'+key); if(!dlg) re
         if(oldest && oldest.el && oldest.el.parentNode) oldest.el.parentNode.removeChild(oldest.el);
       }
     } },1000/40); }
-/* 问题1：若上一段未打完，立即把它显示完全（保留），再在下一行开始新的文本 */
-function interactSay(key,html){ const dlg=$('#interactDlg_'+key); if(dlg){
-    const node=dlg.querySelector('.iline.typing'); if(node){ node.innerHTML=interTyping[key]||''; node.classList.remove('typing'); }
+/* 问题1修复：若上一段未打完，立即把它显示完全（保留），再在下一行开始新的文本；
+   关键：上一段即使被中断，也必须记录到 interHist 里，保证 interHist 和 DOM 同步 */
+function interactSay(key,html){
+  const dlg=$('#interactDlg_'+key); if(!dlg){
+    /* 连对话框都没渲染出来（比如角色页还没开），先把内容存进 interHist 但不 push DOM */
+    interHist[key]=interHist[key]||[];
+    const trimmed = interHist[key].slice(-5);
+    interHist[key] = trimmed;
+    // 等下一次 render 时再画
+    startInterType(key,html);
+    return;
   }
-  if(interTick['t'+key]){ clearInterval(interTick['t'+key]); interTick['t'+key]=null; }
+  const oldNode=dlg.querySelector('.iline.typing');
+  const oldHtml = interTyping[key];
+  /* 把上一段打完整（如果有），并 push 到 interHist 里 */
+  if(oldNode && oldHtml){
+    oldNode.innerHTML=oldHtml; oldNode.classList.remove('typing');
+    clearInterval(interTick['t'+key]); interTick['t'+key]=null;
+    interHist[key]=interHist[key]||[];
+    interHist[key].push({el:oldNode, html:oldHtml});
+    /* 严格限 5 条：超出时立即删除最早那条 DOM 和数据 */
+    while(interHist[key].length>5){
+      const oldest = interHist[key].shift();
+      if(oldest && oldest.el && oldest.el.parentNode) oldest.el.parentNode.removeChild(oldest.el);
+    }
+  } else {
+    if(interTick['t'+key]){ clearInterval(interTick['t'+key]); interTick['t'+key]=null; }
+  }
   interTyping[key]=html; startInterType(key,html);
   // 问题3：陆悠悠聊天成功率——每次交互完后刷新按钮上显示的整数成功率（直接改 DOM 文字，避免整页重绘）
   const ilbtns = document.querySelectorAll('.ilbtn');
@@ -356,7 +377,7 @@ function openGift(key){ giftOpenKey=key; giftSelItem=null; giftJustOpened=true; 
 /* 问题1修复：礼物点击不再重绘整个面板，只切换 class；避免每点一次就闪 */
 function decorateGiftCells(){ const box=$('#giftOverlay'); if(!box) return; if(giftCooldownLeft(giftOpenKey)>0) return; box.querySelectorAll('.gift-cell').forEach(c=>{ c.onclick=()=>{ const k=c.dataset.k; const wasSel = c.classList.contains('sel'); box.querySelectorAll('.gift-cell.sel').forEach(x=>x.classList.remove('sel')); if(!wasSel){ c.classList.add('sel'); giftSelItem=k; } else { giftSelItem=null; } }; }); }
 /* 问题1修复：确认送出后先 remove gift overlay DOM，再 interactSay，避免对话被重绘清掉 */
-function confirmGift(){ const key=giftOpenKey; if(!key||!giftSelItem) return; if(giftCooldownLeft(key)>0) return; const it=giftSelItem; const lv=itemLoveLevel(key,it); const L=(ITEM_LOVE[key]||{}); let delta=0, talk=''; if(lv===0){ /* === giftValue 物品（如 amethyst）优先使用 giftValue === */ const gv = (ITEMS[it]&&ITEMS[it].giftValue) || 0; if(gv>0){ delta=gv; talk='（物品自带赠礼价值）'; } else { delta=-1; talk=GIFT_TALK[key].lv0; } } else if(lv===1){ delta=1; talk=GIFT_TALK[key].lv1; } else if(lv===2){ delta=L.two[it]; talk=GIFT_TALK[key].lv2; } else { delta=(L.three[it]||0)+5; talk=(GIFT_TALK[key]['lv3_'+it])||''; } G.inventory[it]--; G.records=G.records||{}; if(!G.records.giftDay) G.records.giftDay={}; G.records.giftDay[key]=G.day||1;
+function confirmGift(){ const key=giftOpenKey; if(!key||!giftSelItem) return; if(giftCooldownLeft(key)>0) return; const it=giftSelItem; const lv=itemLoveLevel(key,it); const L=(ITEM_LOVE[key]||{}); let delta=0, talk=''; if(lv===0){ /* === giftValue 物品（如 amethyst / diamond 等消耗品类赠礼）=== */ const gv = (ITEMS[it]&&ITEMS[it].giftValue) || 0; if(gv>0){ delta=gv; /* 有赠礼价值但未登记喜好度等级：使用 lv1 对话（正向） */ talk=GIFT_TALK[key].lv1; } else { delta=-1; talk=GIFT_TALK[key].lv0; } } else if(lv===1){ delta=1; talk=GIFT_TALK[key].lv1; } else if(lv===2){ delta=L.two[it]; talk=GIFT_TALK[key].lv2; } else { delta=(L.three[it]||0)+5; talk=(GIFT_TALK[key]['lv3_'+it])||GIFT_TALK[key].lv2; } G.inventory[it]--; G.records=G.records||{}; if(!G.records.giftDay) G.records.giftDay={}; G.records.giftDay[key]=G.day||1;
   // 先移除 DOM 里的送礼面板（避免重绘交互区时把刚要写入的对话清掉）
   const overlay=document.getElementById('giftOverlay'); if(overlay && overlay.parentNode){ overlay.parentNode.removeChild(overlay); }
   giftOpenKey=null; giftSelItem=null;
@@ -416,7 +437,7 @@ window.shopSet=function(key,v){ shopQty[key]=Math.max(1,(+v||1)); shopMsg=''; re
 window.shopTrade=function(key,act){ const it=SHOP_ITEMS.find(x=>x.key===key); if(!it) return; if(combatState){ log('战斗中无法访问商店。'); return; } const q=Math.max(1,shopQty[key]||1); if(act==='buy'){ const price=itemBuyPrice(key); const cost=price*q; if(G.inventory.coin<cost){ shopMsg='金币不足，无法完成该笔购买。'; refreshHUD(); renderShop(); return; } G.inventory.coin-=cost; if(it.permanent){ for(let i=0;i<q;i++) grantPermanentItem(key); } else { G.inventory[key]=(G.inventory[key]||0)+q; } shopMsg=`已购买 <b>${itemName(key)} ×${q}</b>，花费 <b>${cost}</b> 金币。`; } else { if(!it.sellable){ shopMsg='该物品不可出售。'; refreshHUD(); renderShop(); return; } const sell=shopSellPrice(it), gain=sell*q; if((G.inventory[key]||0)<q){ shopMsg='你要卖出的数量超出当前持有。'; refreshHUD(); renderShop(); return; } G.inventory[key]-=q; G.inventory.coin+=gain; shopMsg=`已卖出 <b>${itemName(key)} ×${q}</b>，获得 <b>${gain}</b> 金币。`; } log(shopMsg.replace(/<[^>]+>/g,'')); refreshHUD(); renderShop(); };
 let mapDragMoved=false;
 (function initMapViewport(){ const vp=$('#mapViewport'); const grid=$('#mapGrid'); let scale=1; vp.addEventListener('wheel', e=>{ e.preventDefault(); scale=Math.min(2, Math.max(0.5, scale + (e.deltaY>0?-0.12:0.12))); grid.style.transform=`scale(${scale})`; }, {passive:false}); let down=false,sx=0,sy=0,sl=0,st=0; vp.addEventListener('mousedown',e=>{ down=true; mapDragMoved=false; sx=e.clientX; sy=e.clientY; sl=vp.scrollLeft; st=vp.scrollTop; vp.classList.add('dragging'); }); document.addEventListener('mousemove',e=>{ if(down){ const dx=e.clientX-sx, dy=e.clientY-sy; if(Math.abs(dx)>5||Math.abs(dy)>5) mapDragMoved=true; vp.scrollLeft=sl-dx; vp.scrollTop=st-dy; } }); document.addEventListener('mouseup',()=>{ down=false; vp.classList.remove('dragging'); }); })();
-function openPopoverNear(el, html){ const tip=$('#popover'); tip.innerHTML=html; tip.style.display='block'; tip.style.visibility='hidden'; const r=el.getBoundingClientRect(); const w=tip.offsetWidth||260, h=tip.offsetHeight||60; tip.style.visibility='visible'; let x=r.left; if(x+w>window.innerWidth-8) x=Math.max(8, window.innerWidth-8-w); let y=r.bottom+6; if(y+h>window.innerHeight-8) y=Math.max(8, r.top-h-6); tip.style.left=x+'px'; tip.style.top=y+'px'; }
+function openPopoverNear(el, html){ const tip=$('#popover'); tip.innerHTML=html; tip.style.display='block'; bringToFront(tip); tip.style.visibility='hidden'; const r=el.getBoundingClientRect(); const w=tip.offsetWidth||260, h=tip.offsetHeight||60; tip.style.visibility='visible'; let x=r.left; if(x+w>window.innerWidth-8) x=Math.max(8, window.innerWidth-8-w); let y=r.bottom+6; if(y+h>window.innerHeight-8) y=Math.max(8, r.top-h-6); tip.style.left=x+'px'; tip.style.top=y+'px'; }
 document.addEventListener('click',ev=>{ if(giftOpenKey){ if(giftJustOpened){ giftJustOpened=false; } else if(!ev.target.closest('#giftOverlay')){ closeGift(); return; } } if(swapOpen){ if(swapJustOpened){ swapJustOpened=false; } else if(!ev.target.closest('.swap-overlay')){ applySwap(); } } clickActionOnly(ev); });
 function clickActionOnly(ev){ const st=ev.target.closest('.stchip'); if(st){ const rounds=st.textContent.match(/·(\d+)回合/); openPopoverNear(st, `<b>${st.dataset.name}</b>${rounds?`（${rounds[1]}回合）`:''}<br>${st.dataset.desc||''}`); return; } const tg=ev.target.closest('.talentTag'); if(tg){ const owner=tg.dataset.k; const c=getChar(owner); const t=c.passives[+tg.dataset.i]; if(t){ const name=t.scal? talentDisplayName(owner,t) : t.name; const desc=t.scal? lvDescText(t, entryLevel(owner,t)) : t.desc; openPopoverNear(tg, `<b>${name}</b><br>${desc}`); } return; } const cl=ev.target.closest('.craftlink'); if(cl){ const key=cl.dataset.key; openPopoverNear(cl, `<b>${itemName(key)}</b><br>${itemDetailHTML(key)}`); return; } $('#popover').style.display='none'; }
 document.addEventListener('keydown', ev=>{ if(ev.key!=='Escape') return; ev.preventDefault(); if($('#menuOverlay').classList.contains('show') || $('#gameoverOverlay').classList.contains('show')) return; if($('#modalOverlay').classList.contains('show')){ if(giftOpenKey){ closeGift(); return; } if(swapOpen){ applySwap(); return; } modalBack(); return; } if(G) openSettings(); });
