@@ -53,27 +53,6 @@ function showActTitle(title){
   setTimeout(()=>{ ov.classList.remove('show'); setTimeout(()=>{ ov.innerHTML=''; }, 400); }, 5500);
 }
 
-/* ---- 打字机剧情引擎（v2：支持自动/跳过/speaker/元指令） ----
-   规则：storyPush 接收 {speaker, html, onDone, onEnd} 或 storyPush(html, opts)。
-   引擎扫描文本中的【xxx】元指令并拦截执行，元指令不会进入 storyQueue。
-   打字完成后触发 storyOnDone（非最后一段），或 storyOnEnd（最后一段）。
-   自动模式下，最后一段打完后等待 autoDelay 自动清理；段间自动连打。
-   点击剧情区规则：打字中→立即显示本段全部（storySkipToEnd）；
-   已打完且仍有待打段落 → 推进到下一段（storyAdvance）；
-   已打完且队列空 → 若主线剧情带 __choiceMarker 则等待选择，否则清空。 */
-let storyQueue=[];      // 每一项：{html:string, __choiceMarker?:true}
-let storyTimer=null;
-let storyAutoTimer=null;   // 自动连打的 setTimeout 句柄
-let storyAutoMode=false;  // 持久化：true=自动, false=手动
-try { storyAutoMode = sessionStorage.getItem('storyAutoMode')==='1'; } catch(e){}
-let storyTyping=false;
-let storyIdx=0;
-let storyCurrent=null;
-let storyOnDone=null;
-let storyOnEnd=null;
-let storyCurrentSpeaker=null;
-let storyLastPushCbs=null; // 本次 push 传入的 onDone/onEnd
-
 /* 处理文本中的元指令（返回纯净 HTML，副作用执行指令） */
 function processMetaCommands(text){
   let cleaned = text;
@@ -128,166 +107,362 @@ function processMetaCommands(text){
   return cleaned;
 }
 
-function storyClear(){
-  storyQueue=[];
-  if(storyTimer){clearInterval(storyTimer);storyTimer=null;}
-  if(storyAutoTimer){clearTimeout(storyAutoTimer);storyAutoTimer=null;}
-  storyTyping=false; storyCurrent=null;
-  storyOnDone=null; storyOnEnd=null;
-  storyLastPushCbs=null;
-  storyCurrentSpeaker=null;
-  $('#storySpeaker').innerHTML='';
-  $('#storyBody').innerHTML='';
-}
+/* ============================================================
+   js/ui.js PART 2 —— 剧情打字机引擎 v3（分页 + 段间点击 + 自动模式）
+   ------------------------------------------------------------
+   【分页规则】buildPages(body) 把片段切成 page 数组：
+     R1. speaker 变化 强制换页（除非当前页还空）
+     R2. 同 speaker 连续 >5 段 或 纯字数 >300 强制换页
+     R3. 跨度大（回忆闪回、flashback-on/off）强制换页
+     R4. 片段结束时自动收尾，与后续自然分隔
 
-/* opts 可为 null / 对象 / {speaker, onDone, onEnd} */
-function storyPush(html, opts){
-  let speaker=null, onDone=null, onEnd=null;
-  if(opts){
-    if(typeof opts==='function') onDone=opts;
-    else if(typeof opts==='object'){ speaker=opts.speaker; onDone=opts.onDone; onEnd=opts.onEnd; }
-  }
-  const clean = processMetaCommands(String(html||'').trim());
-  const paras = splitIntoParagraphs(clean);
-  for(const p of paras){
-    if(p && p.trim()) storyQueue.push({html:p});
-  }
-  if(onDone) storyOnDone = onDone;
-  if(onEnd) storyOnEnd = onEnd;
-  if(speaker!=null) storyCurrentSpeaker = speaker;
-  storyRunNext();
-}
-/* 兼容：只给 onDone 的旧调用 */
-function storyPush_old(html, onDone, onEnd){ storyPush(html, {onDone, onEnd}); }
+   【交互规则】
+     - 手动模式：打字完当前段 → 停住 → 玩家点击剧情区 → 推进下一段
+     - 自动模式：段间 200ms 自动连打；页尾 1.5s 自动翻；最后一页 4s 清场
+     - 打字中点击 → 立即 skip-to-end 本段，再按上述规则推进
+     - 剧情区不再滚动，翻页靠"清屏 + 淡入动画"
 
-/* 将 HTML 按自然段（</p> 或 <br>）拆分为段落数组 */
-function splitIntoParagraphs(html){
-  const clean = String(html).trim();
-  const pieces = clean.split(/(?=<\/?p>|<br\s*\/?>)/).filter(s=>s&&s.trim());
-  const merged=[];
-  for(let i=0;i<pieces.length;i++){
-    let seg=pieces[i];
-    if(/^<p[^>]*>/.test(seg) && !/<\/p>$/.test(seg) && i+1<pieces.length){ seg += pieces[i+1]; i++; }
-    if(seg && seg.trim()) merged.push(seg);
-  }
-  return merged.length?merged:[clean];
-}
+   【入口】
+     - 主线剧情：storyStartFragment(body, afterPlayed) 一次性灌入完整 body
+     - 事件系统：storyPush(html, onDone) 旧签名继续兼容 —— 每次 push
+       引擎自动把新段加入 current page 并在点击时推进
+     - 二者完全共存，共享 buildPages 和 typeSegment
+   ============================================================ */
 
-function storyRunNext(){
-  if(storyTyping||storyTimer) return;
-  if(storyAutoTimer){clearTimeout(storyAutoTimer);storyAutoTimer=null;}
-  // 队列空了
-  if(!storyQueue.length){
-    const e=storyOnEnd; storyOnEnd=null;
-    if(e) e();
-    // 自动模式最后一段后等待清理（事件系统由 finishEvent 接管，不自动清）
-    if(storyAutoMode && !eventState){
-      storyAutoTimer=setTimeout(()=>{
-        if(!eventState) storyClear();
-      }, 4000);
+// ---- 引擎状态 ----
+let storyPages=[];        // [{ paragraphs: [{speaker, html}] }]
+let storyPageIdx=0;
+let storySegIdx=0;
+let storyPageTimer=null;
+let storyAutoTimer=null;
+let storyAutoMode=false;
+try { storyAutoMode = sessionStorage.getItem('storyAutoMode')==='1'; } catch(e){}
+let storyTyping=false;
+let storyCurrent=null;
+let storyPlainIdx=0;
+let storyOnSegEnd=null;
+
+/* ============================================================
+   buildPages：把 segments [{speaker, html}] 分成 page 数组
+   纯函数，不碰任何外部状态
+   ============================================================ */
+function buildPages(segments){
+  const pages=[];
+  let cur=null;
+  const FLASHBACK_MARKERS = ['flashback-on','flashback-off'];
+  const MAX_PARAS_PER_PAGE = 5;
+  const MAX_CHARS_PER_PAGE = 300;
+
+  const flush = ()=>{
+    if(cur && cur.paragraphs.length){ pages.push(cur); cur=null; }
+  };
+  const makePage = ()=>({ paragraphs:[], pageChars:0 });
+
+  for(let si=0; si<segments.length; si++){
+    const seg = segments[si] || {};
+    const speaker = seg.speaker || null;
+    const html = seg.html || '';
+    const plain = html.replace(/<[^>]+>/g,'');
+    const charCount = plain.length;
+
+    // 规则3：flashback 切换 → 强制换页（若当前页非空）
+    const edgeMarker = FLASHBACK_MARKERS.some(m => html.includes(m));
+
+    if(!cur) cur = makePage();
+
+    // 规则1：speaker 变化 → 强制换页
+    const lastSp = cur.paragraphs.length
+      ? cur.paragraphs[cur.paragraphs.length-1].speaker : null;
+    const speakerChanged = (lastSp !== speaker) && cur.paragraphs.length > 0;
+
+    if(speakerChanged || (edgeMarker && cur.paragraphs.length>0)){
+      flush(); cur = makePage();
     }
+
+    cur.paragraphs.push({ speaker, html });
+    cur.pageChars += charCount;
+
+    // 规则2：同 speaker 段数 ≥5 或 字数 ≥300 → 换页（把当前段留到下一页开头）
+    let sameRun = 0;
+    for(let pi=cur.paragraphs.length-1; pi>=0; pi--){
+      if(cur.paragraphs[pi].speaker === speaker) sameRun++;
+      else break;
+    }
+    if(sameRun >= MAX_PARAS_PER_PAGE || cur.pageChars >= MAX_CHARS_PER_PAGE){
+      const last = cur.paragraphs.pop();
+      cur.pageChars -= plain.length;
+      flush();
+      cur = { paragraphs:[last], pageChars: plain.length };
+    }
+  }
+  flush();
+  return pages;
+}
+
+/* ============================================================
+   剧情入口
+   ============================================================ */
+
+/* 主线剧情入口：一次性灌入完整 body，重建 pages，从头播放
+   body = [{speaker, html}, ...]
+   onSegEnd: 所有页打完后的回调 */
+function storyStartFragment(body, onSegEnd){
+  // 先清引擎状态（但不清掉事件 title 这类——主线和事件互斥）
+  if(storyPageTimer){ clearInterval(storyPageTimer); storyPageTimer=null; }
+  if(storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
+  const segments = body.map(s => ({
+    speaker: s.speaker || null,
+    html: processMetaCommands(s.html || ''),
+  }));
+  storyPages = buildPages(segments);
+  storyPageIdx = 0; storySegIdx = 0;
+  storyOnSegEnd = onSegEnd || null;
+  renderCurrentPage();
+}
+
+/* 事件系统增量入口：每次 push 一段，引擎自动追加到最后一页末尾并分页
+   html: 纯 HTML 段（事件系统不走 speaker，默认 null）
+   onDone: 当前段打字完毕后的回调（事件 finishEvent 用） */
+function storyPush(html, onDone){
+  // 如果还没 pages（第一句）：启动一个空片段，把新段加进去
+  if(!storyPages.length){
+    storyPages = buildPages([{ speaker: null, html: processMetaCommands(String(html||'')) }]);
+    storyPageIdx = 0; storySegIdx = 0;
+    storyOnSegEnd = onDone || null;
+    renderCurrentPage();
     return;
   }
-  const item = storyQueue.shift();
-  if(item.__choiceMarker){ /* 跳过选项 marker 直接过 */ storyRunNext(); return; }
-  storyCurrent = item.html;
+  // 已经在播：把新段追加到最后一页
+  const lastIdx = storyPages.length - 1;
+  const plain = String(html||'').replace(/<[^>]+>/g,'');
+  storyPages[lastIdx].paragraphs.push({ speaker: null, html: processMetaCommands(String(html||'')) });
+  storyPages[lastIdx].pageChars += plain.length;
+
+  // 如果当前在打字中，等打完会自动推进；如果在页尾等待，让玩家点一下
+  if(!storyTyping){
+    // 已打完所有段（页尾或最后一页）→ 触发下一段
+    // 如果是事件系统在 finishEvent 里连续调用 storyPush，onSegEnd 要更新为 onDone
+    storyOnSegEnd = onDone || null;
+    // 让当前页重新进入推进流程（若已结束则直接 typeSegment）
+    advanceAfterIdle();
+  } else {
+    // 打字中 → 暂不管，等 typeSegment 推进到最后时会触发页尾等待
+  }
+}
+
+/* 从 idle 状态（页尾等待、或刚追加完）推进一段 */
+function advanceAfterIdle(){
+  if(storyPageIdx >= storyPages.length){
+    // 所有页打完 → finishSeg
+    finishCurrentFragment(); return;
+  }
+  const page = storyPages[storyPageIdx];
+  if(storySegIdx < page.paragraphs.length){
+    // 当前页还有段 → 直接打
+    typeSegment();
+  } else {
+    // 当前页已打完 → 玩家点击下一页触发；自动模式下 timer 会自动翻
+    onPageEnd();
+  }
+}
+
+/* ============================================================
+   播放核心
+   ============================================================ */
+
+function renderCurrentPage(){
+  const body = $('#storyBody');
+  body.innerHTML = '';
+  body.classList.remove('story-tap-hint','story-page');
+
+  if(storyPageIdx >= storyPages.length){
+    finishCurrentFragment(); return;
+  }
+  // 给这一页加淡入动画
+  body.classList.add('story-page');
+
+  const page = storyPages[storyPageIdx];
+  if(!page.paragraphs.length){
+    storyPageIdx++; storySegIdx=0;
+    renderCurrentPage(); return;
+  }
+
+  // 事件系统：第一页第一句带事件标题由 startEvent 自己提前塞到 storyBody
+  // 所以我们先打第 storySegIdx 段（0-based）
+  typeSegment();
+}
+
+function typeSegment(){
+  if(storyPageIdx >= storyPages.length){
+    finishCurrentFragment(); return;
+  }
+  const page = storyPages[storyPageIdx];
+  if(storySegIdx >= page.paragraphs.length){
+    onPageEnd(); return;
+  }
+  const seg = page.paragraphs[storySegIdx];
+
   // 更新 speaker
-  const sp = storyCurrentSpeaker;
   const speakerEl = $('#storySpeaker');
   if(eventState){
-    // 事件系统：speaker 区留空（事件用 .ev-title 显示标题）
-    speakerEl.innerHTML = '';
-  } else if(sp){
-    speakerEl.innerHTML = applySpeakerColor(sp);
+    speakerEl.innerHTML = '';  // 事件里 speaker 区留空
   } else {
-    // 旁白 / 主线剧情中切换了空 speaker：保留上一个显示直到新的指定
-    // 用户定义：旁白不显示名字 -> 空着
-    speakerEl.innerHTML = '';
+    speakerEl.innerHTML = seg.speaker ? applySpeakerColor(seg.speaker) : '';
   }
 
+  const cleanHtml = seg.html || '';
+
   const box=$('#storyBody');
-  const para=document.createElement('div'); para.className='story-para';
+  const para = document.createElement('div');
+  para.className = 'story-para';
   box.appendChild(para);
-  // 非 <p> 开头的段直接 innerHTML 输出，不打字机
-  if(!/^\s*<p/i.test(storyCurrent)){
-    para.innerHTML=storyCurrent;
-    box.scrollTop=box.scrollHeight;
-    storyCurrent=null;
-    const d=storyOnDone; storyOnDone=null;
-    if(d) d();
-    if(storyAutoMode) storyAutoTimer=setTimeout(storyRunNext, 250);
+
+  // 非 <p> 开头 → 直接渲染（不打字机）
+  if(!/^\s*<p/i.test(cleanHtml)){
+    para.innerHTML = cleanHtml;
+    box.scrollTop = box.scrollHeight;
+    storySegIdx++;
+    onParagraphDone();
     return;
   }
-  storyTyping=true; storyIdx=0;
-  const plain=storyCurrent.replace(/<[^>]+>/g,'');
-  storyTimer=setInterval(()=>{
-    storyIdx=Math.min(storyIdx+1, plain.length);
-    para.innerHTML=escapeHtml(plain.slice(0,storyIdx)) + (storyIdx<plain.length?'<span class="story-caret"></span>':'');
-    box.scrollTop=box.scrollHeight;
-    if(storyIdx>=plain.length){
-      if(storyTimer){clearInterval(storyTimer);storyTimer=null;}
-      storyTyping=false;
-      para.innerHTML=storyCurrent;
-      box.scrollTop=box.scrollHeight;
-      storyCurrent=null;
-      const d=storyOnDone; storyOnDone=null;
-      if(d) d();
-      // 自动模式：自动推进下一段（若还有）
-      if(storyAutoMode && storyQueue.length){
-        storyAutoTimer=setTimeout(storyRunNext, 300);
-      }
+
+  // 打字机
+  storyTyping = true;
+  storyPlainIdx = 0;
+  storyCurrent = cleanHtml;
+  if(storyPageTimer){ clearInterval(storyPageTimer); storyPageTimer=null; }
+
+  const plain = cleanHtml.replace(/<[^>]+>/g,'');
+  storyPageTimer = setInterval(()=>{
+    storyPlainIdx = Math.min(storyPlainIdx+1, plain.length);
+    para.innerHTML = escapeHtml(plain.slice(0, storyPlainIdx))
+      + (storyPlainIdx < plain.length ? '<span class="story-caret"></span>' : '');
+    box.scrollTop = box.scrollHeight;
+    if(storyPlainIdx >= plain.length){
+      if(storyPageTimer){ clearInterval(storyPageTimer); storyPageTimer=null; }
+      storyTyping = false;
+      para.innerHTML = storyCurrent;
+      box.scrollTop = box.scrollHeight;
+      storyCurrent = null;
+      storySegIdx++;
+      onParagraphDone();
     }
   }, 1000/30);
 }
-function storySkipToEnd(){
-  if(!storyTyping) return false;
-  const box=$('#storyBody'); const para=box.lastElementChild;
-  if(para && para.classList.contains('story-para') && storyCurrent){
-    para.innerHTML=storyCurrent;
-    if(storyTimer){clearInterval(storyTimer);storyTimer=null;}
-    storyTyping=false; storyCurrent=null;
-    box.scrollTop=box.scrollHeight;
-    const d=storyOnDone; storyOnDone=null;
-    if(d) d();
-    if(storyAutoMode && storyQueue.length){
-      if(storyAutoTimer){clearTimeout(storyAutoTimer);}
-      storyAutoTimer=setTimeout(storyRunNext, 300);
+
+/* 一段打字完成后 → 根据手动/自动模式决定是否推进 */
+function onParagraphDone(){
+  const page = storyPages[storyPageIdx];
+  if(!page) return;
+  if(storySegIdx < page.paragraphs.length){
+    // 同页还有段
+    if(storyAutoMode){
+      if(storyAutoTimer){ clearTimeout(storyAutoTimer); }
+      storyAutoTimer = setTimeout(typeSegment, 200);
     }
-    return true;
+    // 手动模式：等玩家点击
+    return;
   }
-  return false;
-}
-function storyAdvance(){
-  if(storyTyping) return;
-  if(storyQueue.length){ storyRunNext(); return true; }
-  return false;
-}
-function storyIsTyping(){ return storyTyping; }
-function storyHasMore(){ return storyQueue.length>0; }
-function escapeHtml(t){ return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function story(html){ storyPush(html); }
-/* 设置当前 speaker（供主线剧情片段切换人物时显式调用） */
-function storySetSpeaker(name){ storyCurrentSpeaker=name; const el=$('#storySpeaker'); el.innerHTML = name?applySpeakerColor(name):''; }
-/* 在队列末尾插入一个「选项 marker」，供跳过功能识别停住点 */
-function storyMarkChoice(){ storyQueue.push({__choiceMarker:true}); }
-/* 跳过到下一个选项 marker：主线剧情专用。事件系统走 eventSkipToChoice */
-function storySkipToChoice(){
-  // 先把正在打的段落打完（skip to end）
-  if(storyTyping){ storySkipToEnd(); }
-  // 清空队列直到遇到 __choiceMarker（事件系统不要调这个）
-  while(storyQueue.length && !storyQueue[0].__choiceMarker){
-    const item = storyQueue.shift();
-    // 清空 storyBody 里对应已渲染段落
-  }
-  // 清掉 storyBody 所有已渲染段落（避免残留）
-  $('#storyBody').innerHTML='';
-  storySpeaker = $('#storySpeaker'); // 保持名字行（如果是主线）
-  // 如果队列现在就是 marker，消耗它（marker 本身不渲染）
-  if(storyQueue.length && storyQueue[0].__choiceMarker){ storyQueue.shift(); }
-  // 之后调用方应立即显示选项
+  // 当前页所有段打完
+  onPageEnd();
 }
 
-/* ---- 自动 / 跳过按钮 ---- */
+/* 页尾：等玩家点击或自动翻页 */
+function onPageEnd(){
+  const box = $('#storyBody');
+  box.innerHTML += '<div class="story-tap-hint">↓ 点击继续</div>';
+
+  if(storyAutoMode){
+    if(storyPageIdx + 1 < storyPages.length){
+      if(storyAutoTimer){ clearTimeout(storyAutoTimer); }
+      storyAutoTimer = setTimeout(()=>{
+        storyPageIdx++; storySegIdx=0;
+        renderCurrentPage();
+      }, 1500);
+    } else {
+      // 最后一页 → 4s 后 finish
+      if(storyAutoTimer){ clearTimeout(storyAutoTimer); }
+      storyAutoTimer = setTimeout(finishCurrentFragment, 4000);
+    }
+  }
+}
+
+function finishCurrentFragment(){
+  if(storyPageTimer){ clearInterval(storyPageTimer); storyPageTimer=null; }
+  if(storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
+  storyTyping=false; storyCurrent=null; storyPlainIdx=0;
+  storyPages=[]; storyPageIdx=0; storySegIdx=0;
+  const cb = storyOnSegEnd; storyOnSegEnd = null;
+  // 清 speaker 行（避免事件/主线衔接时残留）
+  $('#storySpeaker').innerHTML='';
+  if(cb) cb();
+}
+
+/* ============================================================
+   外部触发：玩家点击剧情区 → 推进
+   ============================================================ */
+function storyOnTap(){
+  if(storyTyping){
+    // 打字中点击 → skip-to-end 本段
+    const box=$('#storyBody');
+    const para=box.lastElementChild;
+    if(para && para.classList.contains('story-para') && storyCurrent){
+      para.innerHTML=storyCurrent;
+      if(storyPageTimer){ clearInterval(storyPageTimer); storyPageTimer=null; }
+      storyTyping=false; storyCurrent=null;
+      storySegIdx++;
+      onParagraphDone();
+    }
+    return;
+  }
+  if(!storyPages.length) return;
+  const page = storyPages[storyPageIdx];
+  if(!page) return;
+
+  // 自动模式下玩家点击 → 清掉 auto timer，手动接管一次推进
+  if(storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
+
+  if(storySegIdx < page.paragraphs.length){
+    // 还有段没打 → 推进下一段
+    typeSegment();
+    return;
+  }
+  // 当前页已打完 → 翻下一页
+  if(storyPageIdx + 1 < storyPages.length){
+    storyPageIdx++; storySegIdx=0;
+    renderCurrentPage();
+    return;
+  }
+  // 所有页打完 → finish
+  finishCurrentFragment();
+}
+
+/* ============================================================
+   兼容旧 API（event.js 等依赖）
+   ============================================================ */
+function storyAdvance(){ storyOnTap(); }
+function storyIsTyping(){ return storyTyping; }
+function storyHasMore(){
+  if(storyPageIdx >= storyPages.length) return false;
+  const page = storyPages[storyPageIdx];
+  return page && (storySegIdx < page.paragraphs.length || storyPageIdx + 1 < storyPages.length);
+}
+function storyClear(){ finishCurrentFragment(); $('#storyBody').innerHTML=''; }
+function story(html){ storyPush(html); }
+function storySetSpeaker(name){ $('#storySpeaker').innerHTML = name?applySpeakerColor(name):''; }
+function storySkipToEnd(){ storyOnTap(); return true; }
+function storyMarkChoice(){ /* 空实现，分页引擎不依赖 marker */ }
+
+/* 跳过整个主线片段：清所有 pages，直接 finish */
+function storySkipMainSeg(){
+  if(storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
+  storyPageIdx = storyPages.length;  // 让 finishCurrentFragment 视为已结束
+  finishCurrentFragment();
+}
+
+/* ============================================================
+   自动 / 跳过按钮
+   ============================================================ */
 function initStoryControls(){
   const auto=$('#autoBtn');
   const skip=$('#skipBtn');
@@ -295,54 +470,61 @@ function initStoryControls(){
     storyAutoMode = !storyAutoMode;
     try{ sessionStorage.setItem('storyAutoMode', storyAutoMode?'1':'0'); }catch(e){}
     auto.classList.toggle('on', storyAutoMode);
-    // 开启自动时：若当前剧情已打完且还有待打印，立刻连打
-    if(storyAutoMode && !storyTyping && storyQueue.length){
-      if(storyAutoTimer){clearTimeout(storyAutoTimer);}
-      storyAutoTimer=setTimeout(storyRunNext, 150);
+    // 开启自动时：若当前 idle 且还有内容，立即连打
+    if(storyAutoMode && !storyTyping && storyPages.length){
+      if(storySegIdx >= storyPages[storyPageIdx].paragraphs.length
+        && storyPageIdx + 1 < storyPages.length){
+        // 页尾等待 → 立即翻下一页
+        if(storyAutoTimer){ clearTimeout(storyAutoTimer); }
+        storyAutoTimer = setTimeout(()=>{ storyPageIdx++; storySegIdx=0; renderCurrentPage(); }, 200);
+      }
     }
-    // 关闭自动时：清掉自动连打的定时器
-    if(!storyAutoMode && storyAutoTimer){clearTimeout(storyAutoTimer); storyAutoTimer=null;}
+    if(!storyAutoMode && storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
   }}
   if(skip){ skip.onclick=onSkipClicked; }
 }
 function onSkipClicked(){
-  // 若正在等待选项，不能跳过（提示）
-  const s = eventState;
-  if(s && s.phase==='choose'){ alertDialog('无法跳过','这里需要你做出选择！'); return; }
-  // 主线剧情正在等待选项（storyOnDone 空 + storyQueue 空，但选项由调用方即将/已经渲染）
-  if(!eventState && !storyTyping && !storyQueue.length){
-    // 若调用方还没渲染选项，则提示无法跳过
-    // 简单判断：若 promptZone 有 ev-opt 说明正在选选项
-    const optsEl = document.querySelector('#promptZone .ev-opt');
-    if(optsEl){ alertDialog('无法跳过','这里需要你做出选择！'); return; }
+  // 选项保护
+  if(document.querySelector('#promptZone .ev-opt')){
+    alertDialog('无法跳过','这里需要你做出选择！'); return;
   }
   openModal('确认跳过', '<p>你确定跳过本段剧情？</p>', 'small', {noCloseX:true});
-  // 在弹窗里追加两个按钮
   const body=$('#modalBody');
   const btnRow=document.createElement('div'); btnRow.className='btn-row'; btnRow.style='justify-content:center;margin-top:10px;';
   btnRow.innerHTML = `<button class="mbtn small" id="skipYes">是</button><button class="mbtn small" id="skipNo">否</button>`;
   body.appendChild(btnRow);
   $('#skipNo').onclick=closeModal;
-  $('#skipYes').onclick=()=>{
-    closeModal();
-    doSkipCurrent();
-  };
+  $('#skipYes').onclick=()=>{ closeModal(); doSkipCurrent(); };
 }
 function doSkipCurrent(){
-  const s = eventState;
-  if(s){ /* 事件系统：直接结束事件（跳到 finishEvent 展示结果） */
-    // 若事件还在正文打字，把正文剩余全清，跳到结果
-    s.bodyIdx = s.bodyParas.length;
-    s.phase = 'result';
-    // 调 finishEvent 的等价逻辑：用当前 result（或空）
-    finishEvent(s.result || '');
+  if(eventState){
+    // 事件：跳到 result
+    eventState.bodyIdx = eventState.bodyParas.length;
+    eventState.phase = 'result';
+    finishEvent(eventState.result || '');
     return;
   }
-  // 主线剧情：跳到下一处选项
-  storySkipToChoice();
+  // 主线剧情：跳过整个片段
+  storySkipMainSeg();
 }
-// 页面加载后初始化 controls
-if(typeof document!=='undefined'){ document.addEventListener('DOMContentLoaded', initStoryControls); }
+
+/* 绑定 storyBox 点击（DOMContentLoaded 时执行） */
+function bindStoryTap(){
+  const box=$('#storyBox');
+  if(!box) return;
+  box.addEventListener('click', (e)=>{
+    // 如果正在选择选项，不响应
+    if(document.querySelector('#promptZone .ev-opt')) return;
+    storyOnTap();
+  });
+}
+if(typeof document!=='undefined'){ document.addEventListener('DOMContentLoaded', ()=>{
+  initStoryControls();
+  bindStoryTap();
+}); }
+
+/* escapeHtml（工具） */
+function escapeHtml(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function itemDetailHTML(key){
   let body='';
   if(FOOD[key] || key==='cookedMeat'){
@@ -707,4 +889,3 @@ let mapDragMoved=false;
 function openPopoverNear(el, html){ const tip=$('#popover'); tip.innerHTML=html; tip.style.display='block'; bringToFront(tip); tip.style.visibility='hidden'; const r=el.getBoundingClientRect(); const w=tip.offsetWidth||260, h=tip.offsetHeight||60; tip.style.visibility='visible'; let x=r.left; if(x+w>window.innerWidth-8) x=Math.max(8, window.innerWidth-8-w); let y=r.bottom+6; if(y+h>window.innerHeight-8) y=Math.max(8, r.top-h-6); tip.style.left=x+'px'; tip.style.top=y+'px'; }
 document.addEventListener('click',ev=>{ if(giftOpenKey){ if(giftJustOpened){ giftJustOpened=false; } else if(!ev.target.closest('#giftOverlay')){ closeGift(); return; } } if(swapOpen){ if(swapJustOpened){ swapJustOpened=false; } else if(!ev.target.closest('.swap-overlay')){ applySwap(); } } clickActionOnly(ev); });
 function clickActionOnly(ev){ const st=ev.target.closest('.stchip'); if(st){ const rounds=st.textContent.match(/·(\d+)回合/); openPopoverNear(st, `<b>${st.dataset.name}</b>${rounds?`（${rounds[1]}回合）`:''}<br>${st.dataset.desc||''}`); return; } const tg=ev.target.closest('.talentTag'); if(tg){ const owner=tg.dataset.k; const c=getChar(owner); const t=c.passives[+tg.dataset.i]; if(t){ const name=t.scal? talentDisplayName(owner,t) : t.name; const desc=t.scal? lvDescText(t, entryLevel(owner,t)) : t.desc; openPopoverNear(tg, `<b>${name}</b><br>${desc}`); } return; } const cl=ev.target.closest('.craftlink'); if(cl){ const key=cl.dataset.key; openPopoverNear(cl, `<b>${itemName(key)}</b><br>${itemDetailHTML(key)}`); return; } $('#popover').style.display='none'; }
-document.addEventListener('keydown', ev=>{ if(ev.key!=='Escape') return; ev.preventDefault(); if($('#menuOverlay').classList.contains('show') || $('#gameoverOverlay').classList.contains('show')) return; if($('#modalOverlay').classList.contains('show')){ if(giftOpenKey){ closeGift(); return; } if(swapOpen){ applySwap(); return; } modalBack(); return; } if(G) openSettings(); });
