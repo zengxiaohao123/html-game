@@ -58,11 +58,31 @@
 - **角色交互系统**：交互标签页左侧按钮、右侧对话区（打字机逐字）；夏阳聊天/投喂/送礼、陆悠悠聊天/送礼；送礼三级选择页，每角色每 3 天限一次；物品隐藏喜好度按等级触发不同对话与好感增减。
 - **敌人寻路优化**：当曼哈顿距离相同，选**欧氏距离更小**（即更靠近）的格子，避免左右横跳平距不动问题。
 - **敌人信息抗性提示**：某抗性 ≥10 时在敌人属性页显示「X抗性较高」（不用数值，只提示程度）。
+- **剧情区升级（打字机引擎 v2）**：
+  - 顶部布局：左上角名字行 speaker（事件里自动留空，事件用 `.ev-title` 白字标题），右上角「自动」「跳过」按钮。
+  - **自动模式**（sessionStorage 持久化）：自动连打 + 4s 后自动清空，按钮变绿；玩家点击仍有效。
+  - **跳过按钮**：弹确认框；主线剧情跳到下一处选项（靠 `storyMarkChoice()` 在选项前插 marker）；事件系统直接结束并展示结果。选项处跳过被拒绝。
+  - **名字彩色**：白名单人物特定字上色（夏阳·阳红/叶唯安·叶绿/陆悠悠·悠悠浅蓝/宋梦雨·梦青/许泠朦·泠蓝/潘天宇·宇紫/杨一帆·杨棕/灰白·灰灰），`我`/旁白/`？？？` 白色，旁白不显示名字行。
+  - **屏幕效果**：shake（#app 抖动）/flash（白闪）/black（黑屏 2s）。
+  - **幕标题 overlay**：白字大字全屏遮罩，`【act:第一幕 分道扬镳】` → 5s 自动淡出。
+  - **元指令语法（自动拦截，不显示给玩家）**：
+    - `【shake】` 屏幕抖动
+    - `【flash】` 屏幕闪白
+    - `【black】` 黑屏 2s
+    - `【act:第一幕 分道扬镳】` 弹出幕标题
+  - **事件 vs 主线严格区分**：事件系统内部调 `storyPush(html, cb)` 仍走旧签名兼容；主线剧情用 `storyPush(html, {speaker, onDone, onEnd})`。事件标题 `.ev-title` 已改为白字（之前金色）。
+- **主线剧情触发引擎（main_story/index.js）**：
+  - 目录结构：`main_story/actXX_名/seg_XXX_xxx.js`，按幕+片段分类。
+  - 每段 export `{id, act, title, condition, body, options, nextSeg}`；触发后 `G.records.mainStoryDone[id]=true` 防重复。
+  - 触发点：`loadIntoWorld()` 进世界时、`moveExplore()` 每次移动后（事件/战斗中自动跳过）。
+  - 外部 API：`window.triggerMainStorySeg()`、`window.mainStoryNextSeg()`、`window.showActTitle()`。
+- **删除占位文本**：main.js 中两处自动 `story()` 占位（醒来/每天开始的旁白）已移除。
 
 ### 🧩 规划中 / 未实现
 - 队友个别天赋未完全接入（夏阳·心想事成【巧遇】切换、陆悠悠·风息 物理→风转）。
 - 许泠朦 / 叶唯安 / 潘天宇（代码中尚未出现）。
-- 召唤物 / 结界 / 额外回合、区域切换(wild/city)、完整剧情 / 图鉴。
+- 召唤物 / 结界 / 额外回合、区域切换(wild/city)。
+- **主线剧情内容**：框架和触发引擎已就位，10 幕剧情片段待填充。
 - 详细清单见 `docs/玩法机制-01·三` 与 `docs/开发日志与进度`。
 
 ## 五、设计要点（简要）
@@ -93,7 +113,8 @@
 2) 再按 docs/玩法机制-01「〇、给未来AI的文档使用说明」给的顺序读玩法文档：
    01总览 → 02数据 → 03地图与探索 → 04战斗 → 05界面 → 06存档 → 开发日志
 3) 读代码：index.html 引入 css/style.css + js/{data,save,map,explore,combat,ui,craft,vehicle,event,main}.js
-   （经典全局脚本，按上述顺序加载）
+   + main_story/index.js (type="module") 作为主线剧情汇总与触发引擎。
+   （经典全局脚本，按上述顺序加载；module 脚本会 defer 执行）
 4) 改代码/数据：优先改 js/data.js，再由 docs/02 摘录；用 create_or_update_file / push_files 推 main 分支
 5) Cloudflare 自动部署后，用 WebFetch 验证
 6) 改完同步更新本文档与玩法文档（按第七条规则）
