@@ -308,20 +308,37 @@ const EVENTS = [
 ];
 
 /* 常乐辅助函数 */
+/* 常乐抽牌卡面重新绘制：
+   S=小(1~5) → 2♠（黑桃 2）
+   B=大(6~10) → 10♠（黑桃 10）
+   K=王(JQK)  → J♠（黑桃 J，没有大小王）
+   整体仅保留三张卡面，完全去掉「小/大/王」标签、去掉底部「X小·Y大·Z王」统计文字，
+   卡片尺寸适度放大以利用删除文字后腾出的空间，但整体上移避免剧情区变滚动模式。 */
 function changleCardHTML(type){
-  // S=小(1~5) B=大(6~10) K=王(JQK)
-  const icon = type==='S' ? '🂡' : (type==='B' ? '🃞' : '🃏');
-  const label = type==='S' ? '小' : (type==='B' ? '大' : '王');
-  /* 整体缩小到约原尺寸的 60%：emoji 字号 48px、容器 70px 宽，消除剧情区滚动模式 */
-  return `<div style="display:flex;flex-direction:column;align-items:center;width:70px;margin:0 2px;">
-    <div style="width:70px;height:96px;background:transparent;color:#fdf6e3;font-size:48px;display:flex;align-items:center;justify-content:center;text-shadow:0 2px 6px rgba(0,0,0,.7);">${icon}</div>
-    <span style="font-size:12px;color:#e8c86a;margin-top:1px;font-weight:bold;">${label}</span></div>`;
+  // 黑桃 2（小 / 1~5 点）、黑桃 10（大 / 6~10 点）、黑桃 J（王 / JQK）
+  const face = type==='S' ? '2' : (type==='B' ? '10' : 'J');
+  const suit = '♠';
+  const isFace = type==='K'; // J 牌面稍大更有质感
+  const bg = '#fff';
+  const fg = '#111';
+  return `<div style="width:84px;height:118px;background:${bg};border-radius:8px;border:1px solid #555;box-shadow:2px 2px 6px rgba(0,0,0,.5),inset 0 0 0 1px rgba(0,0,0,.04);padding:6px;display:flex;flex-direction:column;justify-content:space-between;color:${fg};font-family:'Times New Roman',serif;">
+    <div style="display:flex;flex-direction:column;line-height:1;text-align:left;">
+      <span style="font-size:20px;font-weight:bold;">${face}</span>
+      <span style="font-size:18px;line-height:1;">${suit}</span>
+    </div>
+    <div style="text-align:center;font-size:44px;line-height:1;">${suit}</div>
+    <div style="display:flex;flex-direction:column;line-height:1;text-align:right;transform:rotate(180deg);">
+      <span style="font-size:20px;font-weight:bold;">${face}</span>
+      <span style="font-size:18px;line-height:1;">${suit}</span>
+    </div>
+  </div>`;
 }
 function changleCardsBlockHTML(picks){
   const cardsHTML = picks.map(c=>changleCardHTML(c)).join('');
-  /* 整体上移，不再显示任何文字描述（只保留卡片），避免剧情区变滚动模式 */
-  return `<div style="position:absolute;top:-6px;right:6px;z-index:5;padding:4px;background:rgba(30,32,45,.92);border:1px solid rgba(232,216,164,.5);border-radius:6px;text-align:center;box-shadow:2px 4px 14px rgba(0,0,0,.6);pointer-events:none;">
-    <div style="display:flex;justify-content:center;">${cardsHTML}</div>
+  /* 整体上移；完全去掉所有文字（标题、底部统计、卡片下方标签），只保留三张扑克牌本身；
+     卡片适度放大，整个浮层更紧凑地贴在右上角 */
+  return `<div style="position:absolute;top:-10px;right:6px;z-index:5;padding:3px;background:rgba(30,32,45,.92);border:1px solid rgba(232,216,164,.5);border-radius:6px;box-shadow:2px 4px 14px rgba(0,0,0,.6);pointer-events:none;">
+    <div style="display:flex;justify-content:center;gap:4px;">${cardsHTML}</div>
   </div>`;
 }
 function changleRound2(slot){

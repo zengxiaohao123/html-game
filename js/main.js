@@ -30,27 +30,44 @@ function loadIntoWorld(){ $('#menuOverlay').classList.remove('show'); combatStat
 function ensureKeyFocus(){ try{ if(document.body) document.body.setAttribute('tabindex','-1'); window.focus(); if(document.body) document.body.focus({preventScroll:true}); }catch(e){} }
 /* 快捷键 J/B/L/C/E 映射表（全部小写）。再次按下同一键时，若当前打开的界面是该键对应界面，则关闭。
    ESC 仍保留退回一层/设置的逻辑（见 ui.js keydown 监听），右上角 ✕ 按钮也保留关闭功能。 */
-const HOTKEY_MODAL = { j:{title:'任务', open:openTasks}, b:{title:'背包', open:openInventory}, l:{title:'编队', open:openFormation}, c:{title:'角色', open:openCharacters}, e:{title:'合成', open:openCraft} };
+/* 快捷键表（全部小写）。所有快捷键仅主页面（非 modal、非战斗、非事件）可用于打开对应界面；
+   若当前已打开该界面，再次按下则关闭；若当前打开的是另一个界面，快捷键被忽略（必须先关掉）。
+   ESC 仍保留退回一层/设置的逻辑（ui.js keydown），右上角 ✕ 按钮也保留关闭功能。
+   说明：P（睡觉）不是 modal，直接触发下一天，按一次执行一次，不在 modal 里也没法「再次按下」。 */
+const HOTKEY_MODAL = {
+  j:{title:'任务',  open:openTasks},
+  b:{title:'背包',  open:openInventory},
+  l:{title:'编队',  open:openFormation},
+  c:{title:'角色',  open:openCharacters},
+  e:{title:'合成',  open:openCraft},
+  t:{title:'载具',  open:openVehicles},
+};
+const HOTKEY_ACTION = { p: sleep };   /* 非 modal 动作类快捷键 */
+
 function handleHotkeyToggle(k){
-  const cfg = HOTKEY_MODAL[k]; if(!cfg) return;
-  /* 编队/合成在战斗中被禁用；按下时给出提示而非尝试打开 */
-  if((k==='l'||k==='e') && (combatState||eventState)){ log('战斗/事件中无法使用该功能。'); return; }
-  /* 若 modal 已打开且当前就是该键对应的界面，则关闭 */
+  /* 1. modal 已打开时：只允许「同一键」关闭，其他键一律忽略 */
   if($('#modalOverlay').classList.contains('show')){
     try{
       const curTitle = $('#modalTitle').textContent;
-      if(curTitle===cfg.title){ closeModal(); return; }
-      /* 若打开了不同界面，则先关再开（ESC/✕ 保持其原行为，此处只是为了支持「再次按相同键关闭」之外的体验；暂不处理） */
+      const cfg = HOTKEY_MODAL[k];
+      if(cfg && curTitle===cfg.title){ closeModal(); return; }
+      /* 其他情况：忽略，不尝试打开 */
+      return;
     }catch(e){}
+    return;
   }
-  cfg.open();
+  /* 2. modal 未打开但处于战斗/事件中：禁用除 P 以外的快捷键（P 本身会在 sleep 内部做拦截） */
+  if((combatState||eventState) && k!=='p'){ log('战斗/事件中无法使用该功能。'); return; }
+  /* 3. 主页面正常触发 */
+  const cfg = HOTKEY_MODAL[k]; if(cfg){ cfg.open(); return; }
+  const act = HOTKEY_ACTION[k]; if(act){ act(); return; }
 }
 
 function handleKeys(ev){
   if($('#menuOverlay').classList.contains('show') || $('#gameoverOverlay').classList.contains('show')) return;
-  /* 先判断快捷键：非 modal 状态下触发；若 modal 已打开且标题就是该键对应界面，则关闭 */
   const k=ev.key.toLowerCase();
-  if(HOTKEY_MODAL[k]){ handleHotkeyToggle(k); return; }
+  /* 所有热键都先过 handleHotkeyToggle 统一守卫 */
+  if(HOTKEY_MODAL[k] || HOTKEY_ACTION[k]){ handleHotkeyToggle(k); return; }
   if(combatState){
     const cs=combatState;
     if(k==='q'){ if(cs.ally[cs.currentChar] && cs.ally[cs.currentChar].selSkill==='flee'){ tryFlee(); } else { castSkill(cs.currentChar, true); } }

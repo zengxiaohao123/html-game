@@ -278,8 +278,8 @@ const BOND_TEXT = {
 /* ===== 物品喜好度（隐藏属性，玩家不可见） =====
    0级=大部分未说明物品(-1)；1级=one列表(+1)；2级=two映射(按物品描述增加值)；3级=three映射(按描述值再加+5)。 */
 const ITEM_LOVE = {
-  xiayang:{ one:['cookedMeat','roadmap'], two:{caiyunPendant:10}, three:{} },
-  luyouyou:{ one:['cookedMeat','roadmap'], two:{}, three:{caiyunPendant:10} },
+  xiayang:{ one:['cookedMeat','roadmap'], two:{caiyunPendant:10,amethyst:3,diamond:8}, three:{} },
+  luyouyou:{ one:['cookedMeat','roadmap'], two:{amethyst:3,diamond:8}, three:{caiyunPendant:10} },
 };
 const GIFT_TALK = {
   xiayang:{

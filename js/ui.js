@@ -353,18 +353,16 @@ function interactSay(key,html){
   } else {
     if(interTick['t'+key]){ clearInterval(interTick['t'+key]); interTick['t'+key]=null; }
   }
-  /* 防御：若 dlg 里已经有 5 条及以上已完成的 iline（没有 typing 类），先删除最早的那几条，确保下一条加进去不会超过 5 条的历史限制；
+  /* 防御：若 dlg 里已经有 >=5 条已完成的 iline（没有 typing 类），先删除最早的那几条，确保下一条加进去不会超过 5 条的历史上限；
      这样无论何时 interactSay 被调用，DOM 都是实时正确的，不需要等切换页面才刷新 */
-  let dlgChildren = dlg.children;
   let doneCount = 0;
-  let toRemove = [];
-  for(const c of dlgChildren){
+  for(const c of dlg.children){
     if(c.classList && c.classList.contains('iline') && !c.classList.contains('typing')){
       doneCount++;
     }
   }
-  /* 已完成条目超过 4 条（加上下一条=5），就删掉最老的 */
-  while(doneCount >= 4){
+  /* 已完成条目达到 5 条时，再删最早的那条（保证「保留 5 条，第 6 条出现才挤掉最早」） */
+  while(doneCount >= 5){
     for(const c of dlgChildren){
       if(c.classList && c.classList.contains('iline') && !c.classList.contains('typing')){
         c.parentNode && c.parentNode.removeChild(c);
