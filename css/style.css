@@ -210,9 +210,12 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
   text-shadow:0 2px 4px rgba(0,0,0,.8);
   max-width:60%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
-#storySpeaker:empty{display:none;}
+/* 关键：绝不能用 display:none，否则 grid 会把 1fr 第一列折叠成 0 宽，
+   让 auto 列（按钮）贴到 storyHead 最左边 —— 那就是 Bug#1 的根因 */
+#storySpeaker:empty{width:0; min-width:0; overflow:hidden; padding:0; margin:0;}
+/* 按钮永远贴右：给 storyControls 加 margin-left:auto，即使第一列意外塌了也能靠右 */
 #bottom.mode-story #storyHead{visibility:visible; opacity:1;}
-#storyControls{display:flex; gap:6px; flex:none;}
+#storyControls{display:flex; gap:6px; flex:none; margin-left:auto;}
 .sctrl{padding:3px 10px; background:var(--panel2); border:1px solid var(--line); border-radius:4px; color:#cfd4dc; font-size:12px; cursor:pointer; line-height:1.2;}
 .sctrl:hover{background:#2c3040; color:#fff;}
 .sctrl.on{background:#2f7a3a; border-color:#6ee07a; color:#fff;}
