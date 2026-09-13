@@ -91,20 +91,12 @@ function playMainStorySeg(seg){
   G.records.mainStoryDone = G.records.mainStoryDone || {};
   G.records.mainStoryDone[seg.id] = true;
 
-  // 剧情区清空，切 story 模式
+  // 剧情区清空 + 切 story 模式
   switchMode('story');
-  clearStory();
   prompt('');
 
-  // 逐段推送到引擎（逐段打字）
-  let i=0;
-  const pushNext = ()=>{
-    if(i>=seg.body.length){ finishMainStorySeg(seg); return; }
-    const para = seg.body[i]; i++;
-    storySetSpeaker(para.speaker || null);
-    storyPush(para.html, { onDone: pushNext });
-  };
-  pushNext();
+  // 一次性灌进完整 body —— 引擎自动分页、自动打字、自动停住等点击
+  storyStartFragment(seg.body, ()=> finishMainStorySeg(seg));
 }
 
 /* 一段剧情结束时的收尾 */
