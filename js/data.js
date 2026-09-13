@@ -278,12 +278,21 @@ const BOND_TEXT = {
 /* ===== 物品喜好度（隐藏属性，玩家不可见） =====
    0级=大部分未说明物品(-1)；1级=one列表(+1)；2级=two映射(按物品描述增加值)；3级=three映射(按描述值再加+5)。 */
 const ITEM_LOVE = {
-  xiayang:{ one:['cookedMeat','roadmap'], two:{caiyunPendant:10, diamond:8}, three:{} },
-  luyouyou:{ one:['cookedMeat','roadmap'], two:{diamond:8}, three:{caiyunPendant:10} },
+  xiayang:{ one:['cookedMeat','roadmap'], two:{caiyunPendant:10}, three:{} },
+  luyouyou:{ one:['cookedMeat','roadmap'], two:{}, three:{caiyunPendant:10} },
 };
 const GIFT_TALK = {
-  xiayang:{ lv0:'夏阳：“啊哈哈……快点交代，这是啥新型冷笑话？”', lv1:'夏阳：“谢啦，这玩意有点意思。”', lv2:'夏阳：“哇，你怎么知道我想要这个？！”' },
-  luyouyou:{ lv0:'陆悠悠：“我要把这个做到今天的晚饭里，你不会介意的吧～”', lv1:'陆悠悠：“不错不错，未来应该能派上用场。那我就不客气了。”', lv2:'陆悠悠：“啊……看着它，突然灵感涌现啊。得赶快记下来……”', lv3_caiyun:'陆悠悠：“据说远古的魔法师在万米高空之上的云雾中穿行，地上的人们见了，纷纷以为天上的飓刃裁断了云朵，还制作了饰品祈求云层不要砸下来。但云不会掉下来，这里面只是棉絮做成的云团——很失望？恰恰相反，我很喜欢。云无定踪风无定向，若是被捉进瓶子里反而无趣了。带上这个挂饰，坐在最高的悬崖边上，听风铃声声，看云卷云舒……现在就去如何？”' },
+  xiayang:{
+    lv0:'夏阳："啊哈哈……快点交代，这是啥新型冷笑话？"',
+    lv1:'夏阳："谢啦，这玩意有点意思。"',
+    lv2:'夏阳："哇，你怎么知道我想要这个？！"'
+  },
+  luyouyou:{
+    lv0:'陆悠悠："我要把这个做到今天的晚饭里，你不会介意的吧～"',
+    lv1:'陆悠悠："不错不错，未来应该能派上用场。那我就不客气了。"',
+    lv2:'陆悠悠："啊……看着它，突然灵感涌现啊。得赶快记下来……"',
+    lv3_caiyunPendant:'陆悠悠："据说远古的魔法师在万米高空之上的云雾中穿行，地上的人们见了，纷纷以为天上的飓刃裁断了云朵，还制作了饰品祈求云层不要砸下来。但云不会掉下来，这里面只是棉絮做成的云团——很失望？恰恰相反，我很喜欢。云无定踪风无定向，若是被捉进瓶子里反而无趣了。带上这个挂饰，坐在最高的悬崖边上，听风铃声声，看云卷云舒……现在就去如何？"'
+  },
 };
 function itemLoveLevel(ck, itemKey){ const L=ITEM_LOVE[ck]||{}; if(L.three&&L.three[itemKey]!=null) return 3; if(L.two&&L.two[itemKey]!=null) return 2; if(L.one&&L.one.includes(itemKey)) return 1; return 0; }
 

@@ -353,6 +353,26 @@ function interactSay(key,html){
   } else {
     if(interTick['t'+key]){ clearInterval(interTick['t'+key]); interTick['t'+key]=null; }
   }
+  /* 防御：若 dlg 里已经有 5 条及以上已完成的 iline（没有 typing 类），先删除最早的那几条，确保下一条加进去不会超过 5 条的历史限制；
+     这样无论何时 interactSay 被调用，DOM 都是实时正确的，不需要等切换页面才刷新 */
+  let dlgChildren = dlg.children;
+  let doneCount = 0;
+  let toRemove = [];
+  for(const c of dlgChildren){
+    if(c.classList && c.classList.contains('iline') && !c.classList.contains('typing')){
+      doneCount++;
+    }
+  }
+  /* 已完成条目超过 4 条（加上下一条=5），就删掉最老的 */
+  while(doneCount >= 4){
+    for(const c of dlgChildren){
+      if(c.classList && c.classList.contains('iline') && !c.classList.contains('typing')){
+        c.parentNode && c.parentNode.removeChild(c);
+        doneCount--;
+        break;
+      }
+    }
+  }
   interTyping[key]=html; startInterType(key,html);
   // 问题3：陆悠悠聊天成功率——每次交互完后刷新按钮上显示的整数成功率（直接改 DOM 文字，避免整页重绘）
   const ilbtns = document.querySelectorAll('.ilbtn');
@@ -377,7 +397,7 @@ function openGift(key){ giftOpenKey=key; giftSelItem=null; giftJustOpened=true; 
 /* 问题1修复：礼物点击不再重绘整个面板，只切换 class；避免每点一次就闪 */
 function decorateGiftCells(){ const box=$('#giftOverlay'); if(!box) return; if(giftCooldownLeft(giftOpenKey)>0) return; box.querySelectorAll('.gift-cell').forEach(c=>{ c.onclick=()=>{ const k=c.dataset.k; const wasSel = c.classList.contains('sel'); box.querySelectorAll('.gift-cell.sel').forEach(x=>x.classList.remove('sel')); if(!wasSel){ c.classList.add('sel'); giftSelItem=k; } else { giftSelItem=null; } }; }); }
 /* 问题1修复：确认送出后先 remove gift overlay DOM，再 interactSay，避免对话被重绘清掉 */
-function confirmGift(){ const key=giftOpenKey; if(!key||!giftSelItem) return; if(giftCooldownLeft(key)>0) return; const it=giftSelItem; const lv=itemLoveLevel(key,it); const L=(ITEM_LOVE[key]||{}); let delta=0, talk=''; if(lv===0){ /* === giftValue 物品（如 amethyst / diamond 等消耗品类赠礼）=== */ const gv = (ITEMS[it]&&ITEMS[it].giftValue) || 0; if(gv>0){ delta=gv; /* 有赠礼价值但未登记喜好度等级：使用 lv1 对话（正向） */ talk=GIFT_TALK[key].lv1; } else { delta=-1; talk=GIFT_TALK[key].lv0; } } else if(lv===1){ delta=1; talk=GIFT_TALK[key].lv1; } else if(lv===2){ delta=L.two[it]; talk=GIFT_TALK[key].lv2; } else { delta=(L.three[it]||0)+5; talk=(GIFT_TALK[key]['lv3_'+it])||GIFT_TALK[key].lv2; } G.inventory[it]--; G.records=G.records||{}; if(!G.records.giftDay) G.records.giftDay={}; G.records.giftDay[key]=G.day||1;
+function confirmGift(){ const key=giftOpenKey; if(!key||!giftSelItem) return; if(giftCooldownLeft(key)>0) return; const it=giftSelItem; const lv=itemLoveLevel(key,it); const L=(ITEM_LOVE[key]||{}); let delta=0, talk=''; if(lv===0){ delta=-1; talk=GIFT_TALK[key].lv0; } else if(lv===1){ delta=1; talk=GIFT_TALK[key].lv1; } else if(lv===2){ delta=L.two[it]; talk=GIFT_TALK[key].lv2; } else { delta=(L.three[it]||0)+5; talk=(GIFT_TALK[key]['lv3_'+it])||GIFT_TALK[key].lv2; } G.inventory[it]--; G.records=G.records||{}; if(!G.records.giftDay) G.records.giftDay={}; G.records.giftDay[key]=G.day||1;
   // 先移除 DOM 里的送礼面板（避免重绘交互区时把刚要写入的对话清掉）
   const overlay=document.getElementById('giftOverlay'); if(overlay && overlay.parentNode){ overlay.parentNode.removeChild(overlay); }
   giftOpenKey=null; giftSelItem=null;

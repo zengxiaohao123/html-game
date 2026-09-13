@@ -312,19 +312,16 @@ function changleCardHTML(type){
   // S=小(1~5) B=大(6~10) K=王(JQK)
   const icon = type==='S' ? '🂡' : (type==='B' ? '🃞' : '🃏');
   const label = type==='S' ? '小' : (type==='B' ? '大' : '王');
-  /* 放大到约当前 3 倍：emoji 字号 64px、容器 108px 宽 */
-  return `<div style="display:flex;flex-direction:column;align-items:center;width:108px;margin:0 4px;">
-    <div style="width:108px;height:148px;background:transparent;color:#fdf6e3;font-size:96px;display:flex;align-items:center;justify-content:center;text-shadow:0 2px 6px rgba(0,0,0,.7);">${icon}</div>
-    <span style="font-size:16px;color:#e8c86a;margin-top:2px;font-weight:bold;">${label}</span></div>`;
+  /* 整体缩小到约原尺寸的 60%：emoji 字号 48px、容器 70px 宽，消除剧情区滚动模式 */
+  return `<div style="display:flex;flex-direction:column;align-items:center;width:70px;margin:0 2px;">
+    <div style="width:70px;height:96px;background:transparent;color:#fdf6e3;font-size:48px;display:flex;align-items:center;justify-content:center;text-shadow:0 2px 6px rgba(0,0,0,.7);">${icon}</div>
+    <span style="font-size:12px;color:#e8c86a;margin-top:1px;font-weight:bold;">${label}</span></div>`;
 }
 function changleCardsBlockHTML(picks){
   const cardsHTML = picks.map(c=>changleCardHTML(c)).join('');
-  const s=picks.filter(c=>c==='S').length, b=picks.filter(c=>c==='B').length, k=picks.filter(c=>c==='K').length;
-  /* 绝对定位浮层：覆盖在剧情区右上方，不撑宽文档流 */
-  return `<div style="position:absolute;top:8px;right:8px;z-index:5;padding:8px 6px;background:rgba(30,32,45,.92);border:1px solid rgba(232,216,164,.5);border-radius:6px;text-align:center;box-shadow:2px 4px 14px rgba(0,0,0,.6);pointer-events:none;">
-    <div style="font-size:14px;color:#e8c86a;font-weight:700;margin-bottom:5px;">抽牌结果</div>
+  /* 整体上移，不再显示任何文字描述（只保留卡片），避免剧情区变滚动模式 */
+  return `<div style="position:absolute;top:-6px;right:6px;z-index:5;padding:4px;background:rgba(30,32,45,.92);border:1px solid rgba(232,216,164,.5);border-radius:6px;text-align:center;box-shadow:2px 4px 14px rgba(0,0,0,.6);pointer-events:none;">
     <div style="display:flex;justify-content:center;">${cardsHTML}</div>
-    <div style="font-size:13px;color:#c8b888;margin-top:5px;">${s}小 · ${b}大 · ${k}王</div>
   </div>`;
 }
 function changleRound2(slot){

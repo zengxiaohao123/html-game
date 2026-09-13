@@ -28,10 +28,31 @@ function loadIntoWorld(){ $('#menuOverlay').classList.remove('show'); combatStat
   if(G.activeEvent && G.px===G.activeEvent.x && G.py===G.activeEvent.y){ switchMode('story'); renderMap(); startEvent(G.activeEvent.x, G.activeEvent.y, G.activeEvent.slot); return; }
   switchMode('story'); renderMap(); story('你又一次在异世界醒来。这一次，你决定无论如何都要活下去。'); ensureKeyFocus(); }
 function ensureKeyFocus(){ try{ if(document.body) document.body.setAttribute('tabindex','-1'); window.focus(); if(document.body) document.body.focus({preventScroll:true}); }catch(e){} }
+/* 快捷键 J/B/L/C/E 映射表（全部小写）。再次按下同一键时，若当前打开的界面是该键对应界面，则关闭。
+   ESC 仍保留退回一层/设置的逻辑（见 ui.js keydown 监听），右上角 ✕ 按钮也保留关闭功能。 */
+const HOTKEY_MODAL = { j:{title:'任务', open:openTasks}, b:{title:'背包', open:openInventory}, l:{title:'编队', open:openFormation}, c:{title:'角色', open:openCharacters}, e:{title:'合成', open:openCraft} };
+function handleHotkeyToggle(k){
+  const cfg = HOTKEY_MODAL[k]; if(!cfg) return;
+  /* 编队/合成在战斗中被禁用；按下时给出提示而非尝试打开 */
+  if((k==='l'||k==='e') && (combatState||eventState)){ log('战斗/事件中无法使用该功能。'); return; }
+  /* 若 modal 已打开且当前就是该键对应的界面，则关闭 */
+  if($('#modalOverlay').classList.contains('show')){
+    try{
+      const curTitle = $('#modalTitle').textContent;
+      if(curTitle===cfg.title){ closeModal(); return; }
+      /* 若打开了不同界面，则先关再开（ESC/✕ 保持其原行为，此处只是为了支持「再次按相同键关闭」之外的体验；暂不处理） */
+    }catch(e){}
+  }
+  cfg.open();
+}
+
 function handleKeys(ev){
   if($('#menuOverlay').classList.contains('show') || $('#gameoverOverlay').classList.contains('show')) return;
+  /* 先判断快捷键：非 modal 状态下触发；若 modal 已打开且标题就是该键对应界面，则关闭 */
+  const k=ev.key.toLowerCase();
+  if(HOTKEY_MODAL[k]){ handleHotkeyToggle(k); return; }
   if(combatState){
-    const cs=combatState; const k=ev.key.toLowerCase();
+    const cs=combatState;
     if(k==='q'){ if(cs.ally[cs.currentChar] && cs.ally[cs.currentChar].selSkill==='flee'){ tryFlee(); } else { castSkill(cs.currentChar, true); } }
     else if(k==='w'){ combatMove(0,-1); } else if(k==='s'){ combatMove(0,1); } else if(k==='a'){ combatMove(-1,0); } else if(k==='d'){ combatMove(1,0); }
     else if(ev.key==='1'||ev.key==='2'||ev.key==='3'||ev.key==='4'){ const cur=getChar(cs.currentChar); const skills=cur.skills.filter(s=>cur.selectedSkillIds.includes(s.id)); const idx=+ev.key-1; if(idx<skills.length) selectSkill(cs.currentChar, skills[idx].id); else if(idx===skills.length) selectSkill(cs.currentChar, 'flee'); }
@@ -40,7 +61,7 @@ function handleKeys(ev){
   }
   if(!G||!G.map) return; if($('#modalOverlay').classList.contains('show')) return; if(ev.repeat) return;
   if(eventState) return;   // 事件中不可移动
-  const k=ev.key.toLowerCase(); let dx=0,dy=0;
+  let dx=0,dy=0;
   if(k==='w'){dy=-1;} else if(k==='s'){dy=1;} else if(k==='a'){dx=-1;} else if(k==='d'){dx=1;} else return;
   const nx=G.px+dx, ny=G.py+dy; if(nx<0||ny<0||nx>=G.map.n||ny>=G.map.n) return; moveExplore(nx,ny,1);
 }
