@@ -7,48 +7,180 @@ function el(html){const d=document.createElement('div'); d.innerHTML=html; retur
 function switchMode(m){ gameMode=m; $('#bottom').classList.toggle('mode-story', m==='story'); $('#bottom').classList.toggle('mode-combat', m==='combat'); $('#rightTitle').textContent='信息'; if(m==='story') $('#goBtn').style.display='none'; }
 function clearLog(){ $('#logBody').innerHTML=''; }
 function clearStory(){ storyClear(); }
-/* ---- 打字机剧情引擎 ----
-   规则：storyPush 追加一段并开始打字。段打字完成后触发 storyOnDone（不自动连打）。
-   点击剧情区：打字中→storySkipToEnd 立即显示整段；已打完→storyAdvance 推进到下一段
-   （若有多段则打下一段；若已是最后一段则交由调用方 storyOnEnd 处理，如清空剧情区）。
-   注：段间推进依赖外部调用 storyAdvance，引擎不自动连打，以支持“段间点击推进”。 */
-let storyQueue=[];
+/* ---- 主线 / 通用辅助：名字彩色、屏幕效果、幕标题 ---- */
+/* 名字彩色：仅对特定名字的特定字上色，其余保持白色 */
+function applySpeakerColor(name){
+  if(!name) return '';
+  // 白名单名字 -> 替换特定字为带 class 的 span
+  const rules = [
+    { key:'夏阳',   ch:'阳',   cls:'sp-sun' },
+    { key:'叶唯安', ch:'叶',   cls:'sp-ye' },
+    { key:'陆悠悠', ch:'悠悠', cls:'sp-youyou' },
+    { key:'宋梦雨', ch:'梦',   cls:'sp-mengyu' },
+    { key:'许泠朦', ch:'泠',   cls:'sp-lingmeng' },
+    { key:'潘天宇', ch:'宇',   cls:'sp-tianyu' },
+    { key:'杨一帆', ch:'杨',   cls:'sp-yifan' },
+    { key:'灰白',   ch:'灰',   cls:'sp-hui' },
+  ];
+  let out=name;
+  for(const r of rules){
+    if(name===r.key){ out=out.split(r.ch).join(`<span class="${r.cls}">${r.ch}</span>`); }
+  }
+  return out;
+}
+/* 屏幕效果：shake(抖动) / flash(闪白) / black(黑屏2s) */
+function playScreenEffect(type){
+  if(type==='shake'){
+    $('#app').classList.add('fx-shake');
+    setTimeout(()=>$('#app').classList.remove('fx-shake'), 600);
+    return;
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'screen-effect fx-'+type;
+  document.body.appendChild(overlay);
+  setTimeout(()=>overlay.remove(), 2800);
+}
+/* 幕标题：白字大字遮罩 5s 自动淡出 */
+function showActTitle(title){
+  const ov = $('#actTitleOverlay');
+  ov.innerHTML = `<div class="act-title-text">${escapeHtml(title)}</div>`;
+  ov.classList.add('show');
+  setTimeout(()=>{ ov.classList.remove('show'); setTimeout(()=>{ ov.innerHTML=''; }, 400); }, 5500);
+}
+
+/* ---- 打字机剧情引擎（v2：支持自动/跳过/speaker/元指令） ----
+   规则：storyPush 接收 {speaker, html, onDone, onEnd} 或 storyPush(html, opts)。
+   引擎扫描文本中的【xxx】元指令并拦截执行，元指令不会进入 storyQueue。
+   打字完成后触发 storyOnDone（非最后一段），或 storyOnEnd（最后一段）。
+   自动模式下，最后一段打完后等待 autoDelay 自动清理；段间自动连打。
+   点击剧情区规则：打字中→立即显示本段全部（storySkipToEnd）；
+   已打完且仍有待打段落 → 推进到下一段（storyAdvance）；
+   已打完且队列空 → 若主线剧情带 __choiceMarker 则等待选择，否则清空。 */
+let storyQueue=[];      // 每一项：{html:string, __choiceMarker?:true}
 let storyTimer=null;
+let storyAutoTimer=null;   // 自动连打的 setTimeout 句柄
+let storyAutoMode=false;  // 持久化：true=自动, false=手动
+try { storyAutoMode = sessionStorage.getItem('storyAutoMode')==='1'; } catch(e){}
 let storyTyping=false;
 let storyIdx=0;
 let storyCurrent=null;
-let storyOnDone=null;   // 当前段打完后的回调（用于事件：非末段时留待点击，末段时显示选项）
-let storyOnEnd=null;    // 全部段都打完后的回调（结果最后一段点击清空等）
-function storyClear(){ storyQueue=[]; if(storyTimer){clearInterval(storyTimer);storyTimer=null;} storyTyping=false; storyCurrent=null; storyOnDone=null; storyOnEnd=null; $('#storyBody').innerHTML=''; }
-function storyPush(html, onDone, onEnd){
-  const clean=String(html).trim();
-  const paras=clean.split(/(?=<\/?p>|<br\s*\/?>)/).filter(s=>s&&s.trim());
-  const merged=[];
-  for(let i=0;i<paras.length;i++){
-    let seg=paras[i];
-    if(/^<p[^>]*>/.test(seg) && !/<\/p>$/.test(seg) && i+1<paras.length){ seg += paras[i+1]; i++; }
-    if(seg&&seg.trim()) merged.push(seg);
+let storyOnDone=null;
+let storyOnEnd=null;
+let storyCurrentSpeaker=null;
+let storyLastPushCbs=null; // 本次 push 传入的 onDone/onEnd
+
+/* 处理文本中的元指令（返回纯净 HTML，副作用执行指令） */
+function processMetaCommands(text){
+  let cleaned = text;
+  // 所有 【xxx】 块
+  const re = /【([^】]+)】/g;
+  cleaned = cleaned.replace(re, (m, cmd)=>{
+    const c = cmd.trim();
+    if(!c) return '';
+    // 屏幕效果
+    if(['shake','flash','black'].includes(c)){
+      playScreenEffect(c);
+      return '';
+    }
+    // 幕标题：【act:第一幕 分道扬镳】
+    if(c.startsWith('act:')){
+      showActTitle(c.slice(4).trim());
+      return '';
+    }
+    // 指令不识别 -> 不显示
+    return '';
+  });
+  return cleaned;
+}
+
+function storyClear(){
+  storyQueue=[];
+  if(storyTimer){clearInterval(storyTimer);storyTimer=null;}
+  if(storyAutoTimer){clearTimeout(storyAutoTimer);storyAutoTimer=null;}
+  storyTyping=false; storyCurrent=null;
+  storyOnDone=null; storyOnEnd=null;
+  storyLastPushCbs=null;
+  storyCurrentSpeaker=null;
+  $('#storySpeaker').innerHTML='';
+  $('#storyBody').innerHTML='';
+}
+
+/* opts 可为 null / 对象 / {speaker, onDone, onEnd} */
+function storyPush(html, opts){
+  let speaker=null, onDone=null, onEnd=null;
+  if(opts){
+    if(typeof opts==='function') onDone=opts;
+    else if(typeof opts==='object'){ speaker=opts.speaker; onDone=opts.onDone; onEnd=opts.onEnd; }
   }
-  const list=merged.length?merged:[clean];
-  for(const p of list){ if(p&&p.trim()) storyQueue.push(p); }
-  if(onDone) storyOnDone=onDone;
-  if(onEnd) storyOnEnd=onEnd;
+  const clean = processMetaCommands(String(html||'').trim());
+  const paras = splitIntoParagraphs(clean);
+  for(const p of paras){
+    if(p && p.trim()) storyQueue.push({html:p});
+  }
+  if(onDone) storyOnDone = onDone;
+  if(onEnd) storyOnEnd = onEnd;
+  if(speaker!=null) storyCurrentSpeaker = speaker;
   storyRunNext();
 }
+/* 兼容：只给 onDone 的旧调用 */
+function storyPush_old(html, onDone, onEnd){ storyPush(html, {onDone, onEnd}); }
+
+/* 将 HTML 按自然段（</p> 或 <br>）拆分为段落数组 */
+function splitIntoParagraphs(html){
+  const clean = String(html).trim();
+  const pieces = clean.split(/(?=<\/?p>|<br\s*\/?>)/).filter(s=>s&&s.trim());
+  const merged=[];
+  for(let i=0;i<pieces.length;i++){
+    let seg=pieces[i];
+    if(/^<p[^>]*>/.test(seg) && !/<\/p>$/.test(seg) && i+1<pieces.length){ seg += pieces[i+1]; i++; }
+    if(seg && seg.trim()) merged.push(seg);
+  }
+  return merged.length?merged:[clean];
+}
+
 function storyRunNext(){
   if(storyTyping||storyTimer) return;
-  if(!storyQueue.length){ const e=storyOnEnd; storyOnEnd=null; if(e) e(); return; }
-  storyCurrent=storyQueue.shift();
+  if(storyAutoTimer){clearTimeout(storyAutoTimer);storyAutoTimer=null;}
+  // 队列空了
+  if(!storyQueue.length){
+    const e=storyOnEnd; storyOnEnd=null;
+    if(e) e();
+    // 自动模式最后一段后等待清理（事件系统由 finishEvent 接管，不自动清）
+    if(storyAutoMode && !eventState){
+      storyAutoTimer=setTimeout(()=>{
+        if(!eventState) storyClear();
+      }, 4000);
+    }
+    return;
+  }
+  const item = storyQueue.shift();
+  if(item.__choiceMarker){ /* 跳过选项 marker 直接过 */ storyRunNext(); return; }
+  storyCurrent = item.html;
+  // 更新 speaker
+  const sp = storyCurrentSpeaker;
+  const speakerEl = $('#storySpeaker');
+  if(eventState){
+    // 事件系统：speaker 区留空（事件用 .ev-title 显示标题）
+    speakerEl.innerHTML = '';
+  } else if(sp){
+    speakerEl.innerHTML = applySpeakerColor(sp);
+  } else {
+    // 旁白 / 主线剧情中切换了空 speaker：保留上一个显示直到新的指定
+    // 用户定义：旁白不显示名字 -> 空着
+    speakerEl.innerHTML = '';
+  }
+
   const box=$('#storyBody');
   const para=document.createElement('div'); para.className='story-para';
   box.appendChild(para);
-  // 非 <p> 开头的段（如 float div 等独立块）直接 innerHTML 输出，不打字机
+  // 非 <p> 开头的段直接 innerHTML 输出，不打字机
   if(!/^\s*<p/i.test(storyCurrent)){
     para.innerHTML=storyCurrent;
     box.scrollTop=box.scrollHeight;
     storyCurrent=null;
     const d=storyOnDone; storyOnDone=null;
     if(d) d();
+    if(storyAutoMode) storyAutoTimer=setTimeout(storyRunNext, 250);
     return;
   }
   storyTyping=true; storyIdx=0;
@@ -65,24 +197,32 @@ function storyRunNext(){
       storyCurrent=null;
       const d=storyOnDone; storyOnDone=null;
       if(d) d();
+      // 自动模式：自动推进下一段（若还有）
+      if(storyAutoMode && storyQueue.length){
+        storyAutoTimer=setTimeout(storyRunNext, 300);
+      }
     }
   }, 1000/30);
 }
-function storySkipToEnd(){ // 点击时打字中：立即显示本段全部文字（不推进）
+function storySkipToEnd(){
   if(!storyTyping) return false;
   const box=$('#storyBody'); const para=box.lastElementChild;
-  if(para&&para.classList.contains('story-para')&&storyCurrent){
+  if(para && para.classList.contains('story-para') && storyCurrent){
     para.innerHTML=storyCurrent;
     if(storyTimer){clearInterval(storyTimer);storyTimer=null;}
     storyTyping=false; storyCurrent=null;
     box.scrollTop=box.scrollHeight;
     const d=storyOnDone; storyOnDone=null;
     if(d) d();
+    if(storyAutoMode && storyQueue.length){
+      if(storyAutoTimer){clearTimeout(storyAutoTimer);}
+      storyAutoTimer=setTimeout(storyRunNext, 300);
+    }
     return true;
   }
   return false;
 }
-function storyAdvance(){ // 已打完且有待打段落时：推进到下一段
+function storyAdvance(){
   if(storyTyping) return;
   if(storyQueue.length){ storyRunNext(); return true; }
   return false;
@@ -91,6 +231,83 @@ function storyIsTyping(){ return storyTyping; }
 function storyHasMore(){ return storyQueue.length>0; }
 function escapeHtml(t){ return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function story(html){ storyPush(html); }
+/* 设置当前 speaker（供主线剧情片段切换人物时显式调用） */
+function storySetSpeaker(name){ storyCurrentSpeaker=name; const el=$('#storySpeaker'); el.innerHTML = name?applySpeakerColor(name):''; }
+/* 在队列末尾插入一个「选项 marker」，供跳过功能识别停住点 */
+function storyMarkChoice(){ storyQueue.push({__choiceMarker:true}); }
+/* 跳过到下一个选项 marker：主线剧情专用。事件系统走 eventSkipToChoice */
+function storySkipToChoice(){
+  // 先把正在打的段落打完（skip to end）
+  if(storyTyping){ storySkipToEnd(); }
+  // 清空队列直到遇到 __choiceMarker（事件系统不要调这个）
+  while(storyQueue.length && !storyQueue[0].__choiceMarker){
+    const item = storyQueue.shift();
+    // 清空 storyBody 里对应已渲染段落
+  }
+  // 清掉 storyBody 所有已渲染段落（避免残留）
+  $('#storyBody').innerHTML='';
+  storySpeaker = $('#storySpeaker'); // 保持名字行（如果是主线）
+  // 如果队列现在就是 marker，消耗它（marker 本身不渲染）
+  if(storyQueue.length && storyQueue[0].__choiceMarker){ storyQueue.shift(); }
+  // 之后调用方应立即显示选项
+}
+
+/* ---- 自动 / 跳过按钮 ---- */
+function initStoryControls(){
+  const auto=$('#autoBtn');
+  const skip=$('#skipBtn');
+  if(auto){ auto.classList.toggle('on', storyAutoMode); auto.onclick=()=>{
+    storyAutoMode = !storyAutoMode;
+    try{ sessionStorage.setItem('storyAutoMode', storyAutoMode?'1':'0'); }catch(e){}
+    auto.classList.toggle('on', storyAutoMode);
+    // 开启自动时：若当前剧情已打完且还有待打印，立刻连打
+    if(storyAutoMode && !storyTyping && storyQueue.length){
+      if(storyAutoTimer){clearTimeout(storyAutoTimer);}
+      storyAutoTimer=setTimeout(storyRunNext, 150);
+    }
+    // 关闭自动时：清掉自动连打的定时器
+    if(!storyAutoMode && storyAutoTimer){clearTimeout(storyAutoTimer); storyAutoTimer=null;}
+  }}
+  if(skip){ skip.onclick=onSkipClicked; }
+}
+function onSkipClicked(){
+  // 若正在等待选项，不能跳过（提示）
+  const s = eventState;
+  if(s && s.phase==='choose'){ alertDialog('无法跳过','这里需要你做出选择！'); return; }
+  // 主线剧情正在等待选项（storyOnDone 空 + storyQueue 空，但选项由调用方即将/已经渲染）
+  if(!eventState && !storyTyping && !storyQueue.length){
+    // 若调用方还没渲染选项，则提示无法跳过
+    // 简单判断：若 promptZone 有 ev-opt 说明正在选选项
+    const optsEl = document.querySelector('#promptZone .ev-opt');
+    if(optsEl){ alertDialog('无法跳过','这里需要你做出选择！'); return; }
+  }
+  openModal('确认跳过', '<p>你确定跳过本段剧情？</p>', 'small', {noCloseX:true});
+  // 在弹窗里追加两个按钮
+  const body=$('#modalBody');
+  const btnRow=document.createElement('div'); btnRow.className='btn-row'; btnRow.style='justify-content:center;margin-top:10px;';
+  btnRow.innerHTML = `<button class="mbtn small" id="skipYes">是</button><button class="mbtn small" id="skipNo">否</button>`;
+  body.appendChild(btnRow);
+  $('#skipNo').onclick=closeModal;
+  $('#skipYes').onclick=()=>{
+    closeModal();
+    doSkipCurrent();
+  };
+}
+function doSkipCurrent(){
+  const s = eventState;
+  if(s){ /* 事件系统：直接结束事件（跳到 finishEvent 展示结果） */
+    // 若事件还在正文打字，把正文剩余全清，跳到结果
+    s.bodyIdx = s.bodyParas.length;
+    s.phase = 'result';
+    // 调 finishEvent 的等价逻辑：用当前 result（或空）
+    finishEvent(s.result || '');
+    return;
+  }
+  // 主线剧情：跳到下一处选项
+  storySkipToChoice();
+}
+// 页面加载后初始化 controls
+if(typeof document!=='undefined'){ document.addEventListener('DOMContentLoaded', initStoryControls); }
 function itemDetailHTML(key){
   let body='';
   if(FOOD[key] || key==='cookedMeat'){

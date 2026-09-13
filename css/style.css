@@ -198,13 +198,29 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 .btn-row{display:flex; gap:8px; flex-wrap:wrap;}
 
 /* ===== 事件系统 ===== */
-#storyBody{font-size:15.5px;}
-#storyBody .ev-title{font-size:22px; font-weight:800; color:var(--gold); margin-bottom:8px; text-align:left;}
-#storyBody .ev-body p{margin:0 0 6px; text-indent:2em; text-align:left; color:#dfe2ec; line-height:1.85;}
-#storyBody .ev-body{text-align:left;}
+#storyBody{flex:1; overflow-y:auto; padding:4px 10px 8px; font-size:15.5px; line-height:1.85; min-height:0; position:relative;}
 #storyBody .story-para{margin:0 0 10px; text-indent:2em; text-align:left; color:#dfe2ec; line-height:1.85;}
 #storyBody .story-caret{display:inline-block; width:8px; height:1em; background:var(--gold); vertical-align:-2px; animation:blink 1s steps(1) infinite;}
 @keyframes blink{50%{opacity:0;}}
+/* ===== storyBox 顶部：名字行 + 控制按钮 ===== */
+#storyHead{display:flex; justify-content:space-between; align-items:center; flex:none; padding:2px 10px; gap:8px; min-height:26px;}
+#storySpeaker{color:#ffffff; font-size:16px; font-weight:700; letter-spacing:1px; text-shadow:0 1px 2px rgba(0,0,0,.7); max-width:60%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+#storySpeaker:empty{display:none;}
+#storyControls{display:flex; gap:6px; flex:none;}
+.sctrl{padding:3px 10px; background:var(--panel2); border:1px solid var(--line); border-radius:4px; color:#cfd4dc; font-size:12px; cursor:pointer; line-height:1.2;}
+.sctrl:hover{background:#2c3040; color:#fff;}
+.sctrl.on{background:#2f7a3a; border-color:#6ee07a; color:#fff;}
+/* ===== 事件标题（白字）===== */
+#storyBody .ev-title{font-size:18px; font-weight:800; color:#ffffff; margin-bottom:8px; text-align:left;}
+/* ===== 主线人物名字彩色片段 ===== */
+.sp-sun{color:#ff5454;}           /* 夏阳 阳 */
+.sp-ye{color:#5fd96b;}            /* 叶唯安 叶 */
+.sp-youyou{color:#8fd0ff;}        /* 陆悠悠 悠悠 */
+.sp-mengyu{color:#4fd8d8;}        /* 宋梦雨 梦 */
+.sp-lingmeng{color:#4a9bff;}      /* 许泠朦 泠 */
+.sp-tianyu{color:#c05bff;}        /* 潘天宇 宇 */
+.sp-yifan{color:#b09a73;}         /* 杨一帆 杨 */
+.sp-hui{color:#8899aa;}           /* 灰白 灰 */
 #promptZone .ev-opt{margin:10px 0; border:1px solid var(--line); border-radius:6px; overflow:hidden; background:#14171f; cursor:pointer; transition:transform .08s, background .12s;}
 #promptZone .ev-opt:hover{border-color:var(--gold);}
 #promptZone .ev-opt .ev-opt-name{display:flex; justify-content:space-between; align-items:center; background:#f5f2e8; color:#111; font-size:16px; font-weight:700; padding:7px 10px;}
@@ -358,3 +374,50 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 @keyframes depress-pulse{ 0%,100%{opacity:1;} 50%{opacity:.6;} }
 /* 词条 tooltip 样式 */
 .term{border-bottom:1px dashed #4a9bff55; color:#4a9bff; cursor:help;}
+
+/* ===== 屏幕效果 ===== */
+.screen-effect {
+  position: fixed; inset: 0; pointer-events: none; z-index: 1000;
+}
+/* 抖动：对 #app 整体应用 */
+@keyframes fx-shake {
+  0%,100%{transform:translate(0,0);}
+  10%{transform:translate(-6px,-2px);}
+  25%{transform:translate(7px,3px);}
+  40%{transform:translate(-5px,2px);}
+  55%{transform:translate(4px,-3px);}
+  70%{transform:translate(-3px,1px);}
+  85%{transform:translate(2px,0);}
+}
+.fx-shake{animation:fx-shake .55s cubic-bezier(.36,.07,.19,.97);}
+/* 闪白 */
+.fx-flash{background:#ffffff; animation:fx-flash-anim .28s ease-out forwards;}
+@keyframes fx-flash-anim{0%{opacity:0;} 30%{opacity:1;} 100%{opacity:0;}}
+/* 黑屏 2s 后恢复 */
+.fx-black{background:#000; animation:fx-black-anim 2.6s ease forwards;}
+@keyframes fx-black-anim{0%{opacity:0;} 12%{opacity:1;} 85%{opacity:1;} 100%{opacity:0;}}
+
+/* ===== 幕标题 overlay ===== */
+.act-title-overlay{
+  position:fixed; inset:0; z-index:1500;
+  background:rgba(0,0,0,.55);
+  display:flex; align-items:center; justify-content:center;
+  pointer-events:none;
+  opacity:0;
+  transition:opacity .4s ease;
+}
+.act-title-overlay.show{opacity:1;}
+.act-title-text{
+  color:#ffffff; font-size:64px; font-weight:900;
+  letter-spacing:6px; text-align:center; line-height:1.3;
+  text-shadow:0 2px 14px rgba(0,0,0,.9);
+  padding:24px 36px;
+  animation:actFadeOut 5s ease forwards;
+}
+@keyframes actFadeOut{
+  0%{opacity:0; transform:scale(.92);}
+  10%{opacity:1; transform:scale(1);}
+  80%{opacity:1;}
+  100%{opacity:0; transform:scale(1.04);}
+}
+

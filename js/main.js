@@ -26,7 +26,7 @@ function startNew(){ $('#menuOverlay').classList.remove('show'); G=newGame(); G.
   G.hero.hp = heroDisplayMaxHp(); loadIntoWorld(); }
 function loadIntoWorld(){ $('#menuOverlay').classList.remove('show'); combatState=null; if(!G.map) G.map=generateMap(G.day); if(G.px===undefined||G.py===undefined){ G.px=G.map.px; G.py=G.map.py; } if(!G.vehicles||!G.vehicles.some(v=>v&&v.key==='dash')){ G.vehicles=standardVehicles(); G.vehicleSel=0; } refreshHUD(); renderIconbar(); if(G.combat){ const c=G.combat; G.combat=null; reenterCombat(c); return; } const cur=G.map.cells[G.py*G.map.n+G.px]; if(cur && cur.content && cur.content.type==='event' && !cur.content.done){ switchMode('story'); renderMap(); startEvent(G.px,G.py); return; }
   if(G.activeEvent && G.px===G.activeEvent.x && G.py===G.activeEvent.y){ switchMode('story'); renderMap(); startEvent(G.activeEvent.x, G.activeEvent.y, G.activeEvent.slot); return; }
-  switchMode('story'); renderMap(); story('你又一次在异世界醒来。这一次，你决定无论如何都要活下去。'); ensureKeyFocus(); }
+  switchMode('story'); renderMap(); ensureKeyFocus(); }
 function ensureKeyFocus(){ try{ if(document.body) document.body.setAttribute('tabindex','-1'); window.focus(); if(document.body) document.body.focus({preventScroll:true}); }catch(e){} }
 /* 快捷键 J/B/L/C/E 映射表（全部小写）。再次按下同一键时，若当前打开的界面是该键对应界面，则关闭。
    ESC 仍保留退回一层/设置的逻辑（见 ui.js keydown 监听），右上角 ✕ 按钮也保留关闭功能。 */
@@ -131,9 +131,9 @@ function sleep(){
   if(trapN>0){ const keys=Object.keys(trapGain); lines.push(keys.length? `陷阱收获自然资源：${keys.map(k=>RES_ZH[k]+'×'+trapGain[k]).join('，')}。` : '陷阱一无所获，风平浪静。'); }
   if(inTeam('luyouyou')){ const sk=getChar('luyouyou').passives.find(p=>p.id==='skillful'); const pr=vTier(sk,'sleep',entryLevel('luyouyou',sk)); if(Math.random()*100<pr){ const k=NATURAL_RESOURCES[Math.floor(Math.random()*NATURAL_RESOURCES.length)]; G.inventory[k]=(G.inventory[k]||0)+1; lines.push(`巧手：获得 ${RES_ZH[k]}×1。`); } }
   if((G.inventory.goodCard||0)>0){ const gc=G.inventory.goodCard||0; G.inventory.coin=(G.inventory.coin||0)+gc; lines.push(`好人卡：睡觉时获得 <b>${gc}</b> 金币。`); }
-  saveGame(2); clearLog(); clearStory(); prompt('');
+  clearStory(); prompt('');
   for(const l of lines) log(l);
-  story(`夜色褪去，新的一天开始了。今天是第 ${G.day} 天。`); refreshHUD(); renderMap(); renderIconbar();
+  refreshHUD(); renderMap(); renderIconbar();
 }
 function bindTooltip(){
   document.addEventListener('mouseover',ev=>{ const t=ev.target.closest('.term'); if(!t)return; const tip=$('#tooltip'); tip.style.display='block'; tip.textContent=t.title||TERMS[t.dataset.term]||''; bringToFront(tip); positionTip(tip,ev); });
