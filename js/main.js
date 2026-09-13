@@ -26,7 +26,9 @@ function startNew(){ $('#menuOverlay').classList.remove('show'); G=newGame(); G.
   G.hero.hp = heroDisplayMaxHp(); loadIntoWorld(); }
 function loadIntoWorld(){ $('#menuOverlay').classList.remove('show'); combatState=null; if(!G.map) G.map=generateMap(G.day); if(G.px===undefined||G.py===undefined){ G.px=G.map.px; G.py=G.map.py; } if(!G.vehicles||!G.vehicles.some(v=>v&&v.key==='dash')){ G.vehicles=standardVehicles(); G.vehicleSel=0; } refreshHUD(); renderIconbar(); if(G.combat){ const c=G.combat; G.combat=null; reenterCombat(c); return; } const cur=G.map.cells[G.py*G.map.n+G.px]; if(cur && cur.content && cur.content.type==='event' && !cur.content.done){ switchMode('story'); renderMap(); startEvent(G.px,G.py); return; }
   if(G.activeEvent && G.px===G.activeEvent.x && G.py===G.activeEvent.y){ switchMode('story'); renderMap(); startEvent(G.activeEvent.x, G.activeEvent.y, G.activeEvent.slot); return; }
-  switchMode('story'); renderMap(); ensureKeyFocus(); }
+  switchMode('story'); renderMap(); ensureKeyFocus();
+  if(typeof window.triggerMainStorySeg==='function') window.triggerMainStorySeg();
+}
 function ensureKeyFocus(){ try{ if(document.body) document.body.setAttribute('tabindex','-1'); window.focus(); if(document.body) document.body.focus({preventScroll:true}); }catch(e){} }
 /* 快捷键 J/B/L/C/E 映射表（全部小写）。再次按下同一键时，若当前打开的界面是该键对应界面，则关闭。
    ESC 仍保留退回一层/设置的逻辑（见 ui.js keydown 监听），右上角 ✕ 按钮也保留关闭功能。 */

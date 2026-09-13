@@ -51,6 +51,8 @@ function moveExplore(x,y, cost){
   else if(ct==='empty'){ const got=searchEmpty(); if(got) log(`在空地搜到 <b>${got}</b>。`); else log('空地空空如也，一无所获。'); }
   else { log('这里没有什么特别的。'); }
   if(!combatState){ refreshHUD(); renderMap(); }
+  /* 最后检查主线剧情是否触发 */
+  if(typeof window.triggerMainStorySeg==='function') window.triggerMainStorySeg();
 }
 function dirToFacing(dx,dy){ if(dx>0)return 'right'; if(dx<0)return 'left'; if(dy>0)return 'down'; return 'up'; }
 function searchEmpty(){
