@@ -260,7 +260,19 @@ function storyPush(html, onDone){
     storyPages = buildPages([{ speaker: null, html: String(html||'') }]);
     storyPageIdx = 0; storySegIdx = 0;
     storyOnSegEnd = onDone || null;
-    renderCurrentPage();
+
+    // 【Bug#4 关键修复】
+    // 事件系统（showEventBody / finishEvent）在调用 storyPush 之前，
+    // 已经在 storyBody 里手动塞了 <div class="ev-title">...</div>。
+    // 如果此时走 renderCurrentPage()，它第一行就是 body.innerHTML=''，
+    // 会把 ev-title 整个抹掉 —— 这就是事件文本/标题消失的根因。
+    // 所以 eventState 存在时直接跳过 renderCurrentPage，让 typeSegment()
+    // 在现有 body 末尾 append，既保留 ev-title，又能正确打字。
+    if(typeof eventState !== 'undefined' && eventState){
+      typeSegment();
+    } else {
+      renderCurrentPage();
+    }
     return;
   }
   // 已经在播：把新段追加到最后一页

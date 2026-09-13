@@ -203,7 +203,10 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 #storyBody .story-caret{display:inline-block; width:8px; height:1em; background:var(--gold); vertical-align:-2px; animation:blink 1s steps(1) infinite;}
 @keyframes blink{50%{opacity:0;}}
 /* ===== storyBox 顶部：名字行 + 控制按钮 ===== */
-#storyHead{display:grid; grid-template-columns:1fr auto; align-items:center; flex:none; padding:4px 10px 2px; gap:8px; min-height:32px; visibility:hidden; opacity:0; transition:opacity .15s ease;}
+/* min-height 必须固定到有 speaker 名字时的高度（≈44px），
+   否则旁白时 storyHead 塌到 32px，storyBody 就多 12px 可用高度，
+   让玩家感觉"旁白正文比说话者正文高" —— 新 Bug 根因 */
+#storyHead{display:grid; grid-template-columns:1fr auto; align-items:center; flex:none; padding:4px 10px 2px; gap:8px; min-height:44px; height:44px; box-sizing:border-box; visibility:hidden; opacity:0; transition:opacity .15s ease; overflow:hidden;}
 #storySpeaker{
   color:#ffffff; font-size:24px; font-weight:700; letter-spacing:0.8px; font-feature-settings:"kern"; -webkit-font-smoothing:antialiased;
   font-family: "PingFang SC", "PingFang Rounded SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
