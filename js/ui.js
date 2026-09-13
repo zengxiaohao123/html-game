@@ -7,6 +7,10 @@ function el(html){const d=document.createElement('div'); d.innerHTML=html; retur
 function switchMode(m){ gameMode=m; $('#bottom').classList.toggle('mode-story', m==='story'); $('#bottom').classList.toggle('mode-combat', m==='combat'); $('#rightTitle').textContent='信息'; if(m==='story') $('#goBtn').style.display='none'; }
 function clearLog(){ $('#logBody').innerHTML=''; }
 function clearStory(){ storyClear(); }
+
+/* Bug#3: 主线剧情期间只读/禁交互锁 —— 所有菜单入口都用它判断是否禁操作 */
+function lockedMainStory(){ return !!(G && G.mainStoryPlaying); }
+
 /* ---- 主线 / 通用辅助：名字彩色、屏幕效果、幕标题 ---- */
 /* 名字彩色：仅对特定名字的特定字上色，其余保持白色 */
 function applySpeakerColor(name){
@@ -444,9 +448,17 @@ function finishCurrentFragment(){
   $('#storySpeaker').innerHTML = '';
   $('#storyBody').innerHTML = '';
   $('#storyBody').classList.remove('story-page','story-tap-hint','storyFlashback');
-  // Bug#3: 隐藏控制按钮（事件模式自己管 mode-event-lock）
-  const sb = $('#bottom');
-  if(sb && !eventState){ sb.classList.remove('mode-story'); }
+
+  // 【关键！Bug#4 根因】
+  // 不要 remove('mode-story')！
+  // 原版设计：游戏生命周期内始终处于 mode-story，storyBox 永远显示。
+  // 战斗时叠加 mode-combat，事件时叠加 mode-event-lock，退出后回到 mode-story。
+  // 我之前为了 Bug#5（最后一页清场）顺手 remove 了 mode-story，
+  // 导致主线剧情播完后 storyBox 变成 display:none，之后事件系统再加 mode-event-lock
+  // 也不会让 storyBox 显示（CSS 里没有 mode-event-lock → storyBox 的规则）——
+  // 这就是用户看到"事件文本消失（其实是看不见了）"的真正根因！
+  // 所以：永远不移除 mode-story（除非显式切到别的模式）。
+
   // Bug#7: 解锁地图操作
   if(G && G.mainStoryPlaying) G.mainStoryPlaying = false;
   // 回调已由 storyOnTap / onPageEnd 手动触发，这里清空防止重复
@@ -679,7 +691,7 @@ function renderInventory(){
   let rightHTML='';
   if(invSelKey){
     const k=invSelKey; const n=G.inventory[k];
-    const useBtn = (!combatState && !eventState && itemUsable(k)) ? `<button class="mbtn tiny invUse" onclick="useInvItem('${k}')">使用</button>` : '';
+    const useBtn = (!combatState && !eventState && !lockedMainStory() && itemUsable(k)) ? `<button class="mbtn tiny invUse" onclick="useInvItem('${k}')">使用</button>` : '';
     rightHTML = `<div class="inv-detail-right">
       <div class="dr-name">${itemName(k)} ×${n} ${useBtn}</div>
       <div class="dr-desc">${terms(itemDetailHTML(k))}</div>
@@ -760,7 +772,7 @@ function charPageLayout(key){
   const c=getChar(key);
   const isPro = key==='pro';
   const b = isPro? null : getBond(key);
-  const canCarryInteract = !(combatState||eventState);
+  const canCarryInteract = !(combatState||eventState) && !lockedMainStory();
   const sideTabs = [
     {tab:'skills',  label:'技能展示',   enabled:true},
     {tab:'carry',   label:'调整技能',   enabled:canCarryInteract},              // 非战斗/事件时主角和队友都可打开
@@ -919,7 +931,7 @@ function renderFormation(){ const slots=['1','2','3']; const teamView = swapOpen
 let taskSel='m1';
 function afterQuestProgress(){} /* 进度变化钩子：发放改为在任务界面手动领取（claimTask）。 */
 function grantTaskReward(rw){ if(rw.key){ const n=rw.n||1; G.inventory[rw.key]=(G.inventory[rw.key]||0)+n; const name=rw.text||itemName(rw.key); return `${name}×${n}`; } if(rw.simple){ let m=rw.simple.match(/^金币\+(\d+)$/); if(m){ G.inventory.coin=(G.inventory.coin||0)+ +m[1]; return `金币+${+m[1]}`; } m=rw.simple.match(/^主角防御力\+(\d+)$/); if(m){ G.hero.def=(G.hero.def||0)+ +m[1]; return `主角防御力+${+m[1]}`; } return rw.simple; } return ''; }
-window.claimTask=function(id){ const t=TASKS.find(x=>x.id===id); if(!t) return; if(!taskDone(t)){ log('该任务的完成条件尚未达成。'); openTasks(); return; } if(taskDoneMarked(t)){ log('该任务的奖励已领取过。'); openTasks(); return; } G.records=G.records||{}; if(!G.records.questDone||typeof G.records.questDone!=='object') G.records.questDone={}; const parts=[]; for(const rw of (t.rewards||[])){ const s=grantTaskReward(rw); if(s) parts.push(s); } G.records.questDone[t.id]=true; refreshHUD(); if(parts.length){ log(`已领取「${t.name}」奖励：${parts.join('、')}。`); } openTasks(); };
+window.claimTask=function(id){ const t=TASKS.find(x=>x.id===id); if(!t) return; if(lockedMainStory()){ log('主线剧情进行中，无法领取奖励。'); openTasks(); return; } if(!taskDone(t)){ log('该任务的完成条件尚未达成。'); openTasks(); return; } if(taskDoneMarked(t)){ log('该任务的奖励已领取过。'); openTasks(); return; } G.records=G.records||{}; if(!G.records.questDone||typeof G.records.questDone!=='object') G.records.questDone={}; const parts=[]; for(const rw of (t.rewards||[])){ const s=grantTaskReward(rw); if(s) parts.push(s); } G.records.questDone[t.id]=true; refreshHUD(); if(parts.length){ log(`已领取「${t.name}」奖励：${parts.join('、')}。`); } openTasks(); };
 function taskGoalText(t,g){ const p=taskProgress(t); if(t.id==='m1'){ if(g.indexOf('健康')>=0) return `${g}（当前 ${G.hero.health}）`; return `${g}（进行中）`; } if(p!=null) return `${g}（${p}/${t.last}）`; return g; }
 function renderTasksHTML(){
   const sel = TASKS.find(t=>t.id===taskSel && taskVisible(t)) || TASKS.find(taskVisible) || TASKS[0];

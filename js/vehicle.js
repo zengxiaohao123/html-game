@@ -109,6 +109,8 @@ function renderVehicles(){
     `<div class="vgrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;align-items:stretch">${grid||'<span class="stempty">暂无载具</span>'}</div>`, 'full', {replace:true});
 }
 window.selVehicle=function(i){
+  // Bug#3: 主线剧情期间禁更换载具（只允许查看）
+  if(G && G.mainStoryPlaying){ log('主线剧情进行中，无法更换载具。'); renderVehicles(); return; }
   const vs=getVehicles(); if(!vs[i]) return;
   const v=vs[i]; const def=vehicleDef(v.key);
   const finite = !(def.infinite || v.uses==null || v.uses===Infinity);
