@@ -430,6 +430,8 @@ function changleResolve(slot, predType){
 
 
 function startEvent(x, y, slotOverride){
+  // Bug#7: 主线剧情期间禁止触发事件
+  if(G.mainStoryPlaying) return;
   // 需求1：进入事件格即把该格变为空地（防止事件内战斗结束后格子残留）
   const gcell=G.map.cells[y*G.map.n+x];
   if(gcell && gcell.content) gcell.content={type:'empty'};

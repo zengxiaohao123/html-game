@@ -149,14 +149,31 @@ let storyOnSegEnd=null;
 function buildPages(segments){
   const pages=[];
   let cur=null;
-  const FLASHBACK_MARKERS = ['flashback-on','flashback-off'];
+  // 闪回元指令：原始 HTML 里可能写中文（回忆开始/回忆结束）或别名（flashback-on/off）
+  const FLASHBACK_MARKERS = [
+    '回忆开始','进入回忆','flashback-on',
+    '回忆结束','退出回忆','变回正常','flashback-off'
+  ];
   const MAX_PARAS_PER_PAGE = 5;
   const MAX_CHARS_PER_PAGE = 300;
+  // Bug#1: 语义转折词 —— 同 speaker 连续段中出现这些词 → 主动分页
+  const TURN_POINT_WORDS = [
+    '但','然而','就在这时','突然','那一刻','过了一会儿','片刻',
+    '紧接着','忽然','此时','与此同时','就在.*的瞬间','一瞬间',
+    '猛然间','猛然','刹那','下一刻','就在这时','顷刻间','顿时',
+    '可','可是','不过','谁知','不料','谁知','怎料','岂料','谁料',
+    '这一瞬间','这一刹那','这时','那时候','那个瞬间','那刹那',
+    '就在那一瞬间','就在那刹那','在这一刻','在那一刻',
+  ];
+  const TURN_POINT_RE = new RegExp(TURN_POINT_WORDS.join('|'));
 
   const flush = ()=>{
     if(cur && cur.paragraphs.length){ pages.push(cur); cur=null; }
   };
   const makePage = ()=>({ paragraphs:[], pageChars:0 });
+
+  const hasTurnPoint = (plain)=> TURN_POINT_RE.test(plain);
+  const hasFlashbackMark = (html)=> FLASHBACK_MARKERS.some(m => html.includes(m));
 
   for(let si=0; si<segments.length; si++){
     const seg = segments[si] || {};
@@ -165,20 +182,31 @@ function buildPages(segments){
     const plain = html.replace(/<[^>]+>/g,'');
     const charCount = plain.length;
 
-    // 规则3：flashback 切换 → 强制换页（若当前页非空）
-    const edgeMarker = FLASHBACK_MARKERS.some(m => html.includes(m));
-
     if(!cur) cur = makePage();
 
-    // 规则1：speaker 变化 → 强制换页
+    // —— 先判断是否需要换页（在把当前段塞进去之前判断，以便把当前段留到下一页开头）——
+    let needBreak = false;
+
+    // 规则1：speaker 变化
     const lastSp = cur.paragraphs.length
       ? cur.paragraphs[cur.paragraphs.length-1].speaker : null;
     const speakerChanged = (lastSp !== speaker) && cur.paragraphs.length > 0;
+    if(speakerChanged) needBreak = true;
 
-    if(speakerChanged || (edgeMarker && cur.paragraphs.length>0)){
-      flush(); cur = makePage();
+    // 规则3：闪回切换（强制）
+    const isFlashSeg = hasFlashbackMark(html);
+    if(isFlashSeg && cur.paragraphs.length > 0) needBreak = true;
+
+    // 规则1.5（Bug#1 语义）：同 speaker 但有转折词 → 换页（让带转折词的段成为下一页开头）
+    if(!needBreak && cur.paragraphs.length > 0){
+      const lastSeg = segments[si-1];
+      const sameSp = (lastSeg && lastSeg.speaker===speaker);
+      if(sameSp && hasTurnPoint(plain)) needBreak = true;
     }
 
+    if(needBreak){ flush(); cur = makePage(); }
+
+    // 塞进当前页
     cur.paragraphs.push({ speaker, html });
     cur.pageChars += charCount;
 
@@ -210,9 +238,11 @@ function storyStartFragment(body, onSegEnd){
   // 先清引擎状态（但不清掉事件 title 这类——主线和事件互斥）
   if(storyPageTimer){ clearInterval(storyPageTimer); storyPageTimer=null; }
   if(storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
+  // 原始 html 直接丢给 buildPages —— buildPages 要能看到【回忆开始】这些元指令
+  // 来做强制闪回分页；processMetaCommands 只在打字时才执行副作用
   const segments = body.map(s => ({
     speaker: s.speaker || null,
-    html: processMetaCommands(s.html || ''),
+    html: String(s.html || ''),  // 保留原始字符串（含元指令）
   }));
   storyPages = buildPages(segments);
   storyPageIdx = 0; storySegIdx = 0;
@@ -226,7 +256,8 @@ function storyStartFragment(body, onSegEnd){
 function storyPush(html, onDone){
   // 如果还没 pages（第一句）：启动一个空片段，把新段加进去
   if(!storyPages.length){
-    storyPages = buildPages([{ speaker: null, html: processMetaCommands(String(html||'')) }]);
+    // 事件系统也保留原始 html（事件系统基本不带元指令，但保险起见）
+    storyPages = buildPages([{ speaker: null, html: String(html||'') }]);
     storyPageIdx = 0; storySegIdx = 0;
     storyOnSegEnd = onDone || null;
     renderCurrentPage();
@@ -235,7 +266,7 @@ function storyPush(html, onDone){
   // 已经在播：把新段追加到最后一页
   const lastIdx = storyPages.length - 1;
   const plain = String(html||'').replace(/<[^>]+>/g,'');
-  storyPages[lastIdx].paragraphs.push({ speaker: null, html: processMetaCommands(String(html||'')) });
+  storyPages[lastIdx].paragraphs.push({ speaker: null, html: String(html||'') });
   storyPages[lastIdx].pageChars += plain.length;
 
   // 如果当前在打字中，等打完会自动推进；如果在页尾等待，让玩家点一下
@@ -310,7 +341,9 @@ function typeSegment(){
     speakerEl.innerHTML = seg.speaker ? applySpeakerColor(seg.speaker) : '';
   }
 
-  const cleanHtml = seg.html || '';
+  // Bug#8 惰性执行：只有到打字这一段才执行元指令副作用
+  // processMetaCommands 同时会把【xxx】元指令替换为空字符串（不显示给玩家）
+  const cleanHtml = processMetaCommands(seg.html || '');
 
   const box=$('#storyBody');
   const para = document.createElement('div');
@@ -392,9 +425,17 @@ function finishCurrentFragment(){
   if(storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
   storyTyping=false; storyCurrent=null; storyPlainIdx=0;
   storyPages=[]; storyPageIdx=0; storySegIdx=0;
+  // Bug#5：剧情区完全清空（body + speaker + controls）
+  $('#storySpeaker').innerHTML = '';
+  $('#storyBody').innerHTML = '';
+  $('#storyBody').classList.remove('story-page','story-tap-hint');
+  // Bug#3：隐藏控制按钮（剧情结束就不该显示）
+  const sb = $('#bottom');
+  if(sb){ sb.classList.remove('mode-story'); }
+  // Bug#7：解锁地图操作
+  if(G) G.mainStoryPlaying = false;
+  // 最后才触发回调（让 finishMainStorySeg 里的 afterPlayed 等有地方执行）
   const cb = storyOnSegEnd; storyOnSegEnd = null;
-  // 清 speaker 行（避免事件/主线衔接时残留）
-  $('#storySpeaker').innerHTML='';
   if(cb) cb();
 }
 

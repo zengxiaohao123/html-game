@@ -185,14 +185,17 @@ export default {
     { speaker: '我', html: '<p>一帆……？</p>' },
     { speaker: null, html: '<p>我们八个人终于再次聚齐了——以令人绝望的形式。</p>' },
 
-    // —— 结尾：第一幕标题升起 ——
-    { speaker: null, html: '<p>【act:第一幕 分道扬镳】</p>' },
   ],
 
   // 本片段无选项；播完后把 day 推进到 1，玩家正式进入第一天
+  // 同时升起第一幕标题（第一幕在第 0 幕结束时自然衔接）
   afterPlayed: ()=>{
     if(typeof window.storyAdvanceDayToOne === 'function'){
       window.storyAdvanceDayToOne();
+    }
+    // 手动升起第一幕标题（第 0 幕正文最后一段之后）
+    if(typeof window.showActTitle === 'function'){
+      window.showActTitle('第一幕 分道扬镳');
     }
   },
 };

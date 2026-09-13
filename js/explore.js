@@ -29,6 +29,8 @@ function goBtnForMove(x,y){
   go.style.display='block'; go.disabled=false; go.classList.remove('disabled'); go.textContent=`前往 · 消耗 ${cost} 行动力`; go.onclick=()=>{ go.style.display='none'; moveExplore(x,y,cost); };
 }
 function moveExplore(x,y, cost){
+  // Bug#7: 主线剧情期间禁止移动
+  if(G.mainStoryPlaying) return;
   if(combatState) return;
   if(eventState) return;
   const c = moveCostFor(x,y);          // 以当前载具规则计算真实消耗

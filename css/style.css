@@ -203,14 +203,15 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 #storyBody .story-caret{display:inline-block; width:8px; height:1em; background:var(--gold); vertical-align:-2px; animation:blink 1s steps(1) infinite;}
 @keyframes blink{50%{opacity:0;}}
 /* ===== storyBox 顶部：名字行 + 控制按钮 ===== */
-#storyHead{display:flex; justify-content:space-between; align-items:center; flex:none; padding:4px 10px 2px; gap:8px; min-height:32px;}
+#storyHead{display:flex; justify-content:space-between; align-items:center; flex:none; padding:4px 10px 2px; gap:8px; min-height:32px; visibility:hidden; opacity:0; transition:opacity .15s ease;}
 #storySpeaker{
-  color:#ffffff; font-size:24px; font-weight:700; letter-spacing:1px;
-  font-family: "LXGW WenKai TC", "LXGW WenKai", "PingFang SC", "Microsoft YaHei", serif;
+  color:#ffffff; font-size:24px; font-weight:700; letter-spacing:0.8px; font-feature-settings:"kern"; -webkit-font-smoothing:antialiased;
+  font-family: "PingFang SC", "PingFang Rounded SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
   text-shadow:0 2px 4px rgba(0,0,0,.8);
   max-width:60%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 #storySpeaker:empty{display:none;}
+#bottom.mode-story #storyHead{visibility:visible; opacity:1;}
 #storyControls{display:flex; gap:6px; flex:none;}
 .sctrl{padding:3px 10px; background:var(--panel2); border:1px solid var(--line); border-radius:4px; color:#cfd4dc; font-size:12px; cursor:pointer; line-height:1.2;}
 .sctrl:hover{background:#2c3040; color:#fff;}
@@ -218,7 +219,7 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 /* ===== 事件标题（白字 + 霞鹜文楷，与角色名字统一风格） ===== */
 #storyBody .ev-title{
   font-size:20px; font-weight:800; color:#ffffff; margin-bottom:8px; text-align:left;
-  font-family: "LXGW WenKai TC", "LXGW WenKai", "PingFang SC", "Microsoft YaHei", serif;
+  font-family: "PingFang SC", "PingFang Rounded SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
 }
 /* ===== 主线人物名字彩色片段 ===== */
 .sp-sun{color:#ff5454;}           /* 夏阳 阳 */

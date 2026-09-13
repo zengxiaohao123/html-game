@@ -86,6 +86,9 @@ function playMainStorySeg(seg){
   currentMainStorySeg = seg;
   mainStoryPlaying = true;
 
+  // Bug#7: 锁死地图操作（主线剧情期间禁止移动/事件/战斗/交互）
+  if(G) G.mainStoryPlaying = true;
+
   // 标记已触发（立即标记，防止重入）
   G.records = G.records || {};
   G.records.mainStoryDone = G.records.mainStoryDone || {};
