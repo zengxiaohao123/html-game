@@ -104,8 +104,8 @@ function itemDetailHTML(key){
     else body = ITEMS[key].desc || '';
   } else if(key==='armor'){ const lv=(G&&G.proLevels&&G.proLevels.block)||1; body=`使【格挡】升为 <span class="lvlup">${lv+2}</span> 级、【坚守】升为 <span class="lvlup">${((G&&G.proLevels&&G.proLevels.hold)||1)+1}</span> 级。`; }
   else { body = itemDesc(key)||'（暂无说明）'; }
-  /* === lore 蓝色文学描述 === */
-  const lore = (ITEMS[key] && ITEMS[key].lore) || '';
+  /* === lore 蓝色文学描述：优先 ITEMS.lore，其次 RES_LORE（资源专用） === */
+  const lore = (ITEMS[key] && ITEMS[key].lore) || RES_LORE[key] || '';
   return lore ? `${body}<div class="item-lore">${lore}</div>` : body;
 }
 function itemUsable(k){ if(FOOD[k] || k==='clearMind') return !!FOOD[k] || k==='clearMind'; return false; }
@@ -146,15 +146,11 @@ let invTab='consumable';
 let invSelKey=null;
 const INV_CATS=[{id:'consumable',label:'消耗品'},{id:'permanent',label:'永久物品'},{id:'misc',label:'杂物'},{id:'quest',label:'任务道具'}];
 function invClassify(key){
-  /* 杂物：新功能物品归类 */
-  if(['kuiZuo','deadwoodSprout','windChime','luckyCoin'].includes(key)) return 'misc';
-  if(ITEMS[key] && ITEMS[key].permanent){
-    /* 永久物品：原有（club/cloth/quilt/tent/campfire/trap/leather/ironSword/armor/roadmap/goodCard/caiyunPendant/dagger）+ broom/clearMind永久也归 permanent */
-    return 'permanent';
-  }
-  /* 使用消耗/资源 */
-  if(RES_ZH[key] && key!=='amethyst') return 'consumable';
-  if(ITEMS[key]) return ITEMS[key].vehicle ? 'misc' : 'consumable';
+  /* 永久物品：ITEMS 里带 permanent:true 的 */
+  if(ITEMS[key] && ITEMS[key].permanent) return 'permanent';
+  /* 载具类（魔法扫帚等）也归永久物品 */
+  if(ITEMS[key] && ITEMS[key].vehicle) return 'permanent';
+  /* 其余全部归消耗品（资源、合成品、赠礼品类）；当前无杂物 / 任务道具 */
   return 'consumable';
 }
 function openInventory(){
@@ -311,8 +307,12 @@ function renderInteractBody(key){
   if(giftOpenKey===key && !$('#giftOverlay')) html = `<div class="gift-overlay" id="giftOverlay">${renderGiftGrid(key)}</div>` + html;
   wrap.innerHTML=html;
   const dlg=$('#interactDlg_'+key);
-  (interHist[key]||[]).forEach(m=>{ const d=document.createElement('div'); d.className='iline'; d.innerHTML=m; dlg.appendChild(d); });
-  dlg.scrollTop=dlg.scrollHeight;
+  /* 双重保险：重建 DOM 前先清理 interHist 里超出 5 条的数据，只保留最后 5 条 */
+  const hist = interHist[key] || [];
+  const trimmed = hist.length > 5 ? hist.slice(-5) : hist;
+  interHist[key] = trimmed;
+  trimmed.forEach(m=>{ const d=document.createElement('div'); d.className='iline'; d.innerHTML=m; dlg.appendChild(d); });
+  // 不滚到底，不允许滚动
   wrap.querySelectorAll('.ilbtn').forEach(b=>b.onclick=()=>interactAction(key,b.dataset.act));
   // 送礼面板的点击事件（如果当前打开）
   if(giftOpenKey===key){ decorateGiftCells(); }

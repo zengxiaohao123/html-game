@@ -68,7 +68,7 @@ const EVENTS = [
       return started ? '<p>你再次从村民处听说了狗熊最近的行踪。你决定。</p>' : '<p>从附近村民的描述中，你得知附近山中蛰居着一头狗熊，此熊力大无穷且狂躁无比，让村民们十分头疼。好消息是，它最近在冬眠，稍微安分了点。</p>'; },
     options:(slot)=> slot.started ? [
       { name:'请村民领路找到狗熊', desc:'你在山洞里睡懒觉的日子结束了！', req:()=>true,
-        resolve:()=>{ enterEventBattle('bear'); return ''; } },
+        resolve:()=> battleConfirmStage('bear') },
       { name:'请村民标注地点但暂不前往', desc:'小心为上', req:()=>true,
         resolve:()=>{ G.inventory.roadmap=(G.inventory.roadmap||0)+1; return '村民给了你一张路线图，上面标注着狗熊最近栖息的位置。获得<b>路线图×1</b>。'; } },
     ] : [
@@ -81,7 +81,7 @@ const EVENTS = [
     getBody:()=>'<p>在野外，几条狗一路狂吠追着你跑了一公里。你气喘吁吁……</p>',
     options:[
       { name:'别太嚣张', desc:'几条野狗，竟敢在我面前狺狺狂吠', req:()=>true,
-        resolve:()=>{ enterEventBattle('houndPro'); return ''; } },
+        resolve:()=> battleConfirmStage('houndPro') },
       { name:'丢块肉', desc:'试试人类的计谋（需要生肉×1）', req:()=>(G.inventory.rawMeat||0)>=1,
         resolve:()=>{ G.inventory.rawMeat-=1; return '野狗们马上抛下你，去争夺那块肉了。你趁此机会离开了。'; } },
     ],
@@ -109,7 +109,7 @@ const EVENTS = [
       return `<p>走在前面的路人，裤袋露出了钱袋（装有<b>${x}</b>金币），他似乎没注意到，你决定。</p>`; },
     options:(slot)=>[
       { name:`偷偷拿走（成功率${slot.y}%）`, desc:'这也是生存所迫……', req:()=>true,
-        resolve:()=>{ if(Math.random()*100<slot.y){ G.inventory.coin=(G.inventory.coin||0)+slot.x; for(const k in ALLIES) gainAffinity(k,-2); return `你拿到了钱，但良心上受到了谴责，金币+<b>${slot.x}</b>，所有同伴好感度-2。`; } G.hero.hp=1; return '你被发现了！被围观群众痛殴一顿，生命值降为1。'; } },
+        resolve:()=>{ if(Math.random()*100<slot.y){ G.inventory.coin=(G.inventory.coin||0)+slot.x; G.hero.psyStress=Math.max(-100, Math.min(100, (G.hero.psyStress||0)+2)); for(const k in ALLIES) gainAffinity(k,-2); return `你拿到了钱，但良心上受到了谴责，金币+<b>${slot.x}</b>，心理压力+<b>2</b>，所有同伴好感度-2。`; } G.hero.hp=1; return '你被发现了！被围观群众痛殴一顿，生命值降为1。'; } },
       { name:'算了', desc:'多一事不如少一事', req:()=>true,
         resolve:()=>'你离开了此地。' },
     ],
@@ -119,7 +119,7 @@ const EVENTS = [
     getBody:(slot)=>{ if(slot.y==null){ slot.y=10+Math.floor(Math.random()*86); } return '<p>走在前面的小孩手里攥着一长条面包，你决定。</p>'; },
     options:(slot)=>[
       { name:`抢了（成功率${slot.y}%）`, desc:'这也是生存所迫……', req:()=>true,
-        resolve:()=>{ if(Math.random()*100<slot.y){ G.hero.actionPoint=(G.hero.actionPoint||0)+4; for(const k in ALLIES) gainAffinity(k,-2); return '你拿到了面包，但良心上受到了谴责，行动力+<b>4</b>，所有同伴好感度-2。'; } G.hero.hp=1; return '你被发现了！被围观群众痛殴一顿，生命值降为1。'; } },
+        resolve:()=>{ if(Math.random()*100<slot.y){ G.hero.actionPoint=(G.hero.actionPoint||0)+4; G.hero.psyStress=Math.max(-100, Math.min(100, (G.hero.psyStress||0)+2)); for(const k in ALLIES) gainAffinity(k,-2); return '你拿到了面包，但良心上受到了谴责，行动力+<b>4</b>，心理压力+<b>2</b>，所有同伴好感度-2。'; } G.hero.hp=1; return '你被发现了！被围观群众痛殴一顿，生命值降为1。'; } },
       { name:'算了', desc:'多一事不如少一事', req:()=>true,
         resolve:()=>'你离开了此地。' },
     ],
@@ -154,9 +154,13 @@ const EVENTS = [
     id:'changle', title:'常乐·猜大小',
     getBody:(slot)=>{
       if(slot.generated===undefined){
+        /* x=小牌[5,10], y=大牌[0,6], z=王牌[0,6], 且 x+y+z=12 */
         let x,y,z;
-        do{ x=4+Math.floor(Math.random()*5); y=Math.floor(Math.random()*8); z=Math.floor(Math.random()*8); }
-        while(x+y+z!==12);
+        do{
+          x=5+Math.floor(Math.random()*6);            // 5~10
+          y=Math.floor(Math.random()*7);               // 0~6
+          z=12-x-y;
+        }while(z<0||z>6);                              // z 必须 0~6
         slot.x=x; slot.y=y; slot.z=z; slot.generated=true;
       }
       return `<p>村口，几个流浪汉聚在树荫下赌博。你凑近瞧了瞧，桌上是一副与扑克牌类似的牌。其中一个流浪汉瞥了你一眼，随口问道："来加你一个不来？"</p>`;
@@ -193,7 +197,7 @@ const EVENTS = [
       { name:'建议他设置陷阱', desc:'教他布置捕兽夹来防范野猪', req:()=>true,
         resolve:()=>{ G.hero.actionPoint=Math.max(0, (G.hero.actionPoint||0)-1); G.inventory.coin=(G.inventory.coin||0)+6;
           return '<p>你花了少许时间讲解布置捕兽夹的技巧。行动力-1。</p><p>获得金币×6。</p>'; } },
-      { name:'多一事不如少一事', desc:'', req:()=>true, resolve:()=>'<p>你离开了此地。</p>' },
+      { name:'算了', desc:'多一事不如少一事', req:()=>true, resolve:()=>'<p>你离开了此地。</p>' },
     ],
   },
   /* 废弃矿洞 */
@@ -213,7 +217,7 @@ const EVENTS = [
           } else if(r<0.9){
             const dmg=Math.floor(G.hero.hp*0.4); G.hero.hp=Math.max(1, G.hero.hp-dmg);
             return `<p>探索山洞时，一个趔趄，脚下碎石滑落，触发小型塌方。</p><p>失去 ${dmg} 点生命值。</p>`;
-          } else { enterEventBattle('ironClump'); return ''; }
+          } else { return battleConfirmStage('ironClump'); }
         } },
       { name:'仅在洞口张望，不深入', desc:'看看情况就走', req:()=>true,
         resolve:()=>{ G.inventory.blueStar=(G.inventory.blueStar||0)+2; return '<p>你在洞口捡到几块碎矿石。</p><p>获得蓝星石×2。</p>'; } },
@@ -223,7 +227,10 @@ const EVENTS = [
   {
     id:'nunPath', title:'道旁的修女',
     getBody:(slot)=>{
-      if(slot.successRate===undefined) slot.successRate=100;
+      /* 从 G.records 读取累计递减（跨事件持久）；初始 0，成功忏悔每次 +5，累计上限 50 */
+      G.records=G.records||{};
+      if(G.records.nunConfessPenalty==null) G.records.nunConfessPenalty=0;
+      slot.successRate=Math.max(50, 100 - G.records.nunConfessPenalty);
       return `<p>林间岔路的旧石龛下，坐着一名灰袍修女。兜帽压得很低，大半张脸隐在阴影里。她身前摆着褪色的木雕圣像，安静垂首，见到你路过时，抬眼轻声呼唤。</p><p>"旅人，你心中可有重负？不妨在此忏悔，卸下你的罪孽与烦忧。只需一点供金。"</p>`;
     },
     options:(slot)=>[
@@ -231,10 +238,13 @@ const EVENTS = [
         resolve:()=>{
           G.inventory.coin-=1;
           if(Math.random()*100 < slot.successRate){
-            slot.successRate=Math.max(50, slot.successRate-5);
+            /* 忏悔成功：累计递减 +5，最低成功率锁 50%（即累计递减上限 50） */
+            G.records=G.records||{};
+            G.records.nunConfessPenalty=Math.min(50, (G.records.nunConfessPenalty||0)+5);
             G.hero.psyStress=Math.max(-100, (G.hero.psyStress||0)-1);
             return '<p>你付出一枚金币，向她诉说心底积压的焦躁。她静静聆听，低声诵念祷词。</p><p>心理压力-1</p>';
           } else {
+            /* 忏悔失败：成功率不变 */
             return '<p>你付出一枚金币，向她诉说心底积压的焦躁。片刻后她大惊失色，惶恐地喊道："你罪孽深重，主不会拯救你的！"</p>';
           }
         } },
@@ -299,27 +309,27 @@ const EVENTS = [
 
 /* 常乐辅助函数 */
 function changleCardHTML(type){
-  // S=小(1~5) B=大(6~40) K=王(JQK)
+  // S=小(1~5) B=大(6~10) K=王(JQK)
   const icon = type==='S' ? '🂡' : (type==='B' ? '🃞' : '🃏');
   const label = type==='S' ? '小' : (type==='B' ? '大' : '王');
-  return `<div style="display:flex;flex-direction:column;align-items:center;width:32px;margin:0 1px;">
-    <div style="width:30px;height:42px;border:1px solid #aaa;border-radius:3px;background:#fff;color:#222;font-size:16px;display:flex;align-items:center;justify-content:center;">${icon}</div>
-    <span style="font-size:10px;color:#bbb;">${label}</span></div>`;
+  return `<div style="display:flex;flex-direction:column;align-items:center;width:44px;margin:0 2px;">
+    <div style="width:42px;height:60px;border:1.5px solid #e8d8a4;border-radius:5px;background:linear-gradient(145deg,#fdf6e3,#f0e8cc);color:#222;font-size:26px;display:flex;align-items:center;justify-content:center;box-shadow:1px 2px 5px rgba(0,0,0,.45);">${icon}</div>
+    <span style="font-size:12px;color:#d8c88a;margin-top:2px;">${label}</span></div>`;
 }
 function changleCardsBlockHTML(picks){
   const cardsHTML = picks.map(c=>changleCardHTML(c)).join('');
   const s=picks.filter(c=>c==='S').length, b=picks.filter(c=>c==='B').length, k=picks.filter(c=>c==='K').length;
-  // 用 float:right 独立卡片区块，紧贴剧情区右侧；不撑高正文
-  return `<div style="float:right;width:96px;margin:-4px 0 6px 10px;padding:6px 4px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:4px;text-align:center;">
-    <div style="font-size:11px;color:#bbb;margin-bottom:4px;">抽牌结果</div>
+  /* 绝对定位浮层：覆盖在剧情区右上方，不撑宽文档流 */
+  return `<div style="position:absolute;top:8px;right:8px;z-index:5;padding:8px 6px;background:rgba(30,32,45,.92);border:1px solid rgba(232,216,164,.5);border-radius:6px;text-align:center;box-shadow:2px 4px 14px rgba(0,0,0,.6);pointer-events:none;">
+    <div style="font-size:13px;color:#e8c86a;font-weight:700;margin-bottom:5px;">抽牌结果</div>
     <div style="display:flex;justify-content:center;">${cardsHTML}</div>
-    <div style="font-size:10px;color:#aaa;margin-top:4px;">${s}小 · ${b}大 · ${k}王</div>
+    <div style="font-size:12px;color:#c8b888;margin-top:5px;">${s}小 · ${b}大 · ${k}王</div>
   </div>`;
 }
 function changleRound2(slot){
   const x=slot.x, y=slot.y, z=slot.z;
   return { __continue:true,
-    body:`<p>他们给你讲了规则：1到5点是小，6到40点为大，JQK代表王。</p><p>每轮从12张牌中抽取3张，如果你预测对了结果，就能获得对应的奖励。</p><p>你观察到桌上摆着 ${x} 张小牌，${y} 张大牌，${z} 张王牌。</p><p>现在，请押一把：</p>`,
+    body:`<p>他们给你讲了规则：1到5点是小，6到10点为大，JQK代表王。</p><p>每轮从12张牌中抽取3张，如果你预测对了结果，就能获得对应的奖励。</p><p>你观察到桌上摆着 ${x} 张小牌，${y} 张大牌，${z} 张王牌。</p><p>现在，请押一把：</p>`,
     options:[
       { name:'稳一手', desc:'结果中将至少有1张小牌', req:()=>true, resolve:()=> changleResolve(slot, 'atLeast1Small') },
       { name:'以小博大', desc:'结果中将至少有2张大牌', req:()=>true, resolve:()=> changleResolve(slot, 'atLeast2Big') },
@@ -507,9 +517,17 @@ function confirmEventOption(i){
     else el.classList.add('dim');
   });
   const result=opt.resolve(s.slot) || '';
+  /* 进入战斗保护标记：resolve 里已调用 enterEventBattle 清空了 eventState，
+     这里跳过后续 setTimeout / 多层级 / finishEvent 流程，避免与战斗 UI 冲突 */
+  if(result && typeof result==='object' && result.__eventBattleEntered){
+    s.resolving=false; eventState=null;
+    prompt('');
+    return;
+  }
   s.result=result;
   if(wrap) wrap.style.opacity='0';
   setTimeout(()=>{
+    if(eventState!==s){ return; } /* 安全检查：若全局 eventState 已被清空则直接返回 */
     // === 多层级事件：__continue 标记表示继续推进而非结束 ===
     if(typeof result === 'object' && result.__continue){
       s.body = result.body;
@@ -548,6 +566,19 @@ function finishEvent(result){
     storyPush(seg, ()=>{ /* 段打完 */ if(idx<paras.length){ typeNext(); } });
   };
   typeNext();
+}
+
+/* 事件内进入战斗前的二次确认：先描述遭遇，再提供唯一一个选项（走标准二次确认） */
+function battleConfirmStage(enemyKey){
+  const e=ENEMIES[enemyKey] || {name:enemyKey, icon:'❓'};
+  const name=e.name, icon=e.icon||'❓';
+  return { __continue:true,
+    body:`<p>你遭遇了<b>${icon} ${name}</b>！这一战不可避免。</p><p>你握紧了手中的武器。</p>`,
+    options:[
+      { name:`进入战斗（敌人是${name}）`, desc:'', req:()=>true,
+        resolve:()=>{ enterEventBattle(enemyKey); return {__eventBattleEntered:true}; } },
+    ],
+  };
 }
 
 /* 事件内进入战斗：把事件格转为战斗格再进入，战斗结束自动清空为空地 */

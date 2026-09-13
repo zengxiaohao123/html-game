@@ -21,11 +21,18 @@ const RES_DESC = {wood:'基础材料。可用于合成、交易',
   coin:'通行的钱币，可在商店使用。',
   emptyBottle:'随处可见的空瓶子，可用于交易',
   iron:'相对罕见的基础材料。可用于合成、交易',
-  blueStar:'偶尔能捡到的矿石。可用于合成。',
-  blueStarPowder:'随处可见的一种带有药效的粉末。可用于合成。',
+  blueStar:'一种特殊矿石。在暗处呈黯黑色，但遇光或被研磨时会分解出蓝色粉末。可用于合成明心浆。',
+  blueStarPowder:'蓝星石遇光或被研磨时分解出的粉末。具有安神效果。可用于合成明心浆。',
   amethyst:'非常漂亮的宝石。可用于赠礼，使角色好感度+3',
   clearMind:'游戏中重要的软货币。也可自行使用：心理压力+4，立即回满生命值与行动力并解除抑郁状态，本日内主角攻击力+25%、受到的伤害-25%',
-  diamond:'极其稀有的宝石，在废弃矿洞深处偶尔能挖到。'};
+  diamond:'闪闪发亮，十分珍稀。可用于赠礼，使角色好感度+8。',
+};
+/* 资源的文学性描述（蓝色斜体）——与 ITEMS.lore 格式一致 */
+const RES_LORE = {
+  blueStar:'表面黯黑，但遇光或被研磨时，会分解出蓝色的粉末，犹如蓝色星光，因而得名。蓝色粉末有安神效果，熬制成浆后效果会进一步增强',
+  blueStarPowder:'由蓝星石遇光或被研磨而得，具有安神效果。许多人将其作为熏香随身携带，但时间长了会失效，被随手抛弃。熬制成浆后效果会进一步增强',
+  diamond:'钻石', /* 钻石暂不需要额外 lore（任务9的赠礼信息已在 desc 里） */
+};
 const NATURAL_RESOURCES = ['wood','flax','fruit','rawMeat','blueStar'];
 const CITY_RESOURCES = ['coin','emptyBottle','blueStarPowder'];
 
@@ -52,6 +59,7 @@ const ITEMS = {
   broom:{name:'魔法扫帚', desc:'移动至直线3格内的任意1格。可使用2次。每次消耗1行动力。', vehicle:true},
   clearMind:{name:'明心浆', desc:'心理压力+4，立即回满生命值与行动力并解除【抑郁】状态，本日内主角攻击力+25%、受到的伤害-25%。', lore:'饮料？毒药？兴奋剂？若你心已明，便不会纠结它的用途', usable:true},
   amethyst:{name:'紫水晶', desc:'可用于赠礼，使角色好感度+3', giftValue:3},
+  diamond:{name:'钻石', desc:'闪闪发亮，十分珍稀。可用于赠礼，使角色好感度+8。', giftValue:8},
 };
 function itemName(k){ return RES_ZH[k] || (ITEMS[k]&&ITEMS[k].name) || k; }
 function itemDesc(k){ return ITEMS[k]? ITEMS[k].desc : (RES_DESC[k]||''); }
@@ -270,8 +278,8 @@ const BOND_TEXT = {
 /* ===== 物品喜好度（隐藏属性，玩家不可见） =====
    0级=大部分未说明物品(-1)；1级=one列表(+1)；2级=two映射(按物品描述增加值)；3级=three映射(按描述值再加+5)。 */
 const ITEM_LOVE = {
-  xiayang:{ one:['cookedMeat','roadmap'], two:{caiyunPendant:10}, three:{} },
-  luyouyou:{ one:['cookedMeat','roadmap'], two:{}, three:{caiyunPendant:10} },
+  xiayang:{ one:['cookedMeat','roadmap'], two:{caiyunPendant:10, diamond:8}, three:{} },
+  luyouyou:{ one:['cookedMeat','roadmap'], two:{diamond:8}, three:{caiyunPendant:10} },
 };
 const GIFT_TALK = {
   xiayang:{ lv0:'夏阳：“啊哈哈……快点交代，这是啥新型冷笑话？”', lv1:'夏阳：“谢啦，这玩意有点意思。”', lv2:'夏阳：“哇，你怎么知道我想要这个？！”' },

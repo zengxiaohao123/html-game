@@ -64,7 +64,8 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 #storyBox, #combatZone{display:none; height:100%; flex-direction:column; min-height:0;}
 #bottom.mode-story #storyBox{display:flex;}
 #bottom.mode-combat #combatZone{display:flex;}
-#storyBody{flex:1; overflow-y:auto; padding:8px 10px; font-size:14.5px; line-height:1.8; min-height:0;}
+#storyBody{flex:1; overflow-y:auto; padding:8px 10px; font-size:14.5px; line-height:1.8; min-height:0; position:relative;}
+#storyBody .story-para{position:relative;}
 #storyBody .speaker{color:var(--gold); font-weight:700;}
 #combatZone h4, #storyBox h4{flex:none;}
 #combatMain{flex:1; display:flex; gap:8px; min-height:0; overflow:hidden; padding-top:2px;}
@@ -296,7 +297,7 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 .interact-left .ilbtn{width:100%; text-align:left;}
 .interact-hint{font-size:12px; color:var(--txt-dim); line-height:1.6; margin-top:6px;}
 .interact-right{flex:1; display:flex; flex-direction:column; min-width:0;}
-.interact-dlg{flex:1; overflow-y:auto; background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:12px; font-size:14px; line-height:1.7; min-height:180px;}
+.interact-dlg{flex:1; overflow-y:hidden; background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:12px; font-size:14px; line-height:1.7; min-height:180px; position:relative;}
 .interact-dlg .iline{padding:6px 8px; margin-bottom:6px; background:#0d0f15; border-left:3px solid var(--gold); border-radius:4px;}
 .interact-dlg .iline.typing{border-left-style:dashed;}
 .interact-opt{margin-top:10px; padding-top:10px; border-top:1px dashed var(--line);}

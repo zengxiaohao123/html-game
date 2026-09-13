@@ -60,7 +60,15 @@ function moveCostFor(tx,ty){
 function consumeVehicleForMove(){
   const v=getSelVehicle(); if(!v) return;
   const def=vehicleDef(v.key);
-  if(def.daily && G){ G.qiaoyuUsedDay=G.day||1; }
+  if(def.daily && G){
+    G.qiaoyuUsedDay=G.day||1;
+    /* daily 类型（如巧遇）用完后立即切回徒步跋涉 */
+    const vs=getVehicles();
+    if(vs[G.vehicleSel] && vs[G.vehicleSel].key===v.key){
+      G.vehicleSel=0;
+      log(`<b>${def.name}</b> 今日已用完，已自动切换回徒步跋涉。`);
+    }
+  }
   /* === 启程任务·便捷出行：徒步跋涉不计入 === */
   if(G && v.key!=='walk' && v.key!=='dash'){ G.records=G.records||{}; G.records.qCarCount=(G.records.qCarCount||0)+1; }
   if(!(def.infinite||v.uses==null||v.uses===Infinity)){
