@@ -413,9 +413,12 @@ function onPageEnd(){
         renderCurrentPage();
       }, 1500);
     } else {
-      // 最后一页 → 4s 后 finish
+      // Bug#3: 最后一页 → 4s 后清场（先触发回调再清）
       if(storyAutoTimer){ clearTimeout(storyAutoTimer); }
-      storyAutoTimer = setTimeout(finishCurrentFragment, 4000);
+      storyAutoTimer = setTimeout(()=>{
+        if(storyOnSegEnd){ const cb=storyOnSegEnd; storyOnSegEnd=null; cb(); }
+        finishCurrentFragment();
+      }, 4000);
     }
   }
 }
@@ -425,18 +428,17 @@ function finishCurrentFragment(){
   if(storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
   storyTyping=false; storyCurrent=null; storyPlainIdx=0;
   storyPages=[]; storyPageIdx=0; storySegIdx=0;
-  // Bug#5：剧情区完全清空（body + speaker + controls）
+  // Bug#5: 剧情区完全清空
   $('#storySpeaker').innerHTML = '';
   $('#storyBody').innerHTML = '';
-  $('#storyBody').classList.remove('story-page','story-tap-hint');
-  // Bug#3：隐藏控制按钮（剧情结束就不该显示）
+  $('#storyBody').classList.remove('story-page','story-tap-hint','storyFlashback');
+  // Bug#3: 隐藏控制按钮（事件模式自己管 mode-event-lock）
   const sb = $('#bottom');
-  if(sb){ sb.classList.remove('mode-story'); }
-  // Bug#7：解锁地图操作
-  if(G) G.mainStoryPlaying = false;
-  // 最后才触发回调（让 finishMainStorySeg 里的 afterPlayed 等有地方执行）
-  const cb = storyOnSegEnd; storyOnSegEnd = null;
-  if(cb) cb();
+  if(sb && !eventState){ sb.classList.remove('mode-story'); }
+  // Bug#7: 解锁地图操作
+  if(G && G.mainStoryPlaying) G.mainStoryPlaying = false;
+  // 回调已由 storyOnTap / onPageEnd 手动触发，这里清空防止重复
+  storyOnSegEnd = null;
 }
 
 /* ============================================================
@@ -474,7 +476,8 @@ function storyOnTap(){
     renderCurrentPage();
     return;
   }
-  // 所有页打完 → finish
+  // Bug#3: 所有页打完 → 先触发回调（afterPlayed）再清场
+  if(storyOnSegEnd){ const cb=storyOnSegEnd; storyOnSegEnd=null; cb(); }
   finishCurrentFragment();
 }
 
@@ -599,7 +602,23 @@ function refreshHUD(){ if(!G) return;
   const psy = Math.max(-100, Math.min(100, (h.psyStress||0)));
   $('#hud').innerHTML=`<span class="stat">健康 <b>${h.health}</b></span>`+`<span class="stat">天数 <b>${G.day}</b></span>`+`<span class="stat">区域 <b>${G.region==='wild'?'野外':'城市'}</b></span>`+`<span class="stat">攻击 <b>${heroDisplayAtk()}</b></span>`+`<span class="stat">防御 <b>${heroDisplayDef()}</b></span>`+`<span class="stat">生命 <b class="${hpCls}">${h.hp}/${mHp}</b></span>`+`<span class="stat">金币 <b>${G.inventory.coin}</b></span>`+`<span class="stat">行动力 <b>${h.actionPoint}/${h.apCap}</b></span>`+`<span class="stat">心理压力 <b>${psy}</b></span>`+depress;
 }
-function renderIconbar(){ if(!G) return; const show=[[ '任务',openTasks],['编队',openFormation],['角色',openCharacters],['背包',openInventory],['睡觉',sleep],['设置',openSettings],['商店',openShop],['合成',openCraft],['载具',openVehicles]]; const blocked = (combatState||eventState) ? new Set(['编队','睡觉','商店','合成']) : new Set(); $('#iconbar').innerHTML=show.map(([t,f],i)=>`<button class="icobtn${t==='睡觉'?' sleep':''}${blocked.has(t)?' dis':''}" data-i="${i}">${t}</button>`).join(''); $('#iconbar').querySelectorAll('.icobtn').forEach(b=>b.onclick=()=>show[+b.dataset.i][1]()); }
+function renderIconbar(){
+  if(!G) return;
+  const show=[['任务',openTasks],['编队',openFormation],['角色',openCharacters],['背包',openInventory],['睡觉',sleep],['设置',openSettings],['商店',openShop],['合成',openCraft],['载具',openVehicles]];
+  let blocked = new Set();
+  if(combatState||eventState) blocked = new Set(['编队','睡觉','商店','合成']);
+  // Bug#4: 主线剧情期间 —— 锁死编队/睡觉/商店/合成；允许只读看其他面板
+  if(G.mainStoryPlaying){ blocked = new Set(['编队','睡觉','商店','合成']); }
+  $('#iconbar').innerHTML = show.map(([t,f],i)=>
+    `<button class="icobtn${t==='睡觉'?' sleep':''}${blocked.has(t)?' dis':''}" data-i="${i}">${t}</button>`
+  ).join('');
+  $('#iconbar').querySelectorAll('.icobtn').forEach(b=>{
+    b.onclick=()=>{
+      if(blocked.has(b.textContent)){ log('主线剧情期间无法打开此功能。'); return; }
+      show[+b.dataset.i][1]();
+    };
+  });
+}
 function log(msg){ const d=el(`<div class="logline">${msg}</div>`); const body=$('#logBody'); body.appendChild(d); body.scrollTop=body.scrollHeight; /* 行动记录区无上限，仅战斗开始/结束/睡觉时清除 */ }
 function story(html){$('#storyBody').insertAdjacentHTML('beforeend',`<div>${html}</div>`); $('#storyBody').scrollTop=$('#storyBody').scrollHeight;}
 function prompt(msg){$('#promptZone').innerHTML=msg;}
