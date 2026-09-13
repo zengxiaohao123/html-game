@@ -7,7 +7,8 @@
 let G=null; let combatState=null; let gameMode='story'; let previewCell=null;
 function newGame(){
   const bonds={}; for(const k in ALLIES){ bonds[k]={level:1, affinity:10}; }
-  return { day:1, region:'wild', hero:{atk:10,maxHp:100,hp:100,def:0,escapeSpeed:100,health:30,actionPoint:5,apCap:5,facing:'up',
+  // day=0 留给第 0 幕开场剧情使用，afterPlayed 会推进到 1
+  return { day:0, region:'wild', hero:{atk:10,maxHp:100,hp:100,def:0,escapeSpeed:100,health:30,actionPoint:5,apCap:5,facing:'up',
       psyStress:0, depress:false, clearMindBuff:{day:0, atkUp:0, dr:0}},
     inventory:{wood:0,fruit:0,flax:0,rawMeat:0,coin:20,emptyBottle:0,iron:0,blueStar:0,blueStarPowder:0,amethyst:0,clearMind:0},
     records:{slain:{}, wins:0, losses:0, mentalGoodDays:0, qCraftDone:false, qFruitCount:0, qMeatCount:0, qCarCount:0,

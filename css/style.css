@@ -379,7 +379,7 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 .screen-effect {
   position: fixed; inset: 0; pointer-events: none; z-index: 1000;
 }
-/* 抖动：对 #app 整体应用 */
+/* 抖动：对 #app 整体应用；通过 data-shake 控制幅度（dull/mild/strong） */
 @keyframes fx-shake {
   0%,100%{transform:translate(0,0);}
   10%{transform:translate(-6px,-2px);}
@@ -389,13 +389,47 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
   70%{transform:translate(-3px,1px);}
   85%{transform:translate(2px,0);}
 }
+@keyframes fx-shake-dull {
+  0%,100%{transform:translate(0,0);}
+  12%{transform:translate(-2px,-1px);}
+  28%{transform:translate(3px,1px);}
+  45%{transform:translate(-2px,1px);}
+  62%{transform:translate(1px,-1px);}
+  80%{transform:translate(-1px,0);}
+}
 .fx-shake{animation:fx-shake .55s cubic-bezier(.36,.07,.19,.97);}
+.fx-shake-dull{animation:fx-shake-dull .45s cubic-bezier(.36,.07,.19,.97);}
 /* 闪白 */
 .fx-flash{background:#ffffff; animation:fx-flash-anim .28s ease-out forwards;}
 @keyframes fx-flash-anim{0%{opacity:0;} 30%{opacity:1;} 100%{opacity:0;}}
 /* 黑屏 2s 后恢复 */
 .fx-black{background:#000; animation:fx-black-anim 2.6s ease forwards;}
 @keyframes fx-black-anim{0%{opacity:0;} 12%{opacity:1;} 85%{opacity:1;} 100%{opacity:0;}}
+
+/* ===== 回忆闪回：storyFlashback ===== */
+/* 给 #bottom.mode-story.storyFlashback 加即可生效；多次切换可反复用 */
+#bottom.mode-story.storyFlashback{
+  background:#e8e8e8;
+}
+#bottom.mode-story.storyFlashback #storyBox{
+  background:#dcdcdc; border-color:#aaaaaa;
+}
+#bottom.mode-story.storyFlashback #storyBody{
+  color:#333333;
+}
+#bottom.mode-story.storyFlashback #storyBody .story-para,
+#bottom.mode-story.storyFlashback #storyBody .ev-title{
+  color:#333333;
+}
+#bottom.mode-story.storyFlashback #storySpeaker{
+  color:#111111; text-shadow:none;
+}
+#bottom.mode-story.storyFlashback #storyControls .sctrl{
+  background:#bfbfbf; border-color:#999; color:#222;
+}
+#bottom.mode-story.storyFlashback #storyControls .sctrl:hover{
+  background:#a8a8a8; color:#000;
+}
 
 /* ===== 幕标题 overlay ===== */
 .act-title-overlay{

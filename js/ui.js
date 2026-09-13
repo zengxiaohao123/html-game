@@ -28,8 +28,13 @@ function applySpeakerColor(name){
   }
   return out;
 }
-/* 屏幕效果：shake(抖动) / flash(闪白) / black(黑屏2s) */
+/* 屏幕效果：shake / shake-dull / flash / black */
 function playScreenEffect(type){
+  if(type==='shake-dull'){
+    $('#app').classList.add('fx-shake-dull');
+    setTimeout(()=>$('#app').classList.remove('fx-shake-dull'), 500);
+    return;
+  }
   if(type==='shake'){
     $('#app').classList.add('fx-shake');
     setTimeout(()=>$('#app').classList.remove('fx-shake'), 600);
@@ -77,9 +82,39 @@ function processMetaCommands(text){
   cleaned = cleaned.replace(re, (m, cmd)=>{
     const c = cmd.trim();
     if(!c) return '';
+
+    // —— 等价别名（让后续剧情写作更自由）——
+    const map = {
+      '屏幕抖动': 'shake',
+      '轻微抖动': 'shake-dull',
+      '屏幕闪白': 'flash',
+      '闪白':    'flash',
+      '屏幕黑屏': 'black',
+      '黑屏':    'black',
+      '回忆开始': 'flashback-on',
+      '进入回忆': 'flashback-on',
+      '回忆结束': 'flashback-off',
+      '退出回忆': 'flashback-off',
+      '变回正常': 'flashback-off',
+    };
+    const eff = map[c] || c;
+
     // 屏幕效果
-    if(['shake','flash','black'].includes(c)){
-      playScreenEffect(c);
+    if(eff==='shake' || eff==='shake-dull'){
+      playScreenEffect(eff);
+      return '';
+    }
+    if(eff==='flash' || eff==='black'){
+      playScreenEffect(eff);
+      return '';
+    }
+    // 回忆 class 切换（只切 storyBox 容器，不影响地图/HUD）
+    if(eff==='flashback-on'){
+      $('#bottom').classList.add('storyFlashback');
+      return '';
+    }
+    if(eff==='flashback-off'){
+      $('#bottom').classList.remove('storyFlashback');
       return '';
     }
     // 幕标题：【act:第一幕 分道扬镳】

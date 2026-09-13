@@ -1,83 +1,77 @@
 /* ============================================================
    main_story/index.js —— 主线剧情汇总 & 触发引擎
    ============================================================
+
    目录约定：
      main_story/
        index.js                 ← 本文件：汇总所有片段 + 触发引擎
+       act00/
+         seg_000_opening.js     ← 第 0 幕（无标题）：醒来回忆穿越
        act01_分道扬镳/
-         seg_001_intro.js       ← 每段主线剧情一个独立 JS 文件
-         seg_002_xxx.js
-       act02_xxx/
-       act03_xxx/
-       ...
+         seg_001_template.js    ← 模板示例（仅作参考，不会真触发）
+       act02_xxx/ act03_xxx/ ...  预留目录
 
-   每个片段文件 export 一个对象，结构见下文「片段模板」。
-   本文件维护 MAIN_STORY_SEGMENTS 数组，后续新增片段只需：
-     1) 在对应幕目录下新建 seg_XXX_*.js
-     2) 在本文件顶部 import 并 push 进数组
-   —— 这样任何 AI Agent 接手工作时，只需看本文件就能知道
-      当前有哪些片段、它们在哪个幕、触发条件是什么。
+   每个片段文件 export default 一个对象：
+     {
+       id: 'main_act01_seg001',   // 唯一 id，触发后存 G.records.mainStoryDone[id]=true
+       act: 1,                     // 属于第几幕
+       title: '片段标题（仅供人看）',
+       condition: ()=> true,       // 触发条件
+       body: [                     // 正文，每段 {speaker, html}
+         { speaker: null,   html: '<p>旁白。</p>' },
+         { speaker: '我',   html: '<p>我握紧匕首。</p>' },
+         { speaker: '夏阳', html: '<p>别怕……</p>' },  // 阳自动变红
+       ],
+       options: [                  // 可选
+         { name:'A', desc:'...', onPick:()=>{} },
+       ],
+       nextSeg: null,              // 可选，线性接续的下一段 id
+       afterPlayed: null,          // 可选，正文结束后的收尾 hook
+     }
 
-   片段模板（复制修改即可）：
-   ──────────────────────────────────────────────────────
-   export default {
-     id: 'main_act01_seg001',   // 唯一 id，触发后存 G.records.mainStoryDone[id]=true
-     act: 1,                     // 属于第几幕
-     title: '这里写片段标题（仅供人看）',
+   【元指令】语法：剧情文本里直接写，不显示给玩家
+     【屏幕抖动】 / 【轻微抖动】 / 【shake】 / 【shake-dull】
+     【屏幕闪白】 / 【闪白】 / 【flash】
+     【屏幕黑屏】 / 【黑屏】 / 【black】
+     【回忆开始】 / 【进入回忆】 / 【flashback-on】
+     【回忆结束】 / 【退出回忆】 / 【变回正常】 / 【flashback-off】
+     【act:第一幕 分道扬镳】
 
-     // 触发条件：返回 true 则立即触发（主线剧情会抢占事件格）
-     // 常见条件：day>=3, hasQuest('bear'), bond('xiayang')>=3
-     condition: ()=> G.day>=1 && !G.records.mainStoryDone?.['main_act01_seg001'],
+   主线 vs 事件：
+     - 事件（event.js）内部调 storyPush(html, cb) 走两参旧签名，
+       storyRunNext 里识别 eventState===true 时 speaker 区保持为空。
+     - 主线剧情用 storyPush(html, {speaker, onDone, onEnd}) 三参新签名。
+     - 二者共用同一个 typing engine，但互不干扰。
 
-     // 正文：段落数组。每段 {speaker, html}
-     //   speaker 为字符串时，名字行显示该名字并自动处理彩色（白名单人物）
-     //   speaker 为 null / undefined 时，名字行清空（旁白 / 场景描写）
-     //   html 支持 <p>...</p> 包裹，也支持纯文字；自动解析 【元指令】
-     body: [
-       { speaker: null,    html: '<p>这里是旁白。夜色褪去……</p>' },
-       { speaker: '我',    html: '<p>我握紧了手中的匕首。</p>' },
-       { speaker: '夏阳',  html: '<p>阳字会自动变红。我没事……</p>' },
-       { speaker: null,    html: '<p>【shake】一阵剧烈的摇晃……</p>' },
-     ],
-
-     // 选项（可选）：如果有，会在正文所有段落打完后显示在右侧信息区
-     // 每段 options 前引擎会插入一个 __choiceMarker 供「跳过」定位
-     options: [
-       { name: '选项A', desc: '...', onPick: ()=>{ /* 执行效果 */ nextSeg('main_act01_seg002'); } },
-       { name: '选项B', desc: '...', onPick: ()=>{ /* ... */ } },
-     ],
-
-     // 线性接续（可选）：若没有 options，写完正文后自动播放下一段
-     nextSeg: null,  // 比如 'main_act01_seg002'
-   };
-   ──────────────────────────────────────────────────────
+   触发点：
+     - loadIntoWorld()：进世界时调用（第 0 幕在这里触发）
+     - moveExplore()：玩家每次移动后调用（后续幕在这里触发）
+     - eventState / combatState 时一律跳过
    ============================================================ */
 
-// --- import 所有片段（按需要添加） ---
-import segTemplate_act01_seg001 from './act01_分道扬镳/seg_001_template.js';
+// --- import 所有片段（按顺序注册到 MAIN_STORY_SEGMENTS） ---
+import seg000_opening from './act00/seg_000_opening.js';
 
-// --- 汇总数组 ---
+// --- 汇总数组（顺序=优先级：越靠前先触发） ---
 const MAIN_STORY_SEGMENTS = [
-  segTemplate_act01_seg001,
-  // ↑ 后续新增片段 push 进这里
+  seg000_opening,            // 第 0 幕：day=0 立即触发
+  // ↑ 后续剧情片段按"越早触发越靠前"的原则 push 进来
 ];
 
 /* ============================================================
-   触发引擎：由 explore.js / map.js 在玩家每次移动后调用
-   扫描 segments，找出第一个满足 condition 且尚未触发的片段并播放
-   返回 true 表示刚触发了一段剧情，false 表示这次没触发
+   触发引擎
    ============================================================ */
 let currentMainStorySeg = null;
 let mainStoryPlaying = false;
+
 function triggerMainStorySeg(){
   if(!G) return false;
   if(mainStoryPlaying) return false;
-  // 事件中不触发（事件格优先）
+  // 事件中不触发
   if(eventState) return false;
 
-  // 遍历所有片段，condition 为真即触发
   for(const seg of MAIN_STORY_SEGMENTS){
-    if(G.records && G.records.mainStoryDone && G.records.mainStoryDone[seg.id]) continue;
+    if(G.records?.mainStoryDone?.[seg.id]) continue;
     if(typeof seg.condition === 'function' && seg.condition()){
       playMainStorySeg(seg);
       return true;
@@ -86,46 +80,59 @@ function triggerMainStorySeg(){
   return false;
 }
 
-/* 播放一段主线剧情：按 body 顺序推送，最后处理 options 或 nextSeg */
+/* 播放一段主线剧情：按 body 顺序推送 */
 function playMainStorySeg(seg){
   if(!seg) return;
   currentMainStorySeg = seg;
   mainStoryPlaying = true;
-  // 标记已触发
+
+  // 标记已触发（立即标记，防止重入）
   G.records = G.records || {};
   G.records.mainStoryDone = G.records.mainStoryDone || {};
   G.records.mainStoryDone[seg.id] = true;
+
   // 剧情区清空，切 story 模式
   switchMode('story');
-  clearStory();  // storyClear
-  prompt('');    // 清空右侧信息区
+  clearStory();
+  prompt('');
 
-  // 按 body 数组逐段推送到引擎
+  // 逐段推送到引擎（逐段打字）
   let i=0;
   const pushNext = ()=>{
-    if(i>=seg.body.length){ /* 正文结束 */
-      // 1) 若有 options -> 插入 choice marker，然后渲染选项到右侧信息区
-      if(seg.options && seg.options.length){
-        storyMarkChoice();
-        setTimeout(()=>renderMainStoryOptions(seg.options), 0);
-        return;
-      }
-      // 2) 否则 -> nextSeg 线性接续
-      if(seg.nextSeg){
-        const nextSegObj = MAIN_STORY_SEGMENTS.find(s=>s.id===seg.nextSeg);
-        setTimeout(()=>{ mainStoryPlaying=false; triggerMainStorySeg(); }, 600);
-        return;
-      }
-      // 3) 无 options 无 nextSeg -> 本段结束
-      mainStoryPlaying=false;
-      currentMainStorySeg=null;
-      return;
-    }
+    if(i>=seg.body.length){ finishMainStorySeg(seg); return; }
     const para = seg.body[i]; i++;
     storySetSpeaker(para.speaker || null);
     storyPush(para.html, { onDone: pushNext });
   };
   pushNext();
+}
+
+/* 一段剧情结束时的收尾 */
+function finishMainStorySeg(seg){
+  // 1) 有 options → 插入 marker 并渲染选项
+  if(seg.options && seg.options.length){
+    storyMarkChoice();
+    setTimeout(()=>{
+      renderMainStoryOptions(seg.options);
+      if(typeof seg.afterPlayed === 'function') seg.afterPlayed();
+    }, 0);
+    mainStoryPlaying=false;
+    return;
+  }
+  // 2) 无 options → 执行 afterPlayed hook + 清 speaker
+  if(typeof seg.afterPlayed === 'function') seg.afterPlayed();
+  storySetSpeaker(null);
+
+  // 3) 等 0.8s 再查下一段，让玩家看完最后一屏
+  mainStoryPlaying=false;
+  const next = seg.nextSeg ? MAIN_STORY_SEGMENTS.find(s=>s.id===seg.nextSeg) : null;
+  setTimeout(()=>{
+    if(next && !G.records?.mainStoryDone?.[next.id]){
+      playMainStorySeg(next);
+    } else {
+      triggerMainStorySeg();
+    }
+  }, 800);
 }
 
 /* 渲染主线剧情选项（复用事件选项 UI） */
@@ -139,20 +146,20 @@ function renderMainStoryOptions(opts){
   $('#promptZone').querySelectorAll('.ev-opt').forEach(b=>{
     b.onclick=()=>{
       const i=+b.dataset.i;
-      opts[i].onPick && opts[i].onPick();
       prompt('');
+      opts[i].onPick && opts[i].onPick();
     };
   });
-  mainStoryPlaying=false;
-}
-
-/* 给外部调用（比如选项 onPick 里串下一段） */
-function mainStoryNextSeg(id){
-  mainStoryPlaying=false;
-  setTimeout(()=>triggerMainStorySeg(), 50);
 }
 
 /* —— 挂载到 window（供 main.js / explore.js 普通脚本调用）—— */
 window.triggerMainStorySeg = triggerMainStorySeg;
-window.mainStoryNextSeg = mainStoryNextSeg;
-window.showActTitle = showActTitle;   // 幕标题也可以被普通脚本直接调用
+window.mainStoryNextSeg = (id)=>{ mainStoryPlaying=false; setTimeout(()=>triggerMainStorySeg(), 50); };
+window.showActTitle = showActTitle;
+
+/* —— 第 0 幕播完后把 day 推到 1 —— */
+window.storyAdvanceDayToOne = ()=>{
+  if(!G) return;
+  if(G.day < 1) G.day = 1;
+  try{ refreshHUD(); }catch(e){}
+};
