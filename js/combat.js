@@ -34,7 +34,7 @@ function enemyRangeKeys(en){ const set=new Set(); const cs=combatState; const sk
 function facingDir(f){ return f==='up'?[0,-1]:f==='down'?[0,1]:f==='left'?[-1,0]:[1,0]; }
 function dirToFacing(dx,dy){ if(dx>0)return 'right'; if(dx<0)return 'left'; if(dy>0)return 'down'; return 'up'; }
 function dist(a,b){ return Math.abs(a.x-b.x)+Math.abs(a.y-b.y); }
-function charBaseAtk(charKey){ if(charKey==='pro') return G.hero.atk; const b=(G&&G.bonds&&G.bonds[charKey]); const lv=b?(b.level||1):1; return 35 + 10*lv; }
+function charBaseAtk(charKey){ if(charKey==='pro') return G.hero.atk; const b=(G&&G.bonds&&G.bonds[charKey]); const lv=b?(b.level||1):1; let base=35 + 10*lv; /* 帝王之征·魔法秘籍：永久叠加攻击力存 G.alliesPermAtk[charKey] */ if(G&&G.alliesPermAtk&&G.alliesPermAtk[charKey]) base+=G.alliesPermAtk[charKey]; return base; }
 function charAtk(charKey){ const c=getChar(charKey); const base=charBaseAtk(charKey); let a=base; for(const p of c.passives){ const lv=entryLevel(charKey,p); if(p.scal && p.scal.atk) a+=tierValue(p,lv,'atk'); if(p.scal && p.scal.self) a+=tierValue(p,lv,'self'); } if(charKey==='pro'){ for(const k in ALLIES){ for(const p of (ALLIES[k].passives||[])){ if(p.scal&&p.scal.pro) a+=tierValue(p, entryLevel(k,p),'pro'); } }
     /* === 抑郁：主角攻击力归0 === */
     if(G.hero.depress){ a=0; }

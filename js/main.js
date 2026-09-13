@@ -12,7 +12,7 @@ function newGame(){
     inventory:{wood:0,fruit:0,flax:0,rawMeat:0,coin:20,emptyBottle:0,iron:0,blueStar:0,blueStarPowder:0,amethyst:0,clearMind:0},
     records:{slain:{}, wins:0, losses:0, mentalGoodDays:0, qCraftDone:false, qFruitCount:0, qMeatCount:0, qCarCount:0,
       fruitFirstOwned:false, cookedMeatFirstOwned:false, qCraftAvail:false, nonWalkVehicleOwned:true},
-    team:['pro','xiayang','luyouyou'], proLevels:{}, bonds,
+    team:['pro','xiayang','luyouyou'], proLevels:{}, alliesPermAtk:{}, bonds,
     vehicles:[{key:'walk'},{key:'dash'},{key:'dragon',uses:3},{key:'mushroom',uses:3},{key:'carriage',uses:2},{key:'carpet',uses:1},{key:'qiaoyu'}], vehicleSel:0, map:null, px:0, py:0, st:null, lootLog:[] };
 }
 function standardVehicles(){ return [{key:'walk'},{key:'dash'},{key:'dragon',uses:3},{key:'mushroom',uses:3},{key:'carriage',uses:2},{key:'carpet',uses:1},{key:'qiaoyu'}]; }
@@ -45,19 +45,22 @@ const HOTKEY_MODAL = {
 const HOTKEY_ACTION = { p: sleep };   /* 非 modal 动作类快捷键 */
 
 function handleHotkeyToggle(k){
-  /* 1. modal 已打开时：只允许「同一键」关闭，其他键一律忽略 */
+  /* 1. modal 已打开时：只允许「同一键」关闭，其他键一律忽略（保持 guard 规则） */
   if($('#modalOverlay').classList.contains('show')){
     try{
       const curTitle = $('#modalTitle').textContent;
       const cfg = HOTKEY_MODAL[k];
       if(cfg && curTitle===cfg.title){ closeModal(); return; }
-      /* 其他情况：忽略，不尝试打开 */
-      return;
+      return;   // 其他键：modal 打开中一律忽略
     }catch(e){}
     return;
   }
-  /* 2. modal 未打开但处于战斗/事件中：禁用除 P 以外的快捷键（P 本身会在 sleep 内部做拦截） */
-  if((combatState||eventState) && k!=='p'){ log('战斗/事件中无法使用该功能。'); return; }
+  /* 2. modal 未打开但处于战斗/事件中：仅禁用与 iconbar.blocked 一致的那几个快捷键
+     （编队 L、睡觉 P、商店、合成 E）；角色 C、载具 T 等与按钮行为一致，仍可打开 */
+  if(combatState || eventState){
+    const BLOCKED = { l:'编队', p:'睡觉', shop:'商店', e:'合成' };  // 与 iconbar blocked Set 同步
+    if(BLOCKED[k]){ log('战斗/事件中无法使用该功能。'); return; }
+  }
   /* 3. 主页面正常触发 */
   const cfg = HOTKEY_MODAL[k]; if(cfg){ cfg.open(); return; }
   const act = HOTKEY_ACTION[k]; if(act){ act(); return; }

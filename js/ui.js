@@ -257,8 +257,8 @@ function charPageLayout(key){
   const canCarryInteract = !(combatState||eventState);
   const sideTabs = [
     {tab:'skills',  label:'技能展示',   enabled:true},
-    {tab:'carry',   label:'调整技能',   enabled:canCarryInteract && !isPro},   // 任务5改名+任务7禁用
-    {tab:'interact',label:'交互',       enabled:canCarryInteract && !isPro},   // 任务7禁用
+    {tab:'carry',   label:'调整技能',   enabled:canCarryInteract},              // 非战斗/事件时主角和队友都可打开
+    {tab:'interact',label:'交互',       enabled:canCarryInteract && !isPro},    // 交互仅队友有
     {tab:'bond',    label:'羁绊等级效果', enabled:!isPro},
     {tab:'story',   label:'故事',       enabled:true},
   ];

@@ -393,7 +393,8 @@ function changleResolve(slot, predType){
           resolve:()=>{
             const atkGain = Math.round(1.2*a);
             G.hero.atk=(G.hero.atk||0)+atkGain;
-            for(const k of G.team){ if(ALLIES[k]){ ALLIES[k].baseAtk=(ALLIES[k].baseAtk||0)+atkGain; } }
+            G.alliesPermAtk = G.alliesPermAtk || {};
+            for(const k of G.team){ if(ALLIES[k]){ G.alliesPermAtk[k] = (G.alliesPermAtk[k]||0) + atkGain; } }
             return `<p>魔法啥子的俺们不会咧，干架本事倒是有点。</p><p>你学习了战斗技巧，你和编队中的队友各自基础攻击力+${atkGain}。</p><p>盆满钵满，是时候离开了。</p>`; } },
         { name:'要生存物资', desc:'', req:()=>true,
           resolve:()=>{
