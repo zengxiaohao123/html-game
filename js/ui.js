@@ -10,14 +10,17 @@ function switchMode(m){
   $('#bottom').classList.toggle('mode-combat', m==='combat');
   $('#rightTitle').textContent='信息';
   if(m==='story'){
+    // 事件 lockEventUI / 主线剧情 playMainStorySeg 都走这条路：
+    // 强制隐藏 goBtn（防止从探索/战斗残留过来的"前往"按钮继续显示）
     $('#goBtn').style.display='none';
+    // 刷新 iconbar —— isInFlow() 会根据 eventState/mainStoryPlaying/combatState 决定禁用哪些按钮
+    renderIconbar();
   } else {
     // 切到战斗或其他非 story 模式：确保故事引擎的残留全部清掉
     finishCurrentFragment();  // 清 pages / storyBody / speaker / 屏幕效果 / 回调
     const sc = $('#storyControls'); if(sc) sc.style.display='none';
+    renderIconbar();
   }
-  // 切模式后刷新顶部 iconbar（isInFlow() 会根据当前状态决定禁用哪些按钮）
-  renderIconbar();
 }
 function clearLog(){ $('#logBody').innerHTML=''; }
 function clearStory(){ storyClear(); }
@@ -244,8 +247,9 @@ function storyStartFragment(body, onSegEnd, opts){
   $('#app').classList.remove('fx-shake','fx-shake-dull');
   document.querySelectorAll('.screen-effect').forEach(el=>{ try{ el.remove(); }catch(e){} });
 
-  // 保存上下文
-  storyCtx = { title: opts.title || null };
+  // 保存上下文（skipBlockedWhenChoice: true 表示该片段结束时会进入选项，
+  // 玩家不能跳过——跳过会让选项之前的文本丢失，玩家不知道选什么）
+  storyCtx = { title: opts.title || null, skipBlockedWhenChoice: !!opts.skipBlockedWhenChoice };
 
   // 构建 pages：html 保持原始，processMetaCommands 延迟到 typeSegment 执行
   const segments = body.map(s => ({
@@ -599,9 +603,13 @@ function initStoryControls(){
   if(skip){ skip.onclick=onSkipClicked; }
 }
 function onSkipClicked(){
-  // 选项保护
+  // 保护 1：promptZone 里已经有选项（选阶段）
   if(document.querySelector('#promptZone .ev-opt')){
     alertDialog('无法跳过','这里需要你做出选择！'); return;
+  }
+  // 保护 2：当前片段结束时会进入选项，但选项还没出现 → 跳过会把选项前的文本清掉
+  if(storyCtx && storyCtx.skipBlockedWhenChoice){
+    alertDialog('无法跳过','这段剧情后需要你做出选择，请先看完。'); return;
   }
   openModal('确认跳过', '<p>你确定跳过本段剧情？</p>', 'small', {noCloseX:true});
   const body=$('#modalBody');
@@ -612,6 +620,8 @@ function onSkipClicked(){
   $('#skipYes').onclick=()=>{ closeModal(); doSkipCurrent(); };
 }
 function doSkipCurrent(){
+  // 二次保险：onSkipClicked 已经拦了 skipBlockedWhenChoice，但如果其他地方直接调 skip 也要拦住
+  if(storyCtx && storyCtx.skipBlockedWhenChoice){ return; }
   if(eventState){
     // 事件正文阶段：跳过正文 → 回调触发 renderEventOptions（进入选项阶段）
     // 事件结果阶段：跳过结果文本 → 回调触发 eventState=null + unlockEventUI（彻底结束）

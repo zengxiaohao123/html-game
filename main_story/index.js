@@ -91,12 +91,17 @@ function playMainStorySeg(seg){
   G.records.mainStoryDone = G.records.mainStoryDone || {};
   G.records.mainStoryDone[seg.id] = true;
 
-  // 剧情区清空 + 切 story 模式
+  // 剧情区清空 + 切 story 模式 + 刷新 iconbar（lock 编队/睡觉/商店/合成）
   switchMode('story');
   prompt('');
+  // 保险：mainStoryPlaying 刚变成 true，switchMode 里的 renderIconbar 可能还没拿到最新状态
+  renderIconbar();
 
   // 一次性灌进完整 body —— 引擎自动分页、自动打字、自动停住等点击
-  storyStartFragment(seg.body, ()=> finishMainStorySeg(seg));
+  // skipBlockedWhenChoice: 该段带 options → 玩家不能在选项出现前跳过（会丢失语境）
+  const hasChoices = !!(seg.options && seg.options.length);
+  storyStartFragment(seg.body, ()=> finishMainStorySeg(seg), { skipBlockedWhenChoice: hasChoices });
+}
 }
 
 /* 一段剧情结束时的收尾 */
