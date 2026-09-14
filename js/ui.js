@@ -460,14 +460,20 @@ function endForCallbacks(){
 
   // 存回调、清引用
   const cb = storyOnSegEnd; storyOnSegEnd = null;
-  // 注意：不清 storyPages / storyPageIdx / storySegIdx —— finishCurrentFragment 会
-  // 彻底重置；但保留状态让选项期间 storyHasMore 返回正确值。
-  // 不过 finishCurrentFragment 清故事时故事引擎就该彻底重置了，
-  // 这里清 storyPages 和索引其实也没问题 —— 选项期间不会再读。
-  storyPages=[]; storyPageIdx=0; storySegIdx=0;
+  /* ★ 关键：绝对不能清 storyPages / storyPageIdx / storySegIdx
+     1) 这三行之前被清成 0 了，导致 storyOnTap() 第一行 `if(!storyPages.length) return;`
+        直接返回 —— 自动模式打完最后一页后，哪怕玩家临时切回手动再点剧情区也没反应，
+        整个故事引擎在"选项叠加阶段"其实是"死"的。
+     2) 保留完整 storyPages 状态让 storyOnTap 语义不变：
+        最后一页最后一段的情况下它会走到函数末尾，再调 endForCallbacks() —— 但那时
+        storyOnSegEnd 已经被置 null，回调不会二次触发，完全安全。
+     3) storyHasMore() 也因此能继续返回 true —— 这就是它本应有的语义：
+        "故事引擎还在跑，只是暂时等回调 / 等选项"。
+     真正彻底清理（清 pages / 清 controls / 清屏幕效果 / 清 storyCtx）
+     留给 finishCurrentFragment，它的调用点（选项选完后 / 真结束清场）是明确的。 */
 
   // 直接同步调回调。finishMainStorySeg → 有 options 则 renderMainStoryOptions 叠加到 promptZone；
-  // 无 options 则 0.8s 后触发下一段 storyStartFragment。
+  // 无 options 则 0.3s 后触发下一段 storyStartFragment。
   // 事件 renderEventOptions → 选项叠加到 promptZone。
   if(cb) cb();
 }
@@ -961,7 +967,7 @@ function closeGift(){ if(giftOpenKey==null) return; const overlay=document.getEl
 function charBondTab(key,c){ c=c||getChar(key); if(key==='pro') return '<p>主角没有羁绊等级。</p>'; const bt=(BOND_TEXT[key])||{}; let rows=''; for(let lv=0; lv<=10; lv++){ const note=bt[lv]||''; const cur=getBond(key).level===lv? '（当前）':''; rows+=`<div class="bondrow ${getBond(key).level===lv?'cur':''}"><span class="bondlv">羁绊 ${lv} 级${cur}</span><span class="bondnote">${note}</span></div>`; } return `<div class="bondrows">${rows}</div><p style="margin-top:10px;font-size:13px;color:#9aa0ac">基础效果：羁绊每升 1 级，攻击力 +10；标注有等级的技能的等级对应提升。好感度每累计 10 点提升 1 级，羁绊等级只升不降。当前好感度 <b class="lvlup">${getBond(key).affinity}</b>（上限 999，下限 -999）。</p>`; }
 function charStoryTab(key,c){ c=c||getChar(key); if(key==='pro') return '<p>属于你的故事，才刚刚开始……</p>'; return `<p>关于 <b>${c.name}</b> 的故事，正在撰写中，敬请期待。</p>`; }
 let skillPickSel={};
-function openFormation(){ if(isInFlow()){ log('事件中无法使用该功能。'); return; } renderFormation(); }
+function openFormation(){ if(isInFlow()){ log(`${flowLabel()}中无法使用该功能。`); return; } renderFormation(); }
 function eligibleSwapChars(){ const keys=['pro']; for(const k in ALLIES){ if(bondLevel(k)>=1) keys.push(k); } return keys; }
 let swapOpen=false, swapJustOpened=false; let swapTeam=[];
 function openSwap(){ swapTeam=G.team.slice(); swapOpen=true; swapJustOpened=true; renderFormation(); }
@@ -1004,7 +1010,7 @@ function renderTasksHTML(){
 function openTasks(){ openModal('任务', renderTasksHTML(), 'full', {replace:true}); }
 window.selectTask=function(id){ if(id!==taskSel && TASKS.some(t=>t.id===id)){ taskSel=id; openTasks(); } };
 let shopQty={}; let shopMsg='';
-function openShop(){ if(isInFlow()){ log('事件中无法使用该功能。'); return; } if(G){ shopMsg=''; renderShop(); } }
+function openShop(){ if(isInFlow()){ log(`${flowLabel()}中无法使用该功能。`); return; } if(G){ shopMsg=''; renderShop(); } }
 function shopSellPrice(it){ return Math.floor(it.buy*0.5); }
 function renderShop(){ const list=SHOP_ITEMS.map(it=>{ const have=G.inventory[it.key]||0; const buyPrice=itemBuyPrice(it.key); const buyMax=Math.floor((G.inventory.coin||0)/Math.max(1,buyPrice)); const sellMax = it.sellable? have : 0; const maxN=Math.max(buyMax,sellMax,1); let q=Math.max(1, shopQty[it.key]||1); q=Math.min(q, maxN); shopQty[it.key]=q; const buy=buyPrice; const sell=shopSellPrice(it); const sellBtn = it.sellable ? `<button class="mbtn tiny" onclick="shopTrade('${it.key}','sell')">卖出</button>` : `<span class="nohint">不可出售</span>`; const growNote = it.priceGrow? `<span class="rnote">每获得1个，此物价+${it.priceGrow}</span>` : ''; return `<div class="sitem"><div class="shead"><span class="craftlink" data-key="${it.key}">${itemName(it.key)}</span><span class="sprice">${it.sellable?`买入 <b>${buy}</b> · 卖出 <b>${sell}</b> 金币`:`买入 <b>${buy}</b> 金币（不可出售）`}</span></div><div class="sown">持有 <b>${have}</b> · 金币 <b>${G.inventory.coin}</b></div>${growNote}<div class="rcCtl"><span class="craftQty">×${q}</span><input type="range" class="craftRange" min="1" max="${maxN}" value="${q}" oninput="shopSet('${it.key}',this.value)"><button class="mbtn tiny craftDo" onclick="shopTrade('${it.key}','buy')">购买</button>${sellBtn}</div></div>`; }).join(''); openModal('商店', `<p class="mhint">点击物品可查看说明。购买与卖出共用同一滑块设定数量；卖出价为买入价的一半。</p><div class="shopmsg ${shopMsg?'show':''}">${shopMsg}</div><div class="cwrapper">${list}</div>`, 'full', {replace:true}); }
 window.shopSet=function(key,v){ shopQty[key]=Math.max(1,(+v||1)); shopMsg=''; renderShop(); };

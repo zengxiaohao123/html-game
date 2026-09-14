@@ -19,6 +19,13 @@ window.isInStoryFlow = function(){
   return (typeof eventState !== 'undefined' && !!eventState)
       || (typeof mainStoryPlaying !== 'undefined' && !!mainStoryPlaying);
 };
+/* 返回当前锁状态对应的中文标签（用于 log 提示） */
+window.flowLabel = function(){
+  if(!!combatState) return '战斗';
+  if(typeof mainStoryPlaying !== 'undefined' && !!mainStoryPlaying) return '剧情';
+  if(typeof eventState !== 'undefined' && !!eventState) return '事件';
+  return '流程';
+};
 
 function newGame(){
   const bonds={}; for(const k in ALLIES){ bonds[k]={level:1, affinity:10}; }
@@ -83,7 +90,7 @@ function handleHotkeyToggle(k){
      （编队 L、睡觉 P、商店、合成 E）；角色 C、载具 T 等与按钮行为一致，仍可打开 */
   if(isInFlow()){
     const BLOCKED = { l:'编队', p:'睡觉', shop:'商店', e:'合成' };  // 与 iconbar blocked Set 同步
-    if(BLOCKED[k]){ log('战斗/事件中无法使用该功能。'); return; }
+    if(BLOCKED[k]){ log(`${flowLabel()}中无法使用该功能。`); return; }
   }
   /* 3. 主页面正常触发 */
   const cfg = HOTKEY_MODAL[k]; if(cfg){ cfg.open(); return; }
@@ -116,13 +123,19 @@ function handleKeys(ev){
 }
 document.addEventListener('keydown', handleKeys, true);
 function sleep(){
-  if(!G) return; if(isInFlow()){ log('事件中无法使用该功能。'); return; }
+  if(!G) return; if(isInFlow()){ log(`${flowLabel()}中无法使用该功能。`); return; }
   if(G.hero.actionPoint>0 && !confirm('行动力尚未耗尽，仍确定直接「睡觉」进入下一天吗？')) return;
   const inTeam=k=>G.team.indexOf(k)>=0;
   /* === 前一天的心理健康判定 === */
   const prevDay = G.day;
   const wasDepressed = G.hero.depress;
   G.day+=1;
+  /* === 启程任务·合成台：玩家第一次升到 day 2 时自动解锁 ===
+     避免玩家 day 2 后从没打开过合成界面就看不到任务 */
+  if(prevDay < 2 && G.day >= 2){
+    G.records = G.records || {};
+    G.records.qCraftAvail = true;
+  }
   /* === 清除前一天的抑郁状态 === */
   G.hero.depress=false;
   /* === 明心浆 buff 当日生效、次日清除 === */

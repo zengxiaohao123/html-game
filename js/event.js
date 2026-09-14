@@ -581,9 +581,9 @@ function finishEvent(result){
   storySetSpeaker(title);
   const paras = splitParas(result || '');
   const segments = paras.map(html => ({ speaker: null, html }));
-  // 自动模式下结果文本打完后，留 4s 让玩家看清再清屏；手动模式立即清
-  const autoWait = (typeof storyAutoMode !== 'undefined' && storyAutoMode) ? 4000 : 0;
-  // 暂存 eventState 引用（防止 4s 内用户跳过进入战斗之类的打断）
+  // 自动模式下结果文本打完后，留 2s 让玩家看清再清屏；手动模式立即清
+  const autoWait = (typeof storyAutoMode !== 'undefined' && storyAutoMode) ? 2000 : 0;
+  // 暂存 eventState 引用（防止等待期间用户跳过进入战斗之类的打断）
   const savedEventState = eventState;
   storyStartFragment(segments, ()=>{
     // ★ 结果文本打完 → 真正结束事件：清 eventState + 解锁 UI + 刷新地图
