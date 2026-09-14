@@ -574,6 +574,11 @@ function finishEvent(result){
   $('#goBtn').style.display='none';
 
   // 结果打字机显示：统一走 storyStartFragment，事件标题显示在 storySpeaker 区
+  // ★ 在调 storyStartFragment 之前先把 storySpeaker 填上标题 —— 保证即使
+  //   result 为空导致 typeSegment 里段落 html='' 被跳过、或者其他边缘情况，
+  //   事件标题也始终在 storySpeaker 区可见。（storyStartFragment 内部会先清 speaker，
+  //   所以我们之后也 typeSegment 会再填回来；这行是保险起见）
+  storySetSpeaker(title);
   const paras = splitParas(result || '');
   const segments = paras.map(html => ({ speaker: null, html }));
   // 自动模式下结果文本打完后，留 4s 让玩家看清再清屏；手动模式立即清
