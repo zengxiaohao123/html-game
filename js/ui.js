@@ -4,7 +4,19 @@
 "use strict";
 const $=id=>document.querySelector(id);
 function el(html){const d=document.createElement('div'); d.innerHTML=html; return d.firstElementChild;}
-function switchMode(m){ gameMode=m; $('#bottom').classList.toggle('mode-story', m==='story'); $('#bottom').classList.toggle('mode-combat', m==='combat'); $('#rightTitle').textContent='信息'; if(m==='story') $('#goBtn').style.display='none'; }
+function switchMode(m){
+  gameMode=m;
+  $('#bottom').classList.toggle('mode-story', m==='story');
+  $('#bottom').classList.toggle('mode-combat', m==='combat');
+  $('#rightTitle').textContent='信息';
+  if(m==='story'){
+    $('#goBtn').style.display='none';
+  } else {
+    // 切到战斗或其他非 story 模式：确保故事引擎的残留全部清掉
+    finishCurrentFragment();  // 清 pages / storyBody / speaker / 屏幕效果 / 回调
+    const sc = $('#storyControls'); if(sc) sc.style.display='none';
+  }
+}
 function clearLog(){ $('#logBody').innerHTML=''; }
 function clearStory(){ storyClear(); }
 /* ---- 主线 / 通用辅助：名字彩色、屏幕效果、幕标题 ---- */
@@ -144,12 +156,13 @@ let storyOnSegEnd=null;
 
 /* ============================================================
    buildPages：把 segments [{speaker, html}] 分成 page 数组
-   纯函数，不碰任何外部状态
+   纯函数，不执行任何副作用；html 保持原始（含 【元指令】）
    ============================================================ */
 function buildPages(segments){
   const pages=[];
   let cur=null;
-  const FLASHBACK_MARKERS = ['flashback-on','flashback-off'];
+  // 闪回 / 屏幕效果等元指令关键字（匹配原始 html 里的 【xxx】）
+  const META_EDGE = /【(回忆开始|进入回忆|回忆结束|退出回忆|变回正常|act:|屏幕闪白|闪白|屏幕黑屏|黑屏|屏幕抖动|轻微抖动)】/;
   const MAX_PARAS_PER_PAGE = 5;
   const MAX_CHARS_PER_PAGE = 300;
 
@@ -165,8 +178,8 @@ function buildPages(segments){
     const plain = html.replace(/<[^>]+>/g,'');
     const charCount = plain.length;
 
-    // 规则3：flashback 切换 → 强制换页（若当前页非空）
-    const edgeMarker = FLASHBACK_MARKERS.some(m => html.includes(m));
+    // 规则3：含元指令的段落 → 强制换页（若当前页非空），让屏幕效果独立成页
+    const edgeMarker = META_EDGE.test(html);
 
     if(!cur) cur = makePage();
 
@@ -203,51 +216,78 @@ function buildPages(segments){
    剧情入口
    ============================================================ */
 
-/* 主线剧情入口：一次性灌入完整 body，重建 pages，从头播放
-   body = [{speaker, html}, ...]
-   onSegEnd: 所有页打完后的回调 */
-function storyStartFragment(body, onSegEnd){
-  // 先清引擎状态（但不清掉事件 title 这类——主线和事件互斥）
+/* 引擎上下文：本次 storyStartFragment 的运行时信息（事件标题等） */
+let storyCtx = null;
+
+/* 统一剧情入口（主线 & 事件都走这个）
+   body: [{speaker, html}, ...] —— 保持原始 html（含 【元指令】）
+   onSegEnd: 所有页打完后的回调
+   opts:
+     - title: 剧情标题（事件用，显示在 storySpeaker 区；主线不传，默认用段落的 speaker）
+     - keepControls: 是否保留 storyControls（默认 true；特殊场景如只显示元指令效果的独立片段可设 false） */
+function storyStartFragment(body, onSegEnd, opts){
+  opts = opts || {};
+
+  // 先停掉上一段遗留的定时器/打字
   if(storyPageTimer){ clearInterval(storyPageTimer); storyPageTimer=null; }
   if(storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
+  storyTyping=false; storyCurrent=null; storyPlainIdx=0;
+
+  // 清 storyBody（上次 finish 后可能有残留；也确保 storyOnTap 里的 "故事引擎空" 判断正确）
+  $('#storyBody').innerHTML='';
+  $('#storySpeaker').innerHTML='';
+
+  // 统一清屏：彻底重置屏幕效果（闪回 class、抖动、overlay），避免上一段残留
+  $('#bottom').classList.remove('storyFlashback');
+  $('#app').classList.remove('fx-shake','fx-shake-dull');
+  document.querySelectorAll('.screen-effect').forEach(el=>{ try{ el.remove(); }catch(e){} });
+
+  // 保存上下文
+  storyCtx = { title: opts.title || null };
+
+  // 构建 pages：html 保持原始，processMetaCommands 延迟到 typeSegment 执行
   const segments = body.map(s => ({
     speaker: s.speaker || null,
-    html: processMetaCommands(s.html || ''),
+    html: s.html || '',
   }));
   storyPages = buildPages(segments);
   storyPageIdx = 0; storySegIdx = 0;
   storyOnSegEnd = onSegEnd || null;
+
+  // 初始化自动/跳过按钮（默认每次 start 时重建事件绑定；如果已 initStoryControls 过则 auto/skip onclick 已绑好）
+  // 但按钮需要可见 —— 确保 DOM 存在并显示
+  const controls = $('#storyControls');
+  if(controls){
+    controls.style.display = '';
+    // 自动按钮状态同步
+    const auto=$('#autoBtn'); if(auto) auto.classList.toggle('on', storyAutoMode);
+  }
+
+  // 如果没有任何段落（理论上不会发生），直接结束
+  if(!storyPages.length){ finishCurrentFragment(); return; }
+
   renderCurrentPage();
 }
 
-/* 事件系统增量入口：每次 push 一段，引擎自动追加到最后一页末尾并分页
-   html: 纯 HTML 段（事件系统不走 speaker，默认 null）
-   onDone: 当前段打字完毕后的回调（事件 finishEvent 用） */
+/* 旧增量入口 storyPush —— 保留为 deprecated，内部用 storyStartFragment 重建（不推荐新代码用） */
 function storyPush(html, onDone){
-  // 如果还没 pages（第一句）：启动一个空片段，把新段加进去
+  const cleanHtml = processMetaCommands(String(html||''));
   if(!storyPages.length){
-    storyPages = buildPages([{ speaker: null, html: processMetaCommands(String(html||'')) }]);
-    storyPageIdx = 0; storySegIdx = 0;
-    storyOnSegEnd = onDone || null;
-    renderCurrentPage();
+    storyStartFragment([{ speaker: null, html: cleanHtml }], onDone);
     return;
   }
-  // 已经在播：把新段追加到最后一页
-  const lastIdx = storyPages.length - 1;
-  const plain = String(html||'').replace(/<[^>]+>/g,'');
-  storyPages[lastIdx].paragraphs.push({ speaker: null, html: processMetaCommands(String(html||'')) });
-  storyPages[lastIdx].pageChars += plain.length;
+  // 已在播：先清旧定时器，追加段后重新从 current segment 继续
+  if(storyPageTimer){ clearInterval(storyPageTimer); storyPageTimer=null; }
+  storyTyping=false; storyCurrent=null; storyPlainIdx=0;
 
-  // 如果当前在打字中，等打完会自动推进；如果在页尾等待，让玩家点一下
-  if(!storyTyping){
-    // 已打完所有段（页尾或最后一页）→ 触发下一段
-    // 如果是事件系统在 finishEvent 里连续调用 storyPush，onSegEnd 要更新为 onDone
-    storyOnSegEnd = onDone || null;
-    // 让当前页重新进入推进流程（若已结束则直接 typeSegment）
-    advanceAfterIdle();
-  } else {
-    // 打字中 → 暂不管，等 typeSegment 推进到最后时会触发页尾等待
-  }
+  const lastPageIdx = storyPages.length - 1;
+  const plain = cleanHtml.replace(/<[^>]+>/g,'');
+  storyPages[lastPageIdx].paragraphs.push({ speaker: null, html: cleanHtml });
+  storyPages[lastPageIdx].pageChars += plain.length;
+  storyOnSegEnd = onDone || null;
+
+  // 如果在打字中（storyCurrent != null 其实已经清了，这里是保险），让引擎继续推进
+  advanceAfterIdle();
 }
 
 /* 从 idle 状态（页尾等待、或刚追加完）推进一段 */
@@ -302,22 +342,30 @@ function typeSegment(){
   }
   const seg = page.paragraphs[storySegIdx];
 
-  // 更新 speaker
-  const speakerEl = $('#storySpeaker');
-  if(eventState){
-    speakerEl.innerHTML = '';  // 事件里 speaker 区留空
-  } else {
-    speakerEl.innerHTML = seg.speaker ? applySpeakerColor(seg.speaker) : '';
-  }
+  // ★ 核心改动：元指令延迟到打字这一刻才执行 —— processMetaCommands 的副作用（闪白/抖动/闪回 class/幕标题）
+  // 只有当该段落真正被打字时才会触发，保证时机正确。cleanHtml 是清掉了 【xxx】 指令的纯内容。
+  const cleanHtml = processMetaCommands(seg.html || '');
 
-  const cleanHtml = seg.html || '';
+  // 更新 speaker 区：事件优先显示事件标题（固定不动），否则用段落的 speaker（主线角色名），都没有则清空
+  const speakerEl = $('#storySpeaker');
+  if(storyCtx && storyCtx.title){
+    // 事件标题固定显示（typeSegment 每段都会重设，所以要保持不变的话只在 title 变化时设）
+    if(speakerEl.dataset.storyTitle !== storyCtx.title){
+      speakerEl.innerHTML = applySpeakerColor(storyCtx.title);
+      speakerEl.dataset.storyTitle = storyCtx.title;
+    }
+  } else {
+    // 主线：每段根据 seg.speaker 切换
+    speakerEl.innerHTML = seg.speaker ? applySpeakerColor(seg.speaker) : '';
+    delete speakerEl.dataset.storyTitle;
+  }
 
   const box=$('#storyBody');
   const para = document.createElement('div');
   para.className = 'story-para';
   box.appendChild(para);
 
-  // 非 <p> 开头 → 直接渲染（不打字机）
+  // 非 <p> 开头 → 直接渲染（不打字机）—— 事件标题 div、空 <p></p> 占位等
   if(!/^\s*<p/i.test(cleanHtml)){
     para.innerHTML = cleanHtml;
     box.scrollTop = box.scrollHeight;
@@ -388,19 +436,35 @@ function onPageEnd(){
 }
 
 function finishCurrentFragment(){
+  // 1. 停定时器、清打字状态
   if(storyPageTimer){ clearInterval(storyPageTimer); storyPageTimer=null; }
   if(storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
   storyTyping=false; storyCurrent=null; storyPlainIdx=0;
   storyPages=[]; storyPageIdx=0; storySegIdx=0;
   const cb = storyOnSegEnd; storyOnSegEnd = null;
-  // 清 speaker 行（避免事件/主线衔接时残留）
-  $('#storySpeaker').innerHTML='';
-  // 清理可能的屏幕效果 class（闪回 storyFlashback、抖动 fx-shake 等）——
-  // 防止用户在屏幕效果触发后跳过剧情，效果 class 残留导致 UI 永久异常
+
+  // 2. 彻底清 storyBody（正文 + 翻页提示）
+  $('#storyBody').innerHTML='';
+
+  // 3. 清 speaker（包括事件标题残留的 dataset.storyTitle）
+  const speakerEl = $('#storySpeaker');
+  speakerEl.innerHTML='';
+  delete speakerEl.dataset.storyTitle;
+
+  // 注意：storyControls（自动/跳过按钮）在此**不**隐藏。
+  //   原因：回调 cb（主线 finishMainStorySeg → 渲染选项；事件 renderEventOptions → 进入选择阶段）
+  //   之后可能还会继续 storyStartFragment 播下一段，storyStartFragment 会重新保证它可见。
+  //   真正需要隐藏的地方（切战斗、主菜单、游戏结束）在 switchMode / showMenu / backToMenu 里统一处理。
+
+  // 4. 清理所有屏幕效果（闪回、抖动、overlay）—— 防止跳过剧情后效果残留
   $('#bottom').classList.remove('storyFlashback');
   $('#app').classList.remove('fx-shake','fx-shake-dull');
-  // 清屏幕效果 overlay（如果还存在的话）
   document.querySelectorAll('.screen-effect').forEach(el=>{ try{ el.remove(); }catch(e){} });
+
+  // 5. 清引擎上下文
+  storyCtx = null;
+
+  // 6. 触发回调（主线：finishMainStorySeg → 渲染选项/触发下一段；事件：renderEventOptions → 进入选项阶段）
   if(cb) cb();
 }
 
@@ -453,16 +517,27 @@ function storyHasMore(){
   const page = storyPages[storyPageIdx];
   return page && (storySegIdx < page.paragraphs.length || storyPageIdx + 1 < storyPages.length);
 }
-function storyClear(){ finishCurrentFragment(); $('#storyBody').innerHTML=''; }
+function storyClear(){ finishCurrentFragment(); }
 function story(html){ storyPush(html); }
-function storySetSpeaker(name){ $('#storySpeaker').innerHTML = name?applySpeakerColor(name):''; }
+function storySetSpeaker(name){
+  // 外部主动设 speaker（主线剧情 start 前预填、选项后等场景）—— 设完清掉 eventTitle dataset
+  const el = $('#storySpeaker');
+  el.innerHTML = name ? applySpeakerColor(name) : '';
+  if(!name) delete el.dataset.storyTitle;
+}
 function storySkipToEnd(){ storyOnTap(); return true; }
 function storyMarkChoice(){ /* 空实现，分页引擎不依赖 marker */ }
 
-/* 跳过整个主线片段：清所有 pages，直接 finish */
+/* 跳过当前故事片段（主线正文 / 事件正文 / 事件结果 都走这个）：
+   清所有 pages → finishCurrentFragment 触发 onSegEnd 回调（主线 → finishMainStorySeg 进选项；事件 → renderEventOptions 进选项） */
 function storySkipMainSeg(){
+  // 停打字/定时器（finishCurrentFragment 会再清一遍，这里保险）
+  if(storyPageTimer){ clearInterval(storyPageTimer); storyPageTimer=null; }
   if(storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
-  storyPageIdx = storyPages.length;  // 让 finishCurrentFragment 视为已结束
+  storyTyping=false;
+
+  // 强制 finish —— finishCurrentFragment 里会清 storyBody / controls / 屏幕效果 / 触发回调
+  storyPages = []; storyPageIdx = 0; storySegIdx = 0;
   finishCurrentFragment();
 }
 

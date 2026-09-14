@@ -462,25 +462,25 @@ function unlockEventUI(){
 /* 事件正文：按自然段打字机逐段，段间点击剧情区推进；打完最后一段才显示选项 */
 function showEventBody(){
   const s=eventState; if(!s) return;
-  storyClear();
-  // 用 storyStartFragment 一次性灌入所有正文段落，自动/手动模式都能正常工作
-  // 标题作为第一段（非 <p> 开头，引擎直接渲染不打字），正文后续段落正常打字机
-  const paras=splitParas(s.body);
-  s.bodyParas=paras;
-  s.bodyIdx=paras.length; // 标记为"已全部灌入引擎"
-  s.phase='body';
-  const frag = [
-    { speaker: null, html: `<div class="ev-title">${s.ev.title}</div>` },
-    ...paras.map(html => ({ speaker: null, html }))
-  ];
-  storyStartFragment(frag, ()=>{
-    // 引擎打完所有正文 → 进入选择阶段
+
+  // body 可能是 HTML 字符串，也可能已经是 [{speaker,html}] 数组 —— 统一成 segments 格式
+  let segments;
+  if(Array.isArray(s.body)){
+    segments = s.body.map(b => ({ speaker: b.speaker || null, html: b.html || '' }));
+  } else {
+    const paras = splitParas(String(s.body || ''));
+    segments = paras.map(html => ({ speaker: null, html }));
+  }
+
+  s.phase = 'body';
+  // ★ 核心：统一走 storyStartFragment —— 事件标题通过 opts.title 显示在 storySpeaker 区（和主线角色名同一位置）
+  storyStartFragment(segments, ()=>{
+    // 引擎打完所有正文 → 事件进入选项阶段
     if(!eventState) return;
-    eventState.phase='choose';
+    eventState.phase = 'choose';
     renderEventOptions();
-  });
+  }, { title: s.ev.title });
 }
-/* 已废弃：事件正文改为一次性灌入引擎，由故事引擎统一控制分页/打字/自动/跳过 */
 function splitParas(html){
   const clean=String(html).trim();
   // 以 </p> 或 <br> 为段落结束，保留完整标签
@@ -563,22 +563,22 @@ function confirmEventOption(i){
 function finishEvent(result){
   const s=eventState; if(!s) return;
   const title=s.ev.title;
-  // 格子进入事件时已清空；这里仅清除活动事件状态
+
+  // 先保存标题字符串（eventState 马上要清）
   if(G) delete G.activeEvent;
   eventState=null;
   unlockEventUI();
   prompt('');
   $('#goBtn').style.display='none';
   renderMap(); refreshHUD();
-  // 结果打字机显示；用 storyStartFragment 一次性灌入，自动/手动模式都正常
-  storyClear();
-  const paras=splitParas(result);
-  const frag = [
-    { speaker: null, html: `<div class="ev-title">${title}</div>` },
-    ...paras.map(html => ({ speaker: null, html }))
-  ];
-  // 结果段打完后：停住等玩家点击清空（与旧行为一致）
-  storyStartFragment(frag, ()=>{ /* 什么都不做，等玩家看完点击 */ });
+
+  // 结果打字机显示：统一走 storyStartFragment，事件标题显示在 storySpeaker 区
+  const paras = splitParas(result || '');
+  const segments = paras.map(html => ({ speaker: null, html }));
+  storyStartFragment(segments, ()=>{
+    // 结果段打完 —— finishCurrentFragment 已经清了 storyBody/controls/speaker/屏幕效果
+    // 这里留空即可（不需要额外逻辑）
+  }, { title: title });
 }
 
 /* 事件内进入战斗前的二次确认：先描述遭遇，再提供唯一一个选项（走标准二次确认） */
@@ -609,14 +609,10 @@ function enterEventBattle(enemyKey){
 
 function inEvent(){ return !!eventState; }
 
-/* 剧情区点击推进已完全交给故事引擎（bindStoryTap → storyOnTap）。
-   onStoryClick 仅保留"事件选项取消选中"相关逻辑，不再自己推进剧情。 */
-function onStoryClick(){
-  // 事件中点击剧情区 —— 不再手动推进，让故事引擎统一处理（自动/手动/打字 skip 都走 storyOnTap）
-  // 旧代码的 typeNextBodyPara 调用已废弃，事件正文也用 storyStartFragment 一次性灌入
-}
+/* 事件系统专属 click 逻辑（和故事引擎无关）：
+   当事件正文播完进入 choose 阶段时，若用户已选中一个选项（s.selected>=0）
+   然后点了 promptZone 之外（非 ev-opt 内部）的地方 → 取消选中，让他重新选。 */
 document.addEventListener('click', ev=>{
-  // 选中某选项后点击别处（非选项）→ 取消选中（要求3）
   const s=eventState;
   if(s && s.phase==='choose' && !s.resolving && s.selected>=0 && !ev.target.closest('.ev-opt')){
     s.selected=-1; renderEventOptions();
