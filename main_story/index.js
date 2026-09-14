@@ -116,15 +116,31 @@ function finishMainStorySeg(seg){
   storySetSpeaker(null);
 
   // 3) 等 0.8s 再查下一段，让玩家看完最后一屏
-  mainStoryPlaying=false;
+  //    真结束时（无下一段、无更多触发）：自动模式额外等 4s 让玩家看清结果文本，手动模式立即清
+  //    期间 mainStoryPlaying 继续保持 true → isInFlow() 锁 UI（编队/睡觉/移动等仍禁用）
+  const autoWait = (typeof storyAutoMode !== 'undefined' && storyAutoMode) ? 4000 : 0;
   const next = seg.nextSeg ? MAIN_STORY_SEGMENTS.find(s=>s.id===seg.nextSeg) : null;
+  const mainMainStoryPlaying = mainStoryPlaying;  // 暂存一下（防止 4s 内有新剧情打断）
   setTimeout(()=>{
+    if(mainMainStoryPlaying!==mainStoryPlaying) return;  // 已被新剧情接管，放弃本次收尾
     if(next && !G.records?.mainStoryDone?.[next.id]){
+      mainStoryPlaying=false;  // 这段有后续，立即解除锁（playMainStorySeg 会立即重新锁）
       playMainStorySeg(next);
     } else if(!triggerMainStorySeg()){
-      // 真结束：没有下一段、也没有任何可自动触发的剧情 → 彻底清空故事引擎
-      //（清正文 + 自动/跳过按钮 + 屏幕效果），玩家看到剧情区彻底空了
-      finishCurrentFragment();
+      // 真结束：自动模式等 4s 让玩家看清结果，手动模式立即清
+      if(autoWait){
+        setTimeout(()=>{
+          finishCurrentFragment();
+          mainStoryPlaying=false;
+          renderIconbar();
+        }, autoWait);
+      } else {
+        finishCurrentFragment();
+        mainStoryPlaying=false;
+        renderIconbar();
+      }
+    } else {
+      mainStoryPlaying=false;
     }
   }, 800);
 }

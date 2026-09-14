@@ -16,6 +16,8 @@ function switchMode(m){
     finishCurrentFragment();  // 清 pages / storyBody / speaker / 屏幕效果 / 回调
     const sc = $('#storyControls'); if(sc) sc.style.display='none';
   }
+  // 切模式后刷新顶部 iconbar（isInFlow() 会根据当前状态决定禁用哪些按钮）
+  renderIconbar();
 }
 function clearLog(){ $('#logBody').innerHTML=''; }
 function clearStory(){ storyClear(); }
