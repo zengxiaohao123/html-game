@@ -576,16 +576,21 @@ function storyOnTap(){
     return;
   }
   // 所有页打完 → endForCallbacks 走回调（渲染选项 或 触发下一段/真结束）
-  // 但回调可能已经在之前被调过了（cb 是 null），此时 endForCallbacks 空跑。
-  // 自动模式下：最后一页不会设置 storyAutoTimer（不走 1.5s auto timer，直接
-  // endForCallbacks），endForCallbacks 回调又会在主线/事件里自己排一个
-  // setTimeout（auto mode 时 4s autoWait）。玩家想提前退出时，storyOnTap 走到这里
-  // cb 已经是 null 了，endForCallbacks 什么都不做 → 自动 forceEndStoryFlow。
-  const didRunCallback = !!(storyOnSegEnd);   // endForCallbacks 里会把它置 null
+  // 这里的 didRunCallback 判断是整个"手动点最后一页 = 提前退出"的核心：
+  //
+  //   - 自动模式下最后一页不会设 storyAutoTimer（不走 1.5s auto 翻页，直接 endForCallbacks），
+  //     endForCallbacks 回调会在主线/事件里自己排一个 setTimeout(4000) 解锁
+  //   - 手动模式下主线/事件的解锁 setTimeout 根本不会排（autoWait=0 时 finishMainStorySeg /
+  //     finishEvent 走的是 else 分支里直接调 forceEndStoryFlow，但那是 endForCallbacks 同步
+  //     执行的回调里的事 —— 而这里 endForCallbacks 会再次被 storyOnTap 调吗？取决于 cb）
+  //
+  // 关键点：endForCallbacks 会把 storyOnSegEnd 清成 null。
+  // 所以 didRunCallback===false 意味着 cb 之前已经被调过、这次 endForCallbacks 是空跑。
+  // 此时无论当前是手动模式（setTimeout 解锁根本没排）还是自动模式（setTimeout 正在等 4s），
+  // 玩家这一下点击就是想提前结束 —— 统一 forceEndStoryFlow。
+  const didRunCallback = !!(storyOnSegEnd);
   endForCallbacks();
-  if(storyAutoMode && !didRunCallback){
-    // 自动模式 + 之前回调已经被调过 → 现在正卡在主线/事件各自的 autoWait 等待里
-    // 玩家这一下点击就是想提前结束，直接 forceEnd
+  if(!didRunCallback){
     forceEndStoryFlow();
   }
 }
@@ -683,7 +688,9 @@ function bindStoryTap(){
   const box=$('#storyBox');
   if(!box) return;
   box.addEventListener('click', (e)=>{
-    // 如果正在选择选项，不响应
+    // 1. 点击自动/跳过按钮冒泡到 storyBox —— 不算点剧情区
+    if(e.target && e.target.closest('#storyControls')) return;
+    // 2. 选项叠加在 promptZone 里 —— 不响应 storyBox 点击
     if(document.querySelector('#promptZone .ev-opt')) return;
     storyOnTap();
   });

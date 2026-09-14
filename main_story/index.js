@@ -150,7 +150,7 @@ function finishMainStorySeg(seg){
     } else {
       window.mainStoryPlaying=false;
     }
-  }, 300);
+  }, 400);
 }
 
 /* 渲染主线剧情选项（复用事件选项 UI） */
