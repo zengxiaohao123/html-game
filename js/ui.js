@@ -521,23 +521,35 @@ function finishCurrentFragment(){
    避免在多处各写一遍 unlock 代码 + 确保玩家"点一下"之后状态是完整的。
    ============================================================ */
 window.forceEndStoryFlow = function(){
+  console.log('[FORCE-END] ↓ called');
+  console.log('[FORCE-END] before: eventState=', typeof eventState==='undefined'?'(undef)':!!eventState,
+              'mainStoryPlaying=', typeof mainStoryPlaying==='undefined'?'(undef)':!!mainStoryPlaying,
+              'window.eventState=', !!window.eventState,
+              'window.mainStoryPlaying=', !!window.mainStoryPlaying);
+
   // 1) 先清故事引擎 DOM/timer
   finishCurrentFragment();
+  console.log('[FORCE-END] 1) finishCurrentFragment done; storyPages=', storyPages.length);
 
   // 2) 清主线/事件/战斗锁标记 + 暴露到 window 上的 pending unlock timer
   if(typeof window.mainStoryPlaying !== 'undefined'){ window.mainStoryPlaying = false; }
   if(typeof window.eventState !== 'undefined'){ window.eventState = null; }
+  // ★ 关键：直接写闭包里的 eventState，别只写 window
+  if(typeof eventState !== 'undefined'){ eventState = null; }
+  if(typeof mainStoryPlaying !== 'undefined'){ mainStoryPlaying = false; }
   if(typeof window._mainStoryUnlockTimer !== 'undefined'){ clearTimeout(window._mainStoryUnlockTimer); window._mainStoryUnlockTimer = null; }
   if(typeof window._eventUnlockTimer !== 'undefined'){ clearTimeout(window._eventUnlockTimer); window._eventUnlockTimer = null; }
+  console.log('[FORCE-END] 2) states cleared; eventState=', eventState, 'mainStoryPlaying=', mainStoryPlaying);
 
   // 3) 解除事件独占的 mode-event-lock class + 解锁 iconbar
   const bottom = $('#bottom'); if(bottom) bottom.classList.remove('mode-event-lock');
   if(typeof renderIconbar === 'function') renderIconbar();
+  console.log('[FORCE-END] 3) renderIconbar called');
 
-  // 4) 刷新 HUD + 地图（主线剧情/事件结束后地图通常需要恢复可操作 + 任务自动接取 log 需要
-  //    refreshHUD 来触发 questNotified 检查）
+  // 4) 刷新 HUD + 地图
   if(typeof renderMap === 'function') renderMap();
   if(typeof refreshHUD === 'function') refreshHUD();
+  console.log('[FORCE-END] 4) renderMap+refreshHUD called; isInFlow final=', (typeof isInFlow==='function'?isInFlow():'undef'));
 };
 
 /* ============================================================
