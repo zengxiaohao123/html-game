@@ -102,7 +102,6 @@ function playMainStorySeg(seg){
   const hasChoices = !!(seg.options && seg.options.length);
   storyStartFragment(seg.body, ()=> finishMainStorySeg(seg), { skipBlockedWhenChoice: hasChoices });
 }
-}
 
 /* 一段剧情结束时的收尾 */
 function finishMainStorySeg(seg){
