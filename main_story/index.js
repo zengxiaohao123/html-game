@@ -124,7 +124,7 @@ function finishMainStorySeg(seg){
   // 3) 等 0.3s 再查下一段，给最后一屏一个快速扫一眼的空间但不拖沓
   // 真结束时（无下一段、无更多触发）：自动模式额外等 2s 让玩家看清结果文本，手动模式立即清
   //    期间 mainStoryPlaying 继续保持 true → isInFlow() 锁 UI（编队/睡觉/移动等仍禁用）
-  const autoWait = (typeof storyAutoMode !== 'undefined' && storyAutoMode) ? 2000 : 0;
+  const autoWait = (typeof storyAutoMode !== 'undefined' && storyAutoMode) ? 4000 : 0;
   const next = seg.nextSeg ? MAIN_STORY_SEGMENTS.find(s=>s.id===seg.nextSeg) : null;
   const mainMainStoryPlaying = window.mainStoryPlaying;  // 暂存一下（防止等待期间被新剧情打断）
   setTimeout(()=>{
