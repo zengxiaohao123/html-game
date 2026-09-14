@@ -203,15 +203,16 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 #storyBody .story-caret{display:inline-block; width:8px; height:1em; background:var(--gold); vertical-align:-2px; animation:blink 1s steps(1) infinite;}
 @keyframes blink{50%{opacity:0;}}
 /* ===== storyBox 顶部：名字行 + 控制按钮 ===== */
-#storyHead{display:flex; justify-content:space-between; align-items:center; flex:none; padding:4px 10px 2px; gap:8px; min-height:32px;}
+#storyHead{display:flex; justify-content:space-between; align-items:center; flex:none; padding:4px 10px 2px; gap:8px; height:32px;}  /* 固定高度而非 min-height，保证有/无 speaker 时正文起始行一致 */
 #storySpeaker{
   color:#ffffff; font-size:24px; font-weight:700; letter-spacing:1px;
   font-family: "LXGW WenKai TC", "LXGW WenKai", "PingFang SC", "Microsoft YaHei", serif;
   text-shadow:0 2px 4px rgba(0,0,0,.8);
   max-width:60%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  flex:1; min-width:0;   /* 让 speaker 区始终占住左边空间，避免为空时 controls 跑左 */
 }
 #storySpeaker:empty{display:none;}
-#storyControls{display:flex; gap:6px; flex:none;}
+#storyControls{display:flex; gap:6px; flex:none; margin-left:auto;}  /* margin-left:auto 钉死右上角，不管 speaker 是否为空都不漂 */
 .sctrl{padding:3px 10px; background:var(--panel2); border:1px solid var(--line); border-radius:4px; color:#cfd4dc; font-size:12px; cursor:pointer; line-height:1.2;}
 .sctrl:hover{background:#2c3040; color:#fff;}
 .sctrl.on{background:#2f7a3a; border-color:#6ee07a; color:#fff;}

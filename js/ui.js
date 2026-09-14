@@ -1,0 +1,1006 @@
+/* ============================================================
+   js/ui.js —— 模块：界面与UI
+   ============================================================ */
+"use strict";
+const $=id=>document.querySelector(id);
+function el(html){const d=document.createElement('div'); d.innerHTML=html; return d.firstElementChild;}
+function switchMode(m){
+  gameMode=m;
+  $('#bottom').classList.toggle('mode-story', m==='story');
+  $('#bottom').classList.toggle('mode-combat', m==='combat');
+  $('#rightTitle').textContent='信息';
+  if(m==='story'){
+    $('#goBtn').style.display='none';
+  } else {
+    // 切到战斗或其他非 story 模式：确保故事引擎的残留全部清掉
+    finishCurrentFragment();  // 清 pages / storyBody / speaker / 屏幕效果 / 回调
+    const sc = $('#storyControls'); if(sc) sc.style.display='none';
+  }
+  // 切模式后刷新顶部 iconbar（isInFlow() 会根据当前状态决定禁用哪些按钮）
+  renderIconbar();
+}
+function clearLog(){ $('#logBody').innerHTML=''; }
+function clearStory(){ storyClear(); }
+/* ---- 主线 / 通用辅助：名字彩色、屏幕效果、幕标题 ---- */
+/* 名字彩色：仅对特定名字的特定字上色，其余保持白色 */
+function applySpeakerColor(name){
+  if(!name) return '';
+  // 白名单名字 -> 替换特定字为带 class 的 span
+  const rules = [
+    { key:'夏阳',   ch:'阳',   cls:'sp-sun' },
+    { key:'叶唯安', ch:'叶',   cls:'sp-ye' },
+    { key:'陆悠悠', ch:'悠悠', cls:'sp-youyou' },
+    { key:'宋梦雨', ch:'梦',   cls:'sp-mengyu' },
+    { key:'许泠朦', ch:'泠',   cls:'sp-lingmeng' },
+    { key:'潘天宇', ch:'宇',   cls:'sp-tianyu' },
+    { key:'杨一帆', ch:'杨',   cls:'sp-yifan' },
+    { key:'灰白',   ch:'灰',   cls:'sp-hui' },
+  ];
+  let out=name;
+  for(const r of rules){
+    if(name===r.key){ out=out.split(r.ch).join(`<span class="${r.cls}">${r.ch}</span>`); }
+  }
+  return out;
+}
+/* 屏幕效果：shake / shake-dull / flash / black */
+function playScreenEffect(type){
+  if(type==='shake-dull'){
+    $('#app').classList.add('fx-shake-dull');
+    setTimeout(()=>$('#app').classList.remove('fx-shake-dull'), 500);
+    return;
+  }
+  if(type==='shake'){
+    $('#app').classList.add('fx-shake');
+    setTimeout(()=>$('#app').classList.remove('fx-shake'), 600);
+    return;
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'screen-effect fx-'+type;
+  document.body.appendChild(overlay);
+  setTimeout(()=>overlay.remove(), 2800);
+}
+/* 幕标题：白字大字遮罩 5s 自动淡出 */
+function showActTitle(title){
+  const ov = $('#actTitleOverlay');
+  ov.innerHTML = `<div class="act-title-text">${escapeHtml(title)}</div>`;
+  ov.classList.add('show');
+  setTimeout(()=>{ ov.classList.remove('show'); setTimeout(()=>{ ov.innerHTML=''; }, 400); }, 5500);
+}
+
+/* 处理文本中的元指令（返回纯净 HTML，副作用执行指令） */
+function processMetaCommands(text){
+  let cleaned = text;
+  // 所有 【xxx】 块
+  const re = /【([^】]+)】/g;
+  cleaned = cleaned.replace(re, (m, cmd)=>{
+    const c = cmd.trim();
+    if(!c) return '';
+
+    // —— 等价别名（让后续剧情写作更自由）——
+    const map = {
+      '屏幕抖动': 'shake',
+      '轻微抖动': 'shake-dull',
+      '屏幕闪白': 'flash',
+      '闪白':    'flash',
+      '屏幕黑屏': 'black',
+      '黑屏':    'black',
+      '回忆开始': 'flashback-on',
+      '进入回忆': 'flashback-on',
+      '回忆结束': 'flashback-off',
+      '退出回忆': 'flashback-off',
+      '变回正常': 'flashback-off',
+    };
+    const eff = map[c] || c;
+
+    // 屏幕效果
+    if(eff==='shake' || eff==='shake-dull'){
+      playScreenEffect(eff);
+      return '';
+    }
+    if(eff==='flash' || eff==='black'){
+      playScreenEffect(eff);
+      return '';
+    }
+    // 回忆 class 切换（只切 storyBox 容器，不影响地图/HUD）
+    if(eff==='flashback-on'){
+      $('#bottom').classList.add('storyFlashback');
+      return '';
+    }
+    if(eff==='flashback-off'){
+      $('#bottom').classList.remove('storyFlashback');
+      return '';
+    }
+    // 幕标题：【act:第一幕 分道扬镳】
+    if(c.startsWith('act:')){
+      showActTitle(c.slice(4).trim());
+      return '';
+    }
+    // 指令不识别 -> 不显示
+    return '';
+  });
+  return cleaned;
+}
+
+/* ============================================================
+   js/ui.js PART 2 —— 剧情打字机引擎 v3（分页 + 段间点击 + 自动模式）
+   ------------------------------------------------------------
+   【分页规则】buildPages(body) 把片段切成 page 数组：
+     R1. speaker 变化 强制换页（除非当前页还空）
+     R2. 同 speaker 连续 >5 段 或 纯字数 >300 强制换页
+     R3. 跨度大（回忆闪回、flashback-on/off）强制换页
+     R4. 片段结束时自动收尾，与后续自然分隔
+
+   【交互规则】
+     - 手动模式：打字完当前段 → 停住 → 玩家点击剧情区 → 推进下一段
+     - 自动模式：段间 200ms 自动连打；页尾 1.5s 自动翻；最后一页 4s 清场
+     - 打字中点击 → 立即 skip-to-end 本段，再按上述规则推进
+     - 剧情区不再滚动，翻页靠"清屏 + 淡入动画"
+
+   【入口】
+     - 主线剧情：storyStartFragment(body, afterPlayed) 一次性灌入完整 body
+     - 事件系统：storyPush(html, onDone) 旧签名继续兼容 —— 每次 push
+       引擎自动把新段加入 current page 并在点击时推进
+     - 二者完全共存，共享 buildPages 和 typeSegment
+   ============================================================ */
+
+// ---- 引擎状态 ----
+let storyPages=[];        // [{ paragraphs: [{speaker, html}] }]
+let storyPageIdx=0;
+let storySegIdx=0;
+let storyPageTimer=null;
+let storyAutoTimer=null;
+let storyAutoMode=false;
+try { storyAutoMode = sessionStorage.getItem('storyAutoMode')==='1'; } catch(e){}
+let storyTyping=false;
+let storyCurrent=null;
+let storyPlainIdx=0;
+let storyOnSegEnd=null;
+
+/* ============================================================
+   buildPages：把 segments [{speaker, html}] 分成 page 数组
+   纯函数，不执行任何副作用；html 保持原始（含 【元指令】）
+   ============================================================ */
+function buildPages(segments){
+  const pages=[];
+  let cur=null;
+  // 闪回 / 屏幕效果等元指令关键字（匹配原始 html 里的 【xxx】）
+  const META_EDGE = /【(回忆开始|进入回忆|回忆结束|退出回忆|变回正常|act:|屏幕闪白|闪白|屏幕黑屏|黑屏|屏幕抖动|轻微抖动)】/;
+  const MAX_PARAS_PER_PAGE = 5;
+  const MAX_CHARS_PER_PAGE = 300;
+
+  const flush = ()=>{
+    if(cur && cur.paragraphs.length){ pages.push(cur); cur=null; }
+  };
+  const makePage = ()=>({ paragraphs:[], pageChars:0 });
+
+  for(let si=0; si<segments.length; si++){
+    const seg = segments[si] || {};
+    const speaker = seg.speaker || null;
+    const html = seg.html || '';
+    const plain = html.replace(/<[^>]+>/g,'');
+    const charCount = plain.length;
+
+    // 规则3：含元指令的段落 → 强制换页（若当前页非空），让屏幕效果独立成页
+    const edgeMarker = META_EDGE.test(html);
+
+    if(!cur) cur = makePage();
+
+    // 规则1：speaker 变化 → 强制换页
+    const lastSp = cur.paragraphs.length
+      ? cur.paragraphs[cur.paragraphs.length-1].speaker : null;
+    const speakerChanged = (lastSp !== speaker) && cur.paragraphs.length > 0;
+
+    if(speakerChanged || (edgeMarker && cur.paragraphs.length>0)){
+      flush(); cur = makePage();
+    }
+
+    cur.paragraphs.push({ speaker, html });
+    cur.pageChars += charCount;
+
+    // 规则2：同 speaker 段数 ≥5 或 字数 ≥300 → 换页（把当前段留到下一页开头）
+    let sameRun = 0;
+    for(let pi=cur.paragraphs.length-1; pi>=0; pi--){
+      if(cur.paragraphs[pi].speaker === speaker) sameRun++;
+      else break;
+    }
+    if(sameRun >= MAX_PARAS_PER_PAGE || cur.pageChars >= MAX_CHARS_PER_PAGE){
+      const last = cur.paragraphs.pop();
+      cur.pageChars -= plain.length;
+      flush();
+      cur = { paragraphs:[last], pageChars: plain.length };
+    }
+  }
+  flush();
+  return pages;
+}
+
+/* ============================================================
+   剧情入口
+   ============================================================ */
+
+/* 引擎上下文：本次 storyStartFragment 的运行时信息（事件标题等） */
+let storyCtx = null;
+
+/* 统一剧情入口（主线 & 事件都走这个）
+   body: [{speaker, html}, ...] —— 保持原始 html（含 【元指令】）
+   onSegEnd: 所有页打完后的回调
+   opts:
+     - title: 剧情标题（事件用，显示在 storySpeaker 区；主线不传，默认用段落的 speaker）
+     - keepControls: 是否保留 storyControls（默认 true；特殊场景如只显示元指令效果的独立片段可设 false） */
+function storyStartFragment(body, onSegEnd, opts){
+  opts = opts || {};
+
+  // 先停掉上一段遗留的定时器/打字
+  if(storyPageTimer){ clearInterval(storyPageTimer); storyPageTimer=null; }
+  if(storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
+  storyTyping=false; storyCurrent=null; storyPlainIdx=0;
+
+  // 清 storyBody（上次 finish 后可能有残留；也确保 storyOnTap 里的 "故事引擎空" 判断正确）
+  $('#storyBody').innerHTML='';
+  $('#storySpeaker').innerHTML='';
+
+  // 统一清屏：彻底重置屏幕效果（闪回 class、抖动、overlay），避免上一段残留
+  $('#bottom').classList.remove('storyFlashback');
+  $('#app').classList.remove('fx-shake','fx-shake-dull');
+  document.querySelectorAll('.screen-effect').forEach(el=>{ try{ el.remove(); }catch(e){} });
+
+  // 保存上下文
+  storyCtx = { title: opts.title || null };
+
+  // 构建 pages：html 保持原始，processMetaCommands 延迟到 typeSegment 执行
+  const segments = body.map(s => ({
+    speaker: s.speaker || null,
+    html: s.html || '',
+  }));
+  storyPages = buildPages(segments);
+  storyPageIdx = 0; storySegIdx = 0;
+  storyOnSegEnd = onSegEnd || null;
+
+  // 初始化自动/跳过按钮（默认每次 start 时重建事件绑定；如果已 initStoryControls 过则 auto/skip onclick 已绑好）
+  // 但按钮需要可见 —— 确保 DOM 存在并显示
+  const controls = $('#storyControls');
+  if(controls){
+    controls.style.display = '';
+    // 自动按钮状态同步
+    const auto=$('#autoBtn'); if(auto) auto.classList.toggle('on', storyAutoMode);
+  }
+
+  // 如果没有任何段落（理论上不会发生），直接结束
+  if(!storyPages.length){ finishCurrentFragment(); return; }
+
+  renderCurrentPage();
+}
+
+/* 旧增量入口 storyPush —— 保留为 deprecated，内部用 storyStartFragment 重建（不推荐新代码用） */
+function storyPush(html, onDone){
+  const cleanHtml = processMetaCommands(String(html||''));
+  if(!storyPages.length){
+    storyStartFragment([{ speaker: null, html: cleanHtml }], onDone);
+    return;
+  }
+  // 已在播：先清旧定时器，追加段后重新从 current segment 继续
+  if(storyPageTimer){ clearInterval(storyPageTimer); storyPageTimer=null; }
+  storyTyping=false; storyCurrent=null; storyPlainIdx=0;
+
+  const lastPageIdx = storyPages.length - 1;
+  const plain = cleanHtml.replace(/<[^>]+>/g,'');
+  storyPages[lastPageIdx].paragraphs.push({ speaker: null, html: cleanHtml });
+  storyPages[lastPageIdx].pageChars += plain.length;
+  storyOnSegEnd = onDone || null;
+
+  // 如果在打字中（storyCurrent != null 其实已经清了，这里是保险），让引擎继续推进
+  advanceAfterIdle();
+}
+
+/* 从 idle 状态（页尾等待、或刚追加完）推进一段 */
+function advanceAfterIdle(){
+  if(storyPageIdx >= storyPages.length){
+    // 所有页打完 → finishSeg
+    finishCurrentFragment(); return;
+  }
+  const page = storyPages[storyPageIdx];
+  if(storySegIdx < page.paragraphs.length){
+    // 当前页还有段 → 直接打
+    typeSegment();
+  } else {
+    // 当前页已打完 → 玩家点击下一页触发；自动模式下 timer 会自动翻
+    onPageEnd();
+  }
+}
+
+/* ============================================================
+   播放核心
+   ============================================================ */
+
+function renderCurrentPage(){
+  const body = $('#storyBody');
+  body.innerHTML = '';
+  body.classList.remove('story-tap-hint','story-page');
+
+  if(storyPageIdx >= storyPages.length){
+    finishCurrentFragment(); return;
+  }
+  // 给这一页加淡入动画
+  body.classList.add('story-page');
+
+  const page = storyPages[storyPageIdx];
+  if(!page.paragraphs.length){
+    storyPageIdx++; storySegIdx=0;
+    renderCurrentPage(); return;
+  }
+
+  // 事件系统：第一页第一句带事件标题由 startEvent 自己提前塞到 storyBody
+  // 所以我们先打第 storySegIdx 段（0-based）
+  typeSegment();
+}
+
+function typeSegment(){
+  if(storyPageIdx >= storyPages.length){
+    finishCurrentFragment(); return;
+  }
+  const page = storyPages[storyPageIdx];
+  if(storySegIdx >= page.paragraphs.length){
+    onPageEnd(); return;
+  }
+  const seg = page.paragraphs[storySegIdx];
+
+  // ★ 核心改动：元指令延迟到打字这一刻才执行 —— processMetaCommands 的副作用（闪白/抖动/闪回 class/幕标题）
+  // 只有当该段落真正被打字时才会触发，保证时机正确。cleanHtml 是清掉了 【xxx】 指令的纯内容。
+  const cleanHtml = processMetaCommands(seg.html || '');
+
+  // 更新 speaker 区：事件优先显示事件标题（固定不动），否则用段落的 speaker（主线角色名），都没有则清空
+  const speakerEl = $('#storySpeaker');
+  if(storyCtx && storyCtx.title){
+    // 事件标题固定显示（typeSegment 每段都会重设，所以要保持不变的话只在 title 变化时设）
+    if(speakerEl.dataset.storyTitle !== storyCtx.title){
+      speakerEl.innerHTML = applySpeakerColor(storyCtx.title);
+      speakerEl.dataset.storyTitle = storyCtx.title;
+    }
+  } else {
+    // 主线：每段根据 seg.speaker 切换
+    speakerEl.innerHTML = seg.speaker ? applySpeakerColor(seg.speaker) : '';
+    delete speakerEl.dataset.storyTitle;
+  }
+
+  const box=$('#storyBody');
+  const para = document.createElement('div');
+  para.className = 'story-para';
+  box.appendChild(para);
+
+  // 非 <p> 开头 → 直接渲染（不打字机）—— 事件标题 div、空 <p></p> 占位等
+  if(!/^\s*<p/i.test(cleanHtml)){
+    para.innerHTML = cleanHtml;
+    box.scrollTop = box.scrollHeight;
+    storySegIdx++;
+    onParagraphDone();
+    return;
+  }
+
+  // 打字机
+  storyTyping = true;
+  storyPlainIdx = 0;
+  storyCurrent = cleanHtml;
+  if(storyPageTimer){ clearInterval(storyPageTimer); storyPageTimer=null; }
+
+  const plain = cleanHtml.replace(/<[^>]+>/g,'');
+  storyPageTimer = setInterval(()=>{
+    storyPlainIdx = Math.min(storyPlainIdx+1, plain.length);
+    para.innerHTML = escapeHtml(plain.slice(0, storyPlainIdx))
+      + (storyPlainIdx < plain.length ? '<span class="story-caret"></span>' : '');
+    box.scrollTop = box.scrollHeight;
+    if(storyPlainIdx >= plain.length){
+      if(storyPageTimer){ clearInterval(storyPageTimer); storyPageTimer=null; }
+      storyTyping = false;
+      para.innerHTML = storyCurrent;
+      box.scrollTop = box.scrollHeight;
+      storyCurrent = null;
+      storySegIdx++;
+      onParagraphDone();
+    }
+  }, 1000/30);
+}
+
+/* 一段打字完成后 → 根据手动/自动模式决定是否推进 */
+function onParagraphDone(){
+  const page = storyPages[storyPageIdx];
+  if(!page) return;
+  if(storySegIdx < page.paragraphs.length){
+    // 同页还有段
+    if(storyAutoMode){
+      if(storyAutoTimer){ clearTimeout(storyAutoTimer); }
+      storyAutoTimer = setTimeout(typeSegment, 200);
+    }
+    // 手动模式：等玩家点击
+    return;
+  }
+  // 当前页所有段打完
+  onPageEnd();
+}
+
+/* 页尾：等玩家点击或自动翻页 */
+function onPageEnd(){
+  const box = $('#storyBody');
+  // 手动模式才显示"点击继续"提示；自动模式自己翻不需要
+  if(!storyAutoMode){
+    box.innerHTML += '<div class="story-tap-hint">↓ 点击继续</div>';
+  }
+
+  if(storyAutoMode){
+    if(storyPageIdx + 1 < storyPages.length){
+      // 中间页 → 1.5s 自动翻下一页
+      if(storyAutoTimer){ clearTimeout(storyAutoTimer); }
+      storyAutoTimer = setTimeout(()=>{
+        storyPageIdx++; storySegIdx=0;
+        renderCurrentPage();
+      }, 1500);
+    } else {
+      // 最后一页 → 立刻触发回调（选项叠加在最后一页文字上，不清屏）
+      // 等回调里的选项处理完（用户选完 → 下一次 storyStartFragment 会清屏）
+      if(storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
+      endForCallbacks();
+    }
+  }
+}
+
+/* 片段结束但不清正文 —— 用于"选项叠加在最后一页文字上"场景
+   （主线剧情 / 事件正文：最后一页打完，文字保留，选项在 promptZone 出现） */
+function endForCallbacks(){
+  if(storyPageTimer){ clearInterval(storyPageTimer); storyPageTimer=null; }
+  if(storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
+  storyTyping=false; storyCurrent=null; storyPlainIdx=0;
+
+  // 清最后那页的"点击继续"提示（正文内容不动）
+  const box = $('#storyBody');
+  const hint = box.querySelector('.story-tap-hint');
+  if(hint) hint.remove();
+
+  // 存回调、清引用
+  const cb = storyOnSegEnd; storyOnSegEnd = null;
+  // 注意：不清 storyPages / storyPageIdx / storySegIdx —— finishCurrentFragment 会
+  // 彻底重置；但保留状态让选项期间 storyHasMore 返回正确值。
+  // 不过 finishCurrentFragment 清故事时故事引擎就该彻底重置了，
+  // 这里清 storyPages 和索引其实也没问题 —— 选项期间不会再读。
+  storyPages=[]; storyPageIdx=0; storySegIdx=0;
+
+  // 直接同步调回调。finishMainStorySeg → 有 options 则 renderMainStoryOptions 叠加到 promptZone；
+  // 无 options 则 0.8s 后触发下一段 storyStartFragment。
+  // 事件 renderEventOptions → 选项叠加到 promptZone。
+  if(cb) cb();
+}
+
+function finishCurrentFragment(){
+  // 1. 停定时器、清打字状态
+  if(storyPageTimer){ clearInterval(storyPageTimer); storyPageTimer=null; }
+  if(storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
+  storyTyping=false; storyCurrent=null; storyPlainIdx=0;
+  storyPages=[]; storyPageIdx=0; storySegIdx=0;
+  const cb = storyOnSegEnd; storyOnSegEnd = null;
+
+  // 2. 彻底清 storyBody（正文 + 翻页提示）
+  $('#storyBody').innerHTML='';
+
+  // 3. 清 speaker（包括事件标题残留的 dataset.storyTitle）
+  const speakerEl = $('#storySpeaker');
+  speakerEl.innerHTML='';
+  delete speakerEl.dataset.storyTitle;
+
+  // 4. 隐藏自动/跳过按钮（剧情/事件彻底结束时清空）——
+  //    但 endForCallbacks（选项叠加场景）**不**走这里，它不清正文、不清 speaker、不隐藏 controls
+  const controls = $('#storyControls');
+  if(controls) controls.style.display='none';
+
+  // 5. 清理所有屏幕效果（闪回、抖动、overlay）—— 防止跳过剧情后效果残留
+  $('#bottom').classList.remove('storyFlashback');
+  $('#app').classList.remove('fx-shake','fx-shake-dull');
+  document.querySelectorAll('.screen-effect').forEach(el=>{ try{ el.remove(); }catch(e){} });
+
+  // 6. 清引擎上下文
+  storyCtx = null;
+
+  // 7. 触发回调（如果有）—— 通常 finishCurrentFragment 用于"彻底结束"，回调一般为 null；
+  //    storySkipMainSeg（跳过时）直接调这里，此时回调可能还在，照常触发
+  if(cb) cb();
+}
+
+/* ============================================================
+   外部触发：玩家点击剧情区 → 推进
+   ============================================================ */
+function storyOnTap(){
+  if(storyTyping){
+    // 打字中点击 → skip-to-end 本段
+    const box=$('#storyBody');
+    const para=box.lastElementChild;
+    if(para && para.classList.contains('story-para') && storyCurrent){
+      para.innerHTML=storyCurrent;
+      if(storyPageTimer){ clearInterval(storyPageTimer); storyPageTimer=null; }
+      storyTyping=false; storyCurrent=null;
+      storySegIdx++;
+      onParagraphDone();
+    }
+    return;
+  }
+  if(!storyPages.length) return;
+  const page = storyPages[storyPageIdx];
+  if(!page) return;
+
+  // 自动模式下玩家点击 → 清掉 auto timer，手动接管一次推进
+  if(storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
+
+  if(storySegIdx < page.paragraphs.length){
+    // 还有段没打 → 推进下一段
+    typeSegment();
+    return;
+  }
+  // 当前页已打完 → 翻下一页 or 结束
+  if(storyPageIdx + 1 < storyPages.length){
+    storyPageIdx++; storySegIdx=0;
+    renderCurrentPage();
+    return;
+  }
+  // 所有页打完 → 立刻触发回调（不清正文，让选项叠加在最后一页文字上）
+  endForCallbacks();
+}
+
+/* ============================================================
+   兼容旧 API（event.js 等依赖）
+   ============================================================ */
+function storyAdvance(){ storyOnTap(); }
+function storyIsTyping(){ return storyTyping; }
+function storyHasMore(){
+  if(storyPageIdx >= storyPages.length) return false;
+  const page = storyPages[storyPageIdx];
+  return page && (storySegIdx < page.paragraphs.length || storyPageIdx + 1 < storyPages.length);
+}
+function storyClear(){ finishCurrentFragment(); }
+function story(html){ storyPush(html); }
+function storySetSpeaker(name){
+  // 外部主动设 speaker（主线剧情 start 前预填、选项后等场景）—— 设完清掉 eventTitle dataset
+  const el = $('#storySpeaker');
+  el.innerHTML = name ? applySpeakerColor(name) : '';
+  if(!name) delete el.dataset.storyTitle;
+}
+function storySkipToEnd(){ storyOnTap(); return true; }
+function storyMarkChoice(){ /* 空实现，分页引擎不依赖 marker */ }
+
+/* 跳过当前故事片段（主线正文 / 事件正文 / 事件结果 都走这个）：
+   清所有 pages → finishCurrentFragment 触发 onSegEnd 回调（主线 → finishMainStorySeg 进选项；事件 → renderEventOptions 进选项） */
+function storySkipMainSeg(){
+  // 停打字/定时器（finishCurrentFragment 会再清一遍，这里保险）
+  if(storyPageTimer){ clearInterval(storyPageTimer); storyPageTimer=null; }
+  if(storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
+  storyTyping=false;
+
+  // 强制 finish —— finishCurrentFragment 里会清 storyBody / controls / 屏幕效果 / 触发回调
+  storyPages = []; storyPageIdx = 0; storySegIdx = 0;
+  finishCurrentFragment();
+}
+
+/* ============================================================
+   自动 / 跳过按钮
+   ============================================================ */
+function initStoryControls(){
+  const auto=$('#autoBtn');
+  const skip=$('#skipBtn');
+  if(auto){ auto.classList.toggle('on', storyAutoMode); auto.onclick=()=>{
+    storyAutoMode = !storyAutoMode;
+    try{ sessionStorage.setItem('storyAutoMode', storyAutoMode?'1':'0'); }catch(e){}
+    auto.classList.toggle('on', storyAutoMode);
+    // 开启自动时：若当前 idle 且还有内容，立即连打
+    if(storyAutoMode && !storyTyping && storyPages.length){
+      if(storySegIdx >= storyPages[storyPageIdx].paragraphs.length
+        && storyPageIdx + 1 < storyPages.length){
+        // 页尾等待 → 立即翻下一页
+        if(storyAutoTimer){ clearTimeout(storyAutoTimer); }
+        storyAutoTimer = setTimeout(()=>{ storyPageIdx++; storySegIdx=0; renderCurrentPage(); }, 200);
+      }
+    }
+    if(!storyAutoMode && storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
+  }}
+  if(skip){ skip.onclick=onSkipClicked; }
+}
+function onSkipClicked(){
+  // 选项保护
+  if(document.querySelector('#promptZone .ev-opt')){
+    alertDialog('无法跳过','这里需要你做出选择！'); return;
+  }
+  openModal('确认跳过', '<p>你确定跳过本段剧情？</p>', 'small', {noCloseX:true});
+  const body=$('#modalBody');
+  const btnRow=document.createElement('div'); btnRow.className='btn-row'; btnRow.style='justify-content:center;margin-top:10px;';
+  btnRow.innerHTML = `<button class="mbtn small" id="skipYes">是</button><button class="mbtn small" id="skipNo">否</button>`;
+  body.appendChild(btnRow);
+  $('#skipNo').onclick=closeModal;
+  $('#skipYes').onclick=()=>{ closeModal(); doSkipCurrent(); };
+}
+function doSkipCurrent(){
+  if(eventState){
+    // 事件正文阶段：跳过正文 → 回调触发 renderEventOptions（进入选项阶段）
+    // 事件结果阶段：跳过结果文本 → 回调触发 eventState=null + unlockEventUI（彻底结束）
+    // 选项阶段有 onSkipClicked 里的"选项存在"保护，用户没机会点到这里
+    storySkipMainSeg();
+    return;
+  }
+  // 主线剧情：跳过整个片段
+  storySkipMainSeg();
+}
+
+/* 绑定 storyBox 点击（DOMContentLoaded 时执行） */
+function bindStoryTap(){
+  const box=$('#storyBox');
+  if(!box) return;
+  box.addEventListener('click', (e)=>{
+    // 如果正在选择选项，不响应
+    if(document.querySelector('#promptZone .ev-opt')) return;
+    storyOnTap();
+  });
+}
+if(typeof document!=='undefined'){ document.addEventListener('DOMContentLoaded', ()=>{
+  initStoryControls();
+  bindStoryTap();
+}); }
+
+/* escapeHtml（工具） */
+function escapeHtml(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function itemDetailHTML(key){
+  let body='';
+  if(FOOD[key] || key==='cookedMeat'){
+    let add = FOOD[key]&&FOOD[key].healthChance ? '，有20%概率健康+1' : '';
+    body = `回复 <span class="lvlup">${foodHeal(key)}</span> 点生命${add}（已计入篝火、烹饪天赋加成）。`;
+  } else if(key==='clearMind'){
+    body = `心理压力<span style="color:#d9534f">+4</span>，立即回满生命值与行动力并解除 ${termHTML('depress','抑郁')} 状态，本日内主角攻击力+25%、受到的伤害-25%。`;
+  } else if(ITEMS[key] && ITEMS[key].permanent && (ITEMS[key].desc||'').indexOf('天赋')>=0){
+    const map={club:'crit',cloth:'block',dagger:'blood',leather:'hold',ironSword:'momentum'};
+    if(map[key]){ const tid=map[key]; const tname=(PROTAGONIST.passives.find(p=>p.id===tid)||{}).name || tid; const lv=(G&&G.proLevels&&G.proLevels[tid])||1; body=`使主角【天赋·${tname}】升为 <span class="lvlup">${lv+1}</span> 级（当前 ${lv} 级）。`; }
+    else body = ITEMS[key].desc || '';
+  } else if(key==='armor'){ const lv=(G&&G.proLevels&&G.proLevels.block)||1; body=`使【格挡】升为 <span class="lvlup">${lv+2}</span> 级、【坚守】升为 <span class="lvlup">${((G&&G.proLevels&&G.proLevels.hold)||1)+1}</span> 级。`; }
+  else { body = itemDesc(key)||'（暂无说明）'; }
+  /* === lore 蓝色文学描述：优先 ITEMS.lore，其次 RES_LORE（资源专用） === */
+  const lore = (ITEMS[key] && ITEMS[key].lore) || RES_LORE[key] || '';
+  return lore ? `${body}<div class="item-lore">${lore}</div>` : body;
+}
+function itemUsable(k){ if(FOOD[k] || k==='clearMind') return !!FOOD[k] || k==='clearMind'; return false; }
+function refreshHUD(){ if(!G) return;
+  /* === 首次获得 hook 兜底检查 === */
+  G.records=G.records||{};
+  if(!G.records.fruitFirstOwned && (G.inventory.fruit||0)>0) G.records.fruitFirstOwned=true;
+  if(!G.records.cookedMeatFirstOwned && (G.inventory.cookedMeat||0)>0) G.records.cookedMeatFirstOwned=true;
+  if(!G.records.nonWalkVehicleOwned){ if((G.vehicles||[]).some(v=>v.key&&!['walk','dash'].includes(v.key))){ G.records.nonWalkVehicleOwned=true; } }
+  /* === 任务自动接取提醒：新变为可见的任务立即 log === */
+  if(!G.records.questNotified) G.records.questNotified={};
+  for(const t of TASKS){ if(taskVisible(t) && !G.records.questNotified[t.id]){ G.records.questNotified[t.id]=true; log(`📋 已接取 ${t.cat==='main'?'主线':'支线'}任务「${t.name}」，请前往任务界面查看。`); } }
+  /* === HUD === */
+  const h=G.hero; const mHp=heroDisplayMaxHp(); const hpCls=h.hp< mHp*0.3?'hpfill low':'hpfill';
+  const depress = h.depress ? `<span class="stat depress-stat">${termHTML('depress','抑郁')}</span>` : '';
+  const psy = Math.max(-100, Math.min(100, (h.psyStress||0)));
+  $('#hud').innerHTML=`<span class="stat">健康 <b>${h.health}</b></span>`+`<span class="stat">天数 <b>${G.day}</b></span>`+`<span class="stat">区域 <b>${G.region==='wild'?'野外':'城市'}</b></span>`+`<span class="stat">攻击 <b>${heroDisplayAtk()}</b></span>`+`<span class="stat">防御 <b>${heroDisplayDef()}</b></span>`+`<span class="stat">生命 <b class="${hpCls}">${h.hp}/${mHp}</b></span>`+`<span class="stat">金币 <b>${G.inventory.coin}</b></span>`+`<span class="stat">行动力 <b>${h.actionPoint}/${h.apCap}</b></span>`+`<span class="stat">心理压力 <b>${psy}</b></span>`+depress;
+}
+function renderIconbar(){ if(!G) return; const show=[[ '任务',openTasks],['编队',openFormation],['角色',openCharacters],['背包',openInventory],['睡觉',sleep],['设置',openSettings],['商店',openShop],['合成',openCraft],['载具',openVehicles]]; const blocked = (isInFlow()) ? new Set(['编队','睡觉','商店','合成']) : new Set(); $('#iconbar').innerHTML=show.map(([t,f],i)=>`<button class="icobtn${t==='睡觉'?' sleep':''}${blocked.has(t)?' dis':''}" data-i="${i}">${t}</button>`).join(''); $('#iconbar').querySelectorAll('.icobtn').forEach(b=>b.onclick=()=>show[+b.dataset.i][1]()); }
+function log(msg){ const d=el(`<div class="logline">${msg}</div>`); const body=$('#logBody'); body.appendChild(d); body.scrollTop=body.scrollHeight; /* 行动记录区无上限，仅战斗开始/结束/睡觉时清除 */ }
+function story(html){$('#storyBody').insertAdjacentHTML('beforeend',`<div>${html}</div>`); $('#storyBody').scrollTop=$('#storyBody').scrollHeight;}
+function prompt(msg){$('#promptZone').innerHTML=msg;}
+function terms(txt){ if(typeof txt!=='string') return txt; return txt.replace(/【([^】]+)】/g, (m,zh)=> TERM_KEYS[zh]? termHTML(TERM_KEYS[zh], zh) : `<b>${m}</b>`); }
+function renderMap(){ const m=G.map; const grid=$('#mapGrid'); grid.style.gridTemplateColumns=`repeat(${m.n},44px)`; grid.innerHTML=''; for(let y=0;y<m.n;y++){ for(let x=0;x<m.n;x++){ const c=m.cells[y*m.n+x]; const cell=el('<div class="cell"></div>'); if(c.terrain==='obstacle'){cell.classList.add('obstacle');} else if(c.terrain==='void'){cell.classList.add('void');} if(c.terrain!=='void' && c.content && c.content.type) renderCellContent(cell,c); if(G.px===x&&G.py===y){cell.classList.add('player'); cell.classList.add('facing-'+G.hero.facing);} cell.dataset.x=x; cell.dataset.y=y; cell.addEventListener('click',()=>onCellClick(x,y)); grid.appendChild(cell); } } }
+function renderCellContent(cell,c){ if(c.content.type==='battle' && !c.content.done){ if(c.content.rare && (G.inventory.roadmap||0)>0){ cell.textContent='🐻'; cell.title='稀有动物'; cell.style.color='#ffd700'; } else if(c.content.sub==='hard'){ cell.textContent='⚠️'; cell.title='紧急作战'; cell.style.color='#ff6b6b'; } else if(c.content.sub==='boss'){ cell.textContent='💀'; cell.title='boss战'; } else { cell.textContent='⚔'; cell.title='作战'; } return; } else if(c.content.type==='loot' && !c.content.done){ cell.textContent='🎁'; cell.title='战利品'; } else if(c.content.type==='event' && !c.content.done){ cell.textContent='❓'; cell.title='事件'; } }
+function openSettings(){ const lbl = combatState? '存档（回本次战斗开始时）' : (isInStoryFlow()? '存档（回本次剧情开始时）' : '存档'); openModal('设置', `<div style="display:flex;flex-direction:column;gap:14px"><button class="mbtn big" onclick="saveMenuOpen()">${lbl}</button><button class="mbtn big" onclick="openReadSave()">读档</button><button class="mbtn big" onclick="closeModal();backToMenu()">返回主界面（不存档）</button></div>`, 'small'); const sm=$('#modalOverlay .modal'); if(sm) sm.classList.add('settingz'); }
+function saveMenuOpen(){ openModal('选择存档位', buildSaveSlotHTML('save'), 'small'); }
+function openReadSave(){ openReadSaveMenu(); }
+function alertDialog(title,msg){ openModal(title, `<p>${msg}</p>`, 'small'); }
+function openSaveMenu(){ openModal('选择存档位', buildSaveSlotHTML('save'), 'small'); }
+function buildSaveSlotHTML(action){ return savesSlotsHTML(action, loadSaves()); }
+function savesSlotsHTML(action,saves){ let h=''; for(let i=0;i<MAX_SAVES;i++){ const s=saves[i]; h+=`<button class="mbtn" onclick="${action==='save'?`doSave(${i})`:`doLoad(${i})`}">`+`存档位 ${i+1}${s?` — 第 ${s.day} 天 · 健康${s.hero.health} · ${new Date(s._ts).toLocaleString()}`:'（空）'}`+`</button>`; } return h; }
+window.doSave=function(i){ saveGame(i); log(`已保存到存档位 ${i+1}。`); closeModal(); };
+window.doLoad=function(i){ if(loadGame(i)){ loadIntoWorld(); } else{ alert('该存档位为空。'); } };
+function openReadSaveMenu(){ openModal('读取存档', buildSaveSlotHTML('load'), 'small'); }
+let invMsg='';
+let invTab='consumable';
+let invSelKey=null;
+const INV_CATS=[{id:'consumable',label:'消耗品'},{id:'permanent',label:'永久物品'},{id:'misc',label:'杂物'},{id:'quest',label:'任务道具'}];
+function invClassify(key){
+  /* 永久物品：ITEMS 里带 permanent:true 的 */
+  if(ITEMS[key] && ITEMS[key].permanent) return 'permanent';
+  /* 载具类（魔法扫帚等）也归永久物品 */
+  if(ITEMS[key] && ITEMS[key].vehicle) return 'permanent';
+  /* 其余全部归消耗品（资源、合成品、赠礼品类）；当前无杂物 / 任务道具 */
+  return 'consumable';
+}
+function openInventory(){
+  if(G){ invMsg=''; invTab='consumable'; invSelKey=null; renderInventory(); }
+}
+function renderInventory(){
+  const allKeys=Object.keys(G.inventory).filter(k=>k!=='coin' && (G.inventory[k]||0)>0);
+  const byCat={consumable:[], permanent:[], misc:[], quest:[]};
+  for(const k of allKeys){ const c=invClassify(k); if(byCat[c]) byCat[c].push(k); }
+  const currentKeys = byCat[invTab]||[];
+  /* 选中检查 */
+  if(!currentKeys.includes(invSelKey)) invSelKey = currentKeys[0] || null;
+  /* 左侧网格 */
+  const tiles = currentKeys.map(k=>{
+    const n=G.inventory[k];
+    const sel=(k===invSelKey)?' on':'';
+    return `<div class="itile inv-cell${sel}" data-k="${k}"><div class="iname craftlink" data-key="${k}">${itemName(k)}</div><div class="icount">×${n}</div></div>`;
+  }).join('');
+  /* 右侧描述栏 */
+  let rightHTML='';
+  if(invSelKey){
+    const k=invSelKey; const n=G.inventory[k];
+    const useBtn = (!isInFlow() && itemUsable(k)) ? `<button class="mbtn tiny invUse" onclick="useInvItem('${k}')">使用</button>` : '';
+    rightHTML = `<div class="inv-detail-right">
+      <div class="dr-name">${itemName(k)} ×${n} ${useBtn}</div>
+      <div class="dr-desc">${terms(itemDetailHTML(k))}</div>
+    </div>`;
+  } else {
+    rightHTML = `<div class="inv-detail-right"><div class="dr-empty">请点击左侧物品查看描述</div></div>`;
+  }
+  const tabBtns=INV_CATS.map(t=>`<button class="inv-tab ${invTab===t.id?'on':''}" data-id="${t.id}">${t.label}${byCat[t.id]&&byCat[t.id].length?` (${byCat[t.id].length})`:''}</button>`).join('');
+  openModal('背包',
+    `<div class="invbar"><span class="invtitle">随身物品</span><span class="invcoin">金币 <b>${G.inventory.coin}</b></span></div>`+
+    `<div class="inv-tabs">${tabBtns}</div>`+
+    (invMsg?`<div class="shopmsg">${invMsg}</div>`:'')+
+    `<div class="inv-layout"><div class="inv-grid-left"><div class="vgrid inv">${tiles||'<span class="stempty">此类下没有物品</span>'}</div></div>${rightHTML}</div>`, 'full', {replace:true});
+  $('#modalBody').querySelectorAll('.inv-tab').forEach(b=>b.onclick=()=>{ invTab=b.dataset.id; invSelKey=null; renderInventory(); });
+  /* 点击物品选中/取消 */
+  $('#modalBody').querySelectorAll('.inv-cell').forEach(t=>{
+    t.onclick=ev=>{
+      if(ev.target.classList.contains('craftlink')){ if(window.openItemHelp) openItemHelp(t.dataset.k); return; }
+      if(invSelKey===t.dataset.k) invSelKey=null; else invSelKey=t.dataset.k;
+      renderInventory();
+    };
+  });
+}
+window.useInvItem=function(k){ if(isInFlow()){ invMsg='事件中无法使用背包物品。'; renderInventory(); return; } const n=G.inventory[k]||0; if(n<=0){ renderInventory(); return; }
+  /* === 明心浆 === */
+  if(k==='clearMind'){
+    G.inventory[k]-=1;
+    G.hero.psyStress = Math.max(-100, Math.min(100, (G.hero.psyStress||0)+4));
+    G.hero.hp = heroDisplayMaxHp();
+    G.hero.actionPoint = G.hero.apCap;
+    if(G.hero.depress){ G.hero.depress=false; log(`使用了 <b>${itemName(k)}</b>，解除了${termHTML('depress','抑郁')}状态！`); }
+    /* 当日 buff */
+    G.hero.clearMindBuff = { day:G.day, atkUp:25, dr:25 };
+    log(`使用了 <b>${itemName(k)}</b>：生命值与行动力回满，心理压力+4。本日内主角攻击力+25%、受到的伤害-25%。`);
+    refreshHUD(); renderInventory(); return;
+  }
+  /* === 食物 === */
+  if(!FOOD[k]){ renderInventory(); return; }
+  G.inventory[k]-=1;
+  const heal=foodHeal(k); const before=G.hero.hp;
+  if(heal && G.hero.hp<heroineMaxHp()){ G.hero.hp=Math.min(heroineMaxHp(), G.hero.hp+heal); }
+  log(`使用了 <b>${itemName(k)}</b>，回复 ${G.hero.hp-before} 点生命。`);
+  if(k==='fruit' && FOOD[k].healthChance && Math.random()<FOOD[k].healthChance){ G.hero.health+=1; log('果子蕴含生机，你的<b>健康</b>+1。'); }
+  /* === 启程任务挂钩：果腹 / 大口吃肉 === */
+  if(k==='fruit'){ G.records.qFruitCount = (G.records.qFruitCount||0)+1; }
+  if(k==='cookedMeat'){ G.records.qMeatCount = (G.records.qMeatCount||0)+1; }
+  refreshHUD(); renderInventory();
+};
+let modalStack=[];
+function openModal(title,html,size,opt){ const ov=$('#modalOverlay'); if(ov.classList.contains('show') && !(opt&&opt.replace)){ const m=ov.querySelector('.modal'); const sz=m.classList.contains('small')?'small':m.classList.contains('wide')?'wide':m.classList.contains('full')?'full':''; modalStack.push({title:$('#modalTitle').textContent, html:$('#modalBody').innerHTML, size:sz}); } const br=ov.querySelector('.btn-row'); if(br){ br.style.display=''; } $('#modalTitle').textContent=title; const modal=ov.querySelector('.modal'); modal.className='modal'+(size==='small'?' small':(size==='wide'?' wide':(size==='full'?' full':''))); $('#modalBody').innerHTML=html; const mx=document.getElementById('modalX'); if(mx) mx.style.display=(opt&&opt.noCloseX)?'none':'block'; ov.classList.add('show'); }
+function closeModal(){
+  // 问题2：离开角色页面时，自动重置选中主角 + 技能展示（不清除其他界面文本）
+  try{ if($('#modalTitle') && $('#modalTitle').textContent==='角色'){ charPageKey='pro'; charPageTab='skills'; } }catch(e){}
+  $('#modalOverlay').classList.remove('show'); modalStack.length=0;
+}
+function onModalX(){ if(swapOpen){ applySwap(); } closeModal(); }
+function modalBack(){ if(modalStack.length){ const p=modalStack.pop(); $('#modalOverlay').classList.remove('show'); openModal(p.title,p.html,p.size); return true; } closeModal(); return false; }
+let charPageKey='pro'; let charPageTab='skills';
+function openCharacters(){ renderCharacters(); }
+function renderCharacters(){
+  const keys=['pro',...Object.keys(ALLIES)];
+  const tabs=keys.map(k=>`<button class="ctab ${k===charPageKey?'on':''}" data-k="${k}">${getChar(k).name}</button>`).join('');
+  openModal('角色',
+    `<div class="ctabs">${tabs}</div>`+
+    `<div id="charLayout">${charPageLayout(charPageKey)}</div>`,
+    'full', {replace:true});
+  $('#modalBody').querySelectorAll('.ctab').forEach(b=>b.onclick=()=>{ charPageKey=b.dataset.k; renderCharacters(); });
+  // 任务7：事件/战斗中禁用 carry & interact 按钮
+  if(isInFlow()){
+    document.querySelectorAll('#charLayout .csidebtn[data-tab="carry"], #charLayout .csidebtn[data-tab="interact"]').forEach(b=>{
+      b.classList.add('dis'); b.disabled=true; b.title='事件/战斗中不可使用';
+    });
+  }
+  interactInit();
+}
+/* 任务5+6+7：角色页面布局 —— 顶部角色按钮行居中；右侧1/5常驻侧栏；左侧内容区 */
+function charPageLayout(key){
+  const c=getChar(key);
+  const isPro = key==='pro';
+  const b = isPro? null : getBond(key);
+  const canCarryInteract = !(isInFlow());
+  const sideTabs = [
+    {tab:'skills',  label:'技能展示',   enabled:true},
+    {tab:'carry',   label:'调整技能',   enabled:canCarryInteract},              // 非战斗/事件时主角和队友都可打开
+    {tab:'interact',label:'交互',       enabled:canCarryInteract && !isPro},    // 交互仅队友有
+    {tab:'bond',    label:'羁绊等级效果', enabled:!isPro},
+    {tab:'story',   label:'故事',       enabled:true},
+  ];
+  const sideBtns = sideTabs.map(t=>`<button class="csidebtn ${charPageTab===t.tab?'on':''}${t.enabled?'':' dis'}" data-tab="${t.tab}" ${t.enabled?`onclick="setCharPageTab('${t.tab}')"`:'disabled'}>${t.label}</button>`).join('');
+  const subMap={skills:charSkillsTab, carry:charCarryTab, interact:charInteractTab, bond:charBondTab, story:charStoryTab};
+  const body = (subMap[charPageTab]||charSkillsTab)(key, c);
+  return `
+  <div class="char-layout">
+    <div class="char-main">
+      <div class="charPageSub">${body}</div>
+    </div>
+    <div class="char-side">
+      <div class="csname">${c.name}</div>
+      ${!isPro ? `<div class="csbond">羁绊 <b>${b.level}</b> 级<br>好感度 <b>${b.affinity}</b></div>` : `<div class="csbond" style="color:var(--txt-dim)">主角 · 无羁绊</div>`}
+      <div class="csbtns">${sideBtns}</div>
+    </div>
+  </div>`;
+}
+window.setCharPageTab=function(id){ if(!['skills','carry','interact','bond','story'].includes(id)) return; if((isInFlow()) && (id==='carry'||id==='interact')) return; charPageTab=id; renderCharacters(); };
+function charSkillsTab(key,c){ c=c||getChar(key);
+  const attrs= key==='pro'
+    ? `<span>攻击 ${R(charAtk('pro'))}</span><span>最大生命 ${R(heroDisplayMaxHp())}</span><span>防御 ${R(heroDisplayDef())}</span><span>逃跑速度 ${R(G.hero.escapeSpeed)}</span><span>健康 ${R(G.hero.health)}</span><span>行动力上限 ${R(G.hero.apCap)}</span>`
+    : `<span>攻击 ${R(charAtk(key))}</span><span>属性 ${c.element?ELEM[c.element].zh:'无'}</span>`;
+  const talents=c.passives.map(p=>{ const name=p.scal? talentDisplayName(key,p):p.name; const desc=p.scal? lvDescText(p,entryLevel(key,p)) : terms(p.desc); return `<div class="charTalent"><span class="cat talent">天赋</span>${name}：${desc}</div>`; }).join('');
+  const skills=c.skills.map(s=>`<div class="charSkill"><span class="cat ${s.kind==='attack'?'attack':'support'}">${s.kind==='attack'?'攻击':'辅助'}</span>${skillDisplayName(key,s)}${c.selectedSkillIds.includes(s.id)?' <span class="carry">[携带]</span>':''}：${describeSkill(key,s)}</div>`).join('');
+  return `<div class="statGrid char-attrs">${attrs}</div><div class="sec"><b>天赋</b></div>${talents}<div class="sec"><b>技能</b>（战斗中可携带至多3个）</div>${skills}`;
+}
+function charCarryTab(key,c){ c=c||getChar(key); let sel=skillPickSel[key]; if(!sel) sel=getChar(key).selectedSkillIds.slice(); const rows=c.skills.map(s=>{ const on=sel.includes(s.id); return `<div class="skillpick ${on?'sel':''}" onclick="toggleCarryPick('${key}','${s.id}')">${on?'☑':'☐'} <b>${skillDisplayName(key,s)}</b>：${describeSkill(key,s)}</div>`; }).join(''); return `<p style="font-size:14px;margin-bottom:8px">至多选择 3 个技能（当前 ${sel.length}/3，天赋不计）。</p>${rows}<div class="btn-row" style="margin-top:10px"><button class="mbtn small" onclick="saveCarry('${key}')">保存</button></div>`; }
+window.toggleCarryPick=function(key,id){ if(!skillPickSel[key]) skillPickSel[key]=getChar(key).selectedSkillIds.slice(); const sel=skillPickSel[key]; const i=sel.indexOf(id); if(i>=0) sel.splice(i,1); else { if(sel.length>=3){ alert('至多携带 3 个技能。'); return; } sel.push(id); } renderCharacters(); };
+window.saveCarry=function(key){ if(skillPickSel[key]){ getChar(key).selectedSkillIds=skillPickSel[key].slice(); skillPickSel[key]=null; log(`已保存 ${getChar(key).name} 的携带技能。`); } renderCharacters(); };
+function charInteractTab(key,c){ c=c||getChar(key); if(key==='pro') return '<p>你们是……同一个人，情谊无需经营。</p>'; return `<div class="interact-wrap" id="interactWrap"><div class="interact-placeholder">加载互动界面…</div></div>`; }
+/* ---- 交互界面（左列可选项 / 右对话区，打字机出字） ---- */
+const INTER_MAX=40;
+let interHist={}, interTyping={}, interTick={};
+let giftOpenKey=null, giftSelItem=null, giftJustOpened=false;
+const GIFT_EXCLUDE=['coin','campfire','club','cloth','tent','trap','quilt','dagger','leather','ironSword','armor','goodCard',
+  /* === 新物品 === */ 'broom','clearMind','luckyCoin','deadwoodSprout','kuiZuo','windChime','roadmap'];
+function interactInit(){ const wrap=$('#interactWrap'); if(!wrap) return; if(charPageTab!=='interact') return; giftOpenKey=null; giftSelItem=null; giftJustOpened=false; renderInteractBody(charPageKey); }
+function interactButtons(key){ if(key==='xiayang'){ return [['chat','聊天（成功率 50%）'],['feed','投喂'],['gift','送礼']]; } if(key==='luyouyou'){ const st=lyChatState(); return [['chat',`聊天（成功率 ${Math.round(st.cur)}%）`],['gift','送礼']]; } return []; }
+function renderInteractBody(key){
+  const wrap=$('#interactWrap'); if(!wrap) return; const c=getChar(key);
+  const btns=interactButtons(key).map(([id,label])=>`<button class="csub ilbtn" data-act="${id}">${label}</button><br>`).join('');
+  const hints = key==='xiayang'? '<div class="interact-hint">聊天消耗 1 行动力；投喂每天仅第一次提升好感度；每 3 天可送礼 1 次。</div>' : '<div class="interact-hint">聊天消耗 1 行动力（每日成功率随机）；每 3 天可送礼 1 次。</div>';
+  let html=`<div class="interact-box"><div class="interact-left"><div class="interact-left-head">${c.name}</div>${btns}${hints}</div><div class="interact-right"><div class="interact-dlg" id="interactDlg_${key}"></div><div class="interact-opt" id="interactOpt_${key}"></div></div></div>`;
+  if(giftOpenKey===key && !$('#giftOverlay')) html = `<div class="gift-overlay" id="giftOverlay">${renderGiftGrid(key)}</div>` + html;
+  wrap.innerHTML=html;
+  const dlg=$('#interactDlg_'+key);
+  /* 双重保险：重建 DOM 前先清理 interHist 里超出 5 条的数据，只保留最后 5 条 */
+  const hist = interHist[key] || [];
+  const trimmed = hist.length > 5 ? hist.slice(-5) : hist;
+  interHist[key] = trimmed;
+  /* 关键修复：interHist 存的是 {el, html} 对象，要取 .html 字段！ */
+  trimmed.forEach(m=>{ const d=document.createElement('div'); d.className='iline'; d.innerHTML=m.html; dlg.appendChild(d); });
+  wrap.querySelectorAll('.ilbtn').forEach(b=>b.onclick=()=>interactAction(key,b.dataset.act));
+  if(giftOpenKey===key){ decorateGiftCells(); }
+  if(interTyping[key]!=null) startInterType(key,interTyping[key]);
+}
+function interactAction(key,act){ if(act==='chat') interactChat(key); else if(act==='feed') interactFeed(key); else if(act==='gift') openGift(key); }
+/* 打字机：把一段文本打进右侧对话区 */
+function startInterType(key,html){ const dlg=$('#interactDlg_'+key); if(!dlg) return; if(interTick['t'+key]) clearInterval(interTick['t'+key]); const plain=html.replace(/<[^>]+>/g,''); const node=document.createElement('div'); node.className='iline typing'; dlg.appendChild(node); dlg.scrollTop=dlg.scrollHeight; let i=0; interTick['t'+key]=setInterval(()=>{ i=Math.min(i+1,plain.length); node.innerHTML=escapeHtml(plain.slice(0,i))+(i<plain.length?'<span class="story-caret"></span>':''); dlg.scrollTop=dlg.scrollHeight; if(i>=plain.length){ clearInterval(interTick['t'+key]); interTick['t'+key]=null; node.innerHTML=html; node.classList.remove('typing'); interTyping[key]=null; interHist[key]=interHist[key]||[]; interHist[key].push({el:node,html});
+      // 交互文本区严格限 5 条：超出时立即删除最早那条的 DOM
+      while(interHist[key].length>5){
+        const oldest = interHist[key].shift();
+        if(oldest && oldest.el && oldest.el.parentNode) oldest.el.parentNode.removeChild(oldest.el);
+      }
+    } },1000/40); }
+/* 问题1修复：若上一段未打完，立即把它显示完全（保留），再在下一行开始新的文本；
+   关键：上一段即使被中断，也必须记录到 interHist 里，保证 interHist 和 DOM 同步 */
+function interactSay(key,html){
+  const dlg=$('#interactDlg_'+key); if(!dlg){
+    /* 连对话框都没渲染出来（比如角色页还没开），先把内容存进 interHist 但不 push DOM */
+    interHist[key]=interHist[key]||[];
+    const trimmed = interHist[key].slice(-5);
+    interHist[key] = trimmed;
+    // 等下一次 render 时再画
+    startInterType(key,html);
+    return;
+  }
+  const oldNode=dlg.querySelector('.iline.typing');
+  const oldHtml = interTyping[key];
+  /* 把上一段打完整（如果有），并 push 到 interHist 里 */
+  if(oldNode && oldHtml){
+    oldNode.innerHTML=oldHtml; oldNode.classList.remove('typing');
+    clearInterval(interTick['t'+key]); interTick['t'+key]=null;
+    interHist[key]=interHist[key]||[];
+    interHist[key].push({el:oldNode, html:oldHtml});
+    /* 严格限 5 条：超出时立即删除最早那条 DOM 和数据 */
+    while(interHist[key].length>5){
+      const oldest = interHist[key].shift();
+      if(oldest && oldest.el && oldest.el.parentNode) oldest.el.parentNode.removeChild(oldest.el);
+    }
+  } else {
+    if(interTick['t'+key]){ clearInterval(interTick['t'+key]); interTick['t'+key]=null; }
+  }
+  /* 防御性 trim：若 dlg 里已完成的 iline 已经有 >=5 条，则删掉最早的那条，
+     保证下一条进来时仍然不超过 5 条历史上限。
+     每次都用 dlg.children（活 NodeList）重新遍历，避免边删边遍历导致的迭代问题。 */
+  while(true){
+    let doneCount = 0;
+    let firstDone = null;
+    for(const c of dlg.children){
+      if(c.classList && c.classList.contains('iline') && !c.classList.contains('typing')){
+        doneCount++;
+        if(!firstDone) firstDone = c;
+      }
+    }
+    if(doneCount < 5) break;
+    if(firstDone) firstDone.parentNode.removeChild(firstDone);
+  }
+  interTyping[key]=html; startInterType(key,html);
+  // 问题3：陆悠悠聊天成功率——每次交互完后刷新按钮上显示的整数成功率（直接改 DOM 文字，避免整页重绘）
+  const ilbtns = document.querySelectorAll('.ilbtn');
+  if(key==='luyouyou'){ try{
+    const st=lyChatState();
+    const pct=Math.max(0,Math.min(100,Math.round(st.cur)));
+    ilbtns.forEach(b=>{ if(b.dataset.act==='chat') b.textContent=`聊天（成功率 ${pct}%）`; });
+  }catch(e){} }
+}
+/* 对话中途选项（沿用事件选项区 UI，置于对话区下侧） */
+function interactOption(key,opts){ const box=$('#interactOpt_'+key); if(!box) return; box.innerHTML=opts.map((o,i)=>`<div class="ev-opt" data-i="${i}"><div class="ev-opt-name">${o.name}</div>${o.desc?`<div class="ev-opt-desc">${o.desc}</div>`:''}</div>`).join(''); box.querySelectorAll('.ev-opt').forEach(b=>b.onclick=()=>{ const i=+b.dataset.i; const fn=opts[i]&&opts[i].onPick; box.innerHTML=''; if(fn) fn(); }); }
+/* 聊天 */
+function lyChatState(){ G.records=G.records||{}; if(!G.records.lychat) G.records.lychat={day:0,base:0,cur:0}; const s=G.records.lychat; const day=G.day||1; if(s.day!==day){ s.day=day; s.base=Math.round(Math.random()*80-20); s.cur=s.base; } return s; }
+function interactChat(key){ const c=getChar(key); if((G.hero.actionPoint||0)<1){ interactSay(key,`你的行动力不足，无法与 ${c.name} 聊天。（聊天需消耗 1 行动力）`); return; } G.hero.actionPoint-=1; refreshHUD(); if(key==='xiayang'){ if(Math.random()<0.5){ gainAffinity(key,1); interactSay(key,`${c.name}：你讲了个烤熊掌的笑话，夏阳先是愣了一下，随后笑出了声。……你俩相谈甚欢。<span class="lvlup">好感度+1</span>（消耗 1 行动力）`); } else { interactSay(key,`你聊起路上的见闻，夏阳却只是「嗯嗯」地点着头，明显兴致缺缺。<span class="lvlup">好感度+0</span>（消耗 1 行动力）`); } } else if(key==='luyouyou'){ const st=lyChatState(); const curInt=Math.round(st.cur); const ok = curInt>=0 && Math.random()*100<curInt; if(ok){ const add=Math.round(2+Math.random()*2); st.cur = Math.max(0, Math.min(100, curInt+add)); gainAffinity(key,1); interactSay(key,`${c.name}：哈哈，你说话真有意思，我很受用。<span class="lvlup">好感度+1</span>（本日聊天成功率 +${add}%，消耗 1 行动力）`); } else { const sub=Math.round(2+Math.random()*2); st.cur = Math.max(0, Math.min(100, curInt-sub)); interactSay(key,`${c.name}：嗯……这句就没那么有趣了。我再看下路线。<span class="lvlup">好感度+0</span>（本日聊天成功率 -${sub}%，消耗 1 行动力）`); } } }
+/* 投喂（仅夏阳）：自动消耗回复量最少的食物 */
+function interactFeed(key){ if(key!=='xiayang') return; const c=getChar(key); const foods=Object.keys(FOOD).filter(k=>(G.inventory[k]||0)>0); if(!foods.length){ interactSay(key,`你翻遍了背包，也没有任何可以投喂的食物。`); return; } let chosen=null,ch=null; for(const f of foods){ const h=foodHeal(f); if(chosen===null||h<ch){ chosen=f; ch=h; } } G.inventory[chosen]--; G.records=G.records||{}; if(!G.records.feedDay) G.records.feedDay={}; const day=G.day||1; const first = G.records.feedDay[key]!==day; if(first){ G.records.feedDay[key]=day; gainAffinity(key,1); } refreshHUD(); interactSay(key,first? `${c.name}：你投喂了 ${itemName(chosen)}。夏阳眼睛一亮，几口就吃完了。<span class="lvlup">好感度+1</span>` : `${c.name}：你投喂了 ${itemName(chosen)}，但夏阳已经吃饱了，摆摆手。<span class="lvlup">好感度+0</span>（每天仅第一次投喂提升好感度）`); }
+/* 送礼 */
+function giftCooldownLeft(key){ G.records=G.records||{}; const gd=(G.records.giftDay||{})[key]; if(gd==null) return 0; const d=(G.day||1)-gd; return Math.max(0,3-d); }
+function giftableItems(){ return Object.keys(G.inventory).filter(k=>(G.inventory[k]||0)>0 && !GIFT_EXCLUDE.includes(k)); }
+function renderGiftGrid(key){ const cd=giftCooldownLeft(key); const can = cd<=0; const items=giftableItems(); const cells=items.map(it=>`<div class="gift-cell ${giftSelItem===it?'sel':''}" data-k="${it}"><div class="gift-cname">${itemName(it)}</div><div class="gift-count">×${G.inventory[it]}</div></div>`).join('') || '<span class="nohint">背包里没有可送的物品。</span>'; const cdTxt = can? '' : `<div class="gift-cd">${getChar(key).name} 还有 <b>${cd}</b> 天才能再次送礼。</div>`; return `<div class="gift-head">选择礼物（每 3 天可送礼 1 次，不可赠送永久道具）${cdTxt}</div><div class="gift-grid">${cells}</div><div class="gift-foot"><button class="mbtn small" onclick="confirmGift()" ${can?'':'disabled'}>确认送出</button><button class="mbtn small" onclick="closeGift()">取消</button></div>`; }
+function openGift(key){ giftOpenKey=key; giftSelItem=null; giftJustOpened=true; renderInteractBody(key); decorateGiftCells(); }
+/* 问题1修复：礼物点击不再重绘整个面板，只切换 class；避免每点一次就闪 */
+function decorateGiftCells(){ const box=$('#giftOverlay'); if(!box) return; if(giftCooldownLeft(giftOpenKey)>0) return; box.querySelectorAll('.gift-cell').forEach(c=>{ c.onclick=()=>{ const k=c.dataset.k; const wasSel = c.classList.contains('sel'); box.querySelectorAll('.gift-cell.sel').forEach(x=>x.classList.remove('sel')); if(!wasSel){ c.classList.add('sel'); giftSelItem=k; } else { giftSelItem=null; } }; }); }
+/* 问题1修复：确认送出后先 remove gift overlay DOM，再 interactSay，避免对话被重绘清掉 */
+function confirmGift(){ const key=giftOpenKey; if(!key||!giftSelItem) return; if(giftCooldownLeft(key)>0) return; const it=giftSelItem; const lv=itemLoveLevel(key,it); const L=(ITEM_LOVE[key]||{}); let delta=0, talk=''; if(lv===0){ delta=-1; talk=GIFT_TALK[key].lv0; } else if(lv===1){ delta=1; talk=GIFT_TALK[key].lv1; } else if(lv===2){ delta=L.two[it]; talk=GIFT_TALK[key].lv2; } else { delta=(L.three[it]||0)+5; talk=(GIFT_TALK[key]['lv3_'+it])||GIFT_TALK[key].lv2; } G.inventory[it]--; G.records=G.records||{}; if(!G.records.giftDay) G.records.giftDay={}; G.records.giftDay[key]=G.day||1;
+  // 先移除 DOM 里的送礼面板（避免重绘交互区时把刚要写入的对话清掉）
+  const overlay=document.getElementById('giftOverlay'); if(overlay && overlay.parentNode){ overlay.parentNode.removeChild(overlay); }
+  giftOpenKey=null; giftSelItem=null;
+  if(delta!==0) gainAffinity(key,delta); refreshHUD(); interactSay(key, `${talk} <span class="lvlup">好感度${delta>0?'+'+delta:delta}</span>`); }
+/* 问题1修复：关闭送礼面板也先移除 DOM，避免重绘清掉对话 */
+function closeGift(){ if(giftOpenKey==null) return; const overlay=document.getElementById('giftOverlay'); if(overlay && overlay.parentNode){ overlay.parentNode.removeChild(overlay); } giftOpenKey=null; giftSelItem=null; }
+function charBondTab(key,c){ c=c||getChar(key); if(key==='pro') return '<p>主角没有羁绊等级。</p>'; const bt=(BOND_TEXT[key])||{}; let rows=''; for(let lv=0; lv<=10; lv++){ const note=bt[lv]||''; const cur=getBond(key).level===lv? '（当前）':''; rows+=`<div class="bondrow ${getBond(key).level===lv?'cur':''}"><span class="bondlv">羁绊 ${lv} 级${cur}</span><span class="bondnote">${note}</span></div>`; } return `<div class="bondrows">${rows}</div><p style="margin-top:10px;font-size:13px;color:#9aa0ac">基础效果：羁绊每升 1 级，攻击力 +10；标注有等级的技能的等级对应提升。好感度每累计 10 点提升 1 级，羁绊等级只升不降。当前好感度 <b class="lvlup">${getBond(key).affinity}</b>（上限 999，下限 -999）。</p>`; }
+function charStoryTab(key,c){ c=c||getChar(key); if(key==='pro') return '<p>属于你的故事，才刚刚开始……</p>'; return `<p>关于 <b>${c.name}</b> 的故事，正在撰写中，敬请期待。</p>`; }
+let skillPickSel={};
+function openFormation(){ if(isInFlow()){ log('事件中无法使用该功能。'); return; } renderFormation(); }
+function eligibleSwapChars(){ const keys=['pro']; for(const k in ALLIES){ if(bondLevel(k)>=1) keys.push(k); } return keys; }
+let swapOpen=false, swapJustOpened=false; let swapTeam=[];
+function openSwap(){ swapTeam=G.team.slice(); swapOpen=true; swapJustOpened=true; renderFormation(); }
+function toggleSwapChar(k){ const idx=swapTeam.indexOf(k); if(idx>=0){ swapTeam.splice(idx,1); } else { if(swapTeam.length>=3){ log('队伍最多 3 人。'); return; } if(!eligibleSwapChars().includes(k)){ log('该角色羁绊等级不足，暂不可加入编队。'); return; } swapTeam.push(k); } renderFormation(); }
+function applySwap(){ if(!swapTeam.includes('pro') || swapTeam.length<1){ swapOpen=false; swapJustOpened=false; renderFormation(); log('新的队伍不合规则（必须包含主角且至少 1 人），本次换人未生效。'); return; } G.team=swapTeam.slice(); swapOpen=false; swapJustOpened=false; renderFormation(); }
+function renderSwapPanel(){ const cells=eligibleSwapChars().map(k=>{ const c=getChar(k); const idx=swapTeam.indexOf(k); const inTeam=idx>=0; const sub=k==='pro'? '' : `<div class="selem">${c.element?ELEM[c.element].zh:'无'}</div><div class="sbond">羁绊 ${bondLevel(k)}</div>`; const badge=inTeam?`<div class="snum">${idx+1}</div>`:''; return `<div class="schar ${inTeam?'in':''}" onclick="toggleSwapChar('${k}')">${badge}<div class="sname">${c.name}</div>${sub}</div>`; }).join(''); return `<div class="swap-overlay"><div class="swap-head">选择上场的同伴（点击切换，主角可暂离队，退出时若不合规则则还原）</div><div class="swap-grid">${cells}</div><div class="swap-foot"><button class="mbtn small" onclick="applySwap()">确认</button></div></div>`; }
+function renderFormation(){ const slots=['1','2','3']; const teamView = swapOpen? swapTeam : G.team; const cols=slots.map((label,i)=>{ const k=teamView[i]; if(!k) return `<div class="fcol"><div class="fcol-head">${label}号位</div><div class="fcol-empty">空缺</div><button class="mbtn small" onclick="openSwap()">替换</button></div>`; const c=getChar(k); const ele=k==='pro'?'无属性':ELEM[c.element].zh; const skills=c.skills.filter(s=>c.selectedSkillIds.includes(s.id)).map(s=>`<span class="fskill ${s.kind==='attack'?'attack':'support'}">${s.kind==='attack'?'攻击':'辅助'}·${s.name}</span>`).join(''); const tals=c.passives.map((p,ti)=>`<span class="talentTag" data-k="${k}" data-i="${ti}"><span class="cat talent">天赋</span>${p.name}</span>`).join(''); return `<div class="fcol"><div class="fcol-head">${label}号位</div><div class="fcol-name">${c.name}</div><div class="fcol-ele">${ele}</div><div class="fcol-skills">${skills||'<span class="nohint">未携带技能</span>'}</div><div class="fcol-talents">${tals}</div><button class="mbtn small" onclick="openSwap()">替换</button></div>`; }).join(''); openModal('编队', `<div class="form-head"><span class="form-title">当前编队</span><button class="mbtn small" onclick="openSwap()">快捷编队</button></div><div class="form-wrap"><div class="form-cols">${cols}</div></div>${swapOpen?renderSwapPanel():''}`, 'full', {replace:true}); }
+let taskSel='m1';
+function afterQuestProgress(){} /* 进度变化钩子：发放改为在任务界面手动领取（claimTask）。 */
+function grantTaskReward(rw){ if(rw.key){ const n=rw.n||1; G.inventory[rw.key]=(G.inventory[rw.key]||0)+n; const name=rw.text||itemName(rw.key); return `${name}×${n}`; } if(rw.simple){ let m=rw.simple.match(/^金币\+(\d+)$/); if(m){ G.inventory.coin=(G.inventory.coin||0)+ +m[1]; return `金币+${+m[1]}`; } m=rw.simple.match(/^主角防御力\+(\d+)$/); if(m){ G.hero.def=(G.hero.def||0)+ +m[1]; return `主角防御力+${+m[1]}`; } return rw.simple; } return ''; }
+window.claimTask=function(id){ const t=TASKS.find(x=>x.id===id); if(!t) return; if(!taskDone(t)){ log('该任务的完成条件尚未达成。'); openTasks(); return; } if(taskDoneMarked(t)){ log('该任务的奖励已领取过。'); openTasks(); return; } G.records=G.records||{}; if(!G.records.questDone||typeof G.records.questDone!=='object') G.records.questDone={}; const parts=[]; for(const rw of (t.rewards||[])){ const s=grantTaskReward(rw); if(s) parts.push(s); } G.records.questDone[t.id]=true; refreshHUD(); if(parts.length){ log(`已领取「${t.name}」奖励：${parts.join('、')}。`); } openTasks(); };
+function taskGoalText(t,g){ const p=taskProgress(t); if(t.id==='m1'){ if(g.indexOf('健康')>=0) return `${g}（当前 ${G.hero.health}）`; return `${g}（进行中）`; } if(p!=null) return `${g}（${p}/${t.last}）`; return g; }
+function renderTasksHTML(){
+  const sel = TASKS.find(t=>t.id===taskSel && taskVisible(t)) || TASKS.find(taskVisible) || TASKS[0];
+  const doList=cat=>TASKS.filter(t=>t.cat===cat && taskVisible(t)).map(t=>{
+    const done=taskDone(t), marked=taskDoneMarked(t);
+    const stateTxt = done ? (marked?'已完成':'待领取') : '进行中';
+    return `<div class="task-item task-${t.cat} ${t.id===sel.id?'on':''}" onclick="selectTask('${t.id}')"><span class="task-item-name">${t.name}</span><span class="task-item-state ${done?'done':''}">${stateTxt}</span></div>`;
+  }).join('');
+  const goals=(sel.goals||[]).map(g=>`<div class="task-goal">◆ ${taskGoalText(sel,g)}</div>`).join('');
+  const done=taskDone(sel), marked=taskDoneMarked(sel);
+  let claimHtml='';
+  if(done && !marked){ claimHtml=`<div class="task-claim"><button class="mbtn small" onclick="claimTask('${sel.id}')">领取奖励</button></div>`; }
+  else if(done && marked){ claimHtml=`<div class="task-claim done">奖励已领取</div>`; }
+  const rewardBlock = (sel.rewards&&sel.rewards.length)? `<div class="task-divider"></div><div class="task-reward"><span class="task-reward-label">任务奖励</span>：<span class="task-reward-list">${sel.rewards.map(taskRewardHTML).join('、')}</span></div>${claimHtml}` : claimHtml;
+  return `<div class="task-wrap">
+      <div class="task-left">
+        <div class="task-cat-title main">主线任务</div>
+        ${doList('main')}
+        <div class="task-cat-title side">支线任务</div>
+        ${doList('side')}
+      </div>
+      <div class="task-right">
+        <div class="task-title task-${sel.cat}">${sel.name}</div>
+        <div class="task-goals-box">${goals}</div>
+        ${rewardBlock}
+      </div>
+    </div>`;
+}
+function openTasks(){ openModal('任务', renderTasksHTML(), 'full', {replace:true}); }
+window.selectTask=function(id){ if(id!==taskSel && TASKS.some(t=>t.id===id)){ taskSel=id; openTasks(); } };
+let shopQty={}; let shopMsg='';
+function openShop(){ if(isInFlow()){ log('事件中无法使用该功能。'); return; } if(G){ shopMsg=''; renderShop(); } }
+function shopSellPrice(it){ return Math.floor(it.buy*0.5); }
+function renderShop(){ const list=SHOP_ITEMS.map(it=>{ const have=G.inventory[it.key]||0; const buyPrice=itemBuyPrice(it.key); const buyMax=Math.floor((G.inventory.coin||0)/Math.max(1,buyPrice)); const sellMax = it.sellable? have : 0; const maxN=Math.max(buyMax,sellMax,1); let q=Math.max(1, shopQty[it.key]||1); q=Math.min(q, maxN); shopQty[it.key]=q; const buy=buyPrice; const sell=shopSellPrice(it); const sellBtn = it.sellable ? `<button class="mbtn tiny" onclick="shopTrade('${it.key}','sell')">卖出</button>` : `<span class="nohint">不可出售</span>`; const growNote = it.priceGrow? `<span class="rnote">每获得1个，此物价+${it.priceGrow}</span>` : ''; return `<div class="sitem"><div class="shead"><span class="craftlink" data-key="${it.key}">${itemName(it.key)}</span><span class="sprice">${it.sellable?`买入 <b>${buy}</b> · 卖出 <b>${sell}</b> 金币`:`买入 <b>${buy}</b> 金币（不可出售）`}</span></div><div class="sown">持有 <b>${have}</b> · 金币 <b>${G.inventory.coin}</b></div>${growNote}<div class="rcCtl"><span class="craftQty">×${q}</span><input type="range" class="craftRange" min="1" max="${maxN}" value="${q}" oninput="shopSet('${it.key}',this.value)"><button class="mbtn tiny craftDo" onclick="shopTrade('${it.key}','buy')">购买</button>${sellBtn}</div></div>`; }).join(''); openModal('商店', `<p class="mhint">点击物品可查看说明。购买与卖出共用同一滑块设定数量；卖出价为买入价的一半。</p><div class="shopmsg ${shopMsg?'show':''}">${shopMsg}</div><div class="cwrapper">${list}</div>`, 'full', {replace:true}); }
+window.shopSet=function(key,v){ shopQty[key]=Math.max(1,(+v||1)); shopMsg=''; renderShop(); };
+window.shopTrade=function(key,act){ const it=SHOP_ITEMS.find(x=>x.key===key); if(!it) return; if(combatState){ log('战斗中无法访问商店。'); return; } const q=Math.max(1,shopQty[key]||1); if(act==='buy'){ const price=itemBuyPrice(key); const cost=price*q; if(G.inventory.coin<cost){ shopMsg='金币不足，无法完成该笔购买。'; refreshHUD(); renderShop(); return; } G.inventory.coin-=cost; if(it.permanent){ for(let i=0;i<q;i++) grantPermanentItem(key); } else { G.inventory[key]=(G.inventory[key]||0)+q; } shopMsg=`已购买 <b>${itemName(key)} ×${q}</b>，花费 <b>${cost}</b> 金币。`; } else { if(!it.sellable){ shopMsg='该物品不可出售。'; refreshHUD(); renderShop(); return; } const sell=shopSellPrice(it), gain=sell*q; if((G.inventory[key]||0)<q){ shopMsg='你要卖出的数量超出当前持有。'; refreshHUD(); renderShop(); return; } G.inventory[key]-=q; G.inventory.coin+=gain; shopMsg=`已卖出 <b>${itemName(key)} ×${q}</b>，获得 <b>${gain}</b> 金币。`; } log(shopMsg.replace(/<[^>]+>/g,'')); refreshHUD(); renderShop(); };
+let mapDragMoved=false;
+(function initMapViewport(){ const vp=$('#mapViewport'); const grid=$('#mapGrid'); let scale=1; vp.addEventListener('wheel', e=>{ e.preventDefault(); scale=Math.min(2, Math.max(0.5, scale + (e.deltaY>0?-0.12:0.12))); grid.style.transform=`scale(${scale})`; }, {passive:false}); let down=false,sx=0,sy=0,sl=0,st=0; vp.addEventListener('mousedown',e=>{ down=true; mapDragMoved=false; sx=e.clientX; sy=e.clientY; sl=vp.scrollLeft; st=vp.scrollTop; vp.classList.add('dragging'); }); document.addEventListener('mousemove',e=>{ if(down){ const dx=e.clientX-sx, dy=e.clientY-sy; if(Math.abs(dx)>5||Math.abs(dy)>5) mapDragMoved=true; vp.scrollLeft=sl-dx; vp.scrollTop=st-dy; } }); document.addEventListener('mouseup',()=>{ down=false; vp.classList.remove('dragging'); }); })();
+function openPopoverNear(el, html){ const tip=$('#popover'); tip.innerHTML=html; tip.style.display='block'; bringToFront(tip); tip.style.visibility='hidden'; const r=el.getBoundingClientRect(); const w=tip.offsetWidth||260, h=tip.offsetHeight||60; tip.style.visibility='visible'; let x=r.left; if(x+w>window.innerWidth-8) x=Math.max(8, window.innerWidth-8-w); let y=r.bottom+6; if(y+h>window.innerHeight-8) y=Math.max(8, r.top-h-6); tip.style.left=x+'px'; tip.style.top=y+'px'; }
+document.addEventListener('click',ev=>{ if(giftOpenKey){ if(giftJustOpened){ giftJustOpened=false; } else if(!ev.target.closest('#giftOverlay')){ closeGift(); return; } } if(swapOpen){ if(swapJustOpened){ swapJustOpened=false; } else if(!ev.target.closest('.swap-overlay')){ applySwap(); } } clickActionOnly(ev); });
+function clickActionOnly(ev){ const st=ev.target.closest('.stchip'); if(st){ const rounds=st.textContent.match(/·(\d+)回合/); openPopoverNear(st, `<b>${st.dataset.name}</b>${rounds?`（${rounds[1]}回合）`:''}<br>${st.dataset.desc||''}`); return; } const tg=ev.target.closest('.talentTag'); if(tg){ const owner=tg.dataset.k; const c=getChar(owner); const t=c.passives[+tg.dataset.i]; if(t){ const name=t.scal? talentDisplayName(owner,t) : t.name; const desc=t.scal? lvDescText(t, entryLevel(owner,t)) : t.desc; openPopoverNear(tg, `<b>${name}</b><br>${desc}`); } return; } const cl=ev.target.closest('.craftlink'); if(cl){ const key=cl.dataset.key; openPopoverNear(cl, `<b>${itemName(key)}</b><br>${itemDetailHTML(key)}`); return; } $('#popover').style.display='none'; }
