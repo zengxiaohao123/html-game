@@ -122,7 +122,7 @@ function finishMainStorySeg(seg){
   storySetSpeaker(null);
 
   // 3) 等 0.3s 再查下一段，给最后一屏一个快速扫一眼的空间但不拖沓
-  // 真结束时（无下一段、无更多触发）：自动模式额外等 2s 让玩家看清结果文本，手动模式立即清
+  // 真结束时（无下一段、无更多触发）：自动模式额外等 4s 让玩家看清结果文本，手动模式立即清
   //    期间 mainStoryPlaying 继续保持 true → isInFlow() 锁 UI（编队/睡觉/移动等仍禁用）
   const autoWait = (typeof storyAutoMode !== 'undefined' && storyAutoMode) ? 4000 : 0;
   const next = seg.nextSeg ? MAIN_STORY_SEGMENTS.find(s=>s.id===seg.nextSeg) : null;
@@ -134,16 +134,18 @@ function finishMainStorySeg(seg){
       playMainStorySeg(next);
     } else if(!triggerMainStorySeg()){
       // 真结束：自动模式等 4s 让玩家看清结果，手动模式立即清
+      // 统一调 forceEndStoryFlow —— 让主线 autoWait 的解锁与"点 storyBox 提前结束"
+      // 走同一套逻辑，timer id 存 window._mainStoryUnlockTimer 让 forceEndStoryFlow 能清
       if(autoWait){
-        setTimeout(()=>{
-          finishCurrentFragment();
-          window.mainStoryPlaying=false;
-          renderIconbar();
+        window._mainStoryUnlockTimer = setTimeout(()=>{
+          window._mainStoryUnlockTimer = null;
+          if(typeof window.forceEndStoryFlow === 'function') window.forceEndStoryFlow();
+          else { finishCurrentFragment(); window.mainStoryPlaying=false; renderIconbar(); }
         }, autoWait);
       } else {
-        finishCurrentFragment();
-        window.mainStoryPlaying=false;
-        renderIconbar();
+        window._mainStoryUnlockTimer = null;
+        if(typeof window.forceEndStoryFlow === 'function') window.forceEndStoryFlow();
+        else { finishCurrentFragment(); window.mainStoryPlaying=false; renderIconbar(); }
       }
     } else {
       window.mainStoryPlaying=false;

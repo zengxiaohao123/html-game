@@ -587,19 +587,19 @@ function finishEvent(result){
   const savedEventState = eventState;
   storyStartFragment(segments, ()=>{
     // ★ 结果文本打完 → 真正结束事件：清 eventState + 解锁 UI + 刷新地图
+    // 统一调 forceEndStoryFlow —— 让事件 autoWait 的解锁与"点 storyBox 提前结束"
+    // 走同一套逻辑，timer id 存 window._eventUnlockTimer 让 forceEndStoryFlow 能清
     if(autoWait){
-      setTimeout(()=>{
+      window._eventUnlockTimer = setTimeout(()=>{
+        window._eventUnlockTimer = null;
         if(savedEventState !== eventState) return;  // 事件已被战斗等接管
-        eventState=null;
-        unlockEventUI();
-        renderMap(); refreshHUD();
-        finishCurrentFragment();
+        if(typeof window.forceEndStoryFlow === 'function') window.forceEndStoryFlow();
+        else { eventState=null; unlockEventUI(); renderMap(); refreshHUD(); finishCurrentFragment(); }
       }, autoWait);
     } else {
-      eventState=null;
-      unlockEventUI();
-      renderMap(); refreshHUD();
-      finishCurrentFragment();
+      window._eventUnlockTimer = null;
+      if(typeof window.forceEndStoryFlow === 'function') window.forceEndStoryFlow();
+      else { eventState=null; unlockEventUI(); renderMap(); refreshHUD(); finishCurrentFragment(); }
     }
   }, { title: title });
 }

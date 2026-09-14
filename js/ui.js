@@ -513,6 +513,34 @@ function finishCurrentFragment(){
 }
 
 /* ============================================================
+   强制结束故事流程 + 解锁所有 UI（给自动模式下"最后一页点一下提前退出"用）
+
+   finishCurrentFragment 只负责清故事引擎的 DOM/timer；
+   真正的"主线 mainStoryPlaying=false + 事件 eventState=null + iconbar 解锁"分散在
+   finishMainStorySeg / finishEvent 各自的 setTimeout 里。这里统一做完，
+   避免在多处各写一遍 unlock 代码 + 确保玩家"点一下"之后状态是完整的。
+   ============================================================ */
+window.forceEndStoryFlow = function(){
+  // 1) 先清故事引擎 DOM/timer
+  finishCurrentFragment();
+
+  // 2) 清主线/事件/战斗锁标记 + 暴露到 window 上的 pending unlock timer
+  if(typeof window.mainStoryPlaying !== 'undefined'){ window.mainStoryPlaying = false; }
+  if(typeof window.eventState !== 'undefined'){ window.eventState = null; }
+  if(typeof window._mainStoryUnlockTimer !== 'undefined'){ clearTimeout(window._mainStoryUnlockTimer); window._mainStoryUnlockTimer = null; }
+  if(typeof window._eventUnlockTimer !== 'undefined'){ clearTimeout(window._eventUnlockTimer); window._eventUnlockTimer = null; }
+
+  // 3) 解除事件独占的 mode-event-lock class + 解锁 iconbar
+  const bottom = $('#bottom'); if(bottom) bottom.classList.remove('mode-event-lock');
+  if(typeof renderIconbar === 'function') renderIconbar();
+
+  // 4) 刷新 HUD + 地图（主线剧情/事件结束后地图通常需要恢复可操作 + 任务自动接取 log 需要
+  //    refreshHUD 来触发 questNotified 检查）
+  if(typeof renderMap === 'function') renderMap();
+  if(typeof refreshHUD === 'function') refreshHUD();
+};
+
+/* ============================================================
    外部触发：玩家点击剧情区 → 推进
    ============================================================ */
 function storyOnTap(){
@@ -547,8 +575,19 @@ function storyOnTap(){
     renderCurrentPage();
     return;
   }
-  // 所有页打完 → 立刻触发回调（不清正文，让选项叠加在最后一页文字上）
+  // 所有页打完 → endForCallbacks 走回调（渲染选项 或 触发下一段/真结束）
+  // 但回调可能已经在之前被调过了（cb 是 null），此时 endForCallbacks 空跑。
+  // 自动模式下：最后一页不会设置 storyAutoTimer（不走 1.5s auto timer，直接
+  // endForCallbacks），endForCallbacks 回调又会在主线/事件里自己排一个
+  // setTimeout（auto mode 时 4s autoWait）。玩家想提前退出时，storyOnTap 走到这里
+  // cb 已经是 null 了，endForCallbacks 什么都不做 → 自动 forceEndStoryFlow。
+  const didRunCallback = !!(storyOnSegEnd);   // endForCallbacks 里会把它置 null
   endForCallbacks();
+  if(storyAutoMode && !didRunCallback){
+    // 自动模式 + 之前回调已经被调过 → 现在正卡在主线/事件各自的 autoWait 等待里
+    // 玩家这一下点击就是想提前结束，直接 forceEnd
+    forceEndStoryFlow();
+  }
 }
 
 /* ============================================================

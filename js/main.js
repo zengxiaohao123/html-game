@@ -100,6 +100,17 @@ function handleHotkeyToggle(k){
 function handleKeys(ev){
   if($('#menuOverlay').classList.contains('show') || $('#gameoverOverlay').classList.contains('show')) return;
   const k=ev.key.toLowerCase();
+  /* ESC 处理：modal 开着 → 退回一层 / 关闭；否则 → 打开设置 */
+  if(k==='escape'){
+    const modalShown = $('#modalOverlay').classList.contains('show');
+    if(modalShown){
+      modalBack();
+    } else {
+      openSettings();
+    }
+    try{ ev.preventDefault(); ev.stopPropagation(); }catch(e){}
+    return;
+  }
   /* 所有热键都先过 handleHotkeyToggle 统一守卫；处理完后立刻吞掉事件，
      防止它继续冒泡被 craft.js/vehicle.js 等其他文件里遗留的 keydown 监听器抢走 */
   if(HOTKEY_MODAL[k] || HOTKEY_ACTION[k]){
