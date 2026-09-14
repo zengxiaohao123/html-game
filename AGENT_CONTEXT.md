@@ -30,7 +30,7 @@
 - **地图**：有效地图(内区)外围包一圈 `void` 边框。
 - **合成（E）**：仅配方制，战斗禁开；产物入背包。
 - **载具（T）**：探索/战斗均可开；每次真实移动耗 1 已选载具，耗尽自动切回徒步。
-- **ESC**：弹窗退回一层；无弹窗打开设置；主界面/结束界面无效。
+- **ESC**（全局 keydown，js/main.js，事件/剧情/战斗中也可按）：有弹窗时 modalBack 退回一层（栈空则 closeModal）；无弹窗打开设置。处理完后 preventDefault+stopPropagation 吞事件，不继续触发 WASD/其他快捷键。
 - **商店**：非战斗可开；购/售共用滑块；出售价=买入价×50%。
 - **战斗中**：编队/睡觉/商店/合成禁开（图标置灰）；背包可看；**战斗存读档=以战斗开始瞬间为锚点**。
 
@@ -53,6 +53,7 @@
 - **新载具·魔法扫帚**：直线 3 格 / 2 次可用，保留原 carpet。
 - **明心浆合成配方**：2 种路径（空瓶+蓝星粉末+亚麻 / 空瓶+蓝星石+果子），合成 hook 触发任务进度。
 - **5 个启程任务挂钩**：心理健康/合成台/果腹/大口吃肉/便捷出行/友谊的再开始。
+  - **启程任务·合成台（qCraft）**：`hook:'qCraftAvail'` 解锁条件是玩家升到 day 2 时 sleep() 自动设 `G.records.qCraftAvail=true`，或 day 1 打开合成界面（openCraft）也会无条件解锁。day 0~1 不会接取。
 - **任务系统**：接取钩子（首次遇讨伐熊事件才显示任务）；已完成目标需**手动领取奖励**；奖励物品可点击查看说明；任务备注不显示给玩家。
 - **羁绊等级系统**：好感度 -999~+999，羁绊等级 0~10 预设解锁文本（测试期默认 1 级，全技能解锁）。
 - **角色交互系统**：交互标签页左侧按钮、右侧对话区（打字机逐字）；夏阳聊天/投喂/送礼、陆悠悠聊天/送礼；送礼三级选择页，每角色每 3 天限一次；物品隐藏喜好度按等级触发不同对话与好感增减。
@@ -60,8 +61,10 @@
 - **敌人信息抗性提示**：某抗性 ≥10 时在敌人属性页显示「X抗性较高」（不用数值，只提示程度）。
 - **剧情区升级（打字机引擎 v2）**：
   - 顶部布局：左上角名字行 speaker（事件里自动留空，事件用 `.ev-title` 白字标题），右上角「自动」「跳过」按钮。
-  - **自动模式**（sessionStorage 持久化）：自动连打 + 4s 后自动清空，按钮变绿；玩家点击仍有效。
+  - **自动模式**（sessionStorage 持久化）：自动连打 + 自动模式真结束后 4s 自动清空，按钮变绿；玩家随时点剧情区可提前结束（走 forceEndStoryFlow）。
   - **跳过按钮**：弹确认框；主线剧情跳到下一处选项（靠 `storyMarkChoice()` 在选项前插 marker）；事件系统直接结束并展示结果。选项处跳过被拒绝。
+  - **剧情区点击守卫**：promptZone 有选项（`.ev-opt`）时 storyBox 点击被拦；点击来自 storyControls 内的自动/跳过按钮时被 `.closest('#storyControls')` 守卫拦（按钮点击不算点剧情区）。
+  - **最后一页提前退出（forceEndStoryFlow，js/ui.js 全局函数）**：无论手动还是自动模式，正文最后一页刚打完时玩家点 storyBox → 立即 forceEndStoryFlow：finishCurrentFragment 清 DOM/timer + 同时写 window 属性和全局词法变量清 eventState/mainStoryPlaying + 清主线/事件各自的 autoWait setTimeout + renderIconbar + renderMap + refreshHUD。**必须同时写 `eventState = null` 和 `window.eventState = null`**——普通 `<script>` 的顶层 `let` 不会自动挂 window，只写 window 属性没用，isInFlow 读的是全局词法变量。
   - **名字彩色**：白名单人物特定字上色（夏阳·阳红/叶唯安·叶绿/陆悠悠·悠悠浅蓝/宋梦雨·梦青/许泠朦·泠蓝/潘天宇·宇紫/杨一帆·杨棕/灰白·灰灰），`我`/旁白/`？？？` 白色，旁白不显示名字行。
   - **屏幕效果**：shake（#app 抖动）/flash（白闪）/black（黑屏 2s）。
   - **幕标题 overlay**：白字大字全屏遮罩，`【act:第一幕 分道扬镳】` → 5s 自动淡出。
@@ -71,11 +74,14 @@
     - `【black】` 黑屏 2s
     - `【act:第一幕 分道扬镳】` 弹出幕标题
   - **事件 vs 主线严格区分**：事件系统内部调 `storyPush(html, cb)` 仍走旧签名兼容；主线剧情用 `storyPush(html, {speaker, onDone, onEnd})`。事件标题 `.ev-title` 已改为白字（之前金色）。
+- **UI 锁统一（isInFlow，js/main.js）**：`isInFlow()` 统一覆盖战斗 `combatState` + 事件 `eventState` + 主线剧情 `mainStoryPlaying` 三种锁状态。事件/主线结束清锁必须同时写 window 属性和全局词法变量（普通 `<script>` 顶层 `let` 不自动挂 window）。UI 图标栏置灰、移动拦截、各面板守卫（编队/睡觉/商店/合成）全部走 isInFlow。行动记录区用 `flowLabel()` 返回 `剧情/事件/战斗` 提示玩家为什么不能操作。
 - **主线剧情触发引擎（main_story/index.js）**：
   - 目录结构：`main_story/actXX_名/seg_XXX_xxx.js`，按幕+片段分类。
   - 每段 export `{id, act, title, condition, body, options, nextSeg}`；触发后 `G.records.mainStoryDone[id]=true` 防重复。
   - 触发点：`loadIntoWorld()` 进世界时、`moveExplore()` 每次移动后（事件/战斗中自动跳过）。
   - 外部 API：`window.triggerMainStorySeg()`、`window.mainStoryNextSeg()`、`window.showActTitle()`。
+  - **mainStoryPlaying 必须挂 window**：`main_story/index.js` 是 `<script type="module">`，ES module 里的顶层 let 不会自动挂 window，也不会进入全局词法环境。要让 main.js 的 isInFlow 读到，必须用 `window.mainStoryPlaying = true/false`。
+  - **主线收尾时机**：主线剧情打完后 setTimeout 400ms 再触发下一段/真结束，给最后一屏快速扫一眼的时间；真结束时 auto mode 额外等 4s（setTimeout id 存 `window._mainStoryUnlockTimer` 让 forceEndStoryFlow 能清）。
 - **删除占位文本**：main.js 中两处自动 `story()` 占位（醒来/每天开始的旁白）已移除。
 
 ### 🧩 规划中 / 未实现
