@@ -355,11 +355,11 @@ function typeSegment(){
   // 更新 speaker 区：事件优先显示事件标题（固定不动），否则用段落的 speaker（主线角色名），都没有则清空
   const speakerEl = $('#storySpeaker');
   if(storyCtx && storyCtx.title){
-    // 事件标题固定显示（typeSegment 每段都会重设，所以要保持不变的话只在 title 变化时设）
-    if(speakerEl.dataset.storyTitle !== storyCtx.title){
-      speakerEl.innerHTML = applySpeakerColor(storyCtx.title);
-      speakerEl.dataset.storyTitle = storyCtx.title;
-    }
+    // 每次都强制重设 —— 之前 storyStartFragment 会把 innerHTML 清空但不会清 dataset.storyTitle，
+    // 如果同一个事件里 body → result 用的是同一个 title，旧的"只在 title 变化时设"判断会因为
+    // dataset 还留着而跳过，speaker 区就保持空了（自动模式下尤其容易复现）。
+    speakerEl.innerHTML = applySpeakerColor(storyCtx.title);
+    speakerEl.dataset.storyTitle = storyCtx.title;
   } else {
     // 主线：每段根据 seg.speaker 切换
     speakerEl.innerHTML = seg.speaker ? applySpeakerColor(seg.speaker) : '';

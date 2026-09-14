@@ -30,8 +30,10 @@ let craftQty={};
 
 function openCraft(){
   if(isInFlow()){ log('事件中无法使用该功能。'); return; }
-  /* === 启程任务·合成台 hook：打开合成界面即可接任务 === */
-  if(G){ G.records=G.records||{}; G.records.qCraftAvail=true; }
+  /* === 启程任务·合成台 hook：第二天（含）之后打开合成界面才正式接任务 ===
+     理论上第一天（day=0 开场剧情 / day=1 刚结束开场剧情）玩家还处于"生存教学"阶段，
+     不应该立刻解锁"合成台"这条启程任务线。 */
+  if(G && G.day >= 2){ G.records = G.records || {}; G.records.qCraftAvail = true; }
   if(G) renderCrafting();
 }
 
