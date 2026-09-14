@@ -61,12 +61,14 @@ const MAIN_STORY_SEGMENTS = [
 /* ============================================================
    触发引擎
    ============================================================ */
-let currentMainStorySeg = null;
-let mainStoryPlaying = false;
+/* 注意：本文件是 ES module，下面两个状态必须显式挂到 window，
+   否则普通脚本里的 isInFlow() 读不到，主线剧情期间 UI 就不会被锁 */
+window.mainStoryPlaying = false;
+window.currentMainStorySeg = null;
 
 function triggerMainStorySeg(){
   if(!G) return false;
-  if(mainStoryPlaying) return false;
+  if(window.mainStoryPlaying) return false;
   // 事件中不触发
   if(eventState) return false;
 
@@ -83,8 +85,8 @@ function triggerMainStorySeg(){
 /* 播放一段主线剧情：按 body 顺序推送 */
 function playMainStorySeg(seg){
   if(!seg) return;
-  currentMainStorySeg = seg;
-  mainStoryPlaying = true;
+  window.currentMainStorySeg = seg;
+  window.mainStoryPlaying = true;
 
   // 标记已触发（立即标记，防止重入）
   G.records = G.records || {};
@@ -94,7 +96,7 @@ function playMainStorySeg(seg){
   // 剧情区清空 + 切 story 模式 + 刷新 iconbar（lock 编队/睡觉/商店/合成）
   switchMode('story');
   prompt('');
-  // 保险：mainStoryPlaying 刚变成 true，switchMode 里的 renderIconbar 可能还没拿到最新状态
+  // 保险：window.mainStoryPlaying 刚变成 true，switchMode 里的 renderIconbar 可能还没拿到最新状态
   renderIconbar();
 
   // 一次性灌进完整 body —— 引擎自动分页、自动打字、自动停住等点击
@@ -112,7 +114,7 @@ function finishMainStorySeg(seg){
       renderMainStoryOptions(seg.options);
       if(typeof seg.afterPlayed === 'function') seg.afterPlayed();
     }, 0);
-    mainStoryPlaying=false;
+    window.mainStoryPlaying=false;
     return;
   }
   // 2) 无 options → 执行 afterPlayed hook + 清 speaker
@@ -121,30 +123,30 @@ function finishMainStorySeg(seg){
 
   // 3) 等 0.8s 再查下一段，让玩家看完最后一屏
   //    真结束时（无下一段、无更多触发）：自动模式额外等 4s 让玩家看清结果文本，手动模式立即清
-  //    期间 mainStoryPlaying 继续保持 true → isInFlow() 锁 UI（编队/睡觉/移动等仍禁用）
+  //    期间 window.mainStoryPlaying 继续保持 true → isInFlow() 锁 UI（编队/睡觉/移动等仍禁用）
   const autoWait = (typeof storyAutoMode !== 'undefined' && storyAutoMode) ? 4000 : 0;
   const next = seg.nextSeg ? MAIN_STORY_SEGMENTS.find(s=>s.id===seg.nextSeg) : null;
-  const mainMainStoryPlaying = mainStoryPlaying;  // 暂存一下（防止 4s 内有新剧情打断）
+  const mainMainStoryPlaying = window.mainStoryPlaying;  // 暂存一下（防止 4s 内有新剧情打断）
   setTimeout(()=>{
-    if(mainMainStoryPlaying!==mainStoryPlaying) return;  // 已被新剧情接管，放弃本次收尾
+    if(mainMainStoryPlaying!==window.mainStoryPlaying) return;  // 已被新剧情接管，放弃本次收尾
     if(next && !G.records?.mainStoryDone?.[next.id]){
-      mainStoryPlaying=false;  // 这段有后续，立即解除锁（playMainStorySeg 会立即重新锁）
+      window.mainStoryPlaying=false;  // 这段有后续，立即解除锁（playMainStorySeg 会立即重新锁）
       playMainStorySeg(next);
     } else if(!triggerMainStorySeg()){
       // 真结束：自动模式等 4s 让玩家看清结果，手动模式立即清
       if(autoWait){
         setTimeout(()=>{
           finishCurrentFragment();
-          mainStoryPlaying=false;
+          window.mainStoryPlaying=false;
           renderIconbar();
         }, autoWait);
       } else {
         finishCurrentFragment();
-        mainStoryPlaying=false;
+        window.mainStoryPlaying=false;
         renderIconbar();
       }
     } else {
-      mainStoryPlaying=false;
+      window.mainStoryPlaying=false;
     }
   }, 800);
 }
@@ -168,7 +170,7 @@ function renderMainStoryOptions(opts){
 
 /* —— 挂载到 window（供 main.js / explore.js 普通脚本调用）—— */
 window.triggerMainStorySeg = triggerMainStorySeg;
-window.mainStoryNextSeg = (id)=>{ mainStoryPlaying=false; setTimeout(()=>triggerMainStorySeg(), 50); };
+window.mainStoryNextSeg = (id)=>{ window.mainStoryPlaying=false; setTimeout(()=>triggerMainStorySeg(), 50); };
 window.showActTitle = showActTitle;
 
 /* —— 第 0 幕播完后把 day 推到 1 —— */
