@@ -474,12 +474,14 @@ function showEventBody(){
 
   s.phase = 'body';
   // ★ 核心：统一走 storyStartFragment —— 事件标题通过 opts.title 显示在 storySpeaker 区（和主线角色名同一位置）
+  // skipBlockedWhenChoice: 事件正文后会进入选项阶段，不能跳过正文（会丢失语境）
+  const hasChoices = !!(s.options && s.options.length);
   storyStartFragment(segments, ()=>{
     // 引擎打完所有正文 → 事件进入选项阶段
     if(!eventState) return;
     eventState.phase = 'choose';
     renderEventOptions();
-  }, { title: s.ev.title });
+  }, { title: s.ev.title, skipBlockedWhenChoice: hasChoices });
 }
 function splitParas(html){
   const clean=String(html).trim();

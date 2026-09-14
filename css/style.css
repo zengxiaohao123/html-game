@@ -452,6 +452,10 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 #bottom.mode-story.storyFlashback #storyControls .sctrl:hover{
   background:#a8a8a8; color:#000;
 }
+/* ★ 闪回时自动按钮 on 态仍要保持绿色——覆盖上面的灰色规则 */
+#bottom.mode-story.storyFlashback #storyControls .sctrl.on{
+  background:#2f7a3a; border-color:#6ee07a; color:#fff;
+}
 
 /* ===== 幕标题 overlay ===== */
 .act-title-overlay{
