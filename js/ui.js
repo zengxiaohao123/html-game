@@ -418,21 +418,52 @@ function onParagraphDone(){
 /* 页尾：等玩家点击或自动翻页 */
 function onPageEnd(){
   const box = $('#storyBody');
-  box.innerHTML += '<div class="story-tap-hint">↓ 点击继续</div>';
+  // 手动模式才显示"点击继续"提示；自动模式自己翻不需要
+  if(!storyAutoMode){
+    box.innerHTML += '<div class="story-tap-hint">↓ 点击继续</div>';
+  }
 
   if(storyAutoMode){
     if(storyPageIdx + 1 < storyPages.length){
+      // 中间页 → 1.5s 自动翻下一页
       if(storyAutoTimer){ clearTimeout(storyAutoTimer); }
       storyAutoTimer = setTimeout(()=>{
         storyPageIdx++; storySegIdx=0;
         renderCurrentPage();
       }, 1500);
     } else {
-      // 最后一页 → 4s 后 finish
-      if(storyAutoTimer){ clearTimeout(storyAutoTimer); }
-      storyAutoTimer = setTimeout(finishCurrentFragment, 4000);
+      // 最后一页 → 立刻触发回调（选项叠加在最后一页文字上，不清屏）
+      // 等回调里的选项处理完（用户选完 → 下一次 storyStartFragment 会清屏）
+      if(storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
+      endForCallbacks();
     }
   }
+}
+
+/* 片段结束但不清正文 —— 用于"选项叠加在最后一页文字上"场景
+   （主线剧情 / 事件正文：最后一页打完，文字保留，选项在 promptZone 出现） */
+function endForCallbacks(){
+  if(storyPageTimer){ clearInterval(storyPageTimer); storyPageTimer=null; }
+  if(storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
+  storyTyping=false; storyCurrent=null; storyPlainIdx=0;
+
+  // 清最后那页的"点击继续"提示（正文内容不动）
+  const box = $('#storyBody');
+  const hint = box.querySelector('.story-tap-hint');
+  if(hint) hint.remove();
+
+  // 存回调、清引用
+  const cb = storyOnSegEnd; storyOnSegEnd = null;
+  // 注意：不清 storyPages / storyPageIdx / storySegIdx —— finishCurrentFragment 会
+  // 彻底重置；但保留状态让选项期间 storyHasMore 返回正确值。
+  // 不过 finishCurrentFragment 清故事时故事引擎就该彻底重置了，
+  // 这里清 storyPages 和索引其实也没问题 —— 选项期间不会再读。
+  storyPages=[]; storyPageIdx=0; storySegIdx=0;
+
+  // 直接同步调回调。finishMainStorySeg → 有 options 则 renderMainStoryOptions 叠加到 promptZone；
+  // 无 options 则 0.8s 后触发下一段 storyStartFragment。
+  // 事件 renderEventOptions → 选项叠加到 promptZone。
+  if(cb) cb();
 }
 
 function finishCurrentFragment(){
@@ -451,20 +482,21 @@ function finishCurrentFragment(){
   speakerEl.innerHTML='';
   delete speakerEl.dataset.storyTitle;
 
-  // 注意：storyControls（自动/跳过按钮）在此**不**隐藏。
-  //   原因：回调 cb（主线 finishMainStorySeg → 渲染选项；事件 renderEventOptions → 进入选择阶段）
-  //   之后可能还会继续 storyStartFragment 播下一段，storyStartFragment 会重新保证它可见。
-  //   真正需要隐藏的地方（切战斗、主菜单、游戏结束）在 switchMode / showMenu / backToMenu 里统一处理。
+  // 4. 隐藏自动/跳过按钮（剧情/事件彻底结束时清空）——
+  //    但 endForCallbacks（选项叠加场景）**不**走这里，它不清正文、不清 speaker、不隐藏 controls
+  const controls = $('#storyControls');
+  if(controls) controls.style.display='none';
 
-  // 4. 清理所有屏幕效果（闪回、抖动、overlay）—— 防止跳过剧情后效果残留
+  // 5. 清理所有屏幕效果（闪回、抖动、overlay）—— 防止跳过剧情后效果残留
   $('#bottom').classList.remove('storyFlashback');
   $('#app').classList.remove('fx-shake','fx-shake-dull');
   document.querySelectorAll('.screen-effect').forEach(el=>{ try{ el.remove(); }catch(e){} });
 
-  // 5. 清引擎上下文
+  // 6. 清引擎上下文
   storyCtx = null;
 
-  // 6. 触发回调（主线：finishMainStorySeg → 渲染选项/触发下一段；事件：renderEventOptions → 进入选项阶段）
+  // 7. 触发回调（如果有）—— 通常 finishCurrentFragment 用于"彻底结束"，回调一般为 null；
+  //    storySkipMainSeg（跳过时）直接调这里，此时回调可能还在，照常触发
   if(cb) cb();
 }
 
@@ -497,14 +529,14 @@ function storyOnTap(){
     typeSegment();
     return;
   }
-  // 当前页已打完 → 翻下一页
+  // 当前页已打完 → 翻下一页 or 结束
   if(storyPageIdx + 1 < storyPages.length){
     storyPageIdx++; storySegIdx=0;
     renderCurrentPage();
     return;
   }
-  // 所有页打完 → finish
-  finishCurrentFragment();
+  // 所有页打完 → 立刻触发回调（不清正文，让选项叠加在最后一页文字上）
+  endForCallbacks();
 }
 
 /* ============================================================

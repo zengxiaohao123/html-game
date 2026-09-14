@@ -209,9 +209,10 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
   font-family: "LXGW WenKai TC", "LXGW WenKai", "PingFang SC", "Microsoft YaHei", serif;
   text-shadow:0 2px 4px rgba(0,0,0,.8);
   max-width:60%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  flex:1; min-width:0;   /* 让 speaker 区始终占住左边空间，避免为空时 controls 跑左 */
 }
 #storySpeaker:empty{display:none;}
-#storyControls{display:flex; gap:6px; flex:none;}
+#storyControls{display:flex; gap:6px; flex:none; margin-left:auto;}  /* margin-left:auto 钉死右上角，不管 speaker 是否为空都不漂 */
 .sctrl{padding:3px 10px; background:var(--panel2); border:1px solid var(--line); border-radius:4px; color:#cfd4dc; font-size:12px; cursor:pointer; line-height:1.2;}
 .sctrl:hover{background:#2c3040; color:#fff;}
 .sctrl.on{background:#2f7a3a; border-color:#6ee07a; color:#fff;}
