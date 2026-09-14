@@ -5,6 +5,21 @@
    ============================================================ */
 "use strict";
 let G=null; let combatState=null; let gameMode='story'; let previewCell=null;
+
+/* 统一判断：是否处于"剧情流程锁定中"（主线剧情 / 事件 / 战斗）
+   任何想打开编队/睡觉/商店/合成/移动等操作的守卫都应该用这个函数
+   而非各自单独判断 ||eventState。这样主线剧情也会被自动锁上 */
+window.isInFlow = function(){
+  return !!combatState
+    || (typeof eventState !== 'undefined' && !!eventState)
+    || (typeof mainStoryPlaying !== 'undefined' && !!mainStoryPlaying);
+};
+/* 快捷版（仅剧情/事件，不含战斗）—— 战斗守卫仍然只检查 combatState */
+window.isInStoryFlow = function(){
+  return (typeof eventState !== 'undefined' && !!eventState)
+      || (typeof mainStoryPlaying !== 'undefined' && !!mainStoryPlaying);
+};
+
 function newGame(){
   const bonds={}; for(const k in ALLIES){ bonds[k]={level:1, affinity:10}; }
   // day=0 留给第 0 幕开场剧情使用，afterPlayed 会推进到 1
@@ -66,7 +81,7 @@ function handleHotkeyToggle(k){
   }
   /* 2. modal 未打开但处于战斗/事件中：仅禁用与 iconbar.blocked 一致的那几个快捷键
      （编队 L、睡觉 P、商店、合成 E）；角色 C、载具 T 等与按钮行为一致，仍可打开 */
-  if(combatState || eventState){
+  if(isInFlow()){
     const BLOCKED = { l:'编队', p:'睡觉', shop:'商店', e:'合成' };  // 与 iconbar blocked Set 同步
     if(BLOCKED[k]){ log('战斗/事件中无法使用该功能。'); return; }
   }
@@ -94,14 +109,14 @@ function handleKeys(ev){
     return;
   }
   if(!G||!G.map) return; if($('#modalOverlay').classList.contains('show')) return; if(ev.repeat) return;
-  if(eventState) return;   // 事件中不可移动
+  if(isInFlow()) return;   // 事件中不可移动
   let dx=0,dy=0;
   if(k==='w'){dy=-1;} else if(k==='s'){dy=1;} else if(k==='a'){dx=-1;} else if(k==='d'){dx=1;} else return;
   const nx=G.px+dx, ny=G.py+dy; if(nx<0||ny<0||nx>=G.map.n||ny>=G.map.n) return; moveExplore(nx,ny,1);
 }
 document.addEventListener('keydown', handleKeys, true);
 function sleep(){
-  if(!G) return; if(combatState||eventState){ log('事件中无法使用该功能。'); return; }
+  if(!G) return; if(isInFlow()){ log('事件中无法使用该功能。'); return; }
   if(G.hero.actionPoint>0 && !confirm('行动力尚未耗尽，仍确定直接「睡觉」进入下一天吗？')) return;
   const inTeam=k=>G.team.indexOf(k)>=0;
   /* === 前一天的心理健康判定 === */

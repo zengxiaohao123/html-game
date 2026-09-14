@@ -101,7 +101,7 @@ function playMainStorySeg(seg){
 
 /* 一段剧情结束时的收尾 */
 function finishMainStorySeg(seg){
-  // 1) 有 options → 插入 marker 并渲染选项
+  // 1) 有 options → 选项叠加在最后一页文字上，不清正文
   if(seg.options && seg.options.length){
     storyMarkChoice();
     setTimeout(()=>{
@@ -121,8 +121,10 @@ function finishMainStorySeg(seg){
   setTimeout(()=>{
     if(next && !G.records?.mainStoryDone?.[next.id]){
       playMainStorySeg(next);
-    } else {
-      triggerMainStorySeg();
+    } else if(!triggerMainStorySeg()){
+      // 真结束：没有下一段、也没有任何可自动触发的剧情 → 彻底清空故事引擎
+      //（清正文 + 自动/跳过按钮 + 屏幕效果），玩家看到剧情区彻底空了
+      finishCurrentFragment();
     }
   }, 800);
 }

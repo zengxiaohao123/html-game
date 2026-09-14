@@ -559,25 +559,28 @@ function confirmEventOption(i){
   }, 2000);
 }
 
-/* 事件结束：结果打字机显示，清空活动事件，恢复交互（格子已在进入时变空地） */
+/* 事件进入收尾阶段：开始播结果文本，整个事件期间（包括结果文本播放期间）eventState 保持 true
+   —— 让 isInFlow()/isInStoryFlow() 守卫继续锁编队/睡觉/移动/背包物品等操作。
+   只有结果文本真正播完后（在下方 storyStartFragment 的回调里）才清 eventState。 */
 function finishEvent(result){
   const s=eventState; if(!s) return;
   const title=s.ev.title;
 
-  // 先保存标题字符串（eventState 马上要清）
+  // 先从地图状态里移除 activeEvent 标记（格子已在进入事件时清空为空地）
   if(G) delete G.activeEvent;
-  eventState=null;
-  unlockEventUI();
   prompt('');
   $('#goBtn').style.display='none';
-  renderMap(); refreshHUD();
 
   // 结果打字机显示：统一走 storyStartFragment，事件标题显示在 storySpeaker 区
   const paras = splitParas(result || '');
   const segments = paras.map(html => ({ speaker: null, html }));
   storyStartFragment(segments, ()=>{
-    // 结果段打完 —— finishCurrentFragment 已经清了 storyBody/controls/speaker/屏幕效果
-    // 这里留空即可（不需要额外逻辑）
+    // ★ 结果文本打完 → 真正结束事件：清 eventState + 解锁 UI + 刷新地图
+    //    回调里调用 finishCurrentFragment 清空故事引擎（正文 + speaker + controls + 屏幕效果）
+    eventState=null;
+    unlockEventUI();
+    renderMap(); refreshHUD();
+    finishCurrentFragment();  // 保证故事引擎彻底清空
   }, { title: title });
 }
 

@@ -29,7 +29,7 @@ const CRAFT_RECIPES = [
 let craftQty={};
 
 function openCraft(){
-  if(combatState||eventState){ log('事件中无法使用该功能。'); return; }
+  if(isInFlow()){ log('事件中无法使用该功能。'); return; }
   /* === 启程任务·合成台 hook：打开合成界面即可接任务 === */
   if(G){ G.records=G.records||{}; G.records.qCraftAvail=true; }
   if(G) renderCrafting();

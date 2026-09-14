@@ -611,8 +611,9 @@ function onSkipClicked(){
 }
 function doSkipCurrent(){
   if(eventState){
-    // 事件正文阶段：跳过所有正文段落，直接触发 storyStartFragment 的 onSegEnd 回调 → 进入选项阶段
-    // 如果是选项阶段，onSkipClicked 里的"选项存在"保护已经拦住；result 阶段 eventState 已被 finishEvent 清空
+    // 事件正文阶段：跳过正文 → 回调触发 renderEventOptions（进入选项阶段）
+    // 事件结果阶段：跳过结果文本 → 回调触发 eventState=null + unlockEventUI（彻底结束）
+    // 选项阶段有 onSkipClicked 里的"选项存在"保护，用户没机会点到这里
     storySkipMainSeg();
     return;
   }
@@ -670,14 +671,14 @@ function refreshHUD(){ if(!G) return;
   const psy = Math.max(-100, Math.min(100, (h.psyStress||0)));
   $('#hud').innerHTML=`<span class="stat">健康 <b>${h.health}</b></span>`+`<span class="stat">天数 <b>${G.day}</b></span>`+`<span class="stat">区域 <b>${G.region==='wild'?'野外':'城市'}</b></span>`+`<span class="stat">攻击 <b>${heroDisplayAtk()}</b></span>`+`<span class="stat">防御 <b>${heroDisplayDef()}</b></span>`+`<span class="stat">生命 <b class="${hpCls}">${h.hp}/${mHp}</b></span>`+`<span class="stat">金币 <b>${G.inventory.coin}</b></span>`+`<span class="stat">行动力 <b>${h.actionPoint}/${h.apCap}</b></span>`+`<span class="stat">心理压力 <b>${psy}</b></span>`+depress;
 }
-function renderIconbar(){ if(!G) return; const show=[[ '任务',openTasks],['编队',openFormation],['角色',openCharacters],['背包',openInventory],['睡觉',sleep],['设置',openSettings],['商店',openShop],['合成',openCraft],['载具',openVehicles]]; const blocked = (combatState||eventState) ? new Set(['编队','睡觉','商店','合成']) : new Set(); $('#iconbar').innerHTML=show.map(([t,f],i)=>`<button class="icobtn${t==='睡觉'?' sleep':''}${blocked.has(t)?' dis':''}" data-i="${i}">${t}</button>`).join(''); $('#iconbar').querySelectorAll('.icobtn').forEach(b=>b.onclick=()=>show[+b.dataset.i][1]()); }
+function renderIconbar(){ if(!G) return; const show=[[ '任务',openTasks],['编队',openFormation],['角色',openCharacters],['背包',openInventory],['睡觉',sleep],['设置',openSettings],['商店',openShop],['合成',openCraft],['载具',openVehicles]]; const blocked = (isInFlow()) ? new Set(['编队','睡觉','商店','合成']) : new Set(); $('#iconbar').innerHTML=show.map(([t,f],i)=>`<button class="icobtn${t==='睡觉'?' sleep':''}${blocked.has(t)?' dis':''}" data-i="${i}">${t}</button>`).join(''); $('#iconbar').querySelectorAll('.icobtn').forEach(b=>b.onclick=()=>show[+b.dataset.i][1]()); }
 function log(msg){ const d=el(`<div class="logline">${msg}</div>`); const body=$('#logBody'); body.appendChild(d); body.scrollTop=body.scrollHeight; /* 行动记录区无上限，仅战斗开始/结束/睡觉时清除 */ }
 function story(html){$('#storyBody').insertAdjacentHTML('beforeend',`<div>${html}</div>`); $('#storyBody').scrollTop=$('#storyBody').scrollHeight;}
 function prompt(msg){$('#promptZone').innerHTML=msg;}
 function terms(txt){ if(typeof txt!=='string') return txt; return txt.replace(/【([^】]+)】/g, (m,zh)=> TERM_KEYS[zh]? termHTML(TERM_KEYS[zh], zh) : `<b>${m}</b>`); }
 function renderMap(){ const m=G.map; const grid=$('#mapGrid'); grid.style.gridTemplateColumns=`repeat(${m.n},44px)`; grid.innerHTML=''; for(let y=0;y<m.n;y++){ for(let x=0;x<m.n;x++){ const c=m.cells[y*m.n+x]; const cell=el('<div class="cell"></div>'); if(c.terrain==='obstacle'){cell.classList.add('obstacle');} else if(c.terrain==='void'){cell.classList.add('void');} if(c.terrain!=='void' && c.content && c.content.type) renderCellContent(cell,c); if(G.px===x&&G.py===y){cell.classList.add('player'); cell.classList.add('facing-'+G.hero.facing);} cell.dataset.x=x; cell.dataset.y=y; cell.addEventListener('click',()=>onCellClick(x,y)); grid.appendChild(cell); } } }
 function renderCellContent(cell,c){ if(c.content.type==='battle' && !c.content.done){ if(c.content.rare && (G.inventory.roadmap||0)>0){ cell.textContent='🐻'; cell.title='稀有动物'; cell.style.color='#ffd700'; } else if(c.content.sub==='hard'){ cell.textContent='⚠️'; cell.title='紧急作战'; cell.style.color='#ff6b6b'; } else if(c.content.sub==='boss'){ cell.textContent='💀'; cell.title='boss战'; } else { cell.textContent='⚔'; cell.title='作战'; } return; } else if(c.content.type==='loot' && !c.content.done){ cell.textContent='🎁'; cell.title='战利品'; } else if(c.content.type==='event' && !c.content.done){ cell.textContent='❓'; cell.title='事件'; } }
-function openSettings(){ const lbl = combatState? '存档（回本次战斗开始时）' : (eventState? '存档（回本次事件开始时）' : '存档'); openModal('设置', `<div style="display:flex;flex-direction:column;gap:14px"><button class="mbtn big" onclick="saveMenuOpen()">${lbl}</button><button class="mbtn big" onclick="openReadSave()">读档</button><button class="mbtn big" onclick="closeModal();backToMenu()">返回主界面（不存档）</button></div>`, 'small'); const sm=$('#modalOverlay .modal'); if(sm) sm.classList.add('settingz'); }
+function openSettings(){ const lbl = combatState? '存档（回本次战斗开始时）' : (isInStoryFlow()? '存档（回本次剧情开始时）' : '存档'); openModal('设置', `<div style="display:flex;flex-direction:column;gap:14px"><button class="mbtn big" onclick="saveMenuOpen()">${lbl}</button><button class="mbtn big" onclick="openReadSave()">读档</button><button class="mbtn big" onclick="closeModal();backToMenu()">返回主界面（不存档）</button></div>`, 'small'); const sm=$('#modalOverlay .modal'); if(sm) sm.classList.add('settingz'); }
 function saveMenuOpen(){ openModal('选择存档位', buildSaveSlotHTML('save'), 'small'); }
 function openReadSave(){ openReadSaveMenu(); }
 function alertDialog(title,msg){ openModal(title, `<p>${msg}</p>`, 'small'); }
@@ -719,7 +720,7 @@ function renderInventory(){
   let rightHTML='';
   if(invSelKey){
     const k=invSelKey; const n=G.inventory[k];
-    const useBtn = (!combatState && !eventState && itemUsable(k)) ? `<button class="mbtn tiny invUse" onclick="useInvItem('${k}')">使用</button>` : '';
+    const useBtn = (!isInFlow() && itemUsable(k)) ? `<button class="mbtn tiny invUse" onclick="useInvItem('${k}')">使用</button>` : '';
     rightHTML = `<div class="inv-detail-right">
       <div class="dr-name">${itemName(k)} ×${n} ${useBtn}</div>
       <div class="dr-desc">${terms(itemDetailHTML(k))}</div>
@@ -743,7 +744,7 @@ function renderInventory(){
     };
   });
 }
-window.useInvItem=function(k){ if(combatState||eventState){ invMsg='事件中无法使用背包物品。'; renderInventory(); return; } const n=G.inventory[k]||0; if(n<=0){ renderInventory(); return; }
+window.useInvItem=function(k){ if(isInFlow()){ invMsg='事件中无法使用背包物品。'; renderInventory(); return; } const n=G.inventory[k]||0; if(n<=0){ renderInventory(); return; }
   /* === 明心浆 === */
   if(k==='clearMind'){
     G.inventory[k]-=1;
@@ -788,7 +789,7 @@ function renderCharacters(){
     'full', {replace:true});
   $('#modalBody').querySelectorAll('.ctab').forEach(b=>b.onclick=()=>{ charPageKey=b.dataset.k; renderCharacters(); });
   // 任务7：事件/战斗中禁用 carry & interact 按钮
-  if(combatState || eventState){
+  if(isInFlow()){
     document.querySelectorAll('#charLayout .csidebtn[data-tab="carry"], #charLayout .csidebtn[data-tab="interact"]').forEach(b=>{
       b.classList.add('dis'); b.disabled=true; b.title='事件/战斗中不可使用';
     });
@@ -800,7 +801,7 @@ function charPageLayout(key){
   const c=getChar(key);
   const isPro = key==='pro';
   const b = isPro? null : getBond(key);
-  const canCarryInteract = !(combatState||eventState);
+  const canCarryInteract = !(isInFlow());
   const sideTabs = [
     {tab:'skills',  label:'技能展示',   enabled:true},
     {tab:'carry',   label:'调整技能',   enabled:canCarryInteract},              // 非战斗/事件时主角和队友都可打开
@@ -823,7 +824,7 @@ function charPageLayout(key){
     </div>
   </div>`;
 }
-window.setCharPageTab=function(id){ if(!['skills','carry','interact','bond','story'].includes(id)) return; if((combatState||eventState) && (id==='carry'||id==='interact')) return; charPageTab=id; renderCharacters(); };
+window.setCharPageTab=function(id){ if(!['skills','carry','interact','bond','story'].includes(id)) return; if((isInFlow()) && (id==='carry'||id==='interact')) return; charPageTab=id; renderCharacters(); };
 function charSkillsTab(key,c){ c=c||getChar(key);
   const attrs= key==='pro'
     ? `<span>攻击 ${R(charAtk('pro'))}</span><span>最大生命 ${R(heroDisplayMaxHp())}</span><span>防御 ${R(heroDisplayDef())}</span><span>逃跑速度 ${R(G.hero.escapeSpeed)}</span><span>健康 ${R(G.hero.health)}</span><span>行动力上限 ${R(G.hero.apCap)}</span>`
@@ -948,7 +949,7 @@ function closeGift(){ if(giftOpenKey==null) return; const overlay=document.getEl
 function charBondTab(key,c){ c=c||getChar(key); if(key==='pro') return '<p>主角没有羁绊等级。</p>'; const bt=(BOND_TEXT[key])||{}; let rows=''; for(let lv=0; lv<=10; lv++){ const note=bt[lv]||''; const cur=getBond(key).level===lv? '（当前）':''; rows+=`<div class="bondrow ${getBond(key).level===lv?'cur':''}"><span class="bondlv">羁绊 ${lv} 级${cur}</span><span class="bondnote">${note}</span></div>`; } return `<div class="bondrows">${rows}</div><p style="margin-top:10px;font-size:13px;color:#9aa0ac">基础效果：羁绊每升 1 级，攻击力 +10；标注有等级的技能的等级对应提升。好感度每累计 10 点提升 1 级，羁绊等级只升不降。当前好感度 <b class="lvlup">${getBond(key).affinity}</b>（上限 999，下限 -999）。</p>`; }
 function charStoryTab(key,c){ c=c||getChar(key); if(key==='pro') return '<p>属于你的故事，才刚刚开始……</p>'; return `<p>关于 <b>${c.name}</b> 的故事，正在撰写中，敬请期待。</p>`; }
 let skillPickSel={};
-function openFormation(){ if(combatState||eventState){ log('事件中无法使用该功能。'); return; } renderFormation(); }
+function openFormation(){ if(isInFlow()){ log('事件中无法使用该功能。'); return; } renderFormation(); }
 function eligibleSwapChars(){ const keys=['pro']; for(const k in ALLIES){ if(bondLevel(k)>=1) keys.push(k); } return keys; }
 let swapOpen=false, swapJustOpened=false; let swapTeam=[];
 function openSwap(){ swapTeam=G.team.slice(); swapOpen=true; swapJustOpened=true; renderFormation(); }
@@ -991,7 +992,7 @@ function renderTasksHTML(){
 function openTasks(){ openModal('任务', renderTasksHTML(), 'full', {replace:true}); }
 window.selectTask=function(id){ if(id!==taskSel && TASKS.some(t=>t.id===id)){ taskSel=id; openTasks(); } };
 let shopQty={}; let shopMsg='';
-function openShop(){ if(combatState||eventState){ log('事件中无法使用该功能。'); return; } if(G){ shopMsg=''; renderShop(); } }
+function openShop(){ if(isInFlow()){ log('事件中无法使用该功能。'); return; } if(G){ shopMsg=''; renderShop(); } }
 function shopSellPrice(it){ return Math.floor(it.buy*0.5); }
 function renderShop(){ const list=SHOP_ITEMS.map(it=>{ const have=G.inventory[it.key]||0; const buyPrice=itemBuyPrice(it.key); const buyMax=Math.floor((G.inventory.coin||0)/Math.max(1,buyPrice)); const sellMax = it.sellable? have : 0; const maxN=Math.max(buyMax,sellMax,1); let q=Math.max(1, shopQty[it.key]||1); q=Math.min(q, maxN); shopQty[it.key]=q; const buy=buyPrice; const sell=shopSellPrice(it); const sellBtn = it.sellable ? `<button class="mbtn tiny" onclick="shopTrade('${it.key}','sell')">卖出</button>` : `<span class="nohint">不可出售</span>`; const growNote = it.priceGrow? `<span class="rnote">每获得1个，此物价+${it.priceGrow}</span>` : ''; return `<div class="sitem"><div class="shead"><span class="craftlink" data-key="${it.key}">${itemName(it.key)}</span><span class="sprice">${it.sellable?`买入 <b>${buy}</b> · 卖出 <b>${sell}</b> 金币`:`买入 <b>${buy}</b> 金币（不可出售）`}</span></div><div class="sown">持有 <b>${have}</b> · 金币 <b>${G.inventory.coin}</b></div>${growNote}<div class="rcCtl"><span class="craftQty">×${q}</span><input type="range" class="craftRange" min="1" max="${maxN}" value="${q}" oninput="shopSet('${it.key}',this.value)"><button class="mbtn tiny craftDo" onclick="shopTrade('${it.key}','buy')">购买</button>${sellBtn}</div></div>`; }).join(''); openModal('商店', `<p class="mhint">点击物品可查看说明。购买与卖出共用同一滑块设定数量；卖出价为买入价的一半。</p><div class="shopmsg ${shopMsg?'show':''}">${shopMsg}</div><div class="cwrapper">${list}</div>`, 'full', {replace:true}); }
 window.shopSet=function(key,v){ shopQty[key]=Math.max(1,(+v||1)); shopMsg=''; renderShop(); };

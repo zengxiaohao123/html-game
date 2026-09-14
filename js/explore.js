@@ -6,7 +6,7 @@
 "use strict";
 function onCellClick(x,y){
   if(combatState){ combatCellClick(x,y); return; }
-  if(eventState){ return; }   // 事件中不可移动至新格（地图缩放/拖拽仍可用）
+  if(isInFlow()){ return; }   // 事件中不可移动至新格（地图缩放/拖拽仍可用）
   if(mapDragMoved) return;
   const m=G.map; const c=m.cells[y*m.n+x]; previewCell={x,y};
   let info=`<b>位置 (${x+1},${y+1})</b><br>`;
@@ -30,7 +30,7 @@ function goBtnForMove(x,y){
 }
 function moveExplore(x,y, cost){
   if(combatState) return;
-  if(eventState) return;
+  if(isInFlow()) return;
   const c = moveCostFor(x,y);          // 以当前载具规则计算真实消耗
   if(c===null){ log('当前移动方式无法到达该格，未消耗载具次数。'); $('#goBtn').style.display='none'; renderMap(); return; }
   if((G.hero.actionPoint||0) < c){ log('行动力不足。'); $('#goBtn').style.display='none'; return; }
