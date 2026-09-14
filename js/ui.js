@@ -643,13 +643,25 @@ function initStoryControls(){
     storyAutoMode = !storyAutoMode;
     try{ sessionStorage.setItem('storyAutoMode', storyAutoMode?'1':'0'); }catch(e){}
     auto.classList.toggle('on', storyAutoMode);
-    // 开启自动时：若当前 idle 且还有内容，立即连打
-    if(storyAutoMode && !storyTyping && storyPages.length){
-      if(storySegIdx >= storyPages[storyPageIdx].paragraphs.length
-        && storyPageIdx + 1 < storyPages.length){
-        // 页尾等待 → 立即翻下一页
-        if(storyAutoTimer){ clearTimeout(storyAutoTimer); }
-        storyAutoTimer = setTimeout(()=>{ storyPageIdx++; storySegIdx=0; renderCurrentPage(); }, 200);
+    if(storyAutoMode && storyPages.length){
+      // ★ 四种状态全覆盖，让切换到自动模式的瞬间立即接入自动推进
+      if(storyTyping){
+        // 正在打字 —— typeSegment 自然打完后 onPageEnd 会按自动模式接管，不用额外处理
+      } else if(storySegIdx < storyPages[storyPageIdx].paragraphs.length){
+        // 还有未打的段（当前 idle） → 立即连打下一段
+        typeSegment();
+      } else if(storyPageIdx + 1 < storyPages.length){
+        // 页尾等待 + 中间页 → 立即排 1.5s 翻下一页（和 onPageEnd 逻辑一致）
+        if(storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
+        storyAutoTimer = setTimeout(()=>{
+          storyPageIdx++; storySegIdx=0;
+          renderCurrentPage();
+        }, 1500);
+      } else {
+        // 最后一页已打完 → 复用 onPageEnd 的最后一页逻辑（endForCallbacks → 同步调回调 → 回调里
+        // 根据 storyAutoMode 排 autoWait 4s 或立即 forceEndStoryFlow）
+        if(storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
+        endForCallbacks();
       }
     }
     if(!storyAutoMode && storyAutoTimer){ clearTimeout(storyAutoTimer); storyAutoTimer=null; }
