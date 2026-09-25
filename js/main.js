@@ -47,7 +47,18 @@ function showMenu(){
   document.querySelector('#menuBtns').innerHTML=`<button class="mbtn" onclick="startNew()">新的游戏</button>`+`<button class="mbtn" onclick="openReadSave()">读取存档</button>`+`<button class="mbtn" onclick="openTutorial()">玩法简介</button>`;
 }
 function openTutorial(){ openModal('玩法简介', `探索：<b>点击地图格子再点「前往」</b>（信息区），或用 <b>WASD</b> 键移动。<br>进入下一天：点上方 <b>睡觉</b> 按钮。<br>遇敌进入回合战斗：点下方 <b>角色卡</b>（<b>F1/F2/F3</b>）切换角色；点 <b>技能</b>（<b>1/2/3</b>）选中，再点一次即主动使用（或按 <b>Q</b>）；移动（WASD/点击相邻格）后各角色自动释放已选技能。<br>战斗中点敌人可在右侧信息区查看<b>属性/意图/状态</b>，并可切到「详细技能」页查看其技能介绍。<br>状态栏记录单位身上的增益/减益（正面黄框、负面红框），<b>点击状态</b>可查看详情；技能描述中的【词条】<b>悬浮</b>可查看解释。<br>地图可<b>滚轮缩放</b>、<b>拖拽平移</b>（仅视觉）。`, 'small'); }
-window.addEventListener('load',()=>{ bindTooltip(); switchMode('story'); if(loadSaves()[1]) loadGame(1); showMenu(); });
+window.addEventListener('load',()=>{
+  try { bindTooltip(); } catch(e){ console.warn('bindTooltip fail',e); }
+  try { switchMode('story'); } catch(e){ console.warn('switchMode fail',e); }
+  try {
+    const saves = loadSaves();
+    if(saves[1]) loadGame(1);
+  } catch(e){
+    console.warn('旧存档不兼容，跳过自动读档。错误:', e.message);
+    localStorage.removeItem('yysw_saves');
+  }
+  try { showMenu(); } catch(e){ console.error('showMenu fail',e); }
+});
 function showGameOver(){ $('#goMsg').innerHTML='你的健康已归零，流浪在此终结。你仍可读取存档重新开始。'; $('#gameoverOverlay').classList.add('show'); }
 function loadAfterGameOver(){ $('#gameoverOverlay').classList.remove('show'); openReadSaveMenu(); }
 function backToMenu(){ combatState=null; $('#gameoverOverlay').classList.remove('show'); showMenu(); }
