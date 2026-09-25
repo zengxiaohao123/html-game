@@ -59,12 +59,12 @@ window.addEventListener('load',()=>{
   }
   try { showMenu(); } catch(e){ console.error('showMenu fail',e); }
 });
-function showGameOver(){ $('#goMsg').innerHTML='你的健康已归零，流浪在此终结。你仍可读取存档重新开始。'; $('#gameoverOverlay').classList.add('show'); }
-function loadAfterGameOver(){ $('#gameoverOverlay').classList.remove('show'); openReadSaveMenu(); }
-function backToMenu(){ combatState=null; $('#gameoverOverlay').classList.remove('show'); showMenu(); }
-function startNew(){ $('#menuOverlay').classList.remove('show'); G=newGame(); G.map=generateMap(G.day); G.px=G.map.px; G.py=G.map.py; // 问题3：按最新定义，初始 hp 等于 heroDisplayMaxHp()（天赋+队友已计入）
+function showGameOver(){ qs('#goMsg').innerHTML='你的健康已归零，流浪在此终结。你仍可读取存档重新开始。'; qs('#gameoverOverlay').classList.add('show'); }
+function loadAfterGameOver(){ qs('#gameoverOverlay').classList.remove('show'); openReadSaveMenu(); }
+function backToMenu(){ combatState=null; qs('#gameoverOverlay').classList.remove('show'); showMenu(); }
+function startNew(){ qs('#menuOverlay').classList.remove('show'); G=newGame(); G.map=generateMap(G.day); G.px=G.map.px; G.py=G.map.py; // 问题3：按最新定义，初始 hp 等于 heroDisplayMaxHp()（天赋+队友已计入）
   G.hero.hp = heroDisplayMaxHp(); loadIntoWorld(); }
-function loadIntoWorld(){ $('#menuOverlay').classList.remove('show'); combatState=null; if(!G.map) G.map=generateMap(G.day); if(G.px===undefined||G.py===undefined){ G.px=G.map.px; G.py=G.map.py; } if(!G.vehicles||!G.vehicles.some(v=>v&&v.key==='dash')){ G.vehicles=standardVehicles(); G.vehicleSel=0; } refreshHUD(); renderIconbar(); if(G.combat){ const c=G.combat; G.combat=null; reenterCombat(c); return; } const cur=G.map.cells[G.py*G.map.n+G.px]; if(cur && cur.content && cur.content.type==='event' && !cur.content.done){ switchMode('story'); renderMap(); startEvent(G.px,G.py); return; }
+function loadIntoWorld(){ qs('#menuOverlay').classList.remove('show'); combatState=null; if(!G.map) G.map=generateMap(G.day); if(G.px===undefined||G.py===undefined){ G.px=G.map.px; G.py=G.map.py; } if(!G.vehicles||!G.vehicles.some(v=>v&&v.key==='dash')){ G.vehicles=standardVehicles(); G.vehicleSel=0; } refreshHUD(); renderIconbar(); if(G.combat){ const c=G.combat; G.combat=null; reenterCombat(c); return; } const cur=G.map.cells[G.py*G.map.n+G.px]; if(cur && cur.content && cur.content.type==='event' && !cur.content.done){ switchMode('story'); renderMap(); startEvent(G.px,G.py); return; }
   if(G.activeEvent && G.px===G.activeEvent.x && G.py===G.activeEvent.y){ switchMode('story'); renderMap(); startEvent(G.activeEvent.x, G.activeEvent.y, G.activeEvent.slot); return; }
   switchMode('story'); renderMap(); ensureKeyFocus();
   if(typeof window.triggerMainStorySeg==='function') window.triggerMainStorySeg();
@@ -88,9 +88,9 @@ const HOTKEY_ACTION = { p: sleep };   /* 非 modal 动作类快捷键 */
 
 function handleHotkeyToggle(k){
   /* 1. modal 已打开时：只允许「同一键」关闭，其他键一律忽略（保持 guard 规则） */
-  if($('#modalOverlay').classList.contains('show')){
+  if(qs('#modalOverlay').classList.contains('show')){
     try{
-      const curTitle = $('#modalTitle').textContent;
+      const curTitle = qs('#modalTitle').textContent;
       const cfg = HOTKEY_MODAL[k];
       if(cfg && curTitle===cfg.title){ closeModal(); return; }
       return;   // 其他键：modal 打开中一律忽略
@@ -109,11 +109,11 @@ function handleHotkeyToggle(k){
 }
 
 function handleKeys(ev){
-  if($('#menuOverlay').classList.contains('show') || $('#gameoverOverlay').classList.contains('show')) return;
+  if(qs('#menuOverlay').classList.contains('show') || qs('#gameoverOverlay').classList.contains('show')) return;
   const k=ev.key.toLowerCase();
   /* ESC 处理：modal 开着 → 退回一层 / 关闭；否则 → 打开设置 */
   if(k==='escape'){
-    const modalShown = $('#modalOverlay').classList.contains('show');
+    const modalShown = qs('#modalOverlay').classList.contains('show');
     if(modalShown){
       modalBack();
     } else {
@@ -137,7 +137,7 @@ function handleKeys(ev){
     else if(ev.key==='f1'||ev.key==='f2'||ev.key==='f3'){ const chars=getTeamChars(); const idx=+ev.key.slice(1)-1; if(chars[idx]){ cs.currentChar=chars[idx].key; updateCombatUI(); renderCombatMap(); } }
     return;
   }
-  if(!G||!G.map) return; if($('#modalOverlay').classList.contains('show')) return; if(ev.repeat) return;
+  if(!G||!G.map) return; if(qs('#modalOverlay').classList.contains('show')) return; if(ev.repeat) return;
   if(isInFlow()) return;   // 事件中不可移动
   let dx=0,dy=0;
   if(k==='w'){dy=-1;} else if(k==='s'){dy=1;} else if(k==='a'){dx=-1;} else if(k==='d'){dx=1;} else return;
@@ -195,9 +195,9 @@ function sleep(){
   refreshHUD(); renderMap(); renderIconbar();
 }
 function bindTooltip(){
-  document.addEventListener('mouseover',ev=>{ const t=ev.target.closest('.term'); if(!t)return; const tip=$('#tooltip'); tip.style.display='block'; tip.textContent=t.title||TERMS[t.dataset.term]||''; bringToFront(tip); positionTip(tip,ev); });
-  document.addEventListener('mouseout',ev=>{ if(ev.target.closest('.term')) $('#tooltip').style.display='none'; });
-  document.addEventListener('mousemove',ev=>{ positionTip($('#tooltip'),ev); });
+  document.addEventListener('mouseover',ev=>{ const t=ev.target.closest('.term'); if(!t)return; const tip=qs('#tooltip'); tip.style.display='block'; tip.textContent=t.title||TERMS[t.dataset.term]||''; bringToFront(tip); positionTip(tip,ev); });
+  document.addEventListener('mouseout',ev=>{ if(ev.target.closest('.term')) qs('#tooltip').style.display='none'; });
+  document.addEventListener('mousemove',ev=>{ positionTip(qs('#tooltip'),ev); });
 }
 /* 问题6修复：全局递增 z-index，后显示的悬浮层永远在上 */
 let __topZ=500;

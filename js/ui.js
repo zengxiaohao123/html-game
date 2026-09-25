@@ -2,27 +2,27 @@
    js/ui.js —— 模块：界面与UI
    ============================================================ */
 "use strict";
-const $=id=>document.querySelector(id);
+const qs=id=>document.querySelector(id);
 function el(html){const d=document.createElement('div'); d.innerHTML=html; return d.firstElementChild;}
 function switchMode(m){
   gameMode=m;
-  $('#bottom').classList.toggle('mode-story', m==='story');
-  $('#bottom').classList.toggle('mode-combat', m==='combat');
-  $('#rightTitle').textContent='信息';
+  qs('#bottom').classList.toggle('mode-story', m==='story');
+  qs('#bottom').classList.toggle('mode-combat', m==='combat');
+  qs('#rightTitle').textContent='信息';
   if(m==='story'){
     // 事件 lockEventUI / 主线剧情 playMainStorySeg 都走这条路：
     // 强制隐藏 goBtn（防止从探索/战斗残留过来的"前往"按钮继续显示）
-    $('#goBtn').style.display='none';
+    qs('#goBtn').style.display='none';
     // 刷新 iconbar —— isInFlow() 会根据 eventState/mainStoryPlaying/combatState 决定禁用哪些按钮
     renderIconbar();
   } else {
     // 切到战斗或其他非 story 模式：确保故事引擎的残留全部清掉
     finishCurrentFragment();  // 清 pages / storyBody / speaker / 屏幕效果 / 回调
-    const sc = $('#storyControls'); if(sc) sc.style.display='none';
+    const sc = qs('#storyControls'); if(sc) sc.style.display='none';
     renderIconbar();
   }
 }
-function clearLog(){ $('#logBody').innerHTML=''; }
+function clearLog(){ qs('#logBody').innerHTML=''; }
 function clearStory(){ storyClear(); }
 /* ---- 主线 / 通用辅助：名字彩色、屏幕效果、幕标题 ---- */
 /* 名字彩色：仅对特定名字的特定字上色，其余保持白色 */
@@ -48,13 +48,13 @@ function applySpeakerColor(name){
 /* 屏幕效果：shake / shake-dull / flash / black */
 function playScreenEffect(type){
   if(type==='shake-dull'){
-    $('#app').classList.add('fx-shake-dull');
-    setTimeout(()=>$('#app').classList.remove('fx-shake-dull'), 500);
+    qs('#app').classList.add('fx-shake-dull');
+    setTimeout(()=>qs('#app').classList.remove('fx-shake-dull'), 500);
     return;
   }
   if(type==='shake'){
-    $('#app').classList.add('fx-shake');
-    setTimeout(()=>$('#app').classList.remove('fx-shake'), 600);
+    qs('#app').classList.add('fx-shake');
+    setTimeout(()=>qs('#app').classList.remove('fx-shake'), 600);
     return;
   }
   const overlay = document.createElement('div');
@@ -64,7 +64,7 @@ function playScreenEffect(type){
 }
 /* 幕标题：白字大字遮罩 5s 自动淡出 */
 function showActTitle(title){
-  const ov = $('#actTitleOverlay');
+  const ov = qs('#actTitleOverlay');
   ov.innerHTML = `<div class="act-title-text">${escapeHtml(title)}</div>`;
   ov.classList.add('show');
   setTimeout(()=>{ ov.classList.remove('show'); setTimeout(()=>{ ov.innerHTML=''; }, 400); }, 5500);
@@ -106,11 +106,11 @@ function processMetaCommands(text){
     }
     // 回忆 class 切换（只切 storyBox 容器，不影响地图/HUD）
     if(eff==='flashback-on'){
-      $('#bottom').classList.add('storyFlashback');
+      qs('#bottom').classList.add('storyFlashback');
       return '';
     }
     if(eff==='flashback-off'){
-      $('#bottom').classList.remove('storyFlashback');
+      qs('#bottom').classList.remove('storyFlashback');
       return '';
     }
     // 幕标题：【act:第一幕 分道扬镳】
@@ -239,12 +239,12 @@ function storyStartFragment(body, onSegEnd, opts){
   storyTyping=false; storyCurrent=null; storyPlainIdx=0;
 
   // 清 storyBody（上次 finish 后可能有残留；也确保 storyOnTap 里的 "故事引擎空" 判断正确）
-  $('#storyBody').innerHTML='';
-  $('#storySpeaker').innerHTML='';
+  qs('#storyBody').innerHTML='';
+  qs('#storySpeaker').innerHTML='';
 
   // 统一清屏：彻底重置屏幕效果（闪回 class、抖动、overlay），避免上一段残留
-  $('#bottom').classList.remove('storyFlashback');
-  $('#app').classList.remove('fx-shake','fx-shake-dull');
+  qs('#bottom').classList.remove('storyFlashback');
+  qs('#app').classList.remove('fx-shake','fx-shake-dull');
   document.querySelectorAll('.screen-effect').forEach(el=>{ try{ el.remove(); }catch(e){} });
 
   // 保存上下文（skipBlockedWhenChoice: true 表示该片段结束时会进入选项，
@@ -262,11 +262,11 @@ function storyStartFragment(body, onSegEnd, opts){
 
   // 初始化自动/跳过按钮（默认每次 start 时重建事件绑定；如果已 initStoryControls 过则 auto/skip onclick 已绑好）
   // 但按钮需要可见 —— 确保 DOM 存在并显示
-  const controls = $('#storyControls');
+  const controls = qs('#storyControls');
   if(controls){
     controls.style.display = '';
     // 自动按钮状态同步
-    const auto=$('#autoBtn'); if(auto) auto.classList.toggle('on', storyAutoMode);
+    const auto=qs('#autoBtn'); if(auto) auto.classList.toggle('on', storyAutoMode);
   }
 
   // 如果没有任何段落（理论上不会发生），直接结束
@@ -317,7 +317,7 @@ function advanceAfterIdle(){
    ============================================================ */
 
 function renderCurrentPage(){
-  const body = $('#storyBody');
+  const body = qs('#storyBody');
   body.innerHTML = '';
   body.classList.remove('story-tap-hint','story-page');
 
@@ -353,7 +353,7 @@ function typeSegment(){
   const cleanHtml = processMetaCommands(seg.html || '');
 
   // 更新 speaker 区：事件优先显示事件标题（固定不动），否则用段落的 speaker（主线角色名），都没有则清空
-  const speakerEl = $('#storySpeaker');
+  const speakerEl = qs('#storySpeaker');
   if(storyCtx && storyCtx.title){
     // 每次都强制重设 —— 之前 storyStartFragment 会把 innerHTML 清空但不会清 dataset.storyTitle，
     // 如果同一个事件里 body → result 用的是同一个 title，旧的"只在 title 变化时设"判断会因为
@@ -366,7 +366,7 @@ function typeSegment(){
     delete speakerEl.dataset.storyTitle;
   }
 
-  const box=$('#storyBody');
+  const box=qs('#storyBody');
   const para = document.createElement('div');
   para.className = 'story-para';
   box.appendChild(para);
@@ -423,7 +423,7 @@ function onParagraphDone(){
 
 /* 页尾：等玩家点击或自动翻页 */
 function onPageEnd(){
-  const box = $('#storyBody');
+  const box = qs('#storyBody');
   // 手动模式才显示"点击继续"提示；自动模式自己翻不需要
   if(!storyAutoMode){
     box.innerHTML += '<div class="story-tap-hint">↓ 点击继续</div>';
@@ -454,7 +454,7 @@ function endForCallbacks(){
   storyTyping=false; storyCurrent=null; storyPlainIdx=0;
 
   // 清最后那页的"点击继续"提示（正文内容不动）
-  const box = $('#storyBody');
+  const box = qs('#storyBody');
   const hint = box.querySelector('.story-tap-hint');
   if(hint) hint.remove();
 
@@ -487,21 +487,21 @@ function finishCurrentFragment(){
   const cb = storyOnSegEnd; storyOnSegEnd = null;
 
   // 2. 彻底清 storyBody（正文 + 翻页提示）
-  $('#storyBody').innerHTML='';
+  qs('#storyBody').innerHTML='';
 
   // 3. 清 speaker（包括事件标题残留的 dataset.storyTitle）
-  const speakerEl = $('#storySpeaker');
+  const speakerEl = qs('#storySpeaker');
   speakerEl.innerHTML='';
   delete speakerEl.dataset.storyTitle;
 
   // 4. 隐藏自动/跳过按钮（剧情/事件彻底结束时清空）——
   //    但 endForCallbacks（选项叠加场景）**不**走这里，它不清正文、不清 speaker、不隐藏 controls
-  const controls = $('#storyControls');
+  const controls = qs('#storyControls');
   if(controls) controls.style.display='none';
 
   // 5. 清理所有屏幕效果（闪回、抖动、overlay）—— 防止跳过剧情后效果残留
-  $('#bottom').classList.remove('storyFlashback');
-  $('#app').classList.remove('fx-shake','fx-shake-dull');
+  qs('#bottom').classList.remove('storyFlashback');
+  qs('#app').classList.remove('fx-shake','fx-shake-dull');
   document.querySelectorAll('.screen-effect').forEach(el=>{ try{ el.remove(); }catch(e){} });
 
   // 6. 清引擎上下文
@@ -536,7 +536,7 @@ window.forceEndStoryFlow = function(){
   if(typeof window._eventUnlockTimer !== 'undefined'){ clearTimeout(window._eventUnlockTimer); window._eventUnlockTimer = null; }
 
   // 3) 解除 UI 独占 class + 刷新 iconbar（renderIconbar 会用 isInFlow 判定哪些按钮置灰）
-  const bottom = $('#bottom'); if(bottom) bottom.classList.remove('mode-event-lock');
+  const bottom = qs('#bottom'); if(bottom) bottom.classList.remove('mode-event-lock');
   if(typeof renderIconbar === 'function') renderIconbar();
 
   // 4) 刷新 HUD + 地图（主线/事件结束后地图可操作、任务自动接取 log 需要 refreshHUD 触发 questNotified）
@@ -550,7 +550,7 @@ window.forceEndStoryFlow = function(){
 function storyOnTap(){
   if(storyTyping){
     // 打字中点击 → skip-to-end 本段
-    const box=$('#storyBody');
+    const box=qs('#storyBody');
     const para=box.lastElementChild;
     if(para && para.classList.contains('story-para') && storyCurrent){
       para.innerHTML=storyCurrent;
@@ -613,7 +613,7 @@ function storyClear(){ finishCurrentFragment(); }
 function story(html){ storyPush(html); }
 function storySetSpeaker(name){
   // 外部主动设 speaker（主线剧情 start 前预填、选项后等场景）—— 设完清掉 eventTitle dataset
-  const el = $('#storySpeaker');
+  const el = qs('#storySpeaker');
   el.innerHTML = name ? applySpeakerColor(name) : '';
   if(!name) delete el.dataset.storyTitle;
 }
@@ -637,8 +637,8 @@ function storySkipMainSeg(){
    自动 / 跳过按钮
    ============================================================ */
 function initStoryControls(){
-  const auto=$('#autoBtn');
-  const skip=$('#skipBtn');
+  const auto=qs('#autoBtn');
+  const skip=qs('#skipBtn');
   if(auto){ auto.classList.toggle('on', storyAutoMode); auto.onclick=()=>{
     storyAutoMode = !storyAutoMode;
     try{ sessionStorage.setItem('storyAutoMode', storyAutoMode?'1':'0'); }catch(e){}
@@ -678,12 +678,12 @@ function onSkipClicked(){
     alertDialog('无法跳过','这段剧情后需要你做出选择，请先看完。'); return;
   }
   openModal('确认跳过', '<p>你确定跳过本段剧情？</p>', 'small', {noCloseX:true});
-  const body=$('#modalBody');
+  const body=qs('#modalBody');
   const btnRow=document.createElement('div'); btnRow.className='btn-row'; btnRow.style='justify-content:center;margin-top:10px;';
   btnRow.innerHTML = `<button class="mbtn small" id="skipYes">是</button><button class="mbtn small" id="skipNo">否</button>`;
   body.appendChild(btnRow);
-  $('#skipNo').onclick=closeModal;
-  $('#skipYes').onclick=()=>{ closeModal(); doSkipCurrent(); };
+  qs('#skipNo').onclick=closeModal;
+  qs('#skipYes').onclick=()=>{ closeModal(); doSkipCurrent(); };
 }
 function doSkipCurrent(){
   // 二次保险：onSkipClicked 已经拦了 skipBlockedWhenChoice，但如果其他地方直接调 skip 也要拦住
@@ -701,7 +701,7 @@ function doSkipCurrent(){
 
 /* 绑定 storyBox 点击（DOMContentLoaded 时执行） */
 function bindStoryTap(){
-  const box=$('#storyBox');
+  const box=qs('#storyBox');
   if(!box) return;
   box.addEventListener('click', (e)=>{
     // 1. 点击自动/跳过按钮冒泡到 storyBox —— 不算点剧情区
@@ -749,16 +749,16 @@ function refreshHUD(){ if(!G) return;
   const h=G.hero; const mHp=heroDisplayMaxHp(); const hpCls=h.hp< mHp*0.3?'hpfill low':'hpfill';
   const depress = h.depress ? `<span class="stat depress-stat">${termHTML('depress','抑郁')}</span>` : '';
   const psy = Math.max(-100, Math.min(100, (h.psyStress||0)));
-  $('#hud').innerHTML=`<span class="stat">健康 <b>${h.health}</b></span>`+`<span class="stat">天数 <b>${G.day}</b></span>`+`<span class="stat">区域 <b>${G.region==='wild'?'野外':'城市'}</b></span>`+`<span class="stat">攻击 <b>${heroDisplayAtk()}</b></span>`+`<span class="stat">防御 <b>${heroDisplayDef()}</b></span>`+`<span class="stat">生命 <b class="${hpCls}">${h.hp}/${mHp}</b></span>`+`<span class="stat">金币 <b>${G.inventory.coin}</b></span>`+`<span class="stat">行动力 <b>${h.actionPoint}/${h.apCap}</b></span>`+`<span class="stat">心理压力 <b>${psy}</b></span>`+depress;
+  qs('#hud').innerHTML=`<span class="stat">健康 <b>${h.health}</b></span>`+`<span class="stat">天数 <b>${G.day}</b></span>`+`<span class="stat">区域 <b>${G.region==='wild'?'野外':'城市'}</b></span>`+`<span class="stat">攻击 <b>${heroDisplayAtk()}</b></span>`+`<span class="stat">防御 <b>${heroDisplayDef()}</b></span>`+`<span class="stat">生命 <b class="${hpCls}">${h.hp}/${mHp}</b></span>`+`<span class="stat">金币 <b>${G.inventory.coin}</b></span>`+`<span class="stat">行动力 <b>${h.actionPoint}/${h.apCap}</b></span>`+`<span class="stat">心理压力 <b>${psy}</b></span>`+depress;
 }
-function renderIconbar(){ if(!G) return; const show=[[ '任务',openTasks],['编队',openFormation],['角色',openCharacters],['背包',openInventory],['睡觉',sleep],['设置',openSettings],['商店',openShop],['合成',openCraft],['载具',openVehicles]]; const blocked = (isInFlow()) ? new Set(['编队','睡觉','商店','合成']) : new Set(); $('#iconbar').innerHTML=show.map(([t,f],i)=>`<button class="icobtn${t==='睡觉'?' sleep':''}${blocked.has(t)?' dis':''}" data-i="${i}">${t}</button>`).join(''); $('#iconbar').querySelectorAll('.icobtn').forEach(b=>b.onclick=()=>show[+b.dataset.i][1]()); }
-function log(msg){ const d=el(`<div class="logline">${msg}</div>`); const body=$('#logBody'); body.appendChild(d); body.scrollTop=body.scrollHeight; /* 行动记录区无上限，仅战斗开始/结束/睡觉时清除 */ }
-function story(html){$('#storyBody').insertAdjacentHTML('beforeend',`<div>${html}</div>`); $('#storyBody').scrollTop=$('#storyBody').scrollHeight;}
-function prompt(msg){$('#promptZone').innerHTML=msg;}
+function renderIconbar(){ if(!G) return; const show=[[ '任务',openTasks],['编队',openFormation],['角色',openCharacters],['背包',openInventory],['睡觉',sleep],['设置',openSettings],['商店',openShop],['合成',openCraft],['载具',openVehicles]]; const blocked = (isInFlow()) ? new Set(['编队','睡觉','商店','合成']) : new Set(); qs('#iconbar').innerHTML=show.map(([t,f],i)=>`<button class="icobtn${t==='睡觉'?' sleep':''}${blocked.has(t)?' dis':''}" data-i="${i}">${t}</button>`).join(''); qs('#iconbar').querySelectorAll('.icobtn').forEach(b=>b.onclick=()=>show[+b.dataset.i][1]()); }
+function log(msg){ const d=el(`<div class="logline">${msg}</div>`); const body=qs('#logBody'); body.appendChild(d); body.scrollTop=body.scrollHeight; /* 行动记录区无上限，仅战斗开始/结束/睡觉时清除 */ }
+function story(html){qs('#storyBody').insertAdjacentHTML('beforeend',`<div>${html}</div>`); qs('#storyBody').scrollTop=qs('#storyBody').scrollHeight;}
+function prompt(msg){qs('#promptZone').innerHTML=msg;}
 function terms(txt){ if(typeof txt!=='string') return txt; return txt.replace(/【([^】]+)】/g, (m,zh)=> TERM_KEYS[zh]? termHTML(TERM_KEYS[zh], zh) : `<b>${m}</b>`); }
-function renderMap(){ const m=G.map; const grid=$('#mapGrid'); grid.style.gridTemplateColumns=`repeat(${m.n},44px)`; grid.innerHTML=''; for(let y=0;y<m.n;y++){ for(let x=0;x<m.n;x++){ const c=m.cells[y*m.n+x]; const cell=el('<div class="cell"></div>'); if(c.terrain==='obstacle'){cell.classList.add('obstacle');} else if(c.terrain==='void'){cell.classList.add('void');} if(c.terrain!=='void' && c.content && c.content.type) renderCellContent(cell,c); if(G.px===x&&G.py===y){cell.classList.add('player'); cell.classList.add('facing-'+G.hero.facing);} cell.dataset.x=x; cell.dataset.y=y; cell.addEventListener('click',()=>onCellClick(x,y)); grid.appendChild(cell); } } }
+function renderMap(){ const m=G.map; const grid=qs('#mapGrid'); grid.style.gridTemplateColumns=`repeat(${m.n},44px)`; grid.innerHTML=''; for(let y=0;y<m.n;y++){ for(let x=0;x<m.n;x++){ const c=m.cells[y*m.n+x]; const cell=el('<div class="cell"></div>'); if(c.terrain==='obstacle'){cell.classList.add('obstacle');} else if(c.terrain==='void'){cell.classList.add('void');} if(c.terrain!=='void' && c.content && c.content.type) renderCellContent(cell,c); if(G.px===x&&G.py===y){cell.classList.add('player'); cell.classList.add('facing-'+G.hero.facing);} cell.dataset.x=x; cell.dataset.y=y; cell.addEventListener('click',()=>onCellClick(x,y)); grid.appendChild(cell); } } }
 function renderCellContent(cell,c){ if(c.content.type==='battle' && !c.content.done){ if(c.content.rare && (G.inventory.roadmap||0)>0){ cell.textContent='🐻'; cell.title='稀有动物'; cell.style.color='#ffd700'; } else if(c.content.sub==='hard'){ cell.textContent='⚠️'; cell.title='紧急作战'; cell.style.color='#ff6b6b'; } else if(c.content.sub==='boss'){ cell.textContent='💀'; cell.title='boss战'; } else { cell.textContent='⚔'; cell.title='作战'; } return; } else if(c.content.type==='loot' && !c.content.done){ cell.textContent='🎁'; cell.title='战利品'; } else if(c.content.type==='event' && !c.content.done){ cell.textContent='❓'; cell.title='事件'; } }
-function openSettings(){ const lbl = combatState? '存档（回本次战斗开始时）' : (isInStoryFlow()? '存档（回本次剧情开始时）' : '存档'); openModal('设置', `<div style="display:flex;flex-direction:column;gap:14px"><button class="mbtn big" onclick="saveMenuOpen()">${lbl}</button><button class="mbtn big" onclick="openReadSave()">读档</button><button class="mbtn big" onclick="closeModal();backToMenu()">返回主界面（不存档）</button></div>`, 'small'); const sm=$('#modalOverlay .modal'); if(sm) sm.classList.add('settingz'); }
+function openSettings(){ const lbl = combatState? '存档（回本次战斗开始时）' : (isInStoryFlow()? '存档（回本次剧情开始时）' : '存档'); openModal('设置', `<div style="display:flex;flex-direction:column;gap:14px"><button class="mbtn big" onclick="saveMenuOpen()">${lbl}</button><button class="mbtn big" onclick="openReadSave()">读档</button><button class="mbtn big" onclick="closeModal();backToMenu()">返回主界面（不存档）</button></div>`, 'small'); const sm=qs('#modalOverlay .modal'); if(sm) sm.classList.add('settingz'); }
 function saveMenuOpen(){ openModal('选择存档位', buildSaveSlotHTML('save'), 'small'); }
 function openReadSave(){ openReadSaveMenu(); }
 function alertDialog(title,msg){ openModal(title, `<p>${msg}</p>`, 'small'); }
@@ -814,9 +814,9 @@ function renderInventory(){
     `<div class="inv-tabs">${tabBtns}</div>`+
     (invMsg?`<div class="shopmsg">${invMsg}</div>`:'')+
     `<div class="inv-layout"><div class="inv-grid-left"><div class="vgrid inv">${tiles||'<span class="stempty">此类下没有物品</span>'}</div></div>${rightHTML}</div>`, 'full', {replace:true});
-  $('#modalBody').querySelectorAll('.inv-tab').forEach(b=>b.onclick=()=>{ invTab=b.dataset.id; invSelKey=null; renderInventory(); });
+  qs('#modalBody').querySelectorAll('.inv-tab').forEach(b=>b.onclick=()=>{ invTab=b.dataset.id; invSelKey=null; renderInventory(); });
   /* 点击物品选中/取消 */
-  $('#modalBody').querySelectorAll('.inv-cell').forEach(t=>{
+  qs('#modalBody').querySelectorAll('.inv-cell').forEach(t=>{
     t.onclick=ev=>{
       if(ev.target.classList.contains('craftlink')){ if(window.openItemHelp) openItemHelp(t.dataset.k); return; }
       if(invSelKey===t.dataset.k) invSelKey=null; else invSelKey=t.dataset.k;
@@ -850,14 +850,14 @@ window.useInvItem=function(k){ if(isInFlow()){ invMsg='事件中无法使用背�
   refreshHUD(); renderInventory();
 };
 let modalStack=[];
-function openModal(title,html,size,opt){ const ov=$('#modalOverlay'); if(ov.classList.contains('show') && !(opt&&opt.replace)){ const m=ov.querySelector('.modal'); const sz=m.classList.contains('small')?'small':m.classList.contains('wide')?'wide':m.classList.contains('full')?'full':''; modalStack.push({title:$('#modalTitle').textContent, html:$('#modalBody').innerHTML, size:sz}); } const br=ov.querySelector('.btn-row'); if(br){ br.style.display=''; } $('#modalTitle').textContent=title; const modal=ov.querySelector('.modal'); modal.className='modal'+(size==='small'?' small':(size==='wide'?' wide':(size==='full'?' full':''))); $('#modalBody').innerHTML=html; const mx=document.getElementById('modalX'); if(mx) mx.style.display=(opt&&opt.noCloseX)?'none':'block'; ov.classList.add('show'); }
+function openModal(title,html,size,opt){ const ov=qs('#modalOverlay'); if(ov.classList.contains('show') && !(opt&&opt.replace)){ const m=ov.querySelector('.modal'); const sz=m.classList.contains('small')?'small':m.classList.contains('wide')?'wide':m.classList.contains('full')?'full':''; modalStack.push({title:qs('#modalTitle').textContent, html:qs('#modalBody').innerHTML, size:sz}); } const br=ov.querySelector('.btn-row'); if(br){ br.style.display=''; } qs('#modalTitle').textContent=title; const modal=ov.querySelector('.modal'); modal.className='modal'+(size==='small'?' small':(size==='wide'?' wide':(size==='full'?' full':''))); qs('#modalBody').innerHTML=html; const mx=document.getElementById('modalX'); if(mx) mx.style.display=(opt&&opt.noCloseX)?'none':'block'; ov.classList.add('show'); }
 function closeModal(){
   // 问题2：离开角色页面时，自动重置选中主角 + 技能展示（不清除其他界面文本）
-  try{ if($('#modalTitle') && $('#modalTitle').textContent==='角色'){ charPageKey='pro'; charPageTab='skills'; } }catch(e){}
-  $('#modalOverlay').classList.remove('show'); modalStack.length=0;
+  try{ if(qs('#modalTitle') && qs('#modalTitle').textContent==='角色'){ charPageKey='pro'; charPageTab='skills'; } }catch(e){}
+  qs('#modalOverlay').classList.remove('show'); modalStack.length=0;
 }
 function onModalX(){ if(swapOpen){ applySwap(); } closeModal(); }
-function modalBack(){ if(modalStack.length){ const p=modalStack.pop(); $('#modalOverlay').classList.remove('show'); openModal(p.title,p.html,p.size); return true; } closeModal(); return false; }
+function modalBack(){ if(modalStack.length){ const p=modalStack.pop(); qs('#modalOverlay').classList.remove('show'); openModal(p.title,p.html,p.size); return true; } closeModal(); return false; }
 let charPageKey='pro'; let charPageTab='skills';
 function openCharacters(){ renderCharacters(); }
 function renderCharacters(){
@@ -867,7 +867,7 @@ function renderCharacters(){
     `<div class="ctabs">${tabs}</div>`+
     `<div id="charLayout">${charPageLayout(charPageKey)}</div>`,
     'full', {replace:true});
-  $('#modalBody').querySelectorAll('.ctab').forEach(b=>b.onclick=()=>{ charPageKey=b.dataset.k; renderCharacters(); });
+  qs('#modalBody').querySelectorAll('.ctab').forEach(b=>b.onclick=()=>{ charPageKey=b.dataset.k; renderCharacters(); });
   // 任务7：事件/战斗中禁用 carry & interact 按钮
   if(isInFlow()){
     document.querySelectorAll('#charLayout .csidebtn[data-tab="carry"], #charLayout .csidebtn[data-tab="interact"]').forEach(b=>{
@@ -923,16 +923,16 @@ let interHist={}, interTyping={}, interTick={};
 let giftOpenKey=null, giftSelItem=null, giftJustOpened=false;
 const GIFT_EXCLUDE=['coin','campfire','club','cloth','tent','trap','quilt','dagger','leather','ironSword','armor','goodCard',
   /* === 新物品 === */ 'broom','clearMind','luckyCoin','deadwoodSprout','kuiZuo','windChime','roadmap'];
-function interactInit(){ const wrap=$('#interactWrap'); if(!wrap) return; if(charPageTab!=='interact') return; giftOpenKey=null; giftSelItem=null; giftJustOpened=false; renderInteractBody(charPageKey); }
+function interactInit(){ const wrap=qs('#interactWrap'); if(!wrap) return; if(charPageTab!=='interact') return; giftOpenKey=null; giftSelItem=null; giftJustOpened=false; renderInteractBody(charPageKey); }
 function interactButtons(key){ if(key==='xiayang'){ return [['chat','聊天（成功率 50%）'],['feed','投喂'],['gift','送礼']]; } if(key==='luyouyou'){ const st=lyChatState(); return [['chat',`聊天（成功率 ${Math.round(st.cur)}%）`],['gift','送礼']]; } return []; }
 function renderInteractBody(key){
-  const wrap=$('#interactWrap'); if(!wrap) return; const c=getChar(key);
+  const wrap=qs('#interactWrap'); if(!wrap) return; const c=getChar(key);
   const btns=interactButtons(key).map(([id,label])=>`<button class="csub ilbtn" data-act="${id}">${label}</button><br>`).join('');
   const hints = key==='xiayang'? '<div class="interact-hint">聊天消耗 1 行动力；投喂每天仅第一次提升好感度；每 3 天可送礼 1 次。</div>' : '<div class="interact-hint">聊天消耗 1 行动力（每日成功率随机）；每 3 天可送礼 1 次。</div>';
   let html=`<div class="interact-box"><div class="interact-left"><div class="interact-left-head">${c.name}</div>${btns}${hints}</div><div class="interact-right"><div class="interact-dlg" id="interactDlg_${key}"></div><div class="interact-opt" id="interactOpt_${key}"></div></div></div>`;
-  if(giftOpenKey===key && !$('#giftOverlay')) html = `<div class="gift-overlay" id="giftOverlay">${renderGiftGrid(key)}</div>` + html;
+  if(giftOpenKey===key && !qs('#giftOverlay')) html = `<div class="gift-overlay" id="giftOverlay">${renderGiftGrid(key)}</div>` + html;
   wrap.innerHTML=html;
-  const dlg=$('#interactDlg_'+key);
+  const dlg=qs('#interactDlg_'+key);
   /* 双重保险：重建 DOM 前先清理 interHist 里超出 5 条的数据，只保留最后 5 条 */
   const hist = interHist[key] || [];
   const trimmed = hist.length > 5 ? hist.slice(-5) : hist;
@@ -945,7 +945,7 @@ function renderInteractBody(key){
 }
 function interactAction(key,act){ if(act==='chat') interactChat(key); else if(act==='feed') interactFeed(key); else if(act==='gift') openGift(key); }
 /* 打字机：把一段文本打进右侧对话区 */
-function startInterType(key,html){ const dlg=$('#interactDlg_'+key); if(!dlg) return; if(interTick['t'+key]) clearInterval(interTick['t'+key]); const plain=html.replace(/<[^>]+>/g,''); const node=document.createElement('div'); node.className='iline typing'; dlg.appendChild(node); dlg.scrollTop=dlg.scrollHeight; let i=0; interTick['t'+key]=setInterval(()=>{ i=Math.min(i+1,plain.length); node.innerHTML=escapeHtml(plain.slice(0,i))+(i<plain.length?'<span class="story-caret"></span>':''); dlg.scrollTop=dlg.scrollHeight; if(i>=plain.length){ clearInterval(interTick['t'+key]); interTick['t'+key]=null; node.innerHTML=html; node.classList.remove('typing'); interTyping[key]=null; interHist[key]=interHist[key]||[]; interHist[key].push({el:node,html});
+function startInterType(key,html){ const dlg=qs('#interactDlg_'+key); if(!dlg) return; if(interTick['t'+key]) clearInterval(interTick['t'+key]); const plain=html.replace(/<[^>]+>/g,''); const node=document.createElement('div'); node.className='iline typing'; dlg.appendChild(node); dlg.scrollTop=dlg.scrollHeight; let i=0; interTick['t'+key]=setInterval(()=>{ i=Math.min(i+1,plain.length); node.innerHTML=escapeHtml(plain.slice(0,i))+(i<plain.length?'<span class="story-caret"></span>':''); dlg.scrollTop=dlg.scrollHeight; if(i>=plain.length){ clearInterval(interTick['t'+key]); interTick['t'+key]=null; node.innerHTML=html; node.classList.remove('typing'); interTyping[key]=null; interHist[key]=interHist[key]||[]; interHist[key].push({el:node,html});
       // 交互文本区严格限 5 条：超出时立即删除最早那条的 DOM
       while(interHist[key].length>5){
         const oldest = interHist[key].shift();
@@ -955,7 +955,7 @@ function startInterType(key,html){ const dlg=$('#interactDlg_'+key); if(!dlg) re
 /* 问题1修复：若上一段未打完，立即把它显示完全（保留），再在下一行开始新的文本；
    关键：上一段即使被中断，也必须记录到 interHist 里，保证 interHist 和 DOM 同步 */
 function interactSay(key,html){
-  const dlg=$('#interactDlg_'+key); if(!dlg){
+  const dlg=qs('#interactDlg_'+key); if(!dlg){
     /* 连对话框都没渲染出来（比如角色页还没开），先把内容存进 interHist 但不 push DOM */
     interHist[key]=interHist[key]||[];
     const trimmed = interHist[key].slice(-5);
@@ -1005,7 +1005,7 @@ function interactSay(key,html){
   }catch(e){} }
 }
 /* 对话中途选项（沿用事件选项区 UI，置于对话区下侧） */
-function interactOption(key,opts){ const box=$('#interactOpt_'+key); if(!box) return; box.innerHTML=opts.map((o,i)=>`<div class="ev-opt" data-i="${i}"><div class="ev-opt-name">${o.name}</div>${o.desc?`<div class="ev-opt-desc">${o.desc}</div>`:''}</div>`).join(''); box.querySelectorAll('.ev-opt').forEach(b=>b.onclick=()=>{ const i=+b.dataset.i; const fn=opts[i]&&opts[i].onPick; box.innerHTML=''; if(fn) fn(); }); }
+function interactOption(key,opts){ const box=qs('#interactOpt_'+key); if(!box) return; box.innerHTML=opts.map((o,i)=>`<div class="ev-opt" data-i="${i}"><div class="ev-opt-name">${o.name}</div>${o.desc?`<div class="ev-opt-desc">${o.desc}</div>`:''}</div>`).join(''); box.querySelectorAll('.ev-opt').forEach(b=>b.onclick=()=>{ const i=+b.dataset.i; const fn=opts[i]&&opts[i].onPick; box.innerHTML=''; if(fn) fn(); }); }
 /* 聊天 */
 function lyChatState(){ G.records=G.records||{}; if(!G.records.lychat) G.records.lychat={day:0,base:0,cur:0}; const s=G.records.lychat; const day=G.day||1; if(s.day!==day){ s.day=day; s.base=Math.round(Math.random()*80-20); s.cur=s.base; } return s; }
 function interactChat(key){ const c=getChar(key); if((G.hero.actionPoint||0)<1){ interactSay(key,`你的行动力不足，无法与 ${c.name} 聊天。（聊天需消耗 1 行动力）`); return; } G.hero.actionPoint-=1; refreshHUD(); if(key==='xiayang'){ if(Math.random()<0.5){ gainAffinity(key,1); interactSay(key,`${c.name}：你讲了个烤熊掌的笑话，夏阳先是愣了一下，随后笑出了声。……你俩相谈甚欢。<span class="lvlup">好感度+1</span>（消耗 1 行动力）`); } else { interactSay(key,`你聊起路上的见闻，夏阳却只是「嗯嗯」地点着头，明显兴致缺缺。<span class="lvlup">好感度+0</span>（消耗 1 行动力）`); } } else if(key==='luyouyou'){ const st=lyChatState(); const curInt=Math.round(st.cur); const ok = curInt>=0 && Math.random()*100<curInt; if(ok){ const add=Math.round(2+Math.random()*2); st.cur = Math.max(0, Math.min(100, curInt+add)); gainAffinity(key,1); interactSay(key,`${c.name}：哈哈，你说话真有意思，我很受用。<span class="lvlup">好感度+1</span>（本日聊天成功率 +${add}%，消耗 1 行动力）`); } else { const sub=Math.round(2+Math.random()*2); st.cur = Math.max(0, Math.min(100, curInt-sub)); interactSay(key,`${c.name}：嗯……这句就没那么有趣了。我再看下路线。<span class="lvlup">好感度+0</span>（本日聊天成功率 -${sub}%，消耗 1 行动力）`); } } }
@@ -1017,7 +1017,7 @@ function giftableItems(){ return Object.keys(G.inventory).filter(k=>(G.inventory
 function renderGiftGrid(key){ const cd=giftCooldownLeft(key); const can = cd<=0; const items=giftableItems(); const cells=items.map(it=>`<div class="gift-cell ${giftSelItem===it?'sel':''}" data-k="${it}"><div class="gift-cname">${itemName(it)}</div><div class="gift-count">×${G.inventory[it]}</div></div>`).join('') || '<span class="nohint">背包里没有可送的物品。</span>'; const cdTxt = can? '' : `<div class="gift-cd">${getChar(key).name} 还有 <b>${cd}</b> 天才能再次送礼。</div>`; return `<div class="gift-head">选择礼物（每 3 天可送礼 1 次，不可赠送永久道具）${cdTxt}</div><div class="gift-grid">${cells}</div><div class="gift-foot"><button class="mbtn small" onclick="confirmGift()" ${can?'':'disabled'}>确认送出</button><button class="mbtn small" onclick="closeGift()">取消</button></div>`; }
 function openGift(key){ giftOpenKey=key; giftSelItem=null; giftJustOpened=true; renderInteractBody(key); decorateGiftCells(); }
 /* 问题1修复：礼物点击不再重绘整个面板，只切换 class；避免每点一次就闪 */
-function decorateGiftCells(){ const box=$('#giftOverlay'); if(!box) return; if(giftCooldownLeft(giftOpenKey)>0) return; box.querySelectorAll('.gift-cell').forEach(c=>{ c.onclick=()=>{ const k=c.dataset.k; const wasSel = c.classList.contains('sel'); box.querySelectorAll('.gift-cell.sel').forEach(x=>x.classList.remove('sel')); if(!wasSel){ c.classList.add('sel'); giftSelItem=k; } else { giftSelItem=null; } }; }); }
+function decorateGiftCells(){ const box=qs('#giftOverlay'); if(!box) return; if(giftCooldownLeft(giftOpenKey)>0) return; box.querySelectorAll('.gift-cell').forEach(c=>{ c.onclick=()=>{ const k=c.dataset.k; const wasSel = c.classList.contains('sel'); box.querySelectorAll('.gift-cell.sel').forEach(x=>x.classList.remove('sel')); if(!wasSel){ c.classList.add('sel'); giftSelItem=k; } else { giftSelItem=null; } }; }); }
 /* 问题1修复：确认送出后先 remove gift overlay DOM，再 interactSay，避免对话被重绘清掉 */
 function confirmGift(){ const key=giftOpenKey; if(!key||!giftSelItem) return; if(giftCooldownLeft(key)>0) return; const it=giftSelItem; const lv=itemLoveLevel(key,it); const L=(ITEM_LOVE[key]||{}); let delta=0, talk=''; if(lv===0){ delta=-1; talk=GIFT_TALK[key].lv0; } else if(lv===1){ delta=1; talk=GIFT_TALK[key].lv1; } else if(lv===2){ delta=L.two[it]; talk=GIFT_TALK[key].lv2; } else { delta=(L.three[it]||0)+5; talk=(GIFT_TALK[key]['lv3_'+it])||GIFT_TALK[key].lv2; } G.inventory[it]--; G.records=G.records||{}; if(!G.records.giftDay) G.records.giftDay={}; G.records.giftDay[key]=G.day||1;
   // 先移除 DOM 里的送礼面板（避免重绘交互区时把刚要写入的对话清掉）
@@ -1078,7 +1078,7 @@ function renderShop(){ const list=SHOP_ITEMS.map(it=>{ const have=G.inventory[it
 window.shopSet=function(key,v){ shopQty[key]=Math.max(1,(+v||1)); shopMsg=''; renderShop(); };
 window.shopTrade=function(key,act){ const it=SHOP_ITEMS.find(x=>x.key===key); if(!it) return; if(combatState){ log('战斗中无法访问商店。'); return; } const q=Math.max(1,shopQty[key]||1); if(act==='buy'){ const price=itemBuyPrice(key); const cost=price*q; if(G.inventory.coin<cost){ shopMsg='金币不足，无法完成该笔购买。'; refreshHUD(); renderShop(); return; } G.inventory.coin-=cost; if(it.permanent){ for(let i=0;i<q;i++) grantPermanentItem(key); } else { G.inventory[key]=(G.inventory[key]||0)+q; } shopMsg=`已购买 <b>${itemName(key)} ×${q}</b>，花费 <b>${cost}</b> 金币。`; } else { if(!it.sellable){ shopMsg='该物品不可出售。'; refreshHUD(); renderShop(); return; } const sell=shopSellPrice(it), gain=sell*q; if((G.inventory[key]||0)<q){ shopMsg='你要卖出的数量超出当前持有。'; refreshHUD(); renderShop(); return; } G.inventory[key]-=q; G.inventory.coin+=gain; shopMsg=`已卖出 <b>${itemName(key)} ×${q}</b>，获得 <b>${gain}</b> 金币。`; } log(shopMsg.replace(/<[^>]+>/g,'')); refreshHUD(); renderShop(); };
 let mapDragMoved=false;
-(function initMapViewport(){ const vp=$('#mapViewport'); const grid=$('#mapGrid'); let scale=1; vp.addEventListener('wheel', e=>{ e.preventDefault(); scale=Math.min(2, Math.max(0.5, scale + (e.deltaY>0?-0.12:0.12))); grid.style.transform=`scale(${scale})`; }, {passive:false}); let down=false,sx=0,sy=0,sl=0,st=0; vp.addEventListener('mousedown',e=>{ down=true; mapDragMoved=false; sx=e.clientX; sy=e.clientY; sl=vp.scrollLeft; st=vp.scrollTop; vp.classList.add('dragging'); }); document.addEventListener('mousemove',e=>{ if(down){ const dx=e.clientX-sx, dy=e.clientY-sy; if(Math.abs(dx)>5||Math.abs(dy)>5) mapDragMoved=true; vp.scrollLeft=sl-dx; vp.scrollTop=st-dy; } }); document.addEventListener('mouseup',()=>{ down=false; vp.classList.remove('dragging'); }); })();
-function openPopoverNear(el, html){ const tip=$('#popover'); tip.innerHTML=html; tip.style.display='block'; bringToFront(tip); tip.style.visibility='hidden'; const r=el.getBoundingClientRect(); const w=tip.offsetWidth||260, h=tip.offsetHeight||60; tip.style.visibility='visible'; let x=r.left; if(x+w>window.innerWidth-8) x=Math.max(8, window.innerWidth-8-w); let y=r.bottom+6; if(y+h>window.innerHeight-8) y=Math.max(8, r.top-h-6); tip.style.left=x+'px'; tip.style.top=y+'px'; }
+(function initMapViewport(){ const vp=qs('#mapViewport'); const grid=qs('#mapGrid'); let scale=1; vp.addEventListener('wheel', e=>{ e.preventDefault(); scale=Math.min(2, Math.max(0.5, scale + (e.deltaY>0?-0.12:0.12))); grid.style.transform=`scale(${scale})`; }, {passive:false}); let down=false,sx=0,sy=0,sl=0,st=0; vp.addEventListener('mousedown',e=>{ down=true; mapDragMoved=false; sx=e.clientX; sy=e.clientY; sl=vp.scrollLeft; st=vp.scrollTop; vp.classList.add('dragging'); }); document.addEventListener('mousemove',e=>{ if(down){ const dx=e.clientX-sx, dy=e.clientY-sy; if(Math.abs(dx)>5||Math.abs(dy)>5) mapDragMoved=true; vp.scrollLeft=sl-dx; vp.scrollTop=st-dy; } }); document.addEventListener('mouseup',()=>{ down=false; vp.classList.remove('dragging'); }); })();
+function openPopoverNear(el, html){ const tip=qs('#popover'); tip.innerHTML=html; tip.style.display='block'; bringToFront(tip); tip.style.visibility='hidden'; const r=el.getBoundingClientRect(); const w=tip.offsetWidth||260, h=tip.offsetHeight||60; tip.style.visibility='visible'; let x=r.left; if(x+w>window.innerWidth-8) x=Math.max(8, window.innerWidth-8-w); let y=r.bottom+6; if(y+h>window.innerHeight-8) y=Math.max(8, r.top-h-6); tip.style.left=x+'px'; tip.style.top=y+'px'; }
 document.addEventListener('click',ev=>{ if(giftOpenKey){ if(giftJustOpened){ giftJustOpened=false; } else if(!ev.target.closest('#giftOverlay')){ closeGift(); return; } } if(swapOpen){ if(swapJustOpened){ swapJustOpened=false; } else if(!ev.target.closest('.swap-overlay')){ applySwap(); } } clickActionOnly(ev); });
-function clickActionOnly(ev){ const st=ev.target.closest('.stchip'); if(st){ const rounds=st.textContent.match(/·(\d+)回合/); openPopoverNear(st, `<b>${st.dataset.name}</b>${rounds?`（${rounds[1]}回合）`:''}<br>${st.dataset.desc||''}`); return; } const tg=ev.target.closest('.talentTag'); if(tg){ const owner=tg.dataset.k; const c=getChar(owner); const t=c.passives[+tg.dataset.i]; if(t){ const name=t.scal? talentDisplayName(owner,t) : t.name; const desc=t.scal? lvDescText(t, entryLevel(owner,t)) : t.desc; openPopoverNear(tg, `<b>${name}</b><br>${desc}`); } return; } const cl=ev.target.closest('.craftlink'); if(cl){ const key=cl.dataset.key; openPopoverNear(cl, `<b>${itemName(key)}</b><br>${itemDetailHTML(key)}`); return; } $('#popover').style.display='none'; }
+function clickActionOnly(ev){ const st=ev.target.closest('.stchip'); if(st){ const rounds=st.textContent.match(/·(\d+)回合/); openPopoverNear(st, `<b>${st.dataset.name}</b>${rounds?`（${rounds[1]}回合）`:''}<br>${st.dataset.desc||''}`); return; } const tg=ev.target.closest('.talentTag'); if(tg){ const owner=tg.dataset.k; const c=getChar(owner); const t=c.passives[+tg.dataset.i]; if(t){ const name=t.scal? talentDisplayName(owner,t) : t.name; const desc=t.scal? lvDescText(t, entryLevel(owner,t)) : t.desc; openPopoverNear(tg, `<b>${name}</b><br>${desc}`); } return; } const cl=ev.target.closest('.craftlink'); if(cl){ const key=cl.dataset.key; openPopoverNear(cl, `<b>${itemName(key)}</b><br>${itemDetailHTML(key)}`); return; } qs('#popover').style.display='none'; }

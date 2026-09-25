@@ -450,12 +450,12 @@ function startEvent(x, y, slotOverride){
 }
 
 function lockEventUI(){
-  $('#bottom').classList.add('mode-event-lock');
-  $('#goBtn').style.display='none';
+  qs('#bottom').classList.add('mode-event-lock');
+  qs('#goBtn').style.display='none';
   renderIconbar();
 }
 function unlockEventUI(){
-  $('#bottom').classList.remove('mode-event-lock');
+  qs('#bottom').classList.remove('mode-event-lock');
   renderIconbar();
 }
 
@@ -513,7 +513,7 @@ function renderEventOptions(){
     </div>`;
   }).join('');
   prompt(`<div class="ev-opt-wrap">${html}</div>`);
-  $('#promptZone').querySelectorAll('.ev-opt').forEach(b=>{
+  qs('#promptZone').querySelectorAll('.ev-opt').forEach(b=>{
     b.onclick=()=>{ if(s.resolving) return; const i=+b.dataset.i; if(!s.options[i].req()){ log('当前无法选择该选项。'); return; } selectEventOption(i); };
   });
 }
@@ -529,8 +529,8 @@ function confirmEventOption(i){
   const opt=s.options[i]; if(!opt) return;
   s.resolving=true;
   // 确认：选中项变金，其余淡化；整体 2s 内淡出
-  const wrap=$('#promptZone .ev-opt-wrap');
-  $('#promptZone').querySelectorAll('.ev-opt').forEach((el,j)=>{
+  const wrap=qs('#promptZone .ev-opt-wrap');
+  qs('#promptZone').querySelectorAll('.ev-opt').forEach((el,j)=>{
     if(j===i) el.classList.add('confirmed');
     else el.classList.add('dim');
   });
@@ -571,7 +571,7 @@ function finishEvent(result){
   // 先从地图状态里移除 activeEvent 标记（格子已在进入事件时清空为空地）
   if(G) delete G.activeEvent;
   prompt('');
-  $('#goBtn').style.display='none';
+  qs('#goBtn').style.display='none';
 
   // 结果打字机显示：统一走 storyStartFragment，事件标题显示在 storySpeaker 区
   // ★ 在调 storyStartFragment 之前先把 storySpeaker 填上标题 —— 保证即使
