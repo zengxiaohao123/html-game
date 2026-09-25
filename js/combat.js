@@ -756,8 +756,6 @@ function _teamSizeBonus(){
 }
 /* 主角最大生命（含天赋+队友） */
 function heroineMaxHp(){
-  /* 保留旧 heroDisplayMaxHp 函数名 */
-  if(typeof window.heroDisplayMaxHp === 'function') return window.heroDisplayMaxHp();
   const c = PROTAGONIST;
   let hp = c.base.maxHp + (G.proLevels?.block ? G.proLevels.block*50 : 0);
   if(G.team?.includes('luyouyou')) hp += 100; /* 陆悠悠烹饪 */
