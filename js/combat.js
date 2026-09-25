@@ -1889,11 +1889,19 @@ window.reenterCombat = function(snap){
   initCombatState({ enemyKey: snap.enemyKey });
   enterCombatMode();
 };
-/* enterCombatMode —— 在 ui.js 定义，这里做个 stub */
-if(typeof window.enterCombatMode !== 'function'){
-  window.enterCombatMode = function(){ if(typeof switchMode==='function') switchMode('combat'); refreshHUD(); renderCombatMap(); };
+/* enterCombatMode —— 探索触发战斗 / 读档回战斗 时的统一入口
+   （战前 ui.js 定义，这里补完整，避免进入战斗后 UI 残缺） */
+function enterCombatMode(){
+  switchMode('combat');
+  const go = qs('#goBtn'); if(go) go.style.display='none';
+  if(typeof updateCombatUI === 'function') updateCombatUI();
+  if(typeof refreshHUD === 'function') refreshHUD();
+  if(typeof renderCombatMap === 'function') renderCombatMap();
+  if(typeof renderIconbar === 'function') renderIconbar();
+  if(typeof ensureKeyFocus === 'function') ensureKeyFocus();
 }
-if(typeof window.enterCombatMode_v2 !== 'function'){ /* 占位 */ }
+/* 兼容 window.enterCombatMode 引用（极少数地方会调） */
+window.enterCombatMode = enterCombatMode;
 
 /* 当前主角选择技能（主菜单里用） */
 let _curSelectedSkillIdx = 0;
