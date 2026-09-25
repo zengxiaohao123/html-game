@@ -552,7 +552,7 @@ const LUYOOUYOU = {
   passives:[
     {id:'skillful', name:'巧手',    kind:'talent', level:1, scal:{sleep:{base:40,grow:5,crit:true}, craft:{base:25,grow:5,crit:true}}, desc:'睡觉时，有{sleep}%概率获得1个随机资源。合成时，有{craft}%概率获得1个随机资源。'},
     {id:'cooking',  name:'烹饪',    kind:'talent', desc:'食物能提供更好的回复效果。主角最大生命值+100。'},
-    {id:'dance',    name:'蹁跹',    kind:'talent', level:1, scal:{explore:{base:30,grow:10}, combat:{base:30,grow:10}, dodge:{base:5,grow:3,pct:true}}, desc:'探索时每次移动后为主角回复{explore}点生命值。战斗中闪避时，为主角回复{combat}点生命值。主角{dodge}%闪避。'},
+    {id:'dance',    name:'蹁跹',    kind:'talent', level:1, scal:{move:{base:30,grow:10}, combat:{base:30,grow:10}, dodge:{base:5,grow:3,pct:true}}, desc:'探索时每次移动后为主角回复{explore}点生命值。战斗中闪避时，为主角回复{combat}点生命值。主角{dodge}%闪避。'},
     {id:'windSpirit', name:'风息', kind:'talent', level:1, scal:{atk:{base:60,grow:10}, crit:{base:30,grow:5,pct:true}}, desc:'攻击力+{atk}，暴击率+{crit}%。暴击时将本次技能的伤害类型由物理伤害改为风元素伤害。'},
     {id:'pairing',  name:'比翼',    kind:'talent', desc:'自身暴击后，其余我方角色的下一次攻击暴击率+100%。'},
   ],

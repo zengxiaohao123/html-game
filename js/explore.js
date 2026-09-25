@@ -40,7 +40,7 @@ function moveExplore(x,y, cost){
   G.px=x; G.py=y; G.hero.actionPoint-=c;
   consumeVehicleForMove();
   qs('#goBtn').style.display='none'; renderMap();
-  if(G.team.indexOf('luyouyou')>=0){ const fl=getChar('luyouyou').passives.find(p=>p.id==='flutter'); const hv=vTier(fl,'move',entryLevel('luyouyou',fl)); const cap=heroDisplayMaxHp()||G.hero.maxHp; const nx=Math.min(cap, G.hero.hp+hv); if(nx>G.hero.hp){ const got=nx-G.hero.hp; G.hero.hp=nx; log(`【蹁跹】移动后回复 ${got} 点生命。`); } }
+  if(G.team.indexOf('luyouyou')>=0){ const fl=getChar('luyouyou').passives.find(p=>p.id==='dance'); const hv=vTier(fl,'move',entryLevel('luyouyou',fl)); const cap=heroDisplayMaxHp()||G.hero.maxHp; const nx=Math.min(cap, G.hero.hp+hv); if(nx>G.hero.hp){ const got=nx-G.hero.hp; G.hero.hp=nx; log(`【蹁跹】移动后回复 ${got} 点生命。`); } }
   /* === 枯木新枝：每次移动后回复12生命（可叠加） === */
   const deadwoodN = (G.inventory.deadwoodSprout||0);
   if(deadwoodN>0){ const cap=heroDisplayMaxHp()||G.hero.maxHp; const got=12*deadwoodN; const nx=Math.min(cap, G.hero.hp+got); if(nx>G.hero.hp){ const real=nx-G.hero.hp; G.hero.hp=nx; log(`【枯木新枝】回复 ${real} 点生命。`); } }
