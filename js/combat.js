@@ -52,6 +52,144 @@ function teamSizeBonus(){
 }
 function rBuffs(){ if(!G.records) G.records={}; if(!G.records.buffs) G.records.buffs={}; return G.records.buffs; }
 
+/* ============ 战前 UI 兼容层：缺失的全局常量 & 辅助函数 ============ */
+/* 旧版 AURA_ELEMS（战斗中可被附着的元素集合）—— 风、岩不可附着 */
+const AURA_ELEMS = ['fire','water','grass','thunder','ice'];
+/* 各敌人对哪种元素免疫（亲和）—— 旧版元素附着系统用 */
+const AFFIN_IMMUNE = {slime:'grass',fireSlime:'fire',waterSlime:'water',thunderSlime:'thunder',iceSlime:'ice',windSlime:'wind',rockSlime:'rock'};
+
+/* 拖拽地图标记位（ui.js 有定义，这里兜底） */
+if(typeof mapDragMoved==='undefined') window.mapDragMoved=false;
+
+/* 战前：技能范围 → 格子列表（兼容旧 target） */
+function skillRangeCells(skill){
+  const pos = combatState.hero;
+  const out = [];
+  // 先查 rangeOf（新版规格 target）
+  if(rangeOf && skill.target){
+    const r = rangeOf({ type: skill.target, x:pos.x, y:pos.y, facing:pos.facing });
+    if(r && r.length){
+      for(const c of r) out.push({x:c.x, y:c.y});
+      return out;
+    }
+  }
+  // 旧规格 fallback
+  const n = G.map.n;
+  const [dx,dy] = facingDir(pos.facing);
+  if(skill.target==='front'){ const x=pos.x+dx,y=pos.y+dy; if(passable(x,y))out.push({x,y}); }
+  else if(skill.target==='adj'||skill.target==='adj-front'){
+    for(const [a,b] of [[1,0],[-1,0],[0,1],[0,-1]]){ const x=pos.x+a,y=pos.y+b; if(passable(x,y))out.push({x,y}); }
+  }
+  else if(skill.target==='frontline'||skill.target==='line'){
+    for(let i=1;i<=(skill.range||3);i++){ const x=pos.x+dx*i,y=pos.y+dy*i; if(passable(x,y))out.push({x,y}); }
+  }
+  else if(skill.target==='nearest'){
+    for(let x=0;x<n;x++)for(let y=0;y<n;y++) if(passable(x,y)&&Math.abs(x-pos.x)+Math.abs(y-pos.y)<=(skill.range||3)) out.push({x,y});
+  }
+  else out.push({x:pos.x, y:pos.y});
+  return out;
+}
+
+/* 战前：找到范围内的敌人 */
+function skillEnemies(skill){
+  const keys = new Set(skillRangeCells(skill).map(c=>c.x+','+c.y));
+  return combatState.enemies.filter(en=>keys.has(en.x+','+en.y));
+}
+
+/* 战前：敌人对某元素的额外伤害系数（占位 1.0） */
+function enemyDmgMult(enemy, type){ return 1; }
+
+/* 战前：技能伤害预览 */
+function skillDamagePreview(charKey, skill){
+  if(!skill) return null;
+  if(skill.mult != null && charAtk){
+    return Math.max(1, Math.round(charAtk(charKey) * skill.mult));
+  }
+  if(typeof skill.effect === 'function'){
+    return Math.max(1, Math.round(charAtk(charKey)*skill.effect(1)));
+  }
+  return null;
+}
+
+/* 战前：治疗预览（无 healPct → 0） */
+function healPreview(charKey, skill){
+  if(!skill) return 0;
+  if(skill.healPct) return Math.max(1, Math.round(charAtk(charKey)*skill.healPct));
+  return 0;
+}
+
+/* 战前：天赋触发回调 —— 嗜血/起势 */
+function applyTalentOnAttack(charKey, dmg){
+  if(!combatState) return;
+  const c = getChar(charKey), sts = combatState.ally[charKey];
+  if(!sts) return;
+  const blood = c.passives?.find(p=>p.id==='blood');
+  if(blood && Math.random()*100 < tierValue(blood, entryLevel(charKey,blood), 'prob')){
+    if(charKey==='pro'){
+      const heal = Math.max(1, Math.round(dmg*0.5));
+      const cap = heroineMaxHp();
+      const nx = Math.min(cap, G.hero.hp + heal);
+      if(nx > G.hero.hp){
+        const got = nx - G.hero.hp;
+        G.hero.hp = nx; combatState.hero.hp = nx;
+        log(`【嗜血】触发，回复 ${got} 点生命。`);
+      }
+    }
+  }
+  const momentum = c.passives?.find(p=>p.id==='momentum');
+  if(momentum) sts.mom = (sts.mom||0) + tierValue(momentum, entryLevel(charKey,momentum), 'dmg');
+}
+
+/* 战前：比翼 —— 陆悠悠暴击后给队友加下次暴击 buff */
+function triggerBiyi(){
+  for(const k of G.team){
+    if(k==='luyouyou') continue;
+    const sts = combatState.ally[k]?.statuses;
+    if(sts) addStatus(sts, 'crit', null);
+  }
+  log('【比翼】触发：其余我方角色下一次攻击暴击率+100%。');
+}
+
+/* 战前：消耗暴击 buff */
+function consumeCritBuff(charKey){
+  const sts = combatState?.ally[charKey]?.statuses;
+  if(sts && sts.crit){
+    delete sts.crit;
+    log(`${getChar(charKey).name} 消耗了【屏息】，暴击加成已生效。`);
+  }
+}
+
+/* 战前：设置敌人元素附着（亲和敌人会自动补回，不需要真附着——本重做以地块附着为主，这里保留占位） */
+function setAura(enemy, elem){ /* 新规格以地块附着为主，敌人附着占位 */ }
+function reapplyAura(enemy){ /* 占位 */ }
+
+/* 战前：击退（新规格简化为无效果） */
+function knockBack(enemy){ /* 占位 */ }
+
+/* 战前：绑定 goBtn —— 信息区「前往」按钮（战斗内点击相邻格） */
+function bindCombatGo(x,y){
+  const cs = combatState;
+  const go = qs('#goBtn');
+  if(!cs || !go) return;
+  if(cs.playerMoved){ go.style.display='none'; return; }
+  const dx = x - cs.hero.x, dy = y - cs.hero.y;
+  const manhattan = Math.abs(dx) + Math.abs(dy);
+  if(manhattan !== 1){ go.style.display='none'; return; }
+  if(!passable(x,y)){ go.style.display='none'; return; }
+  if(cs.enemies.some(e=>e.x===x&&e.y===y)){ go.style.display='none'; return; }
+  go.style.display='block';
+  go.disabled=false;
+  go.textContent='前往';
+  go.onclick = ()=>{
+    if(!combatState) return;
+    combatMove(dx,dy);
+    go.style.display='none';
+  };
+}
+
+/* 战前：计算移动成本（占位 1） */
+function moveCostFor(x,y){ return passable(x,y) ? 1 : null; }
+
 /* ============================
    1. 状态系统
    ============================ */
@@ -449,9 +587,12 @@ function initCombatState(o){
 
   const ally = {};
   for(const k of G.team){
+    const c = getChar(k);
+    const firstSkill = c && c.selectedSkillIds && c.selectedSkillIds[0];
     ally[k] = {
       statuses: {}, cds: {}, used: false, flatAtk: 0, stolen: 0, gain: 0,
       nodeTriggered: false, acted: false,
+      selSkill: firstSkill || null, mom: 0,
     };
   }
 
@@ -1262,15 +1403,27 @@ function calcEscapeRate(){
 
 
 /* pre-combat UI: passable */
-function passable(x,y){ const n=G.map.n; if(x<0||y<0||x>=n||y>=n) return false; return G.map.cells[y*n+x].terrain==='ground'; };
+function passable(x,y){
+  const n = G.map.n;
+  if(x<0||y<0||x>=n||y>=n) return false;
+  const c = G.map.cells[y*n+x];
+  const td = TERRAIN_DEFS[c.terrain];
+  if(td){
+    if(td.impassable) return false;
+    return true;
+  }
+  // 旧 terrain fallback（只认 void/obstacle/river 为不可通）
+  if(c.terrain==='void'||c.terrain==='obstacle'||c.terrain==='river') return false;
+  return true;
+};
 
 
 /* pre-combat UI: updateCombatUI */
-function updateCombatUI(){ if(!combatState){ switchMode('story'); return; } const cs=combatState; const chars=getTeamChars(); const cur=chars.find(c=>c.key===cs.currentChar)||chars[0]; $('#allyBar').innerHTML=chars.map((c,i)=>`<div class="allyCard ${c.key===cs.currentChar?'active':''}" data-k="${c.key}"><div class="allyName">${c.name}</div><div class="allyElem">${c.element?ELEM[c.element].zh:'无属性'} · ${i+1}号位</div></div>`).join(''); $('#allyBar').querySelectorAll('.allyCard').forEach(b=>b.onclick=()=>{ cs.currentChar=b.dataset.k; updateCombatUI(); renderCombatMap(); }); $('#charAttrs').innerHTML=charAttrsHTML(cur.key); $('#statusBar').innerHTML = cur.key==='pro'? statusBarHTML(heroStatusesWithDepress(cs),cs.field) : statusBarHTML(cs.ally[cur.key].statuses,null); const skills=cur.skills.filter(s=>cur.selectedSkillIds.includes(s.id)); const fleeBase=cs.enemies[0]; const fleeTag= fleeBase? `<div class="skillTag escape ${cs.ally[cur.key].selSkill==='flee'?'active':''}" data-s="flee"><span class="skillNum">4</span>逃　跑　${Math.round(calcEscapeRate(fleeBase))}%</div>` : ''; $('#skillList').innerHTML=skills.map((s,i)=>`<div class="skillTag ${s.kind==='attack'?'attack':'skill'} ${cs.ally[cur.key].selSkill===s.id?'active':''}" data-s="${s.id}"><span class="skillNum">${i+1}</span><span class="cat ${s.kind==='attack'?'attack':'support'}">${s.kind==='attack'?'攻击':'辅助'}</span>${skillDisplayName(cur.key,s)}${(cs.ally[cur.key].cds[s.id]||0)>0?` <span class="nohint">冷却${cs.ally[cur.key].cds[s.id]}</span>`:''}${cs.ally[cur.key].used?' <span class="usedMark">已用</span>':''}</div>`).join('')+fleeTag; $('#skillList').querySelectorAll('.skillTag').forEach(b=>b.onclick=()=>selectSkill(cur.key,b.dataset.s)); $('#talentBox').innerHTML=cur.passives.map((p,i)=>`<span class="talentTag" data-k="${cur.key}" data-i="${i}"><span class="cat talent">天赋</span>${talentDisplayName(cur.key,p)}</span>`).join(''); const selSkillId=cs.ally[cur.key].selSkill; const sel=cur.skills.find(s=>s.id===selSkillId); let detailHtml='<div class="skillDetailText">点击技能查看详情</div>'; if(sel){ detailHtml=`<div class="skillDetailName">${skillDisplayName(cur.key,sel)}</div><div class="skillDetailText">${describeSkill(cur.key,sel)}</div>`; } else if(selSkillId==='flee'){ const fe=cs.enemies[0]; detailHtml=`<div class="skillDetailName">逃走</div><div class="skillDetailText">逃离本场战斗，成功率 ${fe?Math.round(calcEscapeRate(fe)):0}%。本回合已行动则不可跑走。逃跑不获得奖励。</div>`; } $('#skillDetail').innerHTML=detailHtml; updateCombatInfo(); };
+function updateCombatUI(){ if(!combatState){ switchMode('story'); return; } const cs=combatState; const chars=getTeamChars(); const cur=chars.find(c=>c.key===cs.currentChar)||chars[0]; qs('#allyBar').innerHTML=chars.map((c,i)=>`<div class="allyCard ${c.key===cs.currentChar?'active':''}" data-k="${c.key}"><div class="allyName">${c.name}</div><div class="allyElem">${c.element?ELEM[c.element].zh:'无属性'} · ${i+1}号位</div></div>`).join(''); qs('#allyBar').querySelectorAll('.allyCard').forEach(b=>b.onclick=()=>{ cs.currentChar=b.dataset.k; updateCombatUI(); renderCombatMap(); }); qs('#charAttrs').innerHTML=charAttrsHTML(cur.key); qs('#statusBar').innerHTML = cur.key==='pro'? statusBarHTML(heroStatusesWithDepress(cs),cs.field) : statusBarHTML(cs.ally[cur.key].statuses,null); const skills=cur.skills.filter(s=>cur.selectedSkillIds.includes(s.id)); const fleeBase=cs.enemies[0]; const fleeTag= fleeBase? `<div class="skillTag escape ${cs.ally[cur.key].selSkill==='flee'?'active':''}" data-s="flee"><span class="skillNum">4</span>逃　跑　${Math.round(calcEscapeRate(fleeBase))}%</div>` : ''; qs('#skillList').innerHTML=skills.map((s,i)=>`<div class="skillTag ${s.kind==='attack'?'attack':'skill'} ${cs.ally[cur.key].selSkill===s.id?'active':''}" data-s="${s.id}"><span class="skillNum">${i+1}</span><span class="cat ${s.kind==='attack'?'attack':'support'}">${s.kind==='attack'?'攻击':'辅助'}</span>${skillDisplayName(cur.key,s)}${(cs.ally[cur.key].cds[s.id]||0)>0?` <span class="nohint">冷却${cs.ally[cur.key].cds[s.id]}</span>`:''}${cs.ally[cur.key].used?' <span class="usedMark">已用</span>':''}</div>`).join('')+fleeTag; qs('#skillList').querySelectorAll('.skillTag').forEach(b=>b.onclick=()=>selectSkill(cur.key,b.dataset.s)); qs('#talentBox').innerHTML=cur.passives.map((p,i)=>`<span class="talentTag" data-k="${cur.key}" data-i="${i}"><span class="cat talent">天赋</span>${talentDisplayName(cur.key,p)}</span>`).join(''); const selSkillId=cs.ally[cur.key].selSkill; const sel=cur.skills.find(s=>s.id===selSkillId); let detailHtml='<div class="skillDetailText">点击技能查看详情</div>'; if(sel){ detailHtml=`<div class="skillDetailName">${skillDisplayName(cur.key,sel)}</div><div class="skillDetailText">${describeSkill(cur.key,sel)}</div>`; } else if(selSkillId==='flee'){ const fe=cs.enemies[0]; detailHtml=`<div class="skillDetailName">逃走</div><div class="skillDetailText">逃离本场战斗，成功率 ${fe?Math.round(calcEscapeRate(fe)):0}%。本回合已行动则不可跑走。逃跑不获得奖励。</div>`; } qs('#skillDetail').innerHTML=detailHtml; };
 
 
 /* pre-combat UI: renderCombatMap */
-function renderCombatMap(){ if(!combatState) return; const m=G.map; const grid=$('#mapGrid'); grid.style.gridTemplateColumns=`repeat(${m.n},44px)`; grid.innerHTML=''; const cs=combatState; const curChar=getChar(cs.currentChar); const selSkill=curChar.skills.find(s=>s.id===cs.ally[cs.currentChar].selSkill); const rangeKeys=new Set(selSkill&&selSkill.kind==='attack'?skillRangeCells(selSkill).map(c=>c.x+','+c.y):[]); const selEnemy = focusedEnemy() || (cs.infoCell ? cs.enemies.find(en=>en.x===cs.infoCell.x&&en.y===cs.infoCell.y) : null); const enemyKeys = selEnemy ? enemyRangeKeys(selEnemy) : new Set(); for(let y=0;y<m.n;y++)for(let x=0;x<m.n;x++){ const c=m.cells[y*m.n+x]; const cell=el('<div class="cell"></div>'); if(c.terrain==='obstacle')cell.classList.add('obstacle'); else if(c.terrain==='void')cell.classList.add('void'); const key=x+','+y; if(enemyKeys.has(key)) cell.classList.add('range-enemy'); else if(rangeKeys.has(key)) cell.classList.add('range-ally'); if(cs.hero.x===x&&cs.hero.y===y){cell.classList.add('player');cell.classList.add('facing-'+cs.hero.facing);} for(const en of cs.enemies){ if(en.x===x&&en.y===y){ cell.textContent=en.icon; cell.style.color='#fff'; cell.classList.add('efacing-'+en.facing); cell.title=en.name; if(en.maxHp>0) cell.innerHTML+=`<div class="hpbar"><i style="width:${Math.max(0,en.hp)/en.maxHp*100}%"></i></div>`; } } for(const pt of (cs.pets||[])){ if(pt.x===x&&pt.y===y){ cell.textContent='🟢'; cell.title='友方草史莱姆'; if(pt.maxHp>0) cell.innerHTML+=`<div class="hpbar"><i style="width:${Math.max(0,pt.hp)/pt.maxHp*100}%;background:#6ee07a"></i></div>`; } } cell.dataset.x=x;cell.dataset.y=y; cell.addEventListener('click',()=>combatCellClick(x,y)); grid.appendChild(cell); } };
+function renderCombatMap(){ if(!combatState) return; const m=G.map; const grid=qs('#mapGrid'); grid.style.gridTemplateColumns=`repeat(${m.n},44px)`; grid.innerHTML=''; const cs=combatState; const curChar=getChar(cs.currentChar); const selSkill=curChar.skills.find(s=>s.id===cs.ally[cs.currentChar].selSkill); const rangeKeys=new Set(selSkill&&selSkill.kind==='attack'?skillRangeCells(selSkill).map(c=>c.x+','+c.y):[]); const selEnemy = focusedEnemy() || (cs.infoCell ? cs.enemies.find(en=>en.x===cs.infoCell.x&&en.y===cs.infoCell.y) : null); const enemyKeys = selEnemy ? enemyRangeKeys(selEnemy) : new Set(); for(let y=0;y<m.n;y++)for(let x=0;x<m.n;x++){ const c=m.cells[y*m.n+x]; const cell=el('<div class="cell"></div>'); if(c.terrain==='obstacle')cell.classList.add('obstacle'); else if(c.terrain==='void')cell.classList.add('void'); const key=x+','+y; if(enemyKeys.has(key)) cell.classList.add('range-enemy'); else if(rangeKeys.has(key)) cell.classList.add('range-ally'); if(cs.hero.x===x&&cs.hero.y===y){cell.classList.add('player');cell.classList.add('facing-'+cs.hero.facing);} for(const en of cs.enemies){ if(en.x===x&&en.y===y){ cell.textContent=en.icon; cell.style.color='#fff'; cell.classList.add('efacing-'+en.facing); cell.title=en.name; if(en.maxHp>0) cell.innerHTML+=`<div class="hpbar"><i style="width:${Math.max(0,en.hp)/en.maxHp*100}%"></i></div>`; } } for(const pt of (cs.pets||[])){ if(pt.x===x&&pt.y===y){ cell.textContent='🟢'; cell.title='友方草史莱姆'; if(pt.maxHp>0) cell.innerHTML+=`<div class="hpbar"><i style="width:${Math.max(0,pt.hp)/pt.maxHp*100}%;background:#6ee07a"></i></div>`; } } cell.dataset.x=x;cell.dataset.y=y; cell.addEventListener('click',()=>combatCellClick(x,y)); grid.appendChild(cell); } };
 
 
 /* pre-combat UI: selectSkill */

@@ -579,12 +579,41 @@ const ALLIES = {
 };
 
 /* 帮助函数（兼容 combat.js / ui.js 里的旧调用方式） */
+function _ensureCharDefaults(c){
+  if(!c) return c;
+  // 战前 UI 依赖 selectedSkillIds；如果没有就用 defaultSkillIds 前3个
+  if(!c.selectedSkillIds){
+    const src = c.defaultSkillIds || (c.skills||[]).filter(s=>s.kind==='active'||s.kind==='auto').slice(0,6).map(s=>s.id);
+    c.selectedSkillIds = src.slice(0,3);
+  }
+  return c;
+}
 function getChar(key){
-  if(key==='pro')  return PROTAGONIST;
-  if(ALLIES[key])  return ALLIES[key];
-  return null;
+  let c=null;
+  if(key==='pro')  c = PROTAGONIST;
+  else if(ALLIES[key])  c = ALLIES[key];
+  return _ensureCharDefaults(c);
 }
 function getTeamChars(){ return G.team.map(getChar).filter(Boolean); }
+
+/* lvDescText —— ui.js 和 combat.js 都在用，之前在 docs/js/data.js 里有 */
+function lvDescText(entry, level, ext){
+  let d = entry.desc || '';
+  if(entry.scal){
+    for(const key in entry.scal){
+      const s = entry.scal[key];
+      const v = tierValue(entry, level, key);
+      d = d.split('{'+key+'}').join(`<span class="lvlup">${v}${s.pct?'%':''}</span>`);
+    }
+  }
+  if(ext){
+    for(const key in ext){
+      d = d.split('{'+key+'}').join(`<span class="lvlup">${ext[key]}</span>`);
+    }
+  }
+  if(typeof terms==='function') d = terms(d);
+  return d;
+}
 
 /* 等级 entryLevel —— 旧代码兼容 */
 function entryLevel(ck, p){
