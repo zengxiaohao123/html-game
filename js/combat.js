@@ -798,6 +798,10 @@ function totalHeroDefense(){
   let d = PROTAGONIST.base.def + (G.proLevels?.hold||1)*20;
   return d;
 }
+/* —— UI 层兼容别名（全局旧接口） —— */
+function heroDisplayMaxHp(){ return heroineMaxHp(); }
+function heroDisplayDef(){ return totalHeroDefense(); }
+function heroDisplayAtk(){ return charAtk('pro'); }
 /* 主角暴击率 */
 function charCritRate(key){
   if(key==='pro'){
