@@ -859,3 +859,45 @@ function skillGroupResolve(slotEntry){
   if(!sk) return null;
   return { c, sk };
 }
+
+/* ============== 技能 → 图标 文件映射（assets/skills/） ============== */
+/* 规则：auto=蓝方 / active=红方 / link=黄方，每类底色不同。
+   所有图标都是 SVG，用 background-image 显示。缺失的自动回退到技能名缩写。 */
+window.SKILL_ICON_MAP = {
+  // 主角 pro
+  'slash':       {file:'slash.svg',       label:'斩'},
+  'balance':     {file:'shield.svg',       label:'衡'},
+  'desperation': {file:'slash.svg',       label:'拼'},
+  'commune':     {file:'magic.svg',       label:'灵'},
+  'chaos':       {file:'star.svg',        label:'乱'},
+  'absorb':      {file:'sparkle.svg',     label:'汲'},
+  'shift':       {file:'spark.svg',       label:'移'},
+  // 夏阳 xiayang
+  'inspire':     {file:'heart.svg',       label:'鼓舞'},
+  'quench':      {file:'fire.svg',        label:'淬'},
+  'ignite':      {file:'flame.svg',       label:'燃'},
+  'prairie':     {file:'flame.svg',       label:'燎原'},
+  'wish':        {file:'star.svg',        label:'众愿'},
+  'carnival':    {file:'flame.svg',       label:'爆'},
+  'sources':     {file:'fire.svg',        label:'源'},
+  'blaze':       {file:'flame.svg',       label:'炽'},
+  'annihilate':  {file:'sparkle.svg',     label:'焚灭'},
+  // 陆悠悠 luyouyou
+  'skillshot':   {file:'crosshair.svg',   label:'射'},
+  'aim':         {file:'target2.svg',     label:'瞄'},
+  'arrow':       {file:'arrow-right.svg', label:'矢'},
+  'bindWind':    {file:'wind.svg',        label:'风止'},
+  'soar':        {file:'wind.svg',        label:'腾'},
+  'weakPoint':   {file:'target2.svg',     label:'弱'},
+  'eye':         {file:'eye.svg',         label:'风暴眼'},
+  'windRise':    {file:'wind.svg',        label:'风起'},
+};
+/* 全局图标的 kind 样式（底色/边框） */
+window.SKILL_KIND_CSS = {
+  auto:   {bg:'#1e3a6b', bgBorder:'#4a7acf', label:'自动'},
+  active: {bg:'#6b1e1e', bgBorder:'#cf4a4a', label:'主动'},
+  link:   {bg:'#6b5a1e', bgBorder:'#cfb34a', label:'连携'},
+};
+window.getSkillIcon = function(skillId){
+  return window.SKILL_ICON_MAP && window.SKILL_ICON_MAP[skillId] || {file:'sparkle.svg', label: skillId?.[0]||'?'};
+};

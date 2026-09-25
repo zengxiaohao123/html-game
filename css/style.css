@@ -481,3 +481,103 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
   100%{opacity:0; transform:scale(1.04);}
 }
 
+
+/* ============================================================
+   技能组编辑器 + 技能图标格（大重做 v2）
+   ============================================================ */
+.sg-editor-big{ display:grid; grid-template-columns:1.15fr 1fr; gap:16px; height:100%; min-height:480px; }
+.sg-col{ background:#14161c; border:1px solid #33384a; border-radius:10px; padding:12px; display:flex; flex-direction:column; min-height:0; }
+.sg-col-head{ font-size:15px; font-weight:700; color:#fff; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; padding-bottom:8px; border-bottom:1px solid #2a2f3d; letter-spacing:0.5px; }
+.sg-head-btns{ display:flex; gap:6px; }
+
+/* 分组 section */
+.sg-kind-blocks{ flex:1; overflow-y:auto; }
+.sg-kind-section{ margin-bottom:12px; }
+.sg-kind-head{ display:flex; align-items:center; gap:10px; margin-bottom:6px; padding:4px 6px; background:#1a1d26; border-left:3px solid #666; border-radius:3px; }
+.sg-kind-auto .sg-kind-head{ border-left-color:#4a7acf; }
+.sg-kind-active .sg-kind-head{ border-left-color:#cf4a4a; }
+.sg-kind-link  .sg-kind-head{ border-left-color:#cfb34a; }
+.sg-kind-label{ font-weight:700; font-size:13px; color:#fff; letter-spacing:1px; }
+.sg-kind-hint{ font-size:11px; color:#7a8192; }
+.sg-kind-section.sg-drop-hover{ outline:2px dashed #d9b64a; outline-offset:-4px; background:#22221a; }
+
+/* 一行槽（同 kind 内部） */
+.sg-slot-row{ display:flex; flex-wrap:wrap; gap:6px; padding:6px; min-height:72px; background:#101219; border-radius:6px; }
+
+/* 单个槽：槽号 + 图标 + × */
+.sg-slot-wrap{ display:flex; align-items:center; gap:4px; background:#181b23; border:1px solid #2a2f3d; border-radius:6px; padding:3px 4px; position:relative; }
+.sg-slot-num{ font-weight:700; color:#9aa0ac; font-size:11px; width:16px; text-align:center; font-family:Consolas,Monaco,monospace; }
+.sg-slot-del{ position:absolute; top:-6px; right:-6px; width:16px; height:16px; border-radius:50%; background:#2a2f3d; color:#fff; border:1px solid #666; font-size:12px; cursor:pointer; line-height:12px; padding:0; }
+.sg-slot-del:hover{ background:#cf4a4a; border-color:#fff; }
+
+/* ============================================================
+   技能图标格（方形，按 kind 着色）
+   ============================================================ */
+.sg-tile{
+  width:56px; height:64px;
+  border-radius:8px; border:2px solid #444;
+  background:#1c1f27; color:#fff;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  cursor:grab; position:relative;
+  transition:transform .12s, box-shadow .12s;
+  padding:3px;
+}
+.sg-tile:hover{ transform:translateY(-2px); box-shadow:0 4px 10px rgba(0,0,0,.6); }
+.sg-tile:active{ cursor:grabbing; }
+.sg-tile.sg-dragging{ opacity:.5; transform:scale(.95); }
+
+/* kind 着色 */
+.sg-tile.sg-auto{
+  background:linear-gradient(160deg,#2a4a8a 0%,#1a2f5a 100%);
+  border-color:#4a7acf;
+}
+.sg-tile.sg-active{
+  background:linear-gradient(160deg,#8a2a2a 0%,#5a1a1a 100%);
+  border-color:#cf4a4a;
+}
+.sg-tile.sg-link{
+  background:linear-gradient(160deg,#8a6a2a 0%,#5a451a 100%);
+  border-color:#cfb34a;
+}
+
+/* 图标本体：32px × 32px，SVG 作为 background */
+.sg-tile-icon{
+  width:30px; height:30px; flex-shrink:0;
+  background-repeat:no-repeat; background-position:center; background-size:contain;
+  filter:drop-shadow(0 1px 1px rgba(0,0,0,.6)) brightness(0) invert(1);
+  /* brightness(0) invert(1) 把彩色 icon 全部变白 —— 这样 iconify 的彩色 SVG 也能在 kind 底色上和谐 */
+}
+.sg-tile-label{
+  font-size:10px; line-height:11px; text-align:center; max-width:52px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-weight:500; letter-spacing:.5px;
+}
+.sg-tile-owner{
+  position:absolute; bottom:-2px; right:-4px;
+  font-size:9px; color:#fff; background:rgba(0,0,0,.8); border-radius:3px; padding:0 3px; line-height:12px;
+}
+
+/* 右侧可选区 */
+.sg-col-pick .sg-pick-wrap{ flex:1; overflow-y:auto; }
+.sg-pick-col{ margin-bottom:12px; }
+.sg-pick-head{ font-weight:700; color:#fff; font-size:13px; padding:6px 0 4px; border-bottom:1px solid #2a2f3d; margin-bottom:6px; letter-spacing:1px; }
+.sg-pick-grid{ display:flex; flex-wrap:wrap; gap:6px; }
+.sg-pick-grid .sg-tile{ cursor:pointer; }
+
+/* ============================================================
+   角色页面精简版样式（大重做 v2）
+   ============================================================ */
+.char-head-card{ display:flex; align-items:center; gap:16px; padding:14px; background:linear-gradient(120deg,#1a1d26,#222533); border:1px solid #2a2f3d; border-radius:10px; margin-bottom:14px; }
+.char-big-icon{ width:72px; height:72px; border-radius:50%; border:3px solid #d9b64a; flex-shrink:0; background-size:cover; background-position:center; background-repeat:no-repeat; }
+.char-head-info{ flex:1; }
+.char-head-name{ font-size:22px; font-weight:800; color:#fff; letter-spacing:2px; }
+.char-head-meta{ font-size:13px; color:#9aa0ac; margin-top:4px; }
+
+/* 战斗技能区（新 skillList） */
+#skillList .skillTag .charTag{ color:#d9b64a; font-size:11px; font-weight:600; }
+#skillList .skillTag.active{ outline:2px solid #d9b64a; }
+#skillList .skillTag.myturn{ box-shadow:0 0 0 2px #d9b64a,0 0 12px #d9b64a80; animation:pulseGlow 1.2s infinite; }
+@keyframes pulseGlow{
+  0%,100%{ box-shadow:0 0 0 2px #d9b64a,0 0 10px #d9b64a60; }
+  50%{ box-shadow:0 0 0 2px #d9b64a,0 0 20px #d9b64a90; }
+}
