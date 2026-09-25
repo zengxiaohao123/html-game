@@ -62,39 +62,48 @@ const AFFIN_IMMUNE = {slime:'grass',fireSlime:'fire',waterSlime:'water',thunderS
 if(typeof mapDragMoved==='undefined') window.mapDragMoved=false;
 
 /* 战前：技能范围 → 格子列表（兼容旧 target） */
-function skillRangeCells(skill){
-  const pos = combatState.hero;
+function skillRangeCells(skill, refPos, facing){
+  // 新版：统一用 rangeOf（支持 distN/adjN/lineN/frontN/self 等）
+  const pos = refPos || combatState.hero;
+  const fac = facing || pos.facing || 'up';
+  if(rangeOf && skill && skill.target){
+    const r = rangeOf({ type: skill.target, x:pos.x, y:pos.y, facing:fac });
+    if(r) return r.map(c => ({x:c.x, y:c.y}));
+  }
+  // 旧规格 fallback（仅当 skill.target 是字符串且 rangeOf 不认识时）
   const out = [];
-  // 先查 rangeOf（新版规格 target）
-  if(rangeOf && skill.target){
-    const r = rangeOf({ type: skill.target, x:pos.x, y:pos.y, facing:pos.facing });
-    if(r && r.length){
-      for(const c of r) out.push({x:c.x, y:c.y});
-      return out;
-    }
-  }
-  // 旧规格 fallback
   const n = G.map.n;
-  const [dx,dy] = facingDir(pos.facing);
-  if(skill.target==='front'){ const x=pos.x+dx,y=pos.y+dy; if(passable(x,y))out.push({x,y}); }
-  else if(skill.target==='adj'||skill.target==='adj-front'){
-    for(const [a,b] of [[1,0],[-1,0],[0,1],[0,-1]]){ const x=pos.x+a,y=pos.y+b; if(passable(x,y))out.push({x,y}); }
+  const [dx,dy] = facingDir(fac);
+  const [fx,fy] = [pos.x+dx, pos.y+dy];
+  const t = skill && skill.target;
+  if(t==='front'){ if(passable(fx,fy)) out.push({x:fx,y:fy}); }
+  else if(t==='adj'){
+    for(const [a,b] of [[1,0],[-1,0],[0,1],[0,-1]]){ if(passable(pos.x+a,pos.y+b)) out.push({x:pos.x+a,y:pos.y+b}); }
   }
-  else if(skill.target==='frontline'||skill.target==='line'){
-    for(let i=1;i<=(skill.range||3);i++){ const x=pos.x+dx*i,y=pos.y+dy*i; if(passable(x,y))out.push({x,y}); }
+  else if(t==='frontline'){
+    const r = skill.range || 3;
+    for(let i=1;i<=r;i++){ if(passable(pos.x+dx*i,pos.y+dy*i)) out.push({x:pos.x+dx*i,y:pos.y+dy*i}); }
   }
-  else if(skill.target==='nearest'){
-    for(let x=0;x<n;x++)for(let y=0;y<n;y++) if(passable(x,y)&&Math.abs(x-pos.x)+Math.abs(y-pos.y)<=(skill.range||3)) out.push({x,y});
+  else if(t==='nearest'){
+    const r = skill.range || 3;
+    for(let x=0;x<n;x++) for(let y=0;y<n;y++)
+      if(passable(x,y) && Math.abs(x-pos.x)+Math.abs(y-pos.y)<=r) out.push({x,y});
   }
   else out.push({x:pos.x, y:pos.y});
   return out;
 }
 
+
+
 /* 战前：找到范围内的敌人 */
-function skillEnemies(skill){
-  const keys = new Set(skillRangeCells(skill).map(c=>c.x+','+c.y));
-  return combatState.enemies.filter(en=>keys.has(en.x+','+en.y));
+function skillEnemies(skill, refPos, facing){
+  const pos = refPos || combatState.hero;
+  const cells = skillRangeCells(skill, pos, facing);
+  const keys = new Set(cells.map(c=>c.x+','+c.y));
+  return combatState.enemies.filter(en => keys.has(en.x+','+en.y));
 }
+
+
 
 /* 战前：敌人对某元素的额外伤害系数（占位 1.0） */
 function enemyDmgMult(enemy, type){ return 1; }
@@ -587,29 +596,29 @@ function initCombatState(o){
 
   const ally = {};
   for(const k of G.team){
-    const c = getChar(k);
-    const firstSkill = c && c.selectedSkillIds && c.selectedSkillIds[0];
     ally[k] = {
       statuses: {}, cds: {}, used: false, flatAtk: 0, stolen: 0, gain: 0,
-      nodeTriggered: false, acted: false,
-      selSkill: firstSkill || null, mom: 0,
+      mom: 0, dead: false,
     };
   }
+  // 全局技能组运行态槽位（从 G.skillGroup 复制，加 cd/used 运行字段）
+  const slots = buildCombatSkillSlots();
 
   combatState = {
     hero: { x:G.px, y:G.py, facing: G.hero.facing||'up',
       hp: G.hero.hp, maxHp: heroineMaxHp(), shield: 0 },
-    enemies: [], pets: [], ally,
+    enemies: [], pets: [], ally, slots,
     zone: [], counter: {}, field: {},
-    phase: 'player',
-    day: G.day, turn: 1,
+    day: G.day, round: 1,
     entryCell: G.px+','+G.py,
     defeated: [], focusEnemy: null,
-    playerMoved: false, playerOver: false,
-    currentChar: G.team[0]||'pro',
-    selectedEnemy: null, infoCell: null, enemyPage: 0,
     pendingTarget: null, bubbles: [],
     nodeTriggered: false,
+    // ===== 新状态机字段 =====
+    turnOrder: [], turnIndex: 0, actor: null,
+    phase: 'player',            // 'player' | 'auto' | 'enemy'（UI 仍依赖）
+    currentChar: G.team[0]||'pro',  // UI 仍依赖：最后一个行动或即将行动的队友
+    playerMoved: false,
     startSnapshot: {
       heroHp: G.hero.hp,
       vehicles: JSON.parse(JSON.stringify(G.vehicles||[])),
@@ -708,14 +717,14 @@ function startCombat(cell){
   if(typeof clearLog==='function') clearLog();
   log('进入战斗。你得击败所有敌人。');
   enterCombatMode();
-  _phasePlayer();
+  _initTurnOrderAndStart();
 }
 function reenterCombat(snap){
   if(!snap||!G.map){ switchMode('story'); return; }
   initCombatState({ enemyKey: snap.enemyKey });
   log('读档回到本次战斗开始。');
   enterCombatMode();
-  _phasePlayer();
+  _initTurnOrderAndStart();
 }
 /* 外部兼容：战前函数名 */
 function spawnEnemy(key){ return _spawnEnemy(key); }
@@ -839,8 +848,15 @@ function _applyDamageToTarget(target, dmg, type, fromKey){
   
   // 1. 抗性计算（真实伤害跳过）
   if(!isReal){
-    let res = target.def.res?.[type] || 0;
-    if(target.res?.[type]) res = Math.max(res, target.res[type]);
+    let res = 0;
+    if(target === combatState.hero){
+      // 主角抗性：没有 per-element 抗性表，一律 0（护盾/天赋减伤在别处做）
+      res = 0;
+    } else {
+      // 敌人抗性：优先 enemy 自带 def.res 或 res 字段
+      res = target.def?.res?.[type] || 0;
+      if(target.res?.[type]) res = Math.max(res, target.res[type]);
+    }
     // 风元素地块 +风抗性
     const cs = combatState;
     if(cs){
@@ -999,7 +1015,11 @@ function _resolveTargetsForSkill(sk, charKey){
 }
 function combatMove(dx,dy){
   const cs = combatState; if(!cs) return;
-  if(cs.playerOver){ log('已结束本轮移动。'); return; }
+  // 只允许主角在自己的行动回合里移动
+  if(!cs.actor || cs.actor.who !== 'ally' || cs.actor.key !== 'pro'){
+    log('现在不是主角的行动回合。'); return;
+  }
+  if(cs.ally.pro.used){ log('主角本回合已行动。'); return; }
   const hero = cs.hero;
   const nx = hero.x+dx, ny = hero.y+dy;
   if(!passable(nx,ny)){ log('此方向无法通行。'); return; }
@@ -1007,6 +1027,7 @@ function combatMove(dx,dy){
   hero.x = nx; hero.y = ny; hero.facing = dirToFacing(dx,dy);
   G.px = nx; G.py = ny;
   cs.playerMoved = true;
+  log(`主角移动到 (${nx},${ny})。`);
   refreshHUD(); renderCombatMap(); updateCombatUI();
 }
 function tryFlee(){
@@ -1024,178 +1045,314 @@ function tryFlee(){
     refreshHUD(); renderMap(); renderIconbar();
   } else {
     log('逃跑失败，敌人包围了你。');
-    _phaseEnemy();
+    // 失败：结束当前 actor，让状态机自然推进
+    if(cs.actor) _endActorTurn();
   }
-}
-function _advanceCurrentChar(){
-  const cs = combatState;
-  const team = G.team;
-  const idx = team.indexOf(cs.currentChar);
-  if(idx+1 < team.length){
-    cs.currentChar = team[idx+1];
-    cs.playerMoved = false;
-  } else {
-    cs.playerOver = true;
-  }
-  renderCombatMap(); updateCombatUI();
 }
 
 /* ============================
-   9. 敌人 AI（简化但闭环）
+   9. 统一回合状态机（turnOrder + advanceTurn）
+   参考 ExperienceRecall 教训：死亡/冻结 skip 放进 advanceTurn 循环
    ============================ */
-function _enemyTurnAll(){
-  const cs = combatState; if(!cs) return;
-  for(const en of cs.enemies.slice()){
-    if(!cs.enemies.includes(en)) continue;  // 已经被打死
-    if(!enemyCanAct(en)) continue;
-    _enemyAct(en);
+
+/* 构建当前轮的行动顺序：我方逐个 → auto 阶段 → 敌人逐个 */
+function _buildTurnOrder(){
+  const out = [];
+  for(const k of G.team) out.push({ who:'ally', key:k });
+  out.push({ who:'auto' });
+  for(let i=0; i<combatState.enemies.length; i++) out.push({ who:'enemy', idx:i });
+  return out;
+}
+
+/* 判断一个 actor 当前是否可以行动 */
+function _actorActable(actor){
+  if(!actor) return false;
+  if(actor.who === 'auto') return true;  // auto 阶段永远执行（没技能就是空跑）
+  if(actor.who === 'ally'){
+    if(combatState.ally[actor.key].dead) return false;
+    if(combatState.ally[actor.key].used && combatState.ally[actor.key].mom===0){
+      // used 标记 + 没起势 → 跳过（等新回合自动重置 used）
+      // 但若起势叠加，允许继续行动
+    }
+    return true;
+  }
+  if(actor.who === 'enemy'){
+    const e = combatState.enemies[actor.idx];
+    if(!e || e.hp <= 0) return false;
+    if(hasStatus(e.statuses,'freeze')) return false;
+    if(hasStatus(e.statuses,'sleep')) return false;
+    return true;
+  }
+  return false;
+}
+
+/* 找到下一个可行动 actor（可能跳过死亡/冻结） */
+function advanceTurn(){
+  const cs = combatState;
+  if(!cs) return;
+  while(cs.turnIndex < cs.turnOrder.length){
+    const actor = cs.turnOrder[cs.turnIndex];
+    if(_actorActable(actor)){
+      _startActorTurn(actor);
+      return;
+    }
+    cs.turnIndex++;
+  }
+  // turnOrder 跑完 → 回合结束
+  _phaseRoundEnd();
+}
+
+/* 某个 actor 开始自己的行动回合 */
+function _startActorTurn(actor){
+  const cs = combatState;
+  cs.actor = actor;
+
+  if(actor.who === 'ally'){
+    cs.currentChar = actor.key;   // UI 还在依赖 currentChar
+    cs.phase = 'player';
+    _tickAllyStart(actor.key);
+    if(actor.key === 'pro') _turnHeroFacingToEnemy();   // 自动面向最近敌人
     refreshHUD(); renderCombatMap(); updateCombatUI();
-    checkCombatEnd();
-    if(!combatState) return;
+    log(`轮到 ${getChar(actor.key).name} 行动。`);
+  } else if(actor.who === 'auto'){
+    cs.phase = 'auto';
+    _runAutoPhase();
+    // auto 阶段是一段式的，跑完直接结束
+    _endActorTurn();
+  } else if(actor.who === 'enemy'){
+    cs.phase = 'enemy';
+    _runEnemyAct(actor);
+    _endActorTurn();
   }
 }
-function enemyCanAct(en){
-  if(!en || !combatState?.enemies.includes(en)) return false;
-  if(hasStatus(en.statuses,'freeze')) return false;
-  if(hasStatus(en.statuses,'sleep')) return false;
+
+/* 当前 actor 结束自己的行动回合 */
+function _endActorTurn(){
+  const cs = combatState;
+  if(!cs || !cs.actor) return;
+  const actor = cs.actor;
+
+  // 后置结算
+  if(actor.who === 'ally')  _tickAllyEnd(actor.key);
+  if(actor.who === 'enemy') _tickEnemyEnd(actor);
+  if(actor.who === 'auto')  { /* 已在 _runAutoPhase 里结算 */ }
+
+  cs.actor = null;
+  cs.turnIndex++;
+
+  if(!checkCombatEnd()) advanceTurn();
+}
+
+/* 玩家主动结束当前队友的行动（跳回合/放弃） */
+function endCurrentAllyTurn(){
+  const cs = combatState; if(!cs || !cs.actor) return;
+  if(cs.actor.who !== 'ally') return;
+  log(`${getChar(cs.actor.key).name} 结束行动。`);
+  _endActorTurn();
+}
+
+/* ============================
+   10. Ally 回合内细节
+   ============================ */
+function _tickAllyStart(key){
+  const aly = combatState.ally[key]; if(!aly) return;
+  // 回合开始：cd 递减（所有 slots 上的 cd 是全局的，这里统一减）
+  for(const s of combatState.slots){
+    if(s.cd > 0) s.cd--;
+  }
+}
+
+function _tickAllyEnd(key){
+  const aly = combatState.ally[key]; if(!aly) return;
+  // 行动结束：used 标记保持到 auto 阶段之后再统一清
+  // 起势（momentum）保留整场战斗
+}
+
+/* 玩家可用 check：当前队友是否能行动（活着） */
+function _canAllyAct(key){
+  const aly = combatState.ally[key]; if(!aly) return false;
+  if(aly.dead) return false;
   return true;
 }
-function _enemyAct(en){
+
+/* ============================
+   11. Auto 阶段：全队 auto 技能依次自动释放
+   ============================ */
+function _runAutoPhase(){
   const cs = combatState;
+  if(!cs.slots || !cs.slots.length) return;
+
+  // 先把上一轮所有 ally 的 used 重置掉（auto 阶段代表玩家阶段结束）
+  for(const k of G.team){
+    if(cs.ally[k]) cs.ally[k].used = false;
+  }
+
+  for(const slot of cs.slots){
+    const { c, sk } = skillGroupResolve(slot);
+    if(!c || !sk) continue;
+    if(sk.kind !== 'auto') continue;             // 只跑 auto 类
+    if(slot.cd > 0) continue;                    // cd 还没好
+    if(!_canAllyAct(slot.charKey)) continue;      // 属主已死亡
+    const aly = cs.ally[slot.charKey];
+    if(aly.used) continue;                       // 已行动过（队友轮到 auto 阶段）
+
+    const charName = c.name;
+    log(`【自动·${sk.name}】${charName} 自动释放。`);
+    resolveSkill(slot.charKey, sk, false);
+    if(!combatState) return;
+    slot.cd = sk.cd || 0;
+    aly.used = true;
+  }
+
+  // auto 阶段跑完：标记所有队友 used=true，防止再行动
+  for(const k of G.team){
+    if(cs.ally[k]) cs.ally[k].used = true;
+  }
+}
+
+
+/* 辅助：主角自动朝向最近敌人（进入行动回合时自动做） */
+function _turnHeroFacingToEnemy(){
+  const cs = combatState; if(!cs) return;
   const hero = cs.hero;
-  // 1. 选意图：找技能（简化：默认普攻）
-  const def = en.def;
-  const skills = def?.skills || [{id:'attack',name:'普攻',kind:'attack',target:'adj-front',type:'physical',mult:1.0,cd:0}];
-  const availableSkill = skills.find(s=>!(en.cooldowns[s.id]>0)) || skills[0];
-  // 2. 找目标（主角）
+  let best = null, bestD = Infinity;
+  for(const e of cs.enemies){
+    if(e.hp<=0) continue;
+    const d = Math.abs(e.x-hero.x)+Math.abs(e.y-hero.y);
+    if(d < bestD){ bestD = d; best = e; }
+  }
+  if(best){
+    const dx = best.x - hero.x, dy = best.y - hero.y;
+    if(dx!==0 || dy!==0){
+      hero.facing = dirToFacing(dx, dy);
+      G.hero.facing = hero.facing;
+    }
+  }
+}
+
+/* ============================
+   12. Enemy 回合
+   ============================ */
+function _runEnemyAct(actor){
+  const cs = combatState;
+  const en = cs.enemies[actor.idx];
+  if(!en) return;
+
+  // 选技能（简化版本：默认普攻）
+  const def = en.def || {};
+  const skills = def.skills || [{ id:'attack', name:'普攻', kind:'attack', target:'adj-front', type:'physical', mult:1.0, cd:0 }];
+  const availableSkill = skills.find(s => !(en.cooldowns && en.cooldowns[s.id]>0)) || skills[0];
+
+  // 找主角（敌人目标目前锁定主角）
+  const hero = cs.hero;
   const tx = hero.x, ty = hero.y;
   const d = dist(en, hero);
-  // 3. 进入技能范围判断
-  const [fx,fy] = facingDir(en.facing);
+
   const skillRange = rangeOf({ type: availableSkill.target, x:en.x, y:en.y, facing:en.facing });
-  const hit = skillRange.some(c=>c.x===tx && c.y===ty);
-  
+  const hit = skillRange.some(c => c.x===tx && c.y===ty);
+
   if(hit){
-    // 4a. 攻击
     const mult = availableSkill.mult || 1.0;
     const finalType = availableSkill.type || 'physical';
     let dmg = Math.round(en.atk * mult);
-    // 反应（敌人火/水/冰/雷 技能也能触发地块反应）
+    // 敌人元素攻击也会触发地块反应
     const idx = hero.y*G.map.n + hero.x;
     if(finalType && ELEM[finalType]) setCellElement(idx, finalType);
     const dealt = damageHero(dmg, finalType, en.key);
     const critTxt = Math.random()<0.15 ? '<span class="crit-hint">暴击！</span>' : '';
     if(dealt>0) log(`${en.name} 使用【${availableSkill.name}】对主角造成 ${critTxt}${dealt} 点${elemText(finalType)}。`);
+    if(!en.cooldowns) en.cooldowns = {};
     en.cooldowns[availableSkill.id] = availableSkill.cd || 0;
   } else {
-    // 4b. 移动靠近（曼哈顿贪心）
+    // 移动靠近：曼哈顿贪心（不动到主角身上、不踩队友）
     let best = null, bestD = d;
     for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
       const nx = en.x+dx, ny = en.y+dy;
       if(!passable(nx,ny)) continue;
       if(nx===hero.x && ny===hero.y) continue;
-      if(cs.enemies.some(e=>e!==en && e.x===nx && e.y===ny)) continue;
+      if(cs.enemies.some(e => e!==en && e.x===nx && e.y===ny)) continue;
       const nd = Math.abs(nx-tx)+Math.abs(ny-ty);
-      if(nd<bestD){ bestD=nd; best=[dx,dy]; }
+      if(nd < bestD){ bestD = nd; best = [dx,dy]; }
     }
     if(best){
       en.x += best[0]; en.y += best[1];
       en.facing = dirToFacing(best[0], best[1]);
+      log(`${en.name} 向主角靠近。`);
     }
   }
-  // tick 敌人冷却
-  for(const k of Object.keys(en.cooldowns)){ if(en.cooldowns[k]>0) en.cooldowns[k]--; }
-  _afterEnemyAct(en);
+
+  // tick 敌人自身冷却
+  if(en.cooldowns){
+    for(const k of Object.keys(en.cooldowns)){ if(en.cooldowns[k]>0) en.cooldowns[k]--; }
+  }
+
+  renderCombatMap(); updateCombatUI(); refreshHUD();
 }
-function _afterEnemyAct(en){
-  _nodeTickFor(en);
+
+function _tickEnemyEnd(actor){
+  const cs = combatState;
+  const en = cs.enemies[actor.idx];
+  if(!en) return;
+  // 燃烧/中毒等持续状态 tick
+  tickStatuses(en.statuses);
+  if(hasStatus(en.statuses,'burn')){
+    const lost = Math.max(1, Math.round(en.maxHp*0.03));
+    en.hp = Math.max(0, en.hp - lost);
+    log(`【燃烧】${en.name} 流失 ${lost} 点生命。`);
+    if(en.hp<=0){
+      log(`${en.name} 被【燃烧】击败！`);
+      removeEnemy(en);
+    }
+  }
 }
 
 /* ============================
-   10. 回合状态机
+   13. 回合结束结算
    ============================ */
-function _phasePlayer(){
+function _phaseRoundEnd(){
   const cs = combatState; if(!cs) return;
-  cs.phase = 'player';
-  cs.currentChar = G.team[0]||'pro';
-  cs.playerOver = false; cs.playerMoved = false;
+  cs.round++;
+  _refreshHeroShield();
+
+  // 全局状态递减（地块元素自然扩散/衰减已在地块模块处理，这里减队伍状态）
   for(const k of G.team){
-    if(cs.ally[k]){ cs.ally[k].nodeTriggered=false; cs.ally[k].acted=false; }
+    if(cs.ally[k]) tickStatuses(cs.ally[k].statuses);
   }
-  refreshHUD(); renderCombatMap(); updateCombatUI();
-  log('轮到你行动。WASD 移动，1-4 选技能，Q 释放。');
-}
-function _phaseEnemy(){
-  const cs = combatState; if(!cs) return;
-  cs.phase = 'enemy';
-  // tick 我方回合结束
-  _tickPlayerEnd();
-  // 敌人 AI
-  _enemyTurnAll();
-  if(!combatState) return;
-  // tick 敌人回合结束
-  _tickEnemyEnd();
-  if(!combatState) return;
-  // 回合推进
-  _phaseRoundEnd();
-  // 回到玩家 phase
-  _phasePlayer();
-}
-function _tickPlayerEnd(){
-  const cs = combatState; if(!cs) return;
-  // tick 我方角色状态
-  for(const k of G.team){
-    const ally = cs.ally[k]; if(!ally) continue;
-    tickStatuses(ally.statuses);
-    // cd 递减
-    for(const s of G[k]?.skills||[]){
-      if(ally.cds[s.id]>0) ally.cds[s.id]--;
-    }
-  }
-  // tick zone
-  for(let i=cs.zone.length-1; i>=0; i--){
+  // zone tick
+  for(let i = cs.zone.length-1; i>=0; i--){
     const z = cs.zone[i];
     z.turns--;
     if(z.turns<=0){ cs.zone.splice(i,1); continue; }
-    // 燃烧结界 tick
     if(z.type==='burning'){
-      const idx = z.y*G.map.n + z.x;
-      const cell = G.map.cells[idx];
       for(const en of cs.enemies){
-        if(Math.abs(en.x-z.x)+Math.abs(en.y-z.y)<=2){
-          addStatus(en.statuses,'burn',1);
-        }
+        if(Math.abs(en.x-z.x)+Math.abs(en.y-z.y)<=2) addStatus(en.statuses,'burn',1);
       }
-      // 地块火附着 tick
-      if(cell?.element==='grass') setCellElement(idx, 'fire');
     }
   }
-}
-function _tickEnemyEnd(){
-  const cs = combatState; if(!cs) return;
-  for(const en of cs.enemies.slice()){
-    tickStatuses(en.statuses);
-    // 燃烧 tick
-    if(hasStatus(en.statuses,'burn')){
-      const lost = Math.max(1, Math.round(en.maxHp*0.03));
-      en.hp = Math.max(0, en.hp - lost);
-      log(`【燃烧】${en.name} 流失 ${lost} 点生命。`);
-      if(en.hp<=0){ log(`${en.name} 被【燃烧】击败！`); removeEnemy(en); checkCombatEnd(); if(!combatState) return; }
-    }
-    // 冻结地块 +50% 冰伤 下次被打额外伤害已在 damage 框架里处理
-    for(const k of Object.keys(en.cooldowns)){ if(en.cooldowns[k]>0) en.cooldowns[k]--; }
+  // 主角状态 tick（debuff 影响 hp 恢复等）
+  tickStatuses(cs.hero.statuses || (cs.hero.statuses={}));
+
+  // 清空所有 used 标记 + 准备下一轮
+  for(const k of G.team){
+    if(cs.ally[k]){ cs.ally[k].used = false; cs.ally[k].mom = 0; }
   }
-}
-function _phaseRoundEnd(){
-  const cs = combatState; if(!cs) return;
-  cs.turn++;
-  _refreshHeroShield();
+  cs.playerMoved = false;
+
+  // 重建 turnOrder，回到第 0 位
+  cs.turnOrder = _buildTurnOrder();
+  cs.turnIndex = 0;
+
+  log(`第 ${cs.round} 回合开始。`);
+  advanceTurn();
 }
 
-/* ============================
-   11. UI 渲染（保留战前 CSS 类名）
-   ============================ */
-
+/* ========= 入口别名（startCombat 里用） ========= */
+function _initTurnOrderAndStart(){
+  const cs = combatState;
+  cs.turnOrder = _buildTurnOrder();
+  cs.turnIndex = 0;
+  advanceTurn();
+}
 
 function heroInfoHTML(){
   const cs = combatState; if(!cs) return '';
@@ -1419,23 +1576,218 @@ function passable(x,y){
 
 
 /* pre-combat UI: updateCombatUI */
-function updateCombatUI(){ if(!combatState){ switchMode('story'); return; } const cs=combatState; const chars=getTeamChars(); const cur=chars.find(c=>c.key===cs.currentChar)||chars[0]; qs('#allyBar').innerHTML=chars.map((c,i)=>`<div class="allyCard ${c.key===cs.currentChar?'active':''}" data-k="${c.key}"><div class="allyName">${c.name}</div><div class="allyElem">${c.element?ELEM[c.element].zh:'无属性'} · ${i+1}号位</div></div>`).join(''); qs('#allyBar').querySelectorAll('.allyCard').forEach(b=>b.onclick=()=>{ cs.currentChar=b.dataset.k; updateCombatUI(); renderCombatMap(); }); qs('#charAttrs').innerHTML=charAttrsHTML(cur.key); qs('#statusBar').innerHTML = cur.key==='pro'? statusBarHTML(heroStatusesWithDepress(cs),cs.field) : statusBarHTML(cs.ally[cur.key].statuses,null); const skills=cur.skills.filter(s=>cur.selectedSkillIds.includes(s.id)); const fleeBase=cs.enemies[0]; const fleeTag= fleeBase? `<div class="skillTag escape ${cs.ally[cur.key].selSkill==='flee'?'active':''}" data-s="flee"><span class="skillNum">4</span>逃　跑　${Math.round(calcEscapeRate(fleeBase))}%</div>` : ''; qs('#skillList').innerHTML=skills.map((s,i)=>`<div class="skillTag ${s.kind==='attack'?'attack':'skill'} ${cs.ally[cur.key].selSkill===s.id?'active':''}" data-s="${s.id}"><span class="skillNum">${i+1}</span><span class="cat ${s.kind==='attack'?'attack':'support'}">${s.kind==='attack'?'攻击':'辅助'}</span>${skillDisplayName(cur.key,s)}${(cs.ally[cur.key].cds[s.id]||0)>0?` <span class="nohint">冷却${cs.ally[cur.key].cds[s.id]}</span>`:''}${cs.ally[cur.key].used?' <span class="usedMark">已用</span>':''}</div>`).join('')+fleeTag; qs('#skillList').querySelectorAll('.skillTag').forEach(b=>b.onclick=()=>selectSkill(cur.key,b.dataset.s)); qs('#talentBox').innerHTML=cur.passives.map((p,i)=>`<span class="talentTag" data-k="${cur.key}" data-i="${i}"><span class="cat talent">天赋</span>${talentDisplayName(cur.key,p)}</span>`).join(''); const selSkillId=cs.ally[cur.key].selSkill; const sel=cur.skills.find(s=>s.id===selSkillId); let detailHtml='<div class="skillDetailText">点击技能查看详情</div>'; if(sel){ detailHtml=`<div class="skillDetailName">${skillDisplayName(cur.key,sel)}</div><div class="skillDetailText">${describeSkill(cur.key,sel)}</div>`; } else if(selSkillId==='flee'){ const fe=cs.enemies[0]; detailHtml=`<div class="skillDetailName">逃走</div><div class="skillDetailText">逃离本场战斗，成功率 ${fe?Math.round(calcEscapeRate(fe)):0}%。本回合已行动则不可跑走。逃跑不获得奖励。</div>`; } qs('#skillDetail').innerHTML=detailHtml; };
+function updateCombatUI(){
+  const cs = combatState;
+  if(!cs){ switchMode('story'); return; }
+  const chars = getTeamChars();
+  const cur = chars.find(c=>c.key===cs.currentChar) || chars[0];
+
+  // 队友卡：当前 actor 高亮
+  const actorKey = (cs.actor && cs.actor.who==='ally') ? cs.actor.key : null;
+  qs('#allyBar').innerHTML = chars.map(c => {
+    const cls = c.key===actorKey ? ' actor' : '';
+    return `<div class="allyCard${cls}"><div class="allyName">${c.name}</div><div class="allyElem">${c.element?ELEM[c.element].zh:'无属性'}</div></div>`;
+  }).join('');
+
+  // 属性 + 状态栏
+  qs('#charAttrs').innerHTML = charAttrsHTML(cur.key);
+  qs('#statusBar').innerHTML = cur.key==='pro'
+    ? statusBarHTML(heroStatusesWithDepress(cs), cs.field)
+    : statusBarHTML(cs.ally[cur.key]?.statuses, null);
+
+  // 技能列表（从 cs.slots 全取，不按角色过滤）
+  const slots = cs.slots || [];
+  cs.selSlot = cs.selSlot || slots[0]?.slot || 1;
+  const selSlotNum = cs.selSlot;
+
+  const fleeBase = cs.enemies[0];
+  const fleeTag = fleeBase ? `<div class="skillTag escape"><span class="skillNum">🛸</span>逃　跑 ${Math.round(calcEscapeRate(fleeBase))}%</div>` : '';
+
+  qs('#skillList').innerHTML = slots.map(s => {
+    const { c, sk } = skillGroupResolve(s);
+    if(!sk) return '';
+    const cd = s.cd || 0;
+    const cdTxt = cd>0 ? `<span class="nohint">冷却${cd}</span>` : '';
+    const isSel = s.slot === selSlotNum;
+    const isMyTurn = (cs.actor?.who==='ally' && cs.actor.key===s.charKey);
+    const cls = `${sk.kind==='attack'?'attack':'skill'}${isSel?' active':''}${isMyTurn?' myturn':''}`;
+    const kindLabel = sk.kind==='auto'?'自动':sk.kind==='active'?'主动':sk.kind==='link'?'连携':'辅助';
+    return `<div class="skillTag ${cls}" data-slot="${s.slot}">
+      <span class="skillNum">${s.slot}</span>
+      <span class="cat">${kindLabel}</span>
+      <span class="charTag">${c?.name||'?'}</span>
+      ${sk.name}${cdTxt}
+    </div>`;
+  }).join('') + fleeTag;
+
+  // 点击选中 → 再点一次释放
+  qs('#skillList').querySelectorAll('.skillTag[data-slot]').forEach(b => {
+    b.onclick = () => {
+      const n = +b.dataset.slot;
+      if(cs.selSlot === n){
+        const slot = cs.slots.find(x=>x.slot===n);
+        if(slot) castSkill(slot.charKey, true, slot);
+      } else {
+        cs.selSlot = n;
+        updateCombatUI(); renderCombatMap();
+      }
+    };
+  });
+  qs('#skillList').querySelector('.skillTag.escape')?.addEventListener('click', tryFlee);
+
+  // 天赋
+  qs('#talentBox').innerHTML = cur.passives.map((p,i) => {
+    const name = p.scal ? talentDisplayName(cur.key,p) : p.name;
+    return `<span class="talentTag" data-k="${cur.key}" data-i="${i}"><span class="cat talent">天赋</span>${name}</span>`;
+  }).join('');
+
+  // 技能详情
+  const selSlotObj = slots.find(x => x.slot === selSlotNum);
+  let detailHtml = '<div class="skillDetailText">点技能查看详情（点一次选中，再点一次释放）</div>';
+  if(selSlotObj){
+    const { c, sk } = skillGroupResolve(selSlotObj);
+    if(sk){
+      detailHtml = `<div class="skillDetailName">[槽${selSlotObj.slot}] ${c?.name||'?'} · ${sk.name}</div>
+        <div class="skillDetailText">${describeSkill(selSlotObj.charKey, sk)}</div>`;
+    }
+  }
+  qs('#skillDetail').innerHTML = detailHtml;
+}
 
 
 /* pre-combat UI: renderCombatMap */
-function renderCombatMap(){ if(!combatState) return; const m=G.map; const grid=qs('#mapGrid'); grid.style.gridTemplateColumns=`repeat(${m.n},44px)`; grid.innerHTML=''; const cs=combatState; const curChar=getChar(cs.currentChar); const selSkill=curChar.skills.find(s=>s.id===cs.ally[cs.currentChar].selSkill); const rangeKeys=new Set(selSkill&&selSkill.kind==='attack'?skillRangeCells(selSkill).map(c=>c.x+','+c.y):[]); const selEnemy = focusedEnemy() || (cs.infoCell ? cs.enemies.find(en=>en.x===cs.infoCell.x&&en.y===cs.infoCell.y) : null); const enemyKeys = selEnemy ? enemyRangeKeys(selEnemy) : new Set(); for(let y=0;y<m.n;y++)for(let x=0;x<m.n;x++){ const c=m.cells[y*m.n+x]; const cell=el('<div class="cell"></div>'); if(c.terrain==='obstacle')cell.classList.add('obstacle'); else if(c.terrain==='void')cell.classList.add('void'); const key=x+','+y; if(enemyKeys.has(key)) cell.classList.add('range-enemy'); else if(rangeKeys.has(key)) cell.classList.add('range-ally'); if(cs.hero.x===x&&cs.hero.y===y){cell.classList.add('player');cell.classList.add('facing-'+cs.hero.facing);} for(const en of cs.enemies){ if(en.x===x&&en.y===y){ cell.textContent=en.icon; cell.style.color='#fff'; cell.classList.add('efacing-'+en.facing); cell.title=en.name; if(en.maxHp>0) cell.innerHTML+=`<div class="hpbar"><i style="width:${Math.max(0,en.hp)/en.maxHp*100}%"></i></div>`; } } for(const pt of (cs.pets||[])){ if(pt.x===x&&pt.y===y){ cell.textContent='🟢'; cell.title='友方草史莱姆'; if(pt.maxHp>0) cell.innerHTML+=`<div class="hpbar"><i style="width:${Math.max(0,pt.hp)/pt.maxHp*100}%;background:#6ee07a"></i></div>`; } } cell.dataset.x=x;cell.dataset.y=y; cell.addEventListener('click',()=>combatCellClick(x,y)); grid.appendChild(cell); } };
+function renderCombatMap(){
+  if(!combatState) return;
+  const cs = combatState;
+  const m = G.map;
+  const grid = qs('#mapGrid');
+  grid.style.gridTemplateColumns = `repeat(${m.n},44px)`;
+  grid.innerHTML = '';
+
+  // 范围高亮：当前选中 slot 对应技能的范围
+  let rangeKeys = new Set();
+  const selSlotNum = cs.selSlot || 1;
+  const selSlot = (cs.slots||[]).find(x => x.slot===selSlotNum);
+  if(selSlot){
+    const { c, sk } = skillGroupResolve(selSlot);
+    if(sk && sk.target){
+      const cells = skillRangeCells(sk, cs.hero, cs.hero.facing);
+      rangeKeys = new Set(cells.map(c=>c.x+','+c.y));
+    }
+  }
+
+  for(let y=0;y<m.n;y++) for(let x=0;x<m.n;x++){
+    const c = m.cells[y*m.n+x];
+    const cell = el('<div class="cell"></div>');
+    if(c.terrain==='obstacle') cell.classList.add('obstacle');
+    else if(c.terrain==='void') cell.classList.add('void');
+
+    const key = x+','+y;
+    if(rangeKeys.has(key)) cell.classList.add('range-ally');
+
+    // 地块元素高亮边框
+    if(c.element){
+      const e = ELEM[c.element];
+      if(e){ cell.style.outline = `2px solid ${e.c || '#fff'}`; cell.style.outlineOffset = '-2px'; }
+    }
+
+    if(cs.hero.x===x && cs.hero.y===y){ cell.classList.add('player'); cell.classList.add('facing-'+cs.hero.facing); }
+    for(const en of cs.enemies){
+      if(en.x===x && en.y===y){
+        cell.textContent = en.icon; cell.style.color = '#fff'; cell.classList.add('efacing-'+en.facing); cell.title = en.name;
+        if(en.maxHp>0) cell.innerHTML += `<div class="hpbar"><i style="width:${Math.max(0,en.hp)/en.maxHp*100}%"></i></div>`;
+      }
+    }
+    for(const pt of (cs.pets||[])){
+      if(pt.x===x && pt.y===y){ cell.textContent='🟢'; cell.title='友方草史莱姆'; if(pt.maxHp>0) cell.innerHTML+=`<div class="hpbar"><i style="width:${Math.max(0,pt.hp)/pt.maxHp*100}%;background:#6ee07a"></i></div>`; }
+    }
+    cell.dataset.x=x; cell.dataset.y=y;
+    cell.addEventListener('click', () => combatCellClick(x,y));
+    grid.appendChild(cell);
+  }
+}
 
 
 /* pre-combat UI: selectSkill */
-function selectSkill(charKey, skillId){ const cs=combatState; if(!cs) return; if(skillId==='flee'){ if(cs.ally[charKey].selSkill==='flee'){ tryFlee(); return; } cs.ally[charKey].selSkill='flee'; updateCombatUI(); renderCombatMap(); return; } if(cs.ally[charKey].selSkill===skillId){ castSkill(charKey,true); } else { cs.ally[charKey].selSkill=skillId; updateCombatUI(); renderCombatMap(); } };
+function selectSkill(charKey, skillId){
+  const cs = combatState; if(!cs) return;
+  if(!cs.slots || !cs.slots.length){ // 兜底：slots 还没建时跳过
+    cs.ally[charKey].selSkill = skillId;
+    updateCombatUI(); renderCombatMap();
+    return;
+  }
+  // 从 slots 里找这个 skill（优先属主是 charKey，或全局匹配 skillId）
+  let slot = cs.slots.find(s => s.charKey===charKey && s.skillId===skillId);
+  if(!slot) slot = cs.slots.find(s => s.skillId===skillId);
+  if(!slot) { log(`找不到技能槽：${skillId}`); return; }
+
+  // 属主不是当前 actor → 切 actor 再用（自动状态机）
+  if(slot.charKey !== charKey){
+    // 直接 cast，因为当前就是 actor
+  }
+
+  // 选中 = 标记到 ally.selSkill；双击 = 释放
+  cs.ally[charKey].selSkill = skillId;
+  updateCombatUI(); renderCombatMap();
+}
+
+;
 
 
 /* pre-combat UI: castSkill */
-function castSkill(charKey, manual){ const cs=combatState; if(!cs) return; if(cs.ally[charKey].used) return; if(cs.playerMoved){ if(manual) prompt('本回合已移动，技能请于移动前使用。'); return; } const char=getChar(charKey); const skill=char.skills.find(s=>s.id===cs.ally[charKey].selSkill); if(!skill) return; if(skill.cd && cs.ally[charKey].cds[skill.id]>0){ if(manual) prompt(`「${skill.name}」仍在冷却中（剩 ${cs.ally[charKey].cds[skill.id]} 回合）。`); return; } if(!hasValidTarget(skill)){ if(manual) prompt(`「${skill.name}」当前没有可以命中的目标。`); return; } resolveSkill(charKey,skill,manual); if(!combatState) return; cs.ally[charKey].used=true; updateCombatUI(); renderCombatMap(); refreshHUD(); };
+function castSkill(charKey, manual, slotEntry){
+  const cs = combatState; if(!cs) return;
+  // 权限：只能当前 actor 且就是 charKey 放
+  if(!cs.actor || cs.actor.who !== 'ally' || cs.actor.key !== charKey){
+    if(manual) log(`现在不是 ${getChar(charKey).name} 的行动回合。`);
+    return;
+  }
+  if(cs.ally[charKey].used){
+    if(manual) log(`本回合 ${getChar(charKey).name} 已行动。`);
+    return;
+  }
+
+  // 找到 slot
+  let slot = slotEntry;
+  if(!slot){
+    const selId = cs.ally[charKey].selSkill;
+    slot = cs.slots && cs.slots.find(s => s.charKey===charKey && s.skillId===selId);
+  }
+  if(!slot){ if(manual) log('找不到对应的技能槽。'); return; }
+  if(slot.cd > 0){
+    if(manual) log(`「${slot.skillId}」冷却中（剩 ${slot.cd} 回合）。`);
+    return;
+  }
+
+  const { c:char, sk:skill } = skillGroupResolve(slot);
+  if(!skill){ if(manual) log('技能定义缺失。'); return; }
+  if(!hasValidTarget(skill)){
+    if(manual) log(`「${skill.name}」当前没有可命中的目标。`);
+    return;
+  }
+
+  // 释放
+  resolveSkill(charKey, skill, manual);
+  if(!combatState) return;
+
+  // 更新运行态
+  slot.cd = skill.cd || 0;
+  slot.usedThisRound = true;
+  cs.ally[charKey].used = true;
+
+  updateCombatUI(); renderCombatMap(); refreshHUD();
+
+  // 手动释放：结束当前 actor，让状态机推进
+  if(manual){
+    _endActorTurn();
+  }
+}
+
+;
 
 
 /* pre-combat UI: skillRangeCells */
-function skillRangeCells(skill){ const pos=combatState.hero; const n=G.map.n; const [dx,dy]=facingDir(pos.facing); const out=[]; if(skill.target==='front'){ const x=pos.x+dx,y=pos.y+dy; if(passable(x,y))out.push({x,y}); } else if(skill.target==='adj'){ for(const [a,b] of [[1,0],[-1,0],[0,1],[0,-1]]){ const x=pos.x+a,y=pos.y+b; if(passable(x,y))out.push({x,y}); } } else if(skill.target==='frontline'){ for(let i=1;i<=skill.range;i++){ const x=pos.x+dx*i,y=pos.y+dy*i; if(passable(x,y))out.push({x,y}); } } else if(skill.target==='nearest'){ for(let x=0;x<n;x++)for(let y=0;y<n;y++) if(passable(x,y)&&Math.abs(x-pos.x)+Math.abs(y-pos.y)<=skill.range) out.push({x,y}); } else out.push({x:pos.x,y:pos.y}); return out; };
+
 
 
 /* pre-combat UI: describeSkill */
@@ -1471,8 +1823,131 @@ function combatCellClick(x,y){ const cs=combatState; if(!cs) return; if(mapDragM
 
 
 /* pre-combat UI: resolveSkill */
-function resolveSkill(charKey, skill, manual){ if(!combatState) return; const char=getChar(charKey); if(skill.kind==='support'){ applySupport(charKey,skill); return; } const pool=skillEnemies(skill); if(!pool.length) return; let targets=[]; if(skill.multTarget){ const arr=pool.slice(); const n=Math.min(skill.multTarget, arr.length); for(let i=0;i<n;i++){ targets.push(arr.splice(Math.floor(Math.random()*arr.length),1)[0]); } } else if(skill.burstBias){ targets=[ pool.find(e=>e.chargingSkill) || pool.find(e=>hasStatus(e.statuses,'alert')) || pool[Math.floor(Math.random()*pool.length)] ]; } else if(skill.randTarget){ targets=[ pool[Math.floor(Math.random()*pool.length)] ]; } else { targets=pool.slice(); } let effBase=charAtk(charKey); if(skill.stealAtk){ let st=0; for(const k of G.team){ if(k===charKey||!combatState.ally[k]) continue; const s=Math.round(charAtk(k)*skill.stealAtk); st+=s; combatState.ally[k].stolen=(combatState.ally[k].stolen||0)+s; } combatState.ally[charKey].gain=(combatState.ally[charKey].gain||0)+st; log(`${char.name} 使用【偷取】：其余队友共失去 ${st} 点攻击，自身攻击+${st}（本场持续、可叠加）。`); } const mom=(combatState.ally[charKey]&&combatState.ally[charKey].mom)||0; const forceCrit=!!skill.burstBias && targets[0] && targets[0].chargingSkill; const critThis=forceCrit?true:(Math.random()*100 < charCritRate(charKey)); let finalType=skill.type; if(charKey==='luyouyou' && critThis && finalType==='physical') finalType='wind'; if(forceCrit) log(`${targets[0].name} 正处于【蓄力】，本次攻击必定暴击！`); let hitAny=false; for(const enemy of targets){ if(!combatState || !combatState.enemies.includes(enemy)) continue; let dmg=Math.max(1,Math.round(effBase*(1-enemyResistWith(enemy,finalType)/100)*enemyDmgMult(enemy,finalType)*(skill.effect?skill.effect(1):1)*(1+mom/100))); if(critThis) dmg*=2; const eh=elemHit(charKey,enemy,finalType,dmg); dmg=eh.final; const critTxt=critThis&&!forceCrit?'<span class="crit-hint">暴击！</span>':''; const dm = (combatState && combatState.enemies.includes(enemy)) ? damageEnemy(enemy,dmg,finalType,charKey) : 0; if(combatState && dm!==0){ hitAny=true; log(`${char.name} 使用 <b>${skill.name}</b>，对${enemy.name}造成 ${critTxt}<b>${Math.max(1,Math.round(dmg))}</b> 点${elemText(finalType)}。`); } if(!combatState) return; if(skill.burn){ addStatus(enemy.statuses,'burn',skill.burn); log(`${enemy.name} 进入【燃烧】状态。`); } if(skill.bindTurns){ addStatus(enemy.statuses,'bind',skill.bindTurns); log(`${enemy.name} 被【束缚】${skill.bindTurns} 回合。`); } if(skill.knockback) knockBack(enemy); if(!eh.consumed && finalType!=='physical'&&AURA_ELEMS.includes(finalType)&&!AFFIN_IMMUNE[enemy.key]) setAura(enemy,finalType); } if(combatState){ if(hitAny) applyTalentOnAttack(charKey,Math.round(effBase)); if(critThis&&charKey==='luyouyou') triggerBiyi(); consumeCritBuff(charKey); if(skill.cd) combatState.ally[charKey].cds[skill.id]=skill.cd; for(const t of targets) reapplyAura(t); checkCombatEnd(); } };
+function resolveSkill(charKey, skill, manual){
+  if(!combatState) return;
+  const char = getChar(charKey);
+  if(!char) return;
+
+  // 治疗类：主目标自己（简化版）
+  if(skill.healPct){
+    const heal = Math.round(charAtk(charKey) * skill.healPct);
+    if(charKey==='pro'){
+      const cap = heroineMaxHp();
+      G.hero.hp = Math.min(cap, G.hero.hp + heal);
+      combatState.hero.hp = G.hero.hp;
+    }
+    log(`${char.name} 给自己回复 ${heal} 点生命。`);
+    return;
+  }
+
+  // 吸收元素（通灵 skill.commune / 万火之源 等）—— 简化
+  if(skill.applyElem && !skill.mult){
+    // 纯吸收/元素附着类技能：对地块或自身用
+    if(skill.applyElem){
+      const idx = combatState.hero.y*G.map.n + combatState.hero.x;
+      setCellElement(idx, skill.applyElem);
+      log(`${char.name} 对所在地块施加了【${ELEM[skill.applyElem]?.zh||skill.applyElem}】。`);
+    }
+    return;
+  }
+
+  // 攻击类：找敌人
+  const pool = skillEnemies(skill);
+  if(!pool.length) return;
+
+  // 选目标（简化：全目标，或随机1个）
+  let targets;
+  if(skill.multTarget){
+    const arr = pool.slice();
+    const n = Math.min(skill.multTarget, arr.length);
+    targets = [];
+    for(let i=0;i<n;i++) targets.push(arr.splice(Math.floor(Math.random()*arr.length),1)[0]);
+  } else if(skill.randTarget || skill.target==='dist2' || skill.target==='dist3'){
+    targets = [ pool[Math.floor(Math.random()*pool.length)] ];
+  } else {
+    targets = pool.slice();
+  }
+
+  // 偷取攻击（wish）
+  let stealSt = 0;
+  if(skill.stealAlliesAtk){
+    for(const k of G.team){
+      if(k===charKey || !combatState.ally[k]) continue;
+      const s = Math.round(charAtk(k) * skill.stealAlliesAtk);
+      stealSt += s;
+      combatState.ally[k].stolen = (combatState.ally[k].stolen||0) + s;
+    }
+    combatState.ally[charKey].gain = (combatState.ally[charKey].gain||0) + stealSt;
+    if(stealSt>0) log(`${char.name} 偷取 ${stealSt} 点攻击（来自队友）。`);
+  }
+
+  let effBase = charAtk(charKey);
+  const mom = combatState.ally[charKey]?.mom || 0;
+  const critThis = Math.random()*100 < charCritRate(charKey);
+  let finalType = skill.type || 'physical';
+  if(charKey==='luyouyou' && critThis && finalType==='physical') finalType = 'wind';
+
+  let hitAny = false;
+  for(const enemy of targets){
+    if(!combatState || !combatState.enemies.includes(enemy)) continue;
+    let dmg = Math.max(1, Math.round(
+      effBase
+      * (1 - enemyResistWith(enemy, finalType)/100)
+      * (skill.mult || 1)
+      * (1 + mom/100)
+    ));
+    if(critThis) dmg = dmg * 2;
+
+    const eh = elemHit(charKey, enemy, finalType, dmg);
+    dmg = eh.final;
+
+    const critTxt = critThis ? '<span class="crit-hint">暴击！</span>' : '';
+    const dealt = damageEnemy(enemy, dmg, finalType, charKey);
+    if(dealt > 0){
+      hitAny = true;
+      log(`${char.name} 使用 <b>${skill.name}</b>，对 ${enemy.name} 造成 ${critTxt}<b>${Math.round(dmg)}</b> 点${elemText(finalType)}。`);
+    }
+
+    // 元素附着到地块（敌人当前格）+ 燃烧/束缚
+    if(!combatState) return;
+    const eidx = enemy.y*G.map.n + enemy.x;
+    if(finalType !== 'physical' && AURA_ELEMS.includes(finalType) && !AFFIN_IMMUNE[enemy.key]){
+      setCellElement(eidx, finalType);
+    }
+    if(skill.burnDur || skill.burn){
+      addStatus(enemy.statuses, 'burn', skill.burnDur || skill.burn);
+      log(`${enemy.name} 进入【燃烧】状态。`);
+    }
+    if(skill.bindTurns || skill.bind){
+      addStatus(enemy.statuses, 'bind', skill.bindTurns || skill.bind);
+      log(`${enemy.name} 被【束缚】。`);
+    }
+  }
+
+  // 战后天赋钩子
+  if(hitAny){
+    applyTalentOnAttack(charKey, Math.round(effBase));
+    if(critThis && charKey==='luyouyou') triggerBiyi();
+    consumeCritBuff(charKey);
+  }
+  checkCombatEnd();
+}
+
+;
 
 
 /* pre-combat UI: hasValidTarget */
-function hasValidTarget(skill){ if(!combatState) return false; if(skill.kind!=='attack') return true; return skillEnemies(skill).length>0; };
+function hasValidTarget(skill){
+  if(!combatState) return false;
+  if(skill.kind==='link'){
+    // link 技能条件检查（简化：有 trigger 就检查，没 trigger 就默认没条件）
+    if(skill.trigger==='allyApplyElem' || skill.trigger==='anyBurned'){
+      return skillEnemies(skill).length > 0;
+    }
+    return true;  // 其他 trigger 暂不判定，默认可用
+  }
+  if(skill.kind==='support' || skill.kind==='self') return true;
+  return skillEnemies(skill).length > 0;
+}
+
+;

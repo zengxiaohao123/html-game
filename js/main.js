@@ -35,7 +35,7 @@ function newGame(){
     inventory:{wood:0,fruit:0,flax:0,rawMeat:0,coin:20,emptyBottle:0,iron:0,blueStar:0,blueStarPowder:0,amethyst:0,clearMind:0},
     records:{slain:{}, wins:0, losses:0, mentalGoodDays:0, qCraftDone:false, qFruitCount:0, qMeatCount:0, qCarCount:0,
       fruitFirstOwned:false, cookedMeatFirstOwned:false, qCraftAvail:false, nonWalkVehicleOwned:true},
-    team:['pro','xiayang','luyouyou'], proLevels:{}, alliesPermAtk:{}, bonds,
+    team:['pro','xiayang','luyouyou'], skillGroup:buildDefaultSkillGroup(['pro','xiayang','luyouyou']), proLevels:{}, alliesPermAtk:{}, bonds,
     vehicles:[{key:'walk'},{key:'dash'},{key:'dragon',uses:3},{key:'mushroom',uses:3},{key:'carriage',uses:2},{key:'carpet',uses:1},{key:'qiaoyu'}], vehicleSel:0, map:null, px:0, py:0, st:null, lootLog:[] };
 }
 function standardVehicles(){ return [{key:'walk'},{key:'dash'},{key:'dragon',uses:3},{key:'mushroom',uses:3},{key:'carriage',uses:2},{key:'carpet',uses:1},{key:'qiaoyu'}]; }
@@ -64,7 +64,7 @@ function loadAfterGameOver(){ qs('#gameoverOverlay').classList.remove('show'); o
 function backToMenu(){ combatState=null; qs('#gameoverOverlay').classList.remove('show'); showMenu(); }
 function startNew(){ qs('#menuOverlay').classList.remove('show'); G=newGame(); G.map=generateMap(G.day); G.px=G.map.px; G.py=G.map.py; // 问题3：按最新定义，初始 hp 等于 heroDisplayMaxHp()（天赋+队友已计入）
   G.hero.hp = heroDisplayMaxHp(); loadIntoWorld(); }
-function loadIntoWorld(){ qs('#menuOverlay').classList.remove('show'); combatState=null; if(!G.map) G.map=generateMap(G.day); if(G.px===undefined||G.py===undefined){ G.px=G.map.px; G.py=G.map.py; } if(!G.vehicles||!G.vehicles.some(v=>v&&v.key==='dash')){ G.vehicles=standardVehicles(); G.vehicleSel=0; } refreshHUD(); renderIconbar(); if(G.combat){ const c=G.combat; G.combat=null; reenterCombat(c); return; } const cur=G.map.cells[G.py*G.map.n+G.px]; if(cur && cur.content && cur.content.type==='event' && !cur.content.done){ switchMode('story'); renderMap(); startEvent(G.px,G.py); return; }
+function loadIntoWorld(){ qs('#menuOverlay').classList.remove('show'); combatState=null; if(!G.map) G.map=generateMap(G.day); if(G.px===undefined||G.py===undefined){ G.px=G.map.px; G.py=G.map.py; } if(!G.vehicles||!G.vehicles.some(v=>v&&v.key==='dash')){ G.vehicles=standardVehicles(); G.vehicleSel=0; } if(!G.skillGroup) G.skillGroup=buildDefaultSkillGroup(G.team||['pro']); refreshHUD(); renderIconbar(); if(G.combat){ const c=G.combat; G.combat=null; reenterCombat(c); return; } const cur=G.map.cells[G.py*G.map.n+G.px]; if(cur && cur.content && cur.content.type==='event' && !cur.content.done){ switchMode('story'); renderMap(); startEvent(G.px,G.py); return; }
   if(G.activeEvent && G.px===G.activeEvent.x && G.py===G.activeEvent.y){ switchMode('story'); renderMap(); startEvent(G.activeEvent.x, G.activeEvent.y, G.activeEvent.slot); return; }
   switchMode('story'); renderMap(); ensureKeyFocus();
   if(typeof window.triggerMainStorySeg==='function') window.triggerMainStorySeg();

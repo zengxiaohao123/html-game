@@ -784,3 +784,78 @@ const GIFT_TALK = {
   },
 };
 function itemLoveLevel(ck, itemKey){ const L=ITEM_LOVE[ck]||{}; if(L.three&&L.three[itemKey]!=null) return 3; if(L.two&&L.two[itemKey]!=null) return 2; if(L.one&&L.one.includes(itemKey)) return 1; return 0; }
+
+/* ============================================================
+   全局技能组（SkillGroup）—— 大重做规格
+   ------------------------------------------------------------
+   设计：全队共用一套槽位，每个槽位绑定 { charKey, skillId }
+   技能可以混合：主角的斩击 + 夏阳的淬火 + 陆悠悠的 soar，按顺序
+   战斗中 skillList 始终显示槽位列表（不按角色切换）
+   
+   持久结构（存 G.skillGroup）：
+     [ { slot:1, charKey:'pro', skillId:'slash' },
+       { slot:2, charKey:'pro', skillId:'balance' },
+       { slot:3, charKey:'pro', skillId:'desperation' },
+       { slot:4, charKey:'xiayang', skillId:'quench' },
+       { slot:5, charKey:'xiayang', skillId:'prairie' },
+       { slot:6, charKey:'luyouyou', skillId:'skillshot' },
+       { slot:7, charKey:'luyouyou', skillId:'soar' } ]
+   
+   战斗运行态（combatState.slots）：
+     复制 G.skillGroup 的浅拷贝，加 { cd, usedThisRound, enabled }
+   ============================================================ */
+
+/* 从每个角色的 defaultSkillIds 取前 N 个，拼成全局技能组 */
+function buildDefaultSkillGroup(team){
+  const out = [];
+  let slot = 0;
+  const perChar = { pro:3, xiayang:2, luyouyou:2 }; // 默认槽数
+  for(const ck of team){
+    const c = getChar(ck);
+    if(!c) continue;
+    const take = perChar[ck] || 2;
+    const pool = (c.defaultSkillIds||[]).slice(0, take);
+    for(const sid of pool){
+      slot++;
+      out.push({ slot, charKey: ck, skillId: sid });
+    }
+  }
+  return out;
+}
+
+/* 校验+归一化：缺 slot 编号的自动补；非法 charKey / 不存在 skillId 的丢弃 */
+function normalizeSkillGroup(group){
+  if(!Array.isArray(group)) return [];
+  const team = (G && G.team) || ['pro'];
+  const out = [];
+  let nextSlot = 1;
+  for(const s of group){
+    if(!s || !s.charKey || !s.skillId) continue;
+    if(!team.includes(s.charKey)) continue;
+    const c = getChar(s.charKey);
+    if(!c) continue;
+    const sk = c.skills && c.skills.find(x=>x.id===s.skillId);
+    if(!sk) continue;
+    out.push({ slot: nextSlot++, charKey: s.charKey, skillId: s.skillId });
+  }
+  return out;
+}
+
+/* 战斗运行态：从 G.skillGroup 复制一份完整的运行态槽 */
+function buildCombatSkillSlots(){
+  const group = (G && G.skillGroup) || [];
+  return group.map(s => ({
+    slot: s.slot, charKey: s.charKey, skillId: s.skillId,
+    cd: 0, usedThisRound: false, enabled: true,
+    // link 技能条件：由 combat.js 的 triggerChecker 函数判定
+  }));
+}
+
+/* 技能组查询辅助：给定 slot，返回 { slotDef, charDef, skillDef } */
+function skillGroupResolve(slotEntry){
+  const c = getChar(slotEntry.charKey);
+  if(!c) return null;
+  const sk = (c.skills||[]).find(x=>x.id===slotEntry.skillId);
+  if(!sk) return null;
+  return { c, sk };
+}
