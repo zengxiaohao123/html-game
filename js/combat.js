@@ -127,7 +127,7 @@ function healPreview(charKey, skill){
   return 0;
 }
 
-/* 战前：天赋触发回调 —— 嗜血/起势 */
+/* 战前：物品效果触发回调 —— 匕首吸血/铁剑起势 */
 function applyTalentOnAttack(charKey, dmg){
   if(!combatState) return;
   const sts = combatState.ally[charKey];
@@ -141,7 +141,7 @@ function applyTalentOnAttack(charKey, dmg){
       if(nx > G.hero.hp){
         const got = nx - G.hero.hp;
         G.hero.hp = nx; combatState.hero.hp = nx;
-        log(`【嗜血】触发，回复 ${got} 点生命。`);
+        log(`【匕首·吸血回满】触发，回复 ${got} 点生命。`);
       }
     }
     const momP = _proMomentumFromItems();
@@ -906,7 +906,7 @@ function _applyDamageToTarget(target, dmg, type, fromKey){
   if(fromKey && typeof target !== 'object'){}  // 不会发生
   if(target === combatState.hero){
     const blockP = _proBlockFromItems();
-    if(blockP>0 && Math.random()*100 < blockP){ log('主角【格挡】本次伤害被完全抵消！'); return 0; }
+    if(blockP>0 && Math.random()*100 < blockP){ log('主角【布衣·格挡】本次伤害被完全抵消！'); return 0; }
   }
   
   // 4. 护盾抵挡（真实/反伤可穿透，先应用再穿透）
@@ -932,7 +932,7 @@ function _applyDamageToTarget(target, dmg, type, fromKey){
       if(nx > G.hero.hp){
         const got = nx - G.hero.hp;
         G.hero.hp = nx; combatState.hero.hp = nx;
-        log(`【坚守】触发，回复 ${got} 点生命。`);
+        log(`【皮衣·坚守回复】触发，回复 ${got} 点生命。`);
       }
     }
   } else {

@@ -79,15 +79,15 @@ const CITY_RESOURCES = ['coin','emptyBottle','blueStarPowder'];
 const ITEMS = {
   cookedMeat:{name:'熟肉', desc:'香喷喷的肉排。可用于交易，可直接使用回复70点生命值'},
   campfire:{name:'篝火', desc:'食用食物后，使对应的此类食物可回复生命值永久增加（果子+1，生肉+2，熟肉+4）', permanent:true},
-  club:{name:'木棒', desc:'使主角的【天赋·暴击】提升1级。可叠加', permanent:true},
-  cloth:{name:'布衣', desc:'使主角的【天赋·格挡】提升1级。可叠加', permanent:true},
+  club:{name:'木棒', desc:'主角攻击力+10，暴击率+3%。可叠加', permanent:true},
+  cloth:{name:'布衣', desc:'主角最大生命值+50，受到物理伤害时2%概率完全抵消本次伤害。可叠加', permanent:true},
   tent:{name:'帐篷', desc:'探索时行动力上限+1。可叠加', permanent:true},
   trap:{name:'陷阱', desc:'睡觉时，有50%获得1个随机自然资源。可叠加', permanent:true},
   quilt:{name:'被子', desc:'睡觉时，主角回复30点生命值。可叠加', permanent:true},
-  dagger:{name:'匕首', desc:'使主角的【天赋·嗜血】提升1级。可叠加', permanent:true},
-  leather:{name:'皮衣', desc:'使主角的【天赋·坚守】提升1级。可叠加', permanent:true},
-  ironSword:{name:'铁剑', desc:'使主角的【天赋·起势】提升1级。可叠加', permanent:true},
-  armor:{name:'盔甲', desc:'使主角的【天赋·格挡】和【天赋·坚守】各提升1级。可叠加', permanent:true},
+  dagger:{name:'匕首', desc:'主角攻击力+20，暴击后有3%概率回复50%本次伤害（上限为角色最大生命值）。可叠加', permanent:true},
+  leather:{name:'皮衣', desc:'主角最大生命值+50，受到致命伤害时3%概率不死亡并回复3点生命。可叠加', permanent:true},
+  ironSword:{name:'铁剑', desc:'主角攻击力+30，战斗开始第一回合的所有攻击伤害+4%。可叠加', permanent:true},
+  armor:{name:'盔甲', desc:'主角最大生命值+50、防御+20；受到物理伤害时2%概率完全抵消、受到致命伤害时3%概率不死亡。可叠加', permanent:true},
   roadmap:{name:'路线图', desc:'探索中，若地图上有稀有动物，会将其所在格用特殊颜色标记。每次进入被标记的格子后，消耗1张路线图', permanent:true},
   caiyunPendant:{name:'裁云挂件', desc:'半透晶石制成的薄片挂件，内部封存着被风儿裁出的浅白云纹，常作为赠予珍视之人的饰物。可赠予同伴，使其好感度+10', permanent:true},
   goodCard:{name:'好人卡', desc:'勿以善小而不为。睡觉时获得1金币。可叠加', permanent:true},
@@ -120,12 +120,12 @@ function itemUsable(k){ return !!FOOD[k]; }
 function foodHeal(k){ const camp=G && G.inventory && G.inventory.campfire>0; const base=FOOD[k]? FOOD[k].heal : 0; const add = camp ? (k==='fruit'?1 : k==='rawMeat'?2 : k==='cookedMeat'?4 : 0) : 0; let v = base+add; if(G && G.team && G.team.indexOf('luyouyou')>=0){ v = Math.round(v * (k==='cookedMeat'?1.75:1.25)); } return v; }
 
 function grantPermanentItem(key){ G.inventory[key]=(G.inventory[key]||0)+1; switch(key){
-  case 'club': bumpPro('crit'); break;
-  case 'cloth': bumpPro('block'); break;
-  case 'dagger': bumpPro('blood'); break;
-  case 'leather': bumpPro('hold'); break;
-  case 'ironSword': bumpPro('momentum'); break;
-  case 'armor': bumpPro('block'); bumpPro('hold'); break;
+
+
+
+
+
+
   case 'tent': G.hero.apCap=(G.hero.apCap||5)+1; G.hero.actionPoint=(G.hero.actionPoint||0)+1; break;
   case 'broom': G.vehicles=G.vehicles||[]; G.vehicles.push({key:'broom', uses:(VEHICLES.broom&&VEHICLES.broom.uses)||2}); break;
 }
