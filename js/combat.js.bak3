@@ -693,11 +693,6 @@ function _refreshHeroShield(){
    ============================ */
 function startCombat(cell){
   const key = cell.content.key;
-  // 战斗开始：触发位置变为空地（清空 content）
-  if(G.map && typeof G.px==='number' && typeof G.py==='number'){
-    const cur = G.map.cells[G.py*G.map.n + G.px];
-    if(cur) cur.content = null;
-  }
   initCombatState({ enemyKey: key });
   if(typeof clearLog==='function') clearLog();
   log('进入战斗。按 F 结束手动阶段，E 使用连携（若有）。');
@@ -1938,9 +1933,14 @@ function updateCombatUI(){
   if(selSlotObj){
     const { c, sk } = skillGroupResolve(selSlotObj);
     if(sk){
+      const dmg = skillDamagePreview(selSlotObj.charKey, sk);
       detailHtml = `<div class="cb-detail-head">${c?.name||'?'} · ${sk.name}</div>
-        <div class="cb-detail-desc">${sk.desc||''}</div>
-        <div class="cb-detail-cd">冷却：${sk.cd||0} 回合（剩余 ${selSlotObj.cd||0}）</div>`;
+        <div class="cb-detail-desc">${terms(sk.desc||'')}</div>
+        <div class="cb-detail-meta">
+          ${sk.formula?`<span>效果：${sk.formula}</span>`:''}
+          ${dmg!=null?`<span>预期伤害：约 ${dmg}</span>`:''}
+          <span>冷却：${sk.cd||0} 回合（剩余 ${selSlotObj.cd||0}）</span>
+        </div>`;
     }
   }
 
