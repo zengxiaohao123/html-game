@@ -1391,6 +1391,7 @@ function renderFormation(){
         const ic = getSkillIcon(s.skillId);
         return `<div class="fm-sg-tile" style="border:2px solid ${brd}" title="${sk.name}">
           <div class="sg-tile-icon" style="background-image:url('assets/skills/${ic.file}')"></div>
+          <div class="sg-tile-label">${sk.name}</div>
         </div>`;
       }).join('') + `</div>`;
     }
@@ -1498,7 +1499,6 @@ function sgEditorHTML(qIdx){
       descHTML = `
         <div class="sg-desc-name">${c.name} · ${sk.name}</div>
         <div class="sg-desc-text">${sk.desc||''}</div>
-        <div class="sg-desc-cd">冷却：${sk.cd||1} 回合</div>
       `;
     }
   }
@@ -1650,7 +1650,6 @@ function _bindSkillGroupEditorEvents(){
   const team = F.team || [];
   const teamSize = team.length;
   const maxSlots = Math.min(10, 4 + teamSize);
-  const activeMaxInFirst4 = 4; // 前 4 槽总共最多 4 个 active（即槽 1-4 全 active 时满）
 
   // 左上品可加入
   root.querySelectorAll('.sg-pick').forEach(tile => {
@@ -1662,24 +1661,19 @@ function _bindSkillGroupEditorEvents(){
         const ob = b.kind==='active' ? 0 : b.kind==='auto' ? 1 : 2;
         return oa !== ob ? oa-ob : 0;
       });
-      // 校验 1: 上限
-      if(g.length >= maxSlots){ log(`技能组已满（最多 ${maxSlots} 个）。`); return; }
-      // 校验 2: 同角色同 skill 去重
-      if(g.some(s => s.charKey===ck && s.skillId===sid)){ log('该技能已在技能组里。'); return; }
-      // 校验 3: active 不超过 4
-      const activeCount = g.filter(s=>s.kind==='active').length;
-      if(kind==='active' && activeCount >= activeMaxInFirst4){
-        log('槽 1-4 最多 4 个主动技能（第 5 槽起只允许自动/连携）。'); return;
+      // 点第一次 = 设选中；点第二次（同一个已选中的）= 加入
+      if(window.__sgSel === `${ck}:${sid}`){
+        // 已选中 → 执行合法性检查 + 加入
+        if(g.length >= maxSlots){ log(`技能组已满（最多 ${maxSlots} 个）。`); return; }
+        if(g.some(s=>s.charKey===ck && s.skillId===sid)){ log('已在技能组里。'); window.__sgSel=null; return; }
+        const ac = g.filter(s=>s.kind==='active').length;
+        if(kind==='active' && ac >= 4){ log('最多 4 个主动技能。'); return; }
+        g.push({ charKey:ck, skillId:sid, kind });
+        F.skillGroup = g;
+        // 加入后仍然保持选中（不自动清）
+      } else {
+        window.__sgSel = `${ck}:${sid}`;
       }
-      // 校验 4: 槽 5+ 禁 active
-      const willAtIdx = g.length;
-      if(kind==='active' && willAtIdx >= 4){
-        log('第 5 槽起只允许自动/连携技能。'); return;
-      }
-      // 加入
-      g.push({ charKey:ck, skillId:sid, kind });
-      F.skillGroup = g;
-      window.__sgSel = `${ck}:${sid}`;
       qs('#modalBody').innerHTML = sgEditorHTML(qIdx);
       _bindSkillGroupEditorEvents();
     };
@@ -1693,8 +1687,7 @@ function _bindSkillGroupEditorEvents(){
       const cur = g[idx]; if(!cur) return;
       const thisKey = `${cur.charKey}:${cur.skillId}`;
       if(window.__sgSel === thisKey){
-        // 同一 → 卸下
-        g.splice(idx, 1);
+        g.splice(idx, 1);   // 直接按 idx 卸任意位置，不卡顺序
         F.skillGroup = g;
         window.__sgSel = g.length ? `${g[0].charKey}:${g[0].skillId}` : null;
       } else {

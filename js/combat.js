@@ -1103,6 +1103,41 @@ function _turnHeroFacingToEnemy(){
   }
 }
 
+/* —— 辅助：释放技能前将 owner entity 的朝向对准第一个合法目标 —— */
+function _turnOwnerEntityToFirstTarget(slot, ownerKey, cs){
+  if(!cs) return;
+  const { sk } = skillGroupResolve(slot); if(!sk) return;
+  const ownerEnt = cs.entities[ownerKey]; if(!ownerEnt) return;
+  const pool = skillEnemies(sk, ownerEnt, ownerEnt.facing);
+  if(pool && pool.length){
+    const tgt = pool[0];
+    ownerEnt.facing = dirToFacing(Math.sign(tgt.x - ownerEnt.x), Math.sign(tgt.y - ownerEnt.y));
+    if(ownerKey === 'pro') G.hero.facing = ownerEnt.facing;
+  }
+}
+
+/* —— 辅助：释放后检查是否还有其他角色剩次数，若有则重置残存时间 —— */
+function _renewLingeringIfNeeded(cs){
+  if(!cs) return;
+  const aliveAlly = getAliveAllyChars(cs);
+  const usedKeys = Object.keys(cs.playerPhaseCharsUsed);
+  const hasCharsWithSkillLeft = usedKeys.length < aliveAlly.length;
+  if(hasCharsWithSkillLeft && cs.phase === 'playerManual_lingering'){
+    cs.lingerEndTime = Date.now() + 1000;
+  }
+}
+
+/* —— 辅助：判断实体是否受硬控制（冻结、禁锢等） —— */
+function _hasHardCtrl(entity){
+  if(!entity || !entity.statuses) return false;
+  const hardKeys = ['冻结','禁锢','stun','freeze'];
+  for(const k of hardKeys){
+    if(entity.statuses[k] && entity.statuses[k].duration > 0) return true;
+  }
+  if(entity.statuses && Object.values(entity.statuses).some(s => s && s.hard)) return true;
+  return false;
+}
+
 /* ============================================================
    §B. triggerNode —— 行动节点触发
    规格：每回合开头触发一次，buff 衰减、结界衰减、护盾刷新
@@ -1872,20 +1907,15 @@ function updateCombatUI(){
   };
   const kindBorder = kindBorderCSS;  // 避免下面拼写错误
 
-  // === 第一行左：角色名字 tile（点切换）===
+  // === 第一行左：角色 tile（点切换，显示 data-short）===
   const charTiles = chars.map(c => {
     const csk = cs.ally[c.key];
     const deadCls = csk?.dead ? ' dead' : '';
     const actorCls = c.key===actorKey ? ' actor' : '';
     const eleBg = c.element ? (ELEM[c.element]?.c || '#555') : '#7a7a7a';
     const curCls = c.key===cs.currentChar ? ' cb-cur' : '';
-    const hp = c.key==='pro' ? (cs.hero.hp||0) : (csk?.hp || 0);
-    const maxHp = c.key==='pro' ? heroineMaxHp() : (csk?.maxHp || c.base?.maxHp || 100);
-    const hpPct = Math.max(0, Math.min(100, (hp/(maxHp||1))*100));
-    return `<div class="cb-char ${curCls}${deadCls}${actorCls}" data-k="${c.key}" style="border-left:4px solid ${eleBg}">
-      <div class="cb-char-name">${c.name}</div>
-      <div class="cb-char-hpbar"><i style="width:${hpPct}%;background:${eleBg}"></i></div>
-    </div>`;
+    const shortName = (c.name||'?').trim().charAt(0);
+    return `<div class="cb-char ${curCls}${deadCls}${actorCls}" data-k="${c.key}" data-short="${shortName}" style="border-left:4px solid ${eleBg}"></div>`;
   }).join('');
 
   // === 第一行右：技能组一行（主动→自动→link 混排）===
@@ -1938,9 +1968,13 @@ function updateCombatUI(){
   if(selSlotObj){
     const { c, sk } = skillGroupResolve(selSlotObj);
     if(sk){
+      const desc = sk.desc || '';
+      const lowDesc = desc.toLowerCase();
+      const hasCd = /冷却|cd/i.test(lowDesc);
+      const cdLine = hasCd ? '' : `<div class="cb-detail-cd">冷却：${sk.cd||0} 回合（剩余 ${selSlotObj.cd||0}）</div>`;
       detailHtml = `<div class="cb-detail-head">${c?.name||'?'} · ${sk.name}</div>
-        <div class="cb-detail-desc">${sk.desc||''}</div>
-        <div class="cb-detail-cd">冷却：${sk.cd||0} 回合（剩余 ${selSlotObj.cd||0}）</div>`;
+        <div class="cb-detail-desc">${desc}</div>
+        ${cdLine}`;
     }
   }
 
@@ -1977,15 +2011,33 @@ function updateCombatUI(){
       const n = +tile.dataset.slot;
       const slot = slots.find(x => x.slot===n);
       if(!slot) return;
-      if(cs.selSlot === n){
-        if(cs.actor?.who==='ally' && cs.actor.key===slot.charKey && (slot.cd||0)===0){
-          // 修复 4：手动释放前设置 actor/currentChar 到正确 owner（队友也可主动释放）
-          const ownerKey = slot.charKey;
-          cs.actor = { who:'ally', key: ownerKey };
-          cs.currentChar = ownerKey;
-          castSkill(ownerKey, true, slot);
-          return;
-        }
+      // 规格：手动阶段任何活着的队友都可以释放自己的主动/自动/连携技能
+      const phaseOk = (cs.phase==='playerManual' || cs.phase==='playerManual_lingering');
+      const kind = slot.kind || (skillGroupResolve(slot).sk?.kind);
+      if(cs.selSlot === n && phaseOk && (slot.cd||0)===0 && (kind==='active'||kind==='auto')){
+        const ownerKey = slot.charKey;
+        const ownerEnt = cs.entities[ownerKey];
+        if(!ownerEnt || ownerEnt.dead){ log('该角色已倒下，无法释放技能。'); return; }
+        if(_hasHardCtrl(ownerEnt)){ log('该角色受硬控制，无法释放技能。'); return; }
+        // 队友各自有 1 次技能使用次数（规格：由玩家决定先后顺序）
+        if(cs.playerPhaseCharsUsed[ownerKey]){ log('该角色本回合已使用过技能。'); return; }
+        // 设置 actor + 校准朝向
+        cs.actor = { who:'ally', key: ownerKey };
+        cs.currentChar = ownerKey;
+        _turnOwnerEntityToFirstTarget(slot, ownerKey, cs);
+        // 触发 owner 的行动节点（手动释放时才触发；连携已跳过这里）
+        triggerNode(ownerEnt, cs);
+        castSkill(ownerKey, true, slot);
+        if(!combatState) return;
+        const { sk } = skillGroupResolve(slot);
+        cs.playerPhaseCharsUsed[ownerKey] = true;
+        slot.cd = sk?.cd || 1;
+        ownerEnt.usedSkillThisTurn = true;
+        updateCombatUI(); renderCombatMap(); refreshHUD();
+        if(checkCombatEnd()) return;
+        // 释放后重置残存时间（如果有其他角色还有次数，给玩家继续操作的窗口）
+        _renewLingeringIfNeeded(cs);
+        return;
       }
       cs.selSlot = n;
       updateCombatUI(); renderCombatMap();
@@ -2044,8 +2096,43 @@ function renderCombatMap(){
     }
     cell.dataset.x=x; cell.dataset.y=y;
     cell.addEventListener('click', () => combatCellClick(x,y));
+    cell.addEventListener('mouseenter', () => showTileInfo(x,y));
     grid.appendChild(cell);
   }
+}
+
+/* 战斗地图 hover 显示：地块 + 单位 + 附着元素 + 结界 */
+function showTileInfo(x,y){
+  const cs = combatState; if(!cs) return;
+  const box = qs('#tileInfo'); if(!box) return;
+  const c = G.map.cells[y*G.map.n+x]; if(!c){ box.innerHTML=''; return; }
+  const td = TERRAIN_DEFS[c.terrain] || { zh:c.terrain||'未知' };
+  const lines = [`<div class="ti-title">(${x+1},${y+1}) ${td.zh||c.terrain}</div>`];
+  if(c.element){
+    const e = ELEM[c.element];
+    if(e) lines.push(`<div>元素：<span class="ti-tag" style="color:${e.c}">${e.zh||c.element}</span>${e.desc?' <span style="color:#9aa0ac;font-size:11px">'+e.desc+'</span>':''}</div>`);
+  }
+  // 找此格单位
+  const hereEnemy = cs.enemies.find(en => en.x===x && en.y===y);
+  const herePet   = (cs.pets||[]).find(pt => pt.x===x && pt.y===y);
+  const hereHero  = (cs.hero.x===x && cs.hero.y===y) ? cs.hero : null;
+  if(hereHero){
+    const pct = Math.max(0, cs.hero.hp)/heroineMaxHp()*100;
+    lines.push(`<div>主角：HP ${cs.hero.hp}/${heroineMaxHp()} (${Math.round(pct)}%)</div>`);
+  }
+  if(hereEnemy){
+    const pct2 = Math.max(0, hereEnemy.hp)/(hereEnemy.maxHp||1)*100;
+    lines.push(`<div>敌人：${hereEnemy.name} · HP ${hereEnemy.hp}/${hereEnemy.maxHp} (${Math.round(pct2)}%)</div>`);
+  }
+  if(herePet){
+    const pct3 = Math.max(0, herePet.hp)/(herePet.maxHp||1)*100;
+    lines.push(`<div>友方：草史莱姆 · HP ${herePet.hp}/${herePet.maxHp} (${Math.round(pct3)}%)</div>`);
+  }
+  // 结界 / 境界
+  if(cs.field && cs.field.x===x && cs.field.y===y){
+    lines.push(`<div style="color:#d9b64a">${cs.field.name||'结界'}（剩余 ${cs.field.turns||0} 回合）</div>`);
+  }
+  box.innerHTML = lines.join('');
 }
 
 

@@ -818,62 +818,46 @@ function buildDefaultSkillGroup(team){
   return out;
 }
 
-/* 校验+归一化：kind 分块排序 active→auto→link；上限检查；槽5+禁 active；非法条目丢弃 */
+/* 校验+归一化：kind 分块排序 active→auto→link；上限检查；active 总量 ≤4；非法条目丢弃 */
 function normalizeSkillGroup(group, teamSize){
-  if(!Array.isArray(group)) return [];
   teamSize = teamSize || (G && G.team ? G.team.length : 1);
   const maxSlots = Math.min(10, 4 + teamSize);
-  // 先过滤非法条目 + 查出每个 skill 的 kind
-  const validated = [];
-  const team = (G && G.team) || ['pro'];
-  for(const s of group){
+  // 先过滤非法条目 + 解析 kind（旧格式可能只带 slot/charKey/skillId，没 kind）
+  const cleaned = [];
+  for(const s of (group||[])){
     if(!s || !s.charKey || !s.skillId) continue;
-    if(!team.includes(s.charKey)) continue;
-    const c = getChar(s.charKey);
-    if(!c) continue;
-    const sk = (c.skills||[]).find(x=>x.id===s.skillId);
-    if(!sk) continue;
-    validated.push({ charKey: s.charKey, skillId: s.skillId, kind: sk.kind });
+    const c = getChar(s.charKey); if(!c) continue;
+    const sk = (c.skills||[]).find(x=>x.id===s.skillId); if(!sk) continue;
+    const kind = s.kind || sk.kind || 'auto';
+    cleaned.push({ charKey: s.charKey, skillId: s.skillId, kind });
   }
-  // kind 分块 + 块内按原始 validated 顺序（加入顺序）
-  const active = validated.filter(s => s.kind === 'active');
-  const auto   = validated.filter(s => s.kind === 'auto');
-  const link   = validated.filter(s => s.kind === 'link');
-  const activeSorted = active.sort((a,b) => validated.indexOf(a) - validated.indexOf(b));
-  const autoSorted   = auto.sort((a,b)   => validated.indexOf(a)   - validated.indexOf(b));
-  const linkSorted   = link.sort((a,b)   => validated.indexOf(a)   - validated.indexOf(b));
-  // 组合：active → auto → link
-  let combined = [...activeSorted, ...autoSorted, ...linkSorted];
-  // 去掉 active 在槽 5+ 的
-  combined = combined.filter((s, i) => !(i >= 4 && s.kind === 'active'));
-  // 截断到上限
+  const active = cleaned.filter(s => s.kind === 'active').sort((a,b) => cleaned.indexOf(a)-cleaned.indexOf(b));
+  const auto   = cleaned.filter(s => s.kind === 'auto').sort((a,b)   => cleaned.indexOf(a)-cleaned.indexOf(b));
+  const link   = cleaned.filter(s => s.kind === 'link').sort((a,b)   => cleaned.indexOf(a)-cleaned.indexOf(b));
+  let combined = [...active, ...auto, ...link];
+  // active 总量 ≤ 4
+  if(combined.filter(s=>s.kind==='active').length > 4){
+    combined = combined.filter((s,i) => s.kind!=='active' || combined.slice(0,i).filter(x=>x.kind==='active').length < 4);
+  }
   combined = combined.slice(0, maxSlots);
-  // 空组保底：至少保留 1 个
-  if (combined.length === 0 && validated.length > 0){
-    combined = [validated[0]];
-  }
-  // 补 slot 编号
-  let slot = 1;
-  return combined.map(s => ({ slot: slot++, charKey: s.charKey, skillId: s.skillId }));
+  if(combined.length === 0 && cleaned.length > 0){ combined = [cleaned[0]]; }
+  return combined;
 }
 
 /* 校验函数：返回 true/false，检查 group 是否满足所有约束 */
 function validateSkillGroup(group, teamSize){
   teamSize = teamSize || (G && G.team ? G.team.length : 1);
   const maxSlots = Math.min(10, 4 + teamSize);
-  if (!Array.isArray(group)) return false;
-  if (group.length < 1 || group.length > maxSlots) return false;
+  if(!Array.isArray(group)) return false;
+  if(group.length < 1 || group.length > maxSlots) return false;
+  let activeCount = 0;
   for (let i = 0; i < group.length; i++){
     const s = group[i];
-    if (!s || !s.skillId || !s.charKey) return false;
-    const c = getChar(s.charKey);
-    if (!c) return false;
-    const sk = (c.skills||[]).find(x => x.id === s.skillId);
-    if (!sk) return false;
-    if (sk.kind !== 'active' && sk.kind !== 'auto' && sk.kind !== 'link') return false;
-    // 槽 5+ 不能放 active
-    if (i >= 4 && sk.kind === 'active') return false;
+    if(!s || !s.skillId || !s.charKey || !s.kind) return false;
+    if (s.kind !== 'active' && s.kind !== 'auto' && s.kind !== 'link') return false;
+    if (s.kind === 'active') activeCount++;
   }
+  if(activeCount > 4) return false;   // 只查 active 总量，不查槽位
   return true;
 }
 
