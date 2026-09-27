@@ -491,19 +491,47 @@ function _stopLoop(){ if(_loopId){ clearInterval(_loopId); _loopId=null; } }
 
 /* ────────── § 开始战斗 ────────── */
 function startCombat(cell){
+  // === 从真实 G.map cell 对象反解 x/y（cell 没有 .x/.y，只有 .idx） ===
+  const n = G.map ? G.map.n : 11;
+  const cellIdx = cell?.idx ?? -1;
+  const cx = (cellIdx>=0) ? cellIdx % n : (cell?.x ?? G.px ?? 5);
+  const cy = (cellIdx>=0) ? Math.floor(cellIdx / n) : (cell?.y ?? G.py ?? 5);
+
+  // === 从 cell.content.key 查 ENEMIES 模板（rollCombatEvent 返回 content.key='fireSlime' 等） ===
+  let enemyKey = cell?.content?.key || cell?.key || 'fireSlime';
+  let enemyTpl = (typeof ENEMIES!=='undefined' && ENEMIES[enemyKey]) ? ENEMIES[enemyKey] : null;
+  if(!enemyTpl && typeof window.ENEMIES!=='undefined' && window.ENEMIES[enemyKey]){
+    enemyTpl = window.ENEMIES[enemyKey];
+  }
+  if(!enemyTpl){ enemyTpl = { name:'火史莱姆', atk:15, def:0, maxHp:40, icon:'🔴' }; }
+
+  // 允许 cell.enemies 数组（兼容 event.js enterEventBattle 等直接塞 enemies 数组的调用）
   const enemies = [];
-  if(cell && cell.enemies){
+  if(cell?.enemies && Array.isArray(cell.enemies)){
     cell.enemies.forEach((e,i)=>{
-      const ex = cell.x + (i<3? i-1 : 0);
-      const ey = cell.y - (i<3? 0 : 1);
-      enemies.push(_makeEnemy(e,ex,ey));
+      const ex = cx + (i<3? i-1 : 0);
+      const ey = cy - (i<3? 0 : 1);
+      enemies.push(_makeEnemy(e, ex, ey));
     });
   } else {
-    enemies.push(_makeEnemy({name:'火史莱姆',elem:'fire',atk:15,hp:40}, cell.x, cell.y-1));
+    // 正常情况：rollCombatEvent 给的是单个 enemy key → 生成 1-3 个同类型敌人
+    const isElite = enemyTpl.tier==='elite' || cell?.content?.sub==='boss';
+    const count = isElite ? 1 : (Math.random()<0.4 ? 2 : 1);
+    for(let i=0; i<count; i++){
+      const ex = cx + (i-1);
+      const ey = cy + (i===0? -1 : 0);
+      enemies.push(_makeEnemy(enemyTpl, Math.max(0,ex), Math.max(0,ey)));
+    }
   }
-  const proStart = {x: cell.x, y: Math.min(cell.y+1, 9), facing:'up'};
+
+  const proStart = {x: G.px ?? 5, y: G.py ?? cy+1, facing:'up'};
+  // 保险：player 站格不能跟敌人站同格
+  if(enemies.some(e => e.x===proStart.x && e.y===proStart.y)){
+    proStart.x = Math.max(0, proStart.x-1);
+  }
+
   _cs = {
-    mapW: G.mapW||11, mapH: G.mapH||11,
+    mapW: n, mapH: n,
     round: 1, phase: 'roundStart', phaseCtx:{}, phaseStartAt:0,
     cooldown: {}, entities: {}, enemies: {},
     attach: {}, zones: [],
@@ -548,12 +576,15 @@ function startCombat(cell){
 }
 function _makeEnemy(proto,x,y){
   const key = 'e_' + Math.random().toString(36).slice(2,8);
+  // data.js ENEMIES 模板字段：name/atk/def/maxHp/res/passives/skills
+  const maxHp = proto.maxHp || proto.hp || 30;
+  const elem = proto.element || proto.elem || (proto.skills && proto.skills.length>0 ? proto.skills[0].type : undefined) || 'physical';
   return { key, faction:'enemy', type:'enemy', name:proto.name||'敌人',
     x, y, facing:'down',
-    hp: proto.hp||30, maxHp: proto.hp||30,
+    hp: maxHp, maxHp: maxHp,
     atk: proto.atk||10, def: proto.def||0,
-    elem: proto.elem||'physical', atkRange: proto.atkRange||1,
-    resist: proto.resist||{}, buffs:[], debuffs:[],
+    elem: elem, atkRange: 1,
+    resist: proto.res||proto.resist||{}, buffs:[], debuffs:[],
   };
 }
 

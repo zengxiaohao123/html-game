@@ -955,7 +955,7 @@ function itemLoveLevel(key, it){
 }
 
 
-/* combat.js / explore.js 等跨文件模块都要访问的全局角色数据 —— 显式挂 window */
+/* combat.js / explore.js / map.js 等跨文件模块都要访问的全局数据 —— 显式挂 window */
 window.PROTAGONIST = PROTAGONIST;
 window.ALLIES = ALLIES;
 window.XIAYANG = XIAYANG;
@@ -963,3 +963,7 @@ window.LUYOOUYOU = LUYOOUYOU;
 window.getChar = getChar;
 window.getTeamChars = getTeamChars;
 window.ALLIES_MAP = Object.assign({}, ALLIES);
+window.ENEMIES = ENEMIES;
+window.rollCombatEvent = rollCombatEvent;
+window.markRareConsume = markRareConsume;
+window.markBattleDone = markBattleDone;
