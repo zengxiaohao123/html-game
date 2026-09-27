@@ -187,7 +187,7 @@ function _moveToward(src, dst){
 /* ────────── § 敌方 AI ────────── */
 function _enemyAI(e){
   if(!_cs || e.dead) return;
-  const prot = ent('pro');
+  const prot = _ent('pro');
   if(!prot) return;
   const d = _dist(e, prot);
   // 硬控制 → 跳过（批次 2：硬控制效果贯穿敌方行动阶段本身）
@@ -355,7 +355,7 @@ function _charAllSkills(key){
 function _resolveSkillByChar(key, skill, delayMs){
   setTimeout(()=>{
     if(!_cs || _cs.ended) return;
-    const owner = ent(key);
+    const owner = _ent(key);
     if(!owner || owner.dead) return;
 
     // 索敌：严格按 js/rules.js 真实签名
@@ -506,7 +506,7 @@ function startCombat(cell){
     mapW: G.mapW||11, mapH: G.mapH||11,
     round: 1, phase: 'roundStart', phaseCtx:{}, phaseStartAt:0,
     cooldown: {}, entities: {}, enemies: {},
-    attach: {}, zones: {},
+    attach: {}, zones: [],
     linkWindow: { open:false, startAt:0, remainMs:0, candidateSkills:[] },
     currentChar: 'pro',
     startPos: {x:G.px,y:G.py}, startFacing:G.hero?.facing||'down',
@@ -579,7 +579,7 @@ function tryCastSkill(slot){
 function movePro(dx,dy){
   if(!_cs || _cs.phase!=='playerManual') return;
   if(_cs.linkWindow && _cs.linkWindow.open){ log('连携窗口中，先选连携技能或等待关闭'); return; }
-  const pro = ent('pro'); if(!pro) return;
+  const pro = _ent('pro'); if(!pro) return;
   const nx = pro.x+dx, ny = pro.y+dy;
   if(!_inBounds(nx,ny)) return;
   if(_cellHasEntity(nx,ny)){ log('该格有单位，无法移动'); return; }
@@ -662,13 +662,13 @@ function _endCombat(outcome){
     log(`胜利！获得金币 ×${coin}`);
   } else if(outcome==='defeat'){
     log('战斗失败……');
-    if(G.hero && G.hero.hp!==undefined) G.hero.hp = Math.max(1, (ent('pro')?.hp||G.hero.hp));
+    if(G.hero && G.hero.hp!==undefined) G.hero.hp = Math.max(1, (_ent('pro')?.hp||G.hero.hp));
   } else if(outcome==='flee'){
     log('成功逃离战斗。');
   }
   G.px = _cs.startPos.x; G.py = _cs.startPos.y;
   G.hero.facing = _cs.startFacing;
-  const pro = ent('pro');
+  const pro = _ent('pro');
   if(pro) G.hero.hp = pro.hp;
   _cs = null; _sync();
   switchMode('explore');
@@ -770,7 +770,7 @@ function updateCombatUI(){
   const row1Attrs = document.getElementById('row1Attrs');
   if(row1Chars){
     row1Chars.innerHTML = '';
-    const chars = [{key:'pro',name:'主角'}].concat((G.team||[]).map(c=>({key:c.key,name:c.name})));
+    const chars = [{key:'pro',name:'主角'}].concat((G.team||[]).map(k => { const c=getChar(k); return {key:k, name:c?.name||k}; }));
     chars.forEach(c => {
       const tile = document.createElement('div');
       tile.className = 'charTile faction-ally';
@@ -784,7 +784,7 @@ function updateCombatUI(){
   if(row1Attrs){
     row1Attrs.innerHTML = '';
     const cur = _cs.currentChar;
-    const entCur = ent(cur);
+    const entCur = _ent(cur);
     // 主角完整属性 / 队友只显示攻+爆（规格硬约束）
     const showAttrs = [];
     if(cur==='pro'){
@@ -811,7 +811,7 @@ function updateCombatUI(){
   const groupEl = document.getElementById('skillGroup');
   if(groupEl){
     groupEl.innerHTML = '';
-    const charAll = [{key:'pro',name:'主角'}].concat((G.team||[]).map(c=>({key:c.key,name:c.name,team:c})));
+    const charAll = [{key:'pro',name:'主角'}].concat((G.team||[]).map(k => { const c=getChar(k); return {key:k, name:c?.name||k, team:c}; }));
     const allSkills = [];
     charAll.forEach(c => {
       _charSkills(c.key).forEach(s => allSkills.push({ key:c.key, name:c.name, skill:s }));
@@ -880,7 +880,7 @@ function updateCombatUI(){
   const talents = document.getElementById('talentTags');
   if(chips){
     chips.innerHTML = '';
-    const entCur = ent(_cs.currentChar);
+    const entCur = _ent(_cs.currentChar);
     const buffs = entCur?.buffs||[];
     const debuffs = entCur?.debuffs||[];
     if(buffs.length===0 && debuffs.length===0){
