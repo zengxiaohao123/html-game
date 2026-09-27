@@ -866,7 +866,8 @@ window.SKILL_ICON_MAP = {
   'commune':     {file:'magic.svg',       label:'灵'},
   'chaos':       {file:'star.svg',        label:'乱'},
   'absorb':      {file:'sparkle.svg',     label:'汲'},
-  'shift':       {file:'spark.svg',       label:'移'},
+  'shift':       {file:'wind.svg',         label:'移'},
+  'linkShift':   {file:'wind.svg',         label:'移'},
   // 夏阳 xiayang
   'inspire':     {file:'heart.svg',       label:'鼓舞'},
   'quench':      {file:'fire.svg',        label:'淬'},

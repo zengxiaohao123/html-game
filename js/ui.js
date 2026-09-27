@@ -859,9 +859,6 @@ function closeModal(){
 function onModalX(){ if(swapOpen){ applySwap(); } closeModal(); }
 function modalBack(){ if(modalStack.length){ const p=modalStack.pop(); qs('#modalOverlay').classList.remove('show'); openModal(p.title,p.html,p.size); return true; } closeModal(); return false; }
 
-function openCharacters(){ renderCharacters(); }
-
-
 let charPageKey='pro'; let charPageTab='skills';
 function openCharacters(){ renderCharacters(); }
 function renderCharacters(){
@@ -989,6 +986,25 @@ window.sgSetCharElem = function(charKey, skillId, elem){
   renderCharacters();
 };
 
+function charBondTab(key,c){
+  c=c||getChar(key);
+  if(key==='pro') return '<p>主角没有羁绊等级。</p>';
+  const bt=(BOND_TEXT[key])||{};
+  let rows='';
+  for(let lv=0; lv<=10; lv++){
+    const note=bt[lv]||'';
+    const cur=getBond(key).level===lv? '（当前）':'';
+    rows+=`<div class="bondrow ${getBond(key).level===lv?'cur':''}"><span class="bondlv">羁绊 ${lv} 级${cur}</span><span class="bondnote">${note}</span></div>`;
+  }
+  return `<div class="bondrows">${rows}</div><p style="margin-top:10px;font-size:13px;color:#9aa0ac">基础效果：羁绊每升 1 级，攻击力 +10；标注有等级的技能的等级对应提升。好感度每累计 10 点提升 1 级，羁绊等级只升不降。当前好感度 <b class="lvlup">${getBond(key).affinity}</b>（上限 999，下限 -999）。</p>`;
+}
+
+function charStoryTab(key,c){
+  c=c||getChar(key);
+  if(key==='pro') return '<p>属于你的故事，才刚刚开始……</p>';
+  return `<p>关于 <b>${c.name}</b> 的故事，正在撰写中，敬请期待。</p>`;
+}
+
 /* ---- 多队列编队系统 ---- */
 function ensureFormations(){
   if(!G.formations || G.formations.length<4){
@@ -1059,58 +1075,63 @@ function activateFormation(i){
 
 function renderFormation(){
   ensureFormations();
+  const ELEM_BG = { fire:'#e74c3c', water:'#4a9bff', grass:'#5fd96b', thunder:'#c05bff', ice:'#4fd8d8', wind:'#78c7f2', rock:'#b09a73' };
   const rows = G.formations.map((f,i)=>{
     const isActive = (G.activeFormation===i);
-    // 角色 tile（3 格）
-    const tileHTML = [];
+    // ---- 角色格（3 个正方形 tile）----
+    const charsHTML = [];
+    const slotLabels = ['主','2','3'];
+    const allCharKeys = ['pro', ...Object.keys(ALLIES)];
     for(let s=0;s<3;s++){
       const k = f.team[s];
-      let cls = 'fchar-slot';
-      let inner = '';
       if(k){
         const c = getChar(k);
-        const eleZh = k==='pro' ? '无' : (c.element?ELEM[c.element].zh:'');
-        const eleCls = (k==='pro' || !c.element) ? '' : (ELEM[c.element]?.c || '');
-        inner = `<div class="fchar-icon ${eleCls}" style="background:${c.color||'#444'}"></div>
-                 <div class="fchar-name">${c.name}</div>
-                 <div class="fchar-ele">${eleZh}</div>`;
+        const eleKey = c?.element;
+        const bg = c?.color || (eleKey && ELEM_BG[eleKey]) || '#555';
+        const label = k==='pro' ? '主' : (c?.name ? c.name[0] : '?');
+        const posInAll = allCharKeys.indexOf(k);
+        charsHTML.push(`<div class="fm-char-tile ${isActive?'active':''}" style="background:${bg}" data-i="${s}" data-k="${k}" onclick="openTeamEditor(${i})">
+          <span class="fm-char-init">${label}</span>
+        </div>`);
       } else {
-        inner = `<div class="fchar-empty">空位</div>`;
+        charsHTML.push(`<div class="fm-char-tile fm-empty" data-i="${s}" onclick="openTeamEditor(${i})">
+          <span class="fm-empty-hint">+</span>
+        </div>`);
       }
-      tileHTML.push(`<div class="${cls}">${inner}</div>`);
     }
-    // 技能组预览（自动/主动/连携 分块）
+    // ---- 技能组预览（auto/active/link 三小行，每行正方形小 tile）----
     const sg = f.skillGroup || [];
     const kindsOrder = ['auto','active','link'];
     const kindLabels = {auto:'自动', active:'主动', link:'连携'};
-    let sgPreview = '';
+    let skillGroupHTML = '';
     for(const kd of kindsOrder){
       const chunks = sg.filter(s=>{
         const c = getChar(s.charKey); const sk = (c?.skills||[]).find(x=>x.id===s.skillId);
         return sk && sk.kind===kd;
       });
-      if(!chunks.length) continue;
+      if(!chunks.length){
+        skillGroupHTML += `<div class="fm-sg-row sg-${kd}"><span class="fm-sg-kind-label">${kindLabels[kd]}</span><div class="fm-sg-tiles"><span class="fm-sg-empty">—</span></div></div>`;
+        continue;
+      }
       const tls = chunks.map(s=>{
         const c=getChar(s.charKey); const sk=(c?.skills||[]).find(x=>x.id===s.skillId);
-        return `<span class="sg-mini" title="${c?.name} · ${sk?.name||''}">${sk?sk.name.replace(/^(自动|主动|连携)·/,''):s.skillId}</span>`;
+        const icon = getSkillIcon(s.skillId);
+        const label = icon?.label || (sk?.name||'?').replace(/^(自动|主动|连携)·/,'');
+        return `<span class="fm-sg-tile sg-tile sg-${kd}" title="${c?.name} · ${sk?.name||''}"><span>${label}</span></span>`;
       }).join('');
-      sgPreview += `<div class="sg-mini-row"><span class="sg-mini-kind sg-kind-${kd}">${kindLabels[kd]}</span>${tls}</div>`;
+      skillGroupHTML += `<div class="fm-sg-row sg-${kd}"><span class="fm-sg-kind-label">${kindLabels[kd]}</span><div class="fm-sg-tiles">${tls}</div></div>`;
     }
-    if(!sgPreview) sgPreview = '<div class="nohint">（未编入技能组）</div>';
 
-    // 每队一行 HTML
-    return `<div class="formation-row ${isActive?'on':''}">
-      <div class="formation-row-head">
-        <b>队列 ${i+1}</b>${isActive?' <span class="factive-tag">● 启用中</span>':''}
-      </div>
-      <div class="formation-row-body">
-        <div class="formation-chars">${tileHTML.join('')}</div>
-        <div class="formation-sg">${sgPreview}</div>
-        <div class="formation-btns">
-          <button class="mbtn small" onclick="openTeamEditor(${i})">快捷编队</button>
-          <button class="mbtn small" onclick="openSkillGroupEditor(${i})">编辑技能组</button>
-          <button class="mbtn small primary" onclick="activateFormation(${i})">启用队列</button>
-        </div>
+    // ---- 每队一行 HTML ----
+    const activeTag = isActive ? `<span style="color:#d9b64a;font-size:11px;font-weight:700;margin-left:4px">● 启用中</span>` : '';
+    return `<div class="fm-row ${isActive?'fm-row-on':''}">
+      <div class="fm-row-head"><b>队列 ${i+1}</b>${activeTag}</div>
+      <div class="fm-chars">${charsHTML.join('')}</div>
+      <div class="fm-skill-group">${skillGroupHTML}</div>
+      <div class="fm-actions">
+        <button onclick="openTeamEditor(${i})">快捷编队</button>
+        <button onclick="openSkillGroupEditor(${i})">编辑技能组</button>
+        <button class="fm-activate" onclick="activateFormation(${i})">启用</button>
       </div>
     </div>`;
   }).join('');
@@ -1219,16 +1240,19 @@ function sgEditorHTML(qIdx){
       const cdTxt = sk.cd ? `冷却 ${sk.cd} 回合` : '';
       const elemTxt = sk.type ? `${ELEM_ZH[sk.type]||sk.type}属性` : '';
       const triggerTxt = sk.trigger ? `触发：${sk.trigger}` : '';
+      const targetTxt = sk.target ? `目标：${sk.target}` : '';
       detailHTML = `
         <div class="sg-detail-name">${sk.name}</div>
         <div class="sg-detail-kind" style="background:${kCss.bg};color:${kCss.bgBorder}">${kindZh} · ${c?.name||''}</div>
         <div class="sg-detail-desc">${terms(sk.desc||'')}</div>
         <div class="sg-detail-meta">
           ${elemTxt?`<div>${elemTxt}</div>`:''}
+          ${targetTxt?`<div>${targetTxt}</div>`:''}
           ${multTxt?`<div>${multTxt}</div>`:''}
           ${cdTxt?`<div>${cdTxt}</div>`:''}
           ${triggerTxt?`<div>${triggerTxt}</div>`:''}
           ${sk.formula?`<div>公式：${sk.formula}</div>`:''}
+          <div style="color:#666;font-size:10px">id: ${sk.id}</div>
         </div>`;
     } else detailHTML = '<div class="nohint">技能不存在。</div>';
   } else {
@@ -1331,11 +1355,21 @@ window.sgPickClick = function(charKey, skillId){
   _renderSG();
 };
 
-/* 点击已装备 tile：卸下 */
+/* 点击已装备 tile：
+   - 若当前未选中该 tile → 设为选中（右上显示该技能详细描述）
+   - 若已选中（再次点击）→ 卸下
+   这样既实现"点任何 tile 都显示 desc"，又保留"点 tile 卸下"的快捷操作 */
 window.sgGroupClick = function(charKey, skillId){
   const E = sgEditorCache; if(!E) return;
-  E.group = E.group.filter(s => !(s.charKey===charKey && s.skillId===skillId));
-  if(sgEditorSel && sgEditorSel.charKey===charKey && sgEditorSel.skillId===skillId) sgEditorSel = null;
+  const isSel = sgEditorSel && sgEditorSel.charKey===charKey && sgEditorSel.skillId===skillId;
+  if(isSel){
+    // 已选中 → 卸下
+    E.group = E.group.filter(s => !(s.charKey===charKey && s.skillId===skillId));
+    sgEditorSel = null;
+  } else {
+    // 未选中 → 选中（显示右上详细描述）
+    sgEditorSel = { charKey, skillId };
+  }
   _renderSG();
 };
 
