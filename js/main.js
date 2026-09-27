@@ -133,7 +133,7 @@ function handleKeys(ev){
     const cs=combatState;
     if(k==='q'){ if(cs.ally[cs.currentChar] && cs.ally[cs.currentChar].selSkill==='flee'){ tryFlee(); } else { castSkill(cs.currentChar, true); } }
     else if(k==='w'){ combatMove(0,-1); } else if(k==='s'){ combatMove(0,1); } else if(k==='a'){ combatMove(-1,0); } else if(k==='d'){ combatMove(1,0); }
-    else if(ev.key==='1'||ev.key==='2'||ev.key==='3'||ev.key==='4'){ const cur=getChar(cs.currentChar); const skills=cur.skills.filter(s=>cur.selectedSkillIds.includes(s.id)); const idx=+ev.key-1; if(idx<skills.length) selectSkill(cs.currentChar, skills[idx].id); else if(idx===skills.length) selectSkill(cs.currentChar, 'flee'); }
+    else if(ev.key==='1'||ev.key==='2'||ev.key==='3'||ev.key==='4'){ const cur=getChar(cs.currentChar); let skills; if(cur.selectedSkillIds && cur.selectedSkillIds.length>0){ skills=cur.skills.filter(s=>cur.selectedSkillIds.includes(s.id)); } else { skills=cur.skills.filter(s=>s.kind==='active'); } const idx=+ev.key-1; if(idx<skills.length) selectSkill(cs.currentChar, skills[idx].id); else if(idx===skills.length) selectSkill(cs.currentChar, 'flee'); }
     else if(ev.key==='f1'||ev.key==='f2'||ev.key==='f3'){ const chars=getTeamChars(); const idx=+ev.key.slice(1)-1; if(chars[idx]){ cs.currentChar=chars[idx].key; updateCombatUI(); renderCombatMap(); } }
     return;
   }

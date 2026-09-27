@@ -10,6 +10,62 @@
    ============================================================ */
 "use strict";
 
+/* ============================================================
+   跨文件共享工具函数（由 main.js / event.js / explore.js / ui.js 调用）
+   这些在旧 combat.js.bak 里也存在，我完全重写 combat.js 时丢失了。
+   为避免散落到多个文件，集中放在这里（IIFE 外，裸全局）。
+   天赋系统已删除，这些函数现在做简化兜底：
+   - heroDisplayMaxHp → 主角 base.maxHp + 永久物品/队友加成
+   - entryLevel → 现在只有羁绊影响（简化返回 G.bonds[key].level || 1）
+   - vTier / tierValue → 旧天赋 scal 数值计算
+   ============================================================ */
+function vTier(passive, field, lv){
+  if(!passive || !passive.scal) return 0;
+  const f = passive.scal[field]; if(!f) return 0;
+  const base = f.base || 0;
+  const grow = f.grow || 0;
+  const n = lv || 1;
+  const val = base + grow*(n-1);
+  return Math.round(f.pct ? val : val);
+}
+function tierValue(p, lv, field){ return vTier(p, field, lv); }
+function entryLevel(charKey, passive){
+  if(!window.G || !G.bonds) return 1;
+  const bond = G.bonds[charKey];
+  return bond ? bond.level : 1;
+}
+function heroDisplayMaxHp(){
+  if(!window.G) return 100;
+  let m = G.hero?.maxHp ?? 100;
+  const pro = getChar('pro');
+  if(pro?.passives) for(const p of pro.passives){
+    if(p.id === 'cooking') m += 100;  // 陆悠悠：烹饪天赋
+  }
+  // 永久物品加成（简化）
+  if(G.inventory){
+    const inv = G.inventory;
+    const bonus = (inv.heart || 0) * 20;
+    m += bonus;
+  }
+  return Math.max(m, 100);
+}
+function heroDodgeRate(){
+  if(!G || !G.team || !G.team.includes('luyouyou')) return 0;
+  const fl = getChar('luyouyou')?.passives?.find(p=>p.id==='dance');
+  return fl ? vTier(fl, 'dodge', entryLevel('luyouyou', fl)) : 0;
+}
+function totalHeroDefense(){
+  return G?.hero?.def ?? 0;
+}
+function heroDisplayAtk(){ return charAtk('pro'); }
+function heroDisplayDef(){ return totalHeroDefense(); }
+function baseCritRate(k){ return 0.05 * 100; }
+function charBaseAtk(k){
+  if(k==='pro') return G.hero?.atk ?? 10;
+  return getChar(k)?.base?.atk ?? 35;
+}
+
+/* IIFE 战斗核心开始 */
 (function(){
 let _cs = null;
 function _sync(){ combatState = _cs; }  // 同步给 main.js / explore.js 的裸全局

@@ -4,9 +4,6 @@
    ============================================================ */
 "use strict";
 
-/** 元素顺序（用于反应表查找） */
-const ELEM = { fire:'fire', water:'water', grass:'grass', thunder:'thunder', ice:'ice', wind:'wind', rock:'rock' };
-
 /**
  * 反应表：key = 'elem1:elem2'（elem1 是地块原附着，elem2 是新附着）
  * 顺序敏感的会写两个 key（如 fire:water 和 water:fire）
@@ -79,4 +76,4 @@ function willReact(elem1, elem2){ return !!REACTION_TABLE[elem1+':'+elem2]; }
 /** 取得反应描述（如果有反应）；否则返回 null 表示取代 */
 function lookupReaction(elem1, elem2){ return REACTION_TABLE[elem1+':'+elem2] || null; }
 
-window.reactions = { ELEM, ELEMENTS, REACTION_TABLE, sameElement, willReact, lookupReaction };
+window.reactions = { ELEMENTS, REACTION_TABLE, sameElement, willReact, lookupReaction };
