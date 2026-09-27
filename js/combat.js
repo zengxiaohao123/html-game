@@ -33,13 +33,9 @@ let _cs = null;
 function _sync(){ window.combatState = _cs; }
 
 /* ────────── § 工具 ────────── */
-function getChar(k){ return (G.team||[]).find(c => c.key===k); }
-function isAllyKey(k){ return k==='pro' || (G.team||[]).some(c=>c.key===k); }
-function isEnemyKey(k){
-  if(!_cs) return false;
-  return !!(_cs.enemies && _cs.enemies[k]);
-}
-function ent(k){ return _cs?.entities?.[k]; }
+// getChar 函数已由 data.js 以全局 function 暴露，返回 PROTAGONIST/ALLIES 里的对象（带 skills[], base{} 等完整字段）
+// 这里禁止同名遮蔽！
+function _ent(k){ return _cs?.entities?.[k]; }
 function _dist(a,b){ return Math.max(Math.abs(a.x-b.x), Math.abs(a.y-b.y)); }
 function _inBounds(x,y){
   return _cs && x>=0 && y>=0 && x<_cs.mapW && y<_cs.mapH;
@@ -94,28 +90,20 @@ function _phaseRoundStart(){
 
 function _phaseAutoSkills(){
   // 批次 2 核心：遍历我方所有角色，执行 kind='auto' 的技能一次
+  // 适配 data.js：getChar(key).skills[] 统一池子（_ensureCharDefaults 后返回的对象带全部 skills）
   if(!_cs.autoProcessed){ _cs.autoProcessed = {}; }
   let did = false;
-  (G.team||[]).forEach(c=>{
-    const k = c.key;
+  const team = (G.team||['pro']).slice();
+  team.forEach(k => {
     if(_cs.autoProcessed[k]) return;
-    const mySkills = (c.activeSkills||[]).concat(c.autoSkills||[]);
-    const autoOne = mySkills.find(s => s.kind==='auto' && _cooldownLeft(k,s.id)===0);
+    const allSkills = _charAllSkills(k);  // 不过滤编入，自动技能全池扫
+    const autoOne = allSkills.find(s => s.kind==='auto' && _cooldownLeft(k,s.id)===0);
     if(autoOne){
       _cs.autoProcessed[k] = true;
       did = true;
-      _resolveSkillByChar(k, autoOne, 250);  // 自动技能延迟 250ms 让玩家看到
+      _resolveSkillByChar(k, autoOne, 250);
     }
   });
-  // 主角也算
-  if(!_cs.autoProcessed['pro']){
-    const proSkills = _charSkills('pro');
-    const proAuto = proSkills.find(s => s.kind==='auto' && _cooldownLeft('pro',s.id)===0);
-    if(proAuto){
-      _cs.autoProcessed['pro'] = true; did = true;
-      _resolveSkillByChar('pro', proAuto, 250);
-    }
-  }
   if(did){
     setTimeout(()=>{ if(_cs && _cs.phase==='autoSkills') _setPhase('summons'); }, 900);
   } else {
@@ -316,15 +304,52 @@ function _startCooldown(key, skill){
   if(!_cs.cooldown[key]) _cs.cooldown[key] = {};
   _cs.cooldown[key][skill.id] = skill.cd;
 }
+/* ── 字段适配层：data.js skills[] + defaultSkillIds/selectedSkillIds + skill.type/target/mult/cd → combat.js 统一结构 ── */
+function _skillElemType(s){
+  // data.js skill.type: 'physical' | 'fire' | 'water' | ...
+  const t = (s && s.type) || 'physical';
+  return t;  // physical 也是合法"元素"（渲染用 'physical' 显示无色）
+}
+function _skillRangeType(s){
+  // data.js skill.target: 'front2' | 'adj9' | 'dist3' ...
+  return (s && s.target) || 'self';
+}
+function _skillMultiplier(s){
+  // data.js skill.mult（我之前写 skill.multiplier 错了）
+  return (s && typeof s.mult==='number') ? s.mult : 1;
+}
+function _skillCooldown(s){
+  return (s && typeof s.cd==='number') ? s.cd : 0;
+}
 function _charSkills(key){
+  // 统一适配 data.js：所有技能都在 char.skills[] 一个数组里
+  // defaultSkillIds / selectedSkillIds 决定"编入技能组"哪些展示
+  let c;
   if(key==='pro'){
-    const heroSkills = (G.hero?.skills||[]).slice();
-    const defaultIds = G.hero?.selectedSkillIds || G.hero?.defaultSkillIds || heroSkills.map(s=>s.id);
-    return heroSkills.filter(s => defaultIds.includes(s.id));
+    c = getChar('pro') || PROTAGONIST;
+  } else {
+    c = getChar(key);  // getChar 会走 PROTAGONIST/ALLIES，返回 _ensureCharDefaults 后的对象
   }
-  const c = getChar(key);
   if(!c) return [];
-  return ((c.activeSkills||[]).concat(c.autoSkills||[])).concat(c.linkSkills||[]);
+  const pool = c.skills || [];
+  // 选中优先顺序：selectedSkillIds（战前玩家自己编过）> defaultSkillIds（系统默认）> 全部
+  const ids = c.selectedSkillIds || c.defaultSkillIds || pool.map(s=>s.id);
+  if(ids && ids.length>0){
+    // 严格按 ids 排序，按 skill.kind 分组（主→自→连）
+    const filtered = pool.filter(s => ids.includes(s.id));
+    filtered.sort((a,b) => (
+      ({active:0, auto:1, link:2}[a.kind]||9) - ({active:0, auto:1, link:2}[b.kind]||9)
+    ));
+    return filtered;
+  }
+  return pool.slice();
+}
+function _charAllSkills(key){
+  // 全部技能（不按编入筛选），给自动技能遍历用
+  let c;
+  if(key==='pro') c = PROTAGONIST;
+  else c = ALLIES[key];
+  return (c && c.skills) || [];
 }
 
 function _resolveSkillByChar(key, skill, delayMs){
@@ -332,58 +357,115 @@ function _resolveSkillByChar(key, skill, delayMs){
     if(!_cs || _cs.ended) return;
     const owner = ent(key);
     if(!owner || owner.dead) return;
-    const rangeFn = window.rules && window.rules.resolveTargeting
-      ? window.rules.resolveTargeting : _defaultRange;
-    const targets = rangeFn(skill.range, {x:owner.x,y:owner.y,facing:owner.facing}, _cs.mapW, _cs.mapH, _cs.entities, skill.rule||'all', skill.faction||'enemy');
+
+    // 索敌：严格按 js/rules.js 真实签名
+    // resolveTargeting(rangeType, ownerPos, ownerFacing, map, entities, ruleTag, targetFaction)
+    // 返回 { attachCells: [[x,y], ...], damageEntities: [entity, ...] }
+    const rangeType = _skillRangeType(skill);  // 真实字段 skill.target
+    const ownerPos = [owner.x, owner.y];
+    const ownerFacing = owner.facing;
+    const map = G.map;  // rules.js 用 G.map 做 filterNonVoid（检查 terrain !== 'void'）
+    const entities = _cs.entities;
+    const ruleTag = skill.ruleTag || 'default';  // default=范围所有地块+所有可攻击敌对实体
+    const targetFaction = skill.target === 'enemy' ? 'enemy'
+                         : skill.target === 'ally' ? 'ally'
+                         : skill.target === 'self' ? 'self' : 'all';
+
+    let result;
+    try {
+      if(window.rules && window.rules.resolveTargeting){
+        result = window.rules.resolveTargeting(rangeType, ownerPos, ownerFacing, map, entities, ruleTag, targetFaction);
+      } else {
+        result = _defaultRange(rangeType, ownerPos, ownerFacing, _cs.mapW, _cs.mapH, entities);
+      }
+    } catch(e){
+      // 兜底：别因为 rules.js 出错就整个战斗崩
+      log(`⚠ 索敌异常：${e.message}`);
+      result = { damageEntities:[], attachCells:[] };
+    }
+
     window._lastSkillAtk = owner.atk;
-    log(`★ ${owner.name||key} 释放【${skill.name}】(${skill.elem||'physical'})`);
-    targets.forEach(t => {
-      if(t && t.dead) return;
-      let dmg = Math.round(owner.atk * (skill.multiplier||1));
-      let elem = skill.elem || 'physical';
-      _applyDamage(owner, t, dmg, elem);
+    const elem = _skillElemType(skill);  // data.js 里叫 skill.type
+    log(`★ ${owner.name||key} 释放【${skill.name}】(范围 ${rangeType})`);
+
+    const dmgEntities = result && result.damageEntities ? result.damageEntities : [];
+    const multiplier = _skillMultiplier(skill);  // data.js 里叫 skill.mult
+    dmgEntities.forEach(t => {
+      if(!t || t.dead) return;
+      if(elem !== 'physical'){
+        _applyDamage(owner, t, Math.round(owner.atk * multiplier), elem);
+      } else {
+        _applyDamage(owner, t, Math.round(owner.atk * multiplier), 'physical');
+      }
     });
-    // 对地块附着
-    if(skill.elem){
-      (skill.applyAttach||[]).forEach(rule => {
-        const attachTiles = rangeFn(rule.range, {x:owner.x,y:owner.y,facing:owner.facing}, _cs.mapW, _cs.mapH, _cs.entities, rule.rule||'all', 'tile');
-        attachTiles.forEach(t => _attachElem(t.x,t.y,rule.elem||skill.elem,key));
+
+    // 元素附着地块（skill.applyElemDur 等 data.js 字段，简化处理）
+    const attachCells = result && result.attachCells ? result.attachCells : [];
+    if(elem !== 'physical' && attachCells.length>0){
+      attachCells.forEach(([x,y]) => {
+        _attachElem(x, y, elem, key);
+      });
+      // 触发反应（地块附着 vs 本次技能元素）
+      attachCells.forEach(([x,y]) => {
+        // 简化：对该位置上实体尝试反应
+        const e = _allEntities().find(ent => ent.x===x && ent.y===y);
+        if(e) _tryReaction(elem, e);
       });
     }
-    // 结界创建
+
+    // 结界（目前 data.js 没 skill.zone 字段，保留逻辑等后续扩展）
     if(skill.zone){
       _createZone(owner.x, owner.y, skill.zone.elem, skill.zone.duration||3, 'skill');
     }
-    _startCooldown(key, skill);
-    _syncCooldowns();
+
+    // 冷却（data.js 里叫 cd）
+    const cd = _skillCooldown(skill);
+    if(cd>0){
+      if(!_cs.cooldown[key]) _cs.cooldown[key] = {};
+      _cs.cooldown[key][skill.id] = cd;
+    }
   }, delayMs||0);
 }
 
-function _defaultRange(rangeType, pos, mapW, mapH, entities, ruleTag, faction){
-  // 简化兜底索敌：对所有阵营范围内
-  const results = [];
-  Object.values(entities||{}).forEach(e => {
-    if(!e || e.dead) return;
-    if(faction==='enemy' && e.faction!=='enemy') return;
-    if(faction==='ally' && e.faction!=='ally') return;
-    if(faction==='tile'){ results.push({x:e.x,y:e.y}); return; }
-    let hit = false;
-    if(rangeType==='front1'){
-      hit = _inFront(pos, e, 1);
-    } else if(rangeType==='front2'){
-      hit = _inFront(pos, e, 2);
-    } else if(rangeType==='self'){
-      hit = (e.x===pos.x && e.y===pos.y);
-    } else if(rangeType==='anyAdjacent'){
-      hit = _dist(pos,e)<=1;
-    } else if(rangeType==='anywhere'){
-      hit = true;
-    } else {
-      hit = _dist(pos,e)<=2;
+function _defaultRange(rangeType, ownerPos, ownerFacing, mapW, mapH, entities){
+  // 简化兜底：按 rangeType 生成地块 → 筛实体（返回 {damageEntities, attachCells} 对齐 rules.js）
+  const [ox, oy] = Array.isArray(ownerPos) ? ownerPos : [ownerPos?.x ?? 0, ownerPos?.y ?? 0];
+  const cells = [];
+  const dir = ownerFacing || 'down';
+  const [dx, dy] = {up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]}[dir] || [0,1];
+
+  const addCell = (x,y) => {
+    if(x<0||y<0||x>=mapW||y>=mapH) return;
+    cells.push([x,y]);
+  };
+
+  if(rangeType.startsWith('front')){
+    const n = parseInt(rangeType.replace('front',''),10) || 1;
+    for(let i=1;i<=n;i++) addCell(ox+dx*i, oy+dy*i);
+  } else if(rangeType==='self'){
+    addCell(ox, oy);
+  } else if(rangeType==='adj9'){
+    for(let rx=-1;rx<=1;rx++) for(let ry=-1;ry<=1;ry++) addCell(ox+rx, oy+ry);
+  } else if(rangeType==='adj5'){
+    for(let rx=-1;rx<=1;rx++) for(let ry=-1;ry<=1;ry++) if(Math.abs(rx)+Math.abs(ry)<=1) addCell(ox+rx, oy+ry);
+  } else if(rangeType.startsWith('dist')){
+    const n = parseInt(rangeType.replace('dist',''),10) || 1;
+    for(let rx=-n;rx<=n;rx++) for(let ry=-n;ry<=n;ry++) if(Math.abs(rx)+Math.abs(ry)<=n && !(rx===0&&ry===0)) addCell(ox+rx, oy+ry);
+  } else {
+    // 兜底：adj9
+    for(let rx=-1;rx<=1;rx++) for(let ry=-1;ry<=1;ry++) addCell(ox+rx, oy+ry);
+  }
+
+  const damageEntities = [];
+  const attachCells = cells;
+  for(const [cx,cy] of cells){
+    for(const e of Object.values(entities||{})){
+      if(e && !e.dead && e.x===cx && e.y===cy && e.faction==='enemy'){
+        if(!damageEntities.includes(e)) damageEntities.push(e);
+      }
     }
-    if(hit) results.push(e);
-  });
-  return results;
+  }
+  return { damageEntities, attachCells };
 }
 function _inFront(pos, target, depth){
   const dx = target.x-pos.x, dy = target.y-pos.y;
@@ -430,19 +512,26 @@ function startCombat(cell){
     startPos: {x:G.px,y:G.py}, startFacing:G.hero?.facing||'down',
     selectedSkillId: null,
   };
-  // 主角
+  // 主角（PROTAGONIST 是 data.js script tag 层的全局 const，IIFE 闭包可直接访问）
+  const proData = PROTAGONIST;
   _cs.entities.pro = { key:'pro', faction:'ally', type:'hero', name:'主角',
     x:proStart.x, y:proStart.y, facing:proStart.facing,
-    hp: G.hero?.hp ?? 80, maxHp: G.hero?.maxHp ?? 100,
+    hp: G.hero?.hp ?? proData?.base?.hp ?? 80,
+    maxHp: G.hero?.maxHp ?? proData?.base?.maxHp ?? 100,
     atk: charAtk('pro'), def: totalHeroDefense(), elem:'physical',
   };
-  // 队友
-  (G.team||[]).forEach(c=>{
-    _cs.entities[c.key] = {
-      key:c.key, faction:'ally', type:'ally', name:c.name||c.key,
+  // 队友（data.js 里队友对象在 ALLIES / PROTAGONIST 里，字段是 base: {atk, maxHp, def, hp}）
+  (G.team||['pro']).forEach(k => {
+    if(k==='pro') return;  // pro 单独建
+    const c = getChar(k);
+    if(!c) return;
+    const baseHp = c.base?.hp ?? c.base?.maxHp ?? 100;
+    const maxHp = c.base?.maxHp ?? c.base?.hp ?? 100;
+    _cs.entities[k] = {
+      key:k, faction:'ally', type:'ally', name:c.name||k,
       x:proStart.x-1, y:proStart.y, facing:'up',
-      hp: c.base?.hp??80, maxHp:c.base?.hp??80,
-      atk: charAtk(c.key), def: (c.base?.def??0), elem: (c.elem||'physical'),
+      hp: baseHp, maxHp: maxHp,
+      atk: charAtk(k), def: (c.base?.def??0), elem: (c.element || c.elem || 'physical'),
     };
   });
   // 敌人
@@ -471,14 +560,19 @@ function _makeEnemy(proto,x,y){
 /* ────────── § 主操作（玩家按钮/键盘调用） ────────── */
 function tryCastSkill(slot){
   if(!_cs) return;
-  if(_cs.phase!=='playerManual') return;
-  const key = _cs.currentChar||'pro';
+  if(_cs.phase!=='playerManual'){
+    log('当前不是手动行动阶段');
+    return;
+  }
+  const key = _cs.currentChar || 'pro';
   const skills = _charSkills(key);
   const s = skills[slot];
-  if(!s){ log('❌ 槽位空'); return; }
+  if(!s){ log(`❌ 槽位 ${slot} 空（当前角色编入了 ${skills.length} 个技能）`); return; }
   if(s.kind==='auto'){ log('自动技能不可手动释放'); return; }
-  if(s.kind==='link'){ log('连携技能请等待连携窗口'); return; }
-  if(_cooldownLeft(key, s.id)>0){ log(`冷却中 (${_cooldownLeft(key,s.id)} 回合)`); return; }
+  if(s.kind==='link'){ log('连携技能请等待连携窗口（连携触发时会自动打开）'); return; }
+  // 冷却：data.js 里 cd=1 是常见值（几乎每回合都能放），我之前每玩家行动都 -1 导致永远 0 → 逻辑 OK
+  const cdLeft = _cooldownLeft(key, s.id);
+  if(cdLeft>0){ log(`冷却中 (剩 ${cdLeft} 回合)`); return; }
   _resolveSkillByChar(key, s);
   _endPlayerAction();
 }
@@ -530,9 +624,9 @@ function _cellHasEntity(x,y){
 function _openLinkWindow(){
   // 收集所有 kind='link' 可用技能，开 2s 窗口
   const cands = [];
-  (G.team||[]).concat([{key:'pro', name:'主角'}]).forEach(c=>{
-    const k = c.key;
-    const list = _charSkills(k).filter(s => s.kind==='link' && _cooldownLeft(k,s.id)===0);
+  const team = (G.team||['pro']).slice();
+  team.forEach(k => {
+    const list = _charAllSkills(k).filter(s => s.kind==='link' && _cooldownLeft(k,s.id)===0);
     list.forEach(s => cands.push({ key:k, skill:s }));
   });
   if(cands.length===0) return;

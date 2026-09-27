@@ -953,3 +953,13 @@ function itemLoveLevel(key, it){
   if(L.one && L.one.includes(it)) return 1;
   return 0;
 }
+
+
+/* combat.js / explore.js 等跨文件模块都要访问的全局角色数据 —— 显式挂 window */
+window.PROTAGONIST = PROTAGONIST;
+window.ALLIES = ALLIES;
+window.XIAYANG = XIAYANG;
+window.LUYOOUYOU = LUYOOUYOU;
+window.getChar = getChar;
+window.getTeamChars = getTeamChars;
+window.ALLIES_MAP = Object.assign({}, ALLIES);

@@ -171,14 +171,15 @@ function handleKeys(ev){
       const idx = +ev.key - 1;
       const curKey = cs.currentChar || 'pro';
       const skills = (function(){
-        if(curKey==='pro'){
-          const heroSkills = (G.hero?.skills||[]).slice();
-          const defaultIds = G.hero?.selectedSkillIds || G.hero?.defaultSkillIds || heroSkills.map(s=>s.id);
-          return heroSkills.filter(s => defaultIds.includes(s.id) && s.kind!=='auto' && s.kind!=='link');
-        }
-        const c = (G.team||[]).find(x=>x.key===curKey);
+        // 统一用 data.js 暴露的 getChar：getChar(key) 返回 PROTAGONIST / ALLIES 里的完整对象
+        const c = getChar(curKey);
         if(!c) return [];
-        return (c.activeSkills||[]).filter(s=>s.kind==='active');
+        const pool = c.skills || [];
+        const ids = c.selectedSkillIds || c.defaultSkillIds || pool.map(s=>s.id);
+        const filtered = pool.filter(s => ids.includes(s.id) && s.kind==='active');
+        // 按 skill.kind 排序（active 先）
+        filtered.sort((a,b) => ({active:0, auto:1, link:2}[a.kind]||9) - ({active:0, auto:1, link:2}[b.kind]||9));
+        return filtered;
       })();
       if(idx<skills.length){
         cs.selectedSkillId = skills[idx].id;
