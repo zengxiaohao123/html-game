@@ -28,7 +28,6 @@ function entryLevel(cell){ return 1; }
 
 /* IIFE 战斗核心开始 */
 (function(){
-'use strict';
 let _cs = null;
 function _sync(){ window.combatState = _cs; }
 
@@ -326,7 +325,7 @@ function _charSkills(key){
   // defaultSkillIds / selectedSkillIds 决定"编入技能组"哪些展示
   let c;
   if(key==='pro'){
-    c = getChar('pro') || PROTAGONIST;
+    c = getChar('pro') || window.PROTAGONIST;
   } else {
     c = getChar(key);  // getChar 会走 PROTAGONIST/ALLIES，返回 _ensureCharDefaults 后的对象
   }
@@ -347,8 +346,8 @@ function _charSkills(key){
 function _charAllSkills(key){
   // 全部技能（不按编入筛选），给自动技能遍历用
   let c;
-  if(key==='pro') c = PROTAGONIST;
-  else c = ALLIES[key];
+  if(key==='pro') c = window.PROTAGONIST;
+  else c = window.ALLIES?.[key];
   return (c && c.skills) || [];
 }
 
@@ -499,8 +498,8 @@ function startCombat(cell){
 
   // === 从 cell.content.key 查 ENEMIES 模板（rollCombatEvent 返回 content.key='fireSlime' 等） ===
   let enemyKey = cell?.content?.key || cell?.key || 'fireSlime';
-  let enemyTpl = (typeof ENEMIES!=='undefined' && ENEMIES[enemyKey]) ? ENEMIES[enemyKey] : null;
-  if(!enemyTpl && typeof window.ENEMIES!=='undefined' && window.ENEMIES[enemyKey]){
+  let enemyTpl = null;
+  if(window.ENEMIES && window.ENEMIES[enemyKey]){
     enemyTpl = window.ENEMIES[enemyKey];
   }
   if(!enemyTpl){ enemyTpl = { name:'火史莱姆', atk:15, def:0, maxHp:40, icon:'🔴' }; }
@@ -541,7 +540,7 @@ function startCombat(cell){
     selectedSkillId: null,
   };
   // 主角（PROTAGONIST 是 data.js script tag 层的全局 const，IIFE 闭包可直接访问）
-  const proData = PROTAGONIST;
+  const proData = window.PROTAGONIST;
   _cs.entities.pro = { key:'pro', faction:'ally', type:'hero', name:'主角',
     x:proStart.x, y:proStart.y, facing:proStart.facing,
     hp: G.hero?.hp ?? proData?.base?.hp ?? 80,
