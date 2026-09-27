@@ -67,7 +67,7 @@ function skillRangeCells(skill, refPos, facing){
   const pos = refPos || combatState.hero;
   const fac = facing || pos.facing || 'up';
   if(rangeOf && skill && skill.target){
-    const r = rangeOf({ type: skill.target, x:pos.x, y:pos.y, facing:fac });
+    const r = rangeOf(skill, pos.x, pos.y, fac);
     if(r) return r.map(c => ({x:c.x, y:c.y}));
   }
   // 旧规格 fallback（仅当 skill.target 是字符串且 rangeOf 不认识时）
@@ -130,11 +130,11 @@ function healPreview(charKey, skill){
 /* 战前：天赋触发回调 —— 嗜血/起势 */
 function applyTalentOnAttack(charKey, dmg){
   if(!combatState) return;
-  const c = getChar(charKey), sts = combatState.ally[charKey];
+  const sts = combatState.ally[charKey];
   if(!sts) return;
-  const blood = c.passives?.find(p=>p.id==='blood');
-  if(blood && Math.random()*100 < tierValue(blood, entryLevel(charKey,blood), 'prob')){
-    if(charKey==='pro'){
+  if(charKey==='pro'){
+    const bloodP = _proBloodFromItems();
+    if(bloodP>0 && Math.random()*100 < bloodP){
       const heal = Math.max(1, Math.round(dmg*0.5));
       const cap = heroineMaxHp();
       const nx = Math.min(cap, G.hero.hp + heal);
@@ -144,9 +144,9 @@ function applyTalentOnAttack(charKey, dmg){
         log(`【嗜血】触发，回复 ${got} 点生命。`);
       }
     }
+    const momP = _proMomentumFromItems();
+    if(momP>0) sts.mom = (sts.mom||0) + momP;
   }
-  const momentum = c.passives?.find(p=>p.id==='momentum');
-  if(momentum) sts.mom = (sts.mom||0) + tierValue(momentum, entryLevel(charKey,momentum), 'dmg');
 }
 
 /* 战前：比翼 —— 陆悠悠暴击后给队友加下次暴击 buff */
@@ -313,92 +313,7 @@ function ensureCombatTerrain(){
     }
   }
 }
-function rangeOf(opts){
-  /* 范围统一入口：给定 opts 描述 → 返回 {x,y,elem} 格子列表
-     支持的描述（和 data.js 里 skill.target 对齐）:
-       opts.type: 'self'|'front'|'front2'|'front3'|'adj4'|'adj5'|'adj8'|'adj9'|'dist2'|'dist3'|'adj12'|'adj16'|'adj21'|'adj23'|'adj25'|'line-front2'|'line-front3'|'front6'|'front9'
-       opts.x, opts.y: 起始坐标
-       opts.facing: 'up'|'down'|'left'|'right'
-       opts.elem: 要施加的元素（可空）
-  */
-  const result = [];
-  const push = (x,y)=>{
-    if(x<0||y<0||x>=G.map.n||y>=G.map.n) return;
-    if(!passable(x,y) && opts.type!=='dist3' && opts.type!=='adj25') return;
-    result.push({x,y,elem: opts.elem});
-  };
-  const f = opts.facing || 'up';
-  const [fx,fy] = facingDir(f);
-  const cur = {x: opts.x, y: opts.y};
-  const key = (opts.type||'adj4').toLowerCase();
-  
-  switch(key){
-    case 'self':
-      push(cur.x, cur.y); break;
-    case 'front':
-      push(cur.x+fx, cur.y+fy); break;
-    case 'front2':
-      for(let s=1;s<=2;s++) push(cur.x+fx*s, cur.y+fy*s); break;
-    case 'front3':
-      for(let s=1;s<=3;s++) push(cur.x+fx*s, cur.y+fy*s); break;
-    case 'adj4': {
-      for(const [a,b] of [[1,0],[-1,0],[0,1],[0,-1]]) push(cur.x+a, cur.y+b); break;
-    }
-    case 'adj5':
-      push(cur.x,cur.y); for(const [a,b] of [[1,0],[-1,0],[0,1],[0,-1]]) push(cur.x+a, cur.y+b); break;
-    case 'adj8': {
-      for(const [a,b] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]) push(cur.x+a, cur.y+b); break;
-    }
-    case 'adj9':
-      push(cur.x,cur.y); for(const [a,b] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]) push(cur.x+a, cur.y+b); break;
-    case 'dist2': {
-      for(let dy=-2; dy<=2; dy++) for(let dx=-2; dx<=2; dx++){
-        const d=Math.abs(dx)+Math.abs(dy); if(d===0||d>2) continue;
-        push(cur.x+dx, cur.y+dy);
-      }
-      break;
-    }
-    case 'dist3': {
-      for(let dy=-3; dy<=3; dy++) for(let dx=-3; dx<=3; dx++){
-        const d=Math.abs(dx)+Math.abs(dy); if(d===0||d>3) continue;
-        push(cur.x+dx, cur.y+dy);
-      }
-      break;
-    }
-    case 'front6': {
-      // (-1~1, 0~1) 相对朝向
-      const rx = [f==='up'||f==='down' ? -1 : 0, 0, f==='up'||f==='down' ? 1 : 0];
-      const ry = [f==='left'||f==='right' ? -1 : 0, 0, f==='left'||f==='right' ? 1 : 0];
-      // 朝向方向扩展
-      const ex = f==='up' ? 0 : f==='down' ? 0 : f==='left' ? -1 : 1;
-      const ey = f==='up' ? -1 : f==='down' ? 1 : 0;
-      for(let j=0; j<2; j++) for(let i=0;i<rx.length;i++) push(cur.x+rx[i]+ex*j, cur.y+ry[i]+ey*j);
-      break;
-    }
-    case 'front9': {
-      const rx = [f==='up'||f==='down' ? -1 : 0, 0, f==='up'||f==='down' ? 1 : 0];
-      const ry = [f==='left'||f==='right' ? -1 : 0, 0, f==='left'||f==='right' ? 1 : 0];
-      const ex = f==='up' ? 0 : f==='down' ? 0 : f==='left' ? -1 : 1;
-      const ey = f==='up' ? -1 : f==='down' ? 1 : 0;
-      for(let j=0; j<3; j++) for(let i=0;i<rx.length;i++) push(cur.x+rx[i]+ex*j, cur.y+ry[i]+ey*j);
-      break;
-    }
-    case 'line-front2':
-      for(let s=1;s<=2;s++){
-        if(!passable(cur.x+fx*s, cur.y+fy*s)) break;
-        push(cur.x+fx*s, cur.y+fy*s);
-      } break;
-    case 'line-front3':
-      for(let s=1;s<=3;s++){
-        if(!passable(cur.x+fx*s, cur.y+fy*s)) break;
-        push(cur.x+fx*s, cur.y+fy*s);
-      } break;
-    default:
-      // 默认 adj4
-      for(const [a,b] of [[1,0],[-1,0],[0,1],[0,-1]]) push(cur.x+a, cur.y+b);
-  }
-  return result;
-}
+/* rangeOf 统一走 data.js 的版本（签名 rangeOf(skillOrOpts, cx, cy, facing)）。data.js 覆盖全部 target 类型。 */
 
 /* ============================
    3. 元素反应引擎（完整 10 种）
@@ -754,6 +669,16 @@ function charBaseAtk(k){
   const lv = G.bonds[k].level || 1;
   return 35 + 10*lv;
 }
+/* 主角永久物品加成辅助（从 G.inventory 读取）*/
+function _invCount(key){ return (G && G.inventory && G.inventory[key]) || 0; }
+function _proAtkFromItems(){ return _invCount('club')*10 + _invCount('dagger')*20 + _invCount('ironSword')*30; }
+function _proHpFromItems(){ return _invCount('cloth')*50 + _invCount('armor')*50; }
+function _proDefFromItems(){ return _invCount('leather')*20 + _invCount('armor')*20; }
+function _proCritFromItems(){ return _invCount('club')*3; }
+function _proBlockFromItems(){ return _invCount('cloth')*2 + _invCount('armor')*2; }
+function _proHoldFromItems(){ return _invCount('leather')*3 + _invCount('armor')*3; }
+function _proBloodFromItems(){ return _invCount('dagger')*3; }
+function _proMomentumFromItems(){ return _invCount('ironSword')*4; }
 function charAtk(k){
   let a = charBaseAtk(k);
   const c = getChar(k);
@@ -770,6 +695,7 @@ function charAtk(k){
         if(p.scal?.pro) a += tierValue(p,lv,'pro');
       }
     }
+    a += _proAtkFromItems();
     if(G.hero.depress){ a = 0; }
   }
   if(combatState && combatState.ally[k]){
@@ -784,17 +710,14 @@ function totalHeroDefense(){
   const pro = getChar('pro');
   const hold = pro.passives?.find(p=>p.id==='hold');
   if(hold) d += tierValue(hold, entryLevel('pro',hold), 'def');
+  d += _proDefFromItems();
   if(G.hero.depress) d = 0;
   return Math.max(0, Math.min(99999, d));
 }
 function heroineMaxHp(){ return heroDisplayMaxHp(); }
 function heroDisplayMaxHp(){
   let m = G.hero.maxHp;
-  const pro = getChar('pro');
-  if(pro.passives) for(const p of pro.passives){
-    const lv = entryLevel('pro',p);
-    if(p.scal?.hp) m += tierValue(p,lv,'hp');
-  }
+  m += _proHpFromItems();
   if(G.team.includes('luyouyou')) m += 100;  // 烹饪天赋
   return m;
 }
@@ -806,9 +729,12 @@ function heroDodgeRate(){
 function baseCritRate(k){
   let r = 0;
   const c = getChar(k);
-  const pick = k==='pro' ? c.passives?.find(p=>p.id==='crit') :
-               k==='luyouyou' ? c.passives?.find(p=>p.id==='windSpirit') : null;
-  if(pick && pick.scal?.crit) r += tierValue(pick, entryLevel(k,pick), 'crit');
+  if(k==='pro'){
+    r += _proCritFromItems();
+  } else if(k==='luyouyou'){
+    const pick = c.passives?.find(p=>p.id==='windSpirit');
+    if(pick && pick.scal?.crit) r += tierValue(pick, entryLevel(k,pick), 'crit');
+  }
   return r;
 }
 function charCritRate(k){
@@ -897,15 +823,9 @@ function _applyDamageToTarget(target, dmg, type, fromKey){
   
   // 3. 主角格挡（物理/真实/元素 都能被挡，除了某些天赋）
   if(fromKey && typeof target !== 'object'){}  // 不会发生
-  const pro = getChar('pro');
   if(target === combatState.hero){
-    // 主角受击：暴击 / 格挡
-    const crit = Math.random()*100 < baseCritRate('pro');  // 受击时主角自身暴击率？不：被打是对方暴击。这里占位简化
-    const blockP = pro.passives?.find(p=>p.id==='block');
-    if(blockP && Math.random() < vTier(blockP, 'dodge', entryLevel('pro',blockP))){
-      log('主角【格挡】本次伤害被完全抵消！');
-      return 0;
-    }
+    const blockP = _proBlockFromItems();
+    if(blockP>0 && Math.random()*100 < blockP){ log('主角【格挡】本次伤害被完全抵消！'); return 0; }
   }
   
   // 4. 护盾抵挡（真实/反伤可穿透，先应用再穿透）
@@ -923,6 +843,17 @@ function _applyDamageToTarget(target, dmg, type, fromKey){
   if(target === combatState.hero){
     G.hero.hp = Math.max(0, G.hero.hp - final);
     combatState.hero.hp = G.hero.hp;
+    const holdP = _proHoldFromItems();
+    if(holdP>0 && G.hero.hp>0 && Math.random()*100 < holdP){
+      const cap = heroineMaxHp();
+      const heal = Math.max(1, Math.round(cap*0.12));
+      const nx = Math.min(cap, G.hero.hp + heal);
+      if(nx > G.hero.hp){
+        const got = nx - G.hero.hp;
+        G.hero.hp = nx; combatState.hero.hp = nx;
+        log(`【坚守】触发，回复 ${got} 点生命。`);
+      }
+    }
   } else {
     target.hp = Math.max(0, target.hp - final);
   }
@@ -1000,7 +931,7 @@ function _resolveTargetsForSkill(sk, charKey){
   const fromY = charKey==='pro' ? hero.y : hero.y;
   const fromFacing = hero.facing;
   
-  const range = rangeOf({ type: sk.target, x:fromX, y:fromY, facing:fromFacing, elem: sk.type });
+  const range = rangeOf(sk, fromX, fromY, fromFacing);
   const result = [];
   if(sk.kind==='support'){
     // 辅助技能：选我方
@@ -1015,16 +946,20 @@ function _resolveTargetsForSkill(sk, charKey){
 }
 function combatMove(dx,dy){
   const cs = combatState; if(!cs) return;
-  // 只允许主角在自己的行动回合里移动
-  if(!cs.actor || cs.actor.who !== 'ally' || cs.actor.key !== 'pro'){
-    log('现在不是主角的行动回合。'); return;
-  }
+  if(!cs.actor || cs.actor.who !== 'ally' || cs.actor.key !== 'pro'){ log('现在不是主角的行动回合。'); return; }
   if(cs.ally.pro.used){ log('主角本回合已行动。'); return; }
   const hero = cs.hero;
   const nx = hero.x+dx, ny = hero.y+dy;
-  if(!passable(nx,ny)){ log('此方向无法通行。'); return; }
-  if(cs.enemies.some(e=>e.x===nx&&e.y===ny)){ log('敌人占据此格，无法移动过去。'); return; }
-  hero.x = nx; hero.y = ny; hero.facing = dirToFacing(dx,dy);
+  hero.facing = dirToFacing(dx,dy);
+  G.hero.facing = hero.facing;
+  let canMove = passable(nx,ny);
+  if(canMove && cs.enemies.some(e=>e.x===nx&&e.y===ny)) canMove = false;
+  if(!canMove){
+    log('前方无法通行。你只是改变了朝向。');
+    refreshHUD(); renderCombatMap(); updateCombatUI();
+    return;
+  }
+  hero.x = nx; hero.y = ny;
   G.px = nx; G.py = ny;
   cs.playerMoved = true;
   log(`主角移动到 (${nx},${ny})。`);
@@ -1248,7 +1183,7 @@ function _runEnemyAct(actor){
   const tx = hero.x, ty = hero.y;
   const d = dist(en, hero);
 
-  const skillRange = rangeOf({ type: availableSkill.target, x:en.x, y:en.y, facing:en.facing });
+  const skillRange = rangeOf(availableSkill, en.x, en.y, en.facing);
   const hit = skillRange.some(c => c.x===tx && c.y===ty);
 
   if(hit){
@@ -1494,7 +1429,7 @@ function enemyRangeKeys(enemy){
   if(!enemy || !enemy.def) return set;
   const sk = enemy.def.skills?.find(s=>s.target);
   if(!sk) return set;
-  const keys = rangeOf({ type:sk.target, x:enemy.x, y:enemy.y, facing:enemy.facing }).map(c=>c.x+','+c.y);
+  const keys = rangeOf(sk, enemy.x, enemy.y, enemy.facing).map(c=>c.x+','+c.y);
   for(const k of keys) set.add(k);
   return set;
 }
@@ -1575,83 +1510,141 @@ function passable(x,y){
 };
 
 
-/* pre-combat UI: updateCombatUI */
 function updateCombatUI(){
   const cs = combatState;
   if(!cs){ switchMode('story'); return; }
   const chars = getTeamChars();
   const cur = chars.find(c=>c.key===cs.currentChar) || chars[0];
-
-  // 队友卡：当前 actor 高亮
   const actorKey = (cs.actor && cs.actor.who==='ally') ? cs.actor.key : null;
-  qs('#allyBar').innerHTML = chars.map(c => {
-    const cls = c.key===actorKey ? ' actor' : '';
-    return `<div class="allyCard${cls}"><div class="allyName">${c.name}</div><div class="allyElem">${c.element?ELEM[c.element].zh:'无属性'}</div></div>`;
+
+  // ===== 顶部：角色卡一行 =====
+  const charCards = chars.map(c => {
+    const csk = cs.ally[c.key];
+    const deadCls = csk?.dead ? ' dead' : '';
+    const actorCls = c.key===actorKey ? ' actor' : '';
+    const hp = c.key==='pro' ? (cs.hero.hp||0) : (csk?.hp || 0);
+    const maxHp = c.key==='pro' ? heroineMaxHp() : (csk?.maxHp || c.base?.maxHp || 100);
+    const hpPct = Math.max(0, Math.min(100, (hp/(maxHp||1))*100));
+    const eleBg = c.element ? (ELEM[c.element]?.c || '#555') : '#7a7a7a';
+    return `<div class="cb-char-card ${c.key===cs.currentChar?'on':''}${deadCls}${actorCls}" data-k="${c.key}"
+      style="border:2px solid ${eleBg}">
+      <div class="cb-char-name">${c.name}</div>
+      <div class="cb-char-ele">${c.element?ELEM[c.element].zh:'无'} · ${hp}/${maxHp}</div>
+      <div class="cb-char-hpbar"><i style="width:${hpPct}%;background:${eleBg}"></i></div>
+    </div>`;
   }).join('');
 
-  // 属性 + 状态栏
-  qs('#charAttrs').innerHTML = charAttrsHTML(cur.key);
-  qs('#statusBar').innerHTML = cur.key==='pro'
-    ? statusBarHTML(heroStatusesWithDepress(cs), cs.field)
-    : statusBarHTML(cs.ally[cur.key]?.statuses, null);
-
-  // 技能列表（从 cs.slots 全取，不按角色过滤）
+  // ===== 顶部：全局技能组一行（按 kind 分块）=====
   const slots = cs.slots || [];
-  cs.selSlot = cs.selSlot || slots[0]?.slot || 1;
-  const selSlotNum = cs.selSlot;
-
-  const fleeBase = cs.enemies[0];
-  const fleeTag = fleeBase ? `<div class="skillTag escape"><span class="skillNum">🛸</span>逃　跑 ${Math.round(calcEscapeRate(fleeBase))}%</div>` : '';
-
-  qs('#skillList').innerHTML = slots.map(s => {
-    const { c, sk } = skillGroupResolve(s);
-    if(!sk) return '';
-    const cd = s.cd || 0;
-    const cdTxt = cd>0 ? `<span class="nohint">冷却${cd}</span>` : '';
-    const isSel = s.slot === selSlotNum;
-    const isMyTurn = (cs.actor?.who==='ally' && cs.actor.key===s.charKey);
-    const cls = `${sk.kind==='attack'?'attack':'skill'}${isSel?' active':''}${isMyTurn?' myturn':''}`;
-    const kindLabel = sk.kind==='auto'?'自动':sk.kind==='active'?'主动':sk.kind==='link'?'连携':'辅助';
-    return `<div class="skillTag ${cls}" data-slot="${s.slot}">
-      <span class="skillNum">${s.slot}</span>
-      <span class="cat">${kindLabel}</span>
-      <span class="charTag">${c?.name||'?'}</span>
-      ${sk.name}${cdTxt}
+  if(!cs.selSlot) cs.selSlot = slots[0]?.slot || 1;
+  const kindsOrder = ['auto','active','link'];
+  const kindLabels = {auto:'自动', active:'主动', link:'连携'};
+  let skillGroupRow = '';
+  for(const k of kindsOrder){
+    const row = slots.filter(s => {
+      const sk = (getChar(s.charKey)?.skills||[]).find(x=>x.id===s.skillId);
+      return sk && sk.kind===k;
+    });
+    if(!row.length) continue;
+    const tiles = row.map(s => {
+      const { c, sk } = skillGroupResolve(s);
+      if(!sk) return '';
+      const cd = s.cd || 0;
+      const isSel = s.slot === cs.selSlot;
+      const isMyTurn = (cs.actor?.who==='ally' && cs.actor.key===s.charKey);
+      const icon = getSkillIcon(s.skillId);
+      return `<div class="sg-tile sg-${sk.kind} sg-combat${isSel?' sg-sel':''}${cd>0?' sg-cd':''}${isMyTurn?' sg-myturn':''}"
+        data-slot="${s.slot}" title="${sk.name} —— ${c?.name||''}">
+        <div class="sg-tile-icon" style="background-image:url('assets/skills/${icon.file}')"></div>
+        <div class="sg-tile-label">${sk.name.replace(/^(自动|主动|连携)·/,'')}</div>
+        ${cd>0?`<div class="sg-cd-badge">${cd}</div>`:''}
+      </div>`;
+    }).join('');
+    skillGroupRow += `<div class="cb-skills-kind cb-sk-${k}">
+      <div class="cb-skills-kind-label">${kindLabels[k]}</div>
+      <div class="cb-skills-tiles">${tiles}</div>
     </div>`;
-  }).join('') + fleeTag;
+  }
 
-  // 点击选中 → 再点一次释放
-  qs('#skillList').querySelectorAll('.skillTag[data-slot]').forEach(b => {
-    b.onclick = () => {
-      const n = +b.dataset.slot;
-      if(cs.selSlot === n){
-        const slot = cs.slots.find(x=>x.slot===n);
-        if(slot) castSkill(slot.charKey, true, slot);
-      } else {
-        cs.selSlot = n;
-        updateCombatUI(); renderCombatMap();
-      }
-    };
-  });
-  qs('#skillList').querySelector('.skillTag.escape')?.addEventListener('click', tryFlee);
+  // ===== 第二行：当前角色属性 =====
+  const curAttrs = charAttrsHTML(cur.key);
 
-  // 天赋
-  qs('#talentBox').innerHTML = cur.passives.map((p,i) => {
+  // ===== 第三行：buff/debuff =====
+  const statuses = cur.key==='pro' ? heroStatusesWithDepress(cs) : (cs.ally[cur.key]?.statuses || {});
+  const stBar = cur.key==='pro' ? statusBarHTML(statuses, cs.field) : statusBarHTML(statuses, null);
+
+  // ===== 第四行：天赋 =====
+  const talents = (cur.passives||[]).map((p,i) => {
     const name = p.scal ? talentDisplayName(cur.key,p) : p.name;
     return `<span class="talentTag" data-k="${cur.key}" data-i="${i}"><span class="cat talent">天赋</span>${name}</span>`;
   }).join('');
 
-  // 技能详情
-  const selSlotObj = slots.find(x => x.slot === selSlotNum);
-  let detailHtml = '<div class="skillDetailText">点技能查看详情（点一次选中，再点一次释放）</div>';
+  // ===== 右侧：技能详情 + 圆形逃跑按钮 =====
+  const selSlotObj = slots.find(x => x.slot === cs.selSlot);
+  let detailHtml = '<div class="cb-detail-empty">点击左侧技能组中的技能查看详情。点一次选中，属主是当前行动角色且无冷却时再点一次释放。</div>';
   if(selSlotObj){
     const { c, sk } = skillGroupResolve(selSlotObj);
     if(sk){
-      detailHtml = `<div class="skillDetailName">[槽${selSlotObj.slot}] ${c?.name||'?'} · ${sk.name}</div>
-        <div class="skillDetailText">${describeSkill(selSlotObj.charKey, sk)}</div>`;
+      const dmg = skillDamagePreview(selSlotObj.charKey, sk);
+      detailHtml = `<div class="cb-detail-head">${c?.name||'?'} · ${sk.name}</div>
+        <div class="cb-detail-kind sg-kind-${sk.kind}">${kindLabels[sk.kind]||''}</div>
+        <div class="cb-detail-desc">${terms(sk.desc||'')}</div>
+        <div class="cb-detail-meta">
+          ${sk.formula?`<span>效果：${sk.formula}</span>`:''}
+          ${dmg!=null?`<span>预期伤害：约 ${dmg}</span>`:''}
+          <span>冷却：${sk.cd||0} 回合（当前剩 ${selSlotObj.cd||0}）</span>
+        </div>`;
     }
   }
-  qs('#skillDetail').innerHTML = detailHtml;
+  const fleeRate = calcEscapeRate();
+
+  // ===== 写入 DOM =====
+  qs('#allyBar').innerHTML = `
+    <div class="cb-all-row">${charCards}</div>
+    <div class="cb-skills-row">${skillGroupRow || '<span class="nohint">（技能组为空）</span>'}</div>
+  `;
+  qs('#charAttrs').innerHTML = curAttrs;
+  qs('#statusBar').innerHTML = stBar;
+  qs('#skillList').innerHTML = '';
+  qs('#talentBox').innerHTML = talents || '<span class="nohint">（无天赋）</span>';
+  qs('#skillDetail').innerHTML = `
+    <div class="cb-skill-detail">${detailHtml}</div>
+    <div class="cb-flee-wrap">
+      <button class="cb-flee-btn" id="cbFleeBtn" title="尝试逃跑">
+        <span class="cb-flee-icon">🛸</span>
+        <span class="cb-flee-text">逃跑</span>
+        <span class="cb-flee-rate">${Math.round(fleeRate)}%</span>
+      </button>
+    </div>
+  `;
+
+  // ===== 事件绑定 =====
+  qs('#allyBar').querySelectorAll('.cb-char-card').forEach(b => {
+    b.onclick = () => {
+      const k = b.dataset.k;
+      if(cs.currentChar !== k){
+        cs.currentChar = k;
+        updateCombatUI(); renderCombatMap();
+      }
+    };
+  });
+  qs('#allyBar').querySelectorAll('.sg-combat').forEach(tile => {
+    tile.onclick = () => {
+      const n = +tile.dataset.slot;
+      const slot = slots.find(x => x.slot===n);
+      if(!slot) return;
+      if(cs.selSlot === n){
+        if(cs.actor?.who==='ally' && cs.actor.key===slot.charKey && (slot.cd||0)===0){
+          castSkill(slot.charKey, true, slot);
+          return;
+        }
+      }
+      cs.selSlot = n;
+      updateCombatUI(); renderCombatMap();
+    };
+  });
+  const fleeBtn = qs('#cbFleeBtn');
+  if(fleeBtn) fleeBtn.onclick = tryFlee;
 }
 
 
