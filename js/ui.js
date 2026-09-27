@@ -4,22 +4,20 @@
 "use strict";
 const qs=id=>document.querySelector(id);
 function el(html){const d=document.createElement('div'); d.innerHTML=html; return d.firstElementChild;}
+/* gameMode 必须在 switchMode 之前定义 —— switchMode 内部裸引用它；main.js 晚于 ui.js 加载 */
+let gameMode='story';
 function switchMode(m){
   gameMode=m;
   qs('#bottom').classList.toggle('mode-story', m==='story');
   qs('#bottom').classList.toggle('mode-combat', m==='combat');
   qs('#rightTitle').textContent='信息';
   if(m==='story'){
-    // 事件 lockEventUI / 主线剧情 playMainStorySeg 都走这条路：
-    // 强制隐藏 goBtn（防止从探索/战斗残留过来的"前往"按钮继续显示）
     qs('#goBtn').style.display='none';
-    // 刷新 iconbar —— isInFlow() 会根据 eventState/mainStoryPlaying/combatState 决定禁用哪些按钮
-    renderIconbar();
+    try { renderIconbar(); } catch(e){ console.warn('switchMode story renderIconbar fail',e.message); }
   } else {
-    // 切到战斗或其他非 story 模式：确保故事引擎的残留全部清掉
-    finishCurrentFragment();  // 清 pages / storyBody / speaker / 屏幕效果 / 回调
+    try { finishCurrentFragment(); } catch(e){}
     const sc = qs('#storyControls'); if(sc) sc.style.display='none';
-    renderIconbar();
+    try { renderIconbar(); } catch(e){ console.warn('switchMode combat renderIconbar fail',e.message); }
   }
 }
 function clearLog(){ qs('#logBody').innerHTML=''; }
@@ -1829,3 +1827,10 @@ let mapDragMoved=false;
 function openPopoverNear(el, html){ const tip=qs('#popover'); tip.innerHTML=html; tip.style.display='block'; bringToFront(tip); tip.style.visibility='hidden'; const r=el.getBoundingClientRect(); const w=tip.offsetWidth||260, h=tip.offsetHeight||60; tip.style.visibility='visible'; let x=r.left; if(x+w>window.innerWidth-8) x=Math.max(8, window.innerWidth-8-w); let y=r.bottom+6; if(y+h>window.innerHeight-8) y=Math.max(8, r.top-h-6); tip.style.left=x+'px'; tip.style.top=y+'px'; }
 document.addEventListener('click',ev=>{ if(giftOpenKey){ if(giftJustOpened){ giftJustOpened=false; } else if(!ev.target.closest('#giftOverlay')){ closeGift(); return; } } if(swapOpen){ if(swapJustOpened){ swapJustOpened=false; } else if(!ev.target.closest('.swap-overlay')){ applySwap(); } } clickActionOnly(ev); });
 function clickActionOnly(ev){ const st=ev.target.closest('.stchip'); if(st){ const rounds=st.textContent.match(/·(\d+)回合/); openPopoverNear(st, `<b>${st.dataset.name}</b>${rounds?`（${rounds[1]}回合）`:''}<br>${st.dataset.desc||''}`); return; } const tg=ev.target.closest('.talentTag'); if(tg){ const owner=tg.dataset.k; const c=getChar(owner); const t=c.passives[+tg.dataset.i]; if(t){ const name=t.scal? talentDisplayName(owner,t) : t.name; const desc=t.scal? lvDescText(t, entryLevel(owner,t)) : t.desc; openPopoverNear(tg, `<b>${name}</b><br>${desc}`); } return; } const cl=ev.target.closest('.craftlink'); if(cl){ const key=cl.dataset.key; openPopoverNear(cl, `<b>${itemName(key)}</b><br>${itemDetailHTML(key)}`); return; } qs('#popover').style.display='none'; }
+
+/* === combat.js 在 ui.js 之前加载，以下函数 ui.js 定义完立即挂 window 供战斗中使用 === */
+window.switchMode = switchMode;
+window.log = log;
+window.renderMap = renderMap;
+window.refreshHUD = refreshHUD;
+window.tryFlee = typeof tryFlee!=='undefined' ? tryFlee : undefined;

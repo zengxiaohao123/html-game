@@ -2,7 +2,13 @@
    js/reactions.js —— 模块：元素反应表 + 反应栈
    规格依据：docs/02-核心概念 §九 · 元素反应
    ============================================================ */
-"use strict";
+
+
+/**
+ * 元素中文名枚举（data.js 没有定义 ELEMENTS，这里 reactions.js 自己维护）
+ * 和 data.js 里 ELEM={fire:'火',...} 重复但独立 —— 保持 reactions.js 自包含
+ */
+const ELEMENTS = { fire:'火', water:'水', grass:'草', thunder:'雷', ice:'冰', wind:'风', rock:'岩', physical:'物理' };
 
 /**
  * 反应表：key = 'elem1:elem2'（elem1 是地块原附着，elem2 是新附着）

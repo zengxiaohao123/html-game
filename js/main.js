@@ -4,7 +4,7 @@
    睡觉进下一天、词条悬浮提示。本文件最后加载。
    ============================================================ */
 "use strict";
-var G=null; var combatState=null; let gameMode='story'; let previewCell=null;
+var G=null; var combatState=null; let previewCell=null;
 
 /* 统一判断：是否处于"剧情流程锁定中"（主线剧情 / 事件 / 战斗）
    任何想打开编队/睡觉/商店/合成/移动等操作的守卫都应该用这个函数

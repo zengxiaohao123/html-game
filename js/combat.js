@@ -44,7 +44,7 @@ function _setPhase(p, opts){
   _cs.phaseCtx = opts||{};
   _cs.phaseStartAt = Date.now();
   _sync();
-  log(_phaseLabel(p));
+  window.log?.(_phaseLabel(p));
 }
 function _phaseLabel(p){
   return { roundStart:'—— 回合开始 ——', playerManual:'☯ 手动行动', autoSkills:'⚡ 自动技能阶段', summons:'✦ 召唤物行动', neutral:'◈ 中立单位行动', enemy:'☠ 敌方行动', roundEnd:'—— 回合结束 ——', flee:'💨 逃跑' }[p] || p;
@@ -79,7 +79,7 @@ function _tick(dt){
 }
 
 function _phaseRoundStart(){
-  log(`▸ 第 ${_cs.round} 回合`);
+  window.log?.(`▸ 第 ${_cs.round} 回合`);
   // 结界触发者自己的行动节点（批次 2：燃烧/感电/超导）
   _tickZonesAt('roundStart');
   _cs.readyAuto = {};
@@ -191,7 +191,7 @@ function _enemyAI(e){
   const d = _dist(e, prot);
   // 硬控制 → 跳过（批次 2：硬控制效果贯穿敌方行动阶段本身）
   if(e.hardControl){
-    log(`${e.name} 处于硬控制，跳过行动。`);
+    window.log?.(`${e.name} 处于硬控制，跳过行动。`);
     return;
   }
   // 普攻：射程=1 或有 range 字段
@@ -210,10 +210,10 @@ function _applyDamage(attacker, target, dmg, elem){
   if(!target || target.dead) return;
   const effective = Math.max(1, dmg - (target.def||0));
   target.hp -= effective;
-  log(`${attacker.name||attacker.key} → ${target.name||target.key}：${effective} 点${elem==='physical'?'物理':elem}伤害`);
+  window.log?.(`${attacker.name||attacker.key} → ${target.name||target.key}：${effective} 点${elem==='physical'?'物理':elem}伤害`);
   if(target.hp<=0){
     target.hp = 0; target.dead = true;
-    log(`${target.name||target.key} 倒下了。`);
+    window.log?.(`${target.name||target.key} 倒下了。`);
   }
   // 攻击自带元素 → 附着
   if(elem && elem!=='physical'){
@@ -243,7 +243,7 @@ function _tryReaction(newElem, target){
   const pair = window.reactions && window.reactions.lookupReaction
     ? window.reactions.lookupReaction(newElem, attach.elem) : null;
   if(pair){
-    log(`⚗ 元素反应：${pair.name}`);
+    window.log?.(`⚗ 元素反应：${pair.name}`);
     if(pair.type==='explosion'){
       // 全体 AOE：范围内所有非我方单位受伤
       _allEntities().forEach(e => {
@@ -263,7 +263,7 @@ function _tryReaction(newElem, target){
 function _createZone(x,y,elem,duration,kind){
   if(!_cs.zones) _cs.zones = [];
   _cs.zones.push({ x, y, elem, duration, kind });
-  log(`✦ 生成${elem}结界（${duration} 回合）`);
+  window.log?.(`✦ 生成${elem}结界（${duration} 回合）`);
 }
 function _tickZoneDuration(){
   if(!_cs.zones) return;
@@ -379,13 +379,13 @@ function _resolveSkillByChar(key, skill, delayMs){
       }
     } catch(e){
       // 兜底：别因为 rules.js 出错就整个战斗崩
-      log(`⚠ 索敌异常：${e.message}`);
+      window.log?.(`⚠ 索敌异常：${e.message}`);
       result = { damageEntities:[], attachCells:[] };
     }
 
     window._lastSkillAtk = owner.atk;
     const elem = _skillElemType(skill);  // data.js 里叫 skill.type
-    log(`★ ${owner.name||key} 释放【${skill.name}】(范围 ${rangeType})`);
+    window.log?.(`★ ${owner.name||key} 释放【${skill.name}】(范围 ${rangeType})`);
 
     const dmgEntities = result && result.damageEntities ? result.damageEntities : [];
     const multiplier = _skillMultiplier(skill);  // data.js 里叫 skill.mult
@@ -566,8 +566,8 @@ function startCombat(cell){
     _cs.entities[e.key] = e;
     _cs.enemies[e.key] = e;
   });
-  switchMode('combat');
-  log(`⚔ 战斗开始！第 ${_cs.round} 回合`);
+  window.switchMode && window.switchMode('combat');
+  window.log?.(`⚔ 战斗开始！第 ${_cs.round} 回合`);
   _setPhase('roundStart');
   _startLoop();
   renderCombatMap();
@@ -591,28 +591,28 @@ function _makeEnemy(proto,x,y){
 function tryCastSkill(slot){
   if(!_cs) return;
   if(_cs.phase!=='playerManual'){
-    log('当前不是手动行动阶段');
+    window.log?.('当前不是手动行动阶段');
     return;
   }
   const key = _cs.currentChar || 'pro';
   const skills = _charSkills(key);
   const s = skills[slot];
-  if(!s){ log(`❌ 槽位 ${slot} 空（当前角色编入了 ${skills.length} 个技能）`); return; }
-  if(s.kind==='auto'){ log('自动技能不可手动释放'); return; }
-  if(s.kind==='link'){ log('连携技能请等待连携窗口（连携触发时会自动打开）'); return; }
+  if(!s){ window.log?.(`❌ 槽位 ${slot} 空（当前角色编入了 ${skills.length} 个技能）`); return; }
+  if(s.kind==='auto'){ window.log?.('自动技能不可手动释放'); return; }
+  if(s.kind==='link'){ window.log?.('连携技能请等待连携窗口（连携触发时会自动打开）'); return; }
   // 冷却：data.js 里 cd=1 是常见值（几乎每回合都能放），我之前每玩家行动都 -1 导致永远 0 → 逻辑 OK
   const cdLeft = _cooldownLeft(key, s.id);
-  if(cdLeft>0){ log(`冷却中 (剩 ${cdLeft} 回合)`); return; }
+  if(cdLeft>0){ window.log?.(`冷却中 (剩 ${cdLeft} 回合)`); return; }
   _resolveSkillByChar(key, s);
   _endPlayerAction();
 }
 function movePro(dx,dy){
   if(!_cs || _cs.phase!=='playerManual') return;
-  if(_cs.linkWindow && _cs.linkWindow.open){ log('连携窗口中，先选连携技能或等待关闭'); return; }
+  if(_cs.linkWindow && _cs.linkWindow.open){ window.log?.('连携窗口中，先选连携技能或等待关闭'); return; }
   const pro = _ent('pro'); if(!pro) return;
   const nx = pro.x+dx, ny = pro.y+dy;
   if(!_inBounds(nx,ny)) return;
-  if(_cellHasEntity(nx,ny)){ log('该格有单位，无法移动'); return; }
+  if(_cellHasEntity(nx,ny)){ window.log?.('该格有单位，无法移动'); return; }
   pro.x = nx; pro.y = ny;
   if(dx===1) pro.facing='right'; else if(dx===-1) pro.facing='left';
   else if(dy===1) pro.facing='down'; else if(dy===-1) pro.facing='up';
@@ -622,7 +622,7 @@ function movePro(dx,dy){
 }
 function skipTurn(){
   if(!_cs || _cs.phase!=='playerManual') return;
-  log('跳过回合。');
+  window.log?.('跳过回合。');
   _endPlayerAction();
 }
 function tryFlee(){
@@ -630,7 +630,7 @@ function tryFlee(){
   if(Math.random()<0.6){
     _endCombat('flee');
   } else {
-    log('逃跑失败！');
+    window.log?.('逃跑失败！');
     _endPlayerAction();
   }
 }
@@ -661,7 +661,7 @@ function _openLinkWindow(){
   });
   if(cands.length===0) return;
   _cs.linkWindow = { open:true, startAt:Date.now(), remainMs:2000, candidateSkills:cands };
-  log(`◈ 连携窗口开启（${cands.length} 个候选）—— 2 秒内按 [Q] 触发`);
+  window.log?.(`◈ 连携窗口开启（${cands.length} 个候选）—— 2 秒内按 [Q] 触发`);
 }
 function _closeLinkWindow(){
   if(_cs && _cs.linkWindow){
@@ -670,10 +670,10 @@ function _closeLinkWindow(){
   }
 }
 function triggerLink(){
-  if(!_cs || !_cs.linkWindow || !_cs.linkWindow.open){ log('当前没有连携窗口'); return; }
+  if(!_cs || !_cs.linkWindow || !_cs.linkWindow.open){ window.log?.('当前没有连携窗口'); return; }
   const c = _cs.linkWindow.candidateSkills[0];
   if(!c) return;
-  log(`✦ 触发连携：${c.skill.name}`);
+  window.log?.(`✦ 触发连携：${c.skill.name}`);
   _resolveSkillByChar(c.key, c.skill);
   _closeLinkWindow();
 }
@@ -689,21 +689,21 @@ function _endCombat(outcome){
   if(!_cs) return;
   if(outcome==='win'){
     const coin = 10 + Math.floor(Math.random()*10);
-    log(`胜利！获得金币 ×${coin}`);
+    window.log?.(`胜利！获得金币 ×${coin}`);
   } else if(outcome==='defeat'){
-    log('战斗失败……');
+    window.log?.('战斗失败……');
     if(G.hero && G.hero.hp!==undefined) G.hero.hp = Math.max(1, (_ent('pro')?.hp||G.hero.hp));
   } else if(outcome==='flee'){
-    log('成功逃离战斗。');
+    window.log?.('成功逃离战斗。');
   }
   G.px = _cs.startPos.x; G.py = _cs.startPos.y;
   G.hero.facing = _cs.startFacing;
   const pro = _ent('pro');
   if(pro) G.hero.hp = pro.hp;
   _cs = null; _sync();
-  switchMode('explore');
-  renderMap(); refreshHUD();
-  log('（回到探索入口地块）');
+  window.switchMode && window.switchMode('explore');
+  window.renderMap && window.renderMap(); window.refreshHUD && window.refreshHUD();
+  window.log?.('（回到探索入口地块）');
 }
 
 /* ────────── § renderCombatMap：地块 + 附着背景 + 结界边框 + 实体 ────────── */
