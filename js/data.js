@@ -965,5 +965,3 @@ window.getTeamChars = getTeamChars;
 window.ALLIES_MAP = Object.assign({}, ALLIES);
 window.ENEMIES = ENEMIES;
 window.rollCombatEvent = rollCombatEvent;
-window.markRareConsume = markRareConsume;
-window.markBattleDone = markBattleDone;
