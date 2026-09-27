@@ -79,15 +79,15 @@ const CITY_RESOURCES = ['coin','emptyBottle','blueStarPowder'];
 const ITEMS = {
   cookedMeat:{name:'熟肉', desc:'香喷喷的肉排。可用于交易，可直接使用回复70点生命值'},
   campfire:{name:'篝火', desc:'食用食物后，使对应的此类食物可回复生命值永久增加（果子+1，生肉+2，熟肉+4）', permanent:true},
-  club:{name:'木棒', desc:'使主角的【天赋·暴击】提升1级。可叠加', permanent:true},
-  cloth:{name:'布衣', desc:'使主角的【天赋·格挡】提升1级。可叠加', permanent:true},
+  club:{name:'木棒', desc:'主角攻击力+10、暴击率+3%。可叠加，每件独立生效。', permanent:true},
+  cloth:{name:'布衣', desc:'主角最大生命+50，受击时有2%概率使本次伤害降为0。可叠加，每件独立生效。', permanent:true},
   tent:{name:'帐篷', desc:'探索时行动力上限+1。可叠加', permanent:true},
   trap:{name:'陷阱', desc:'睡觉时，有50%获得1个随机自然资源。可叠加', permanent:true},
   quilt:{name:'被子', desc:'睡觉时，主角回复30点生命值。可叠加', permanent:true},
-  dagger:{name:'匕首', desc:'使主角的【天赋·嗜血】提升1级。可叠加', permanent:true},
-  leather:{name:'皮衣', desc:'使主角的【天赋·坚守】提升1级。可叠加', permanent:true},
-  ironSword:{name:'铁剑', desc:'使主角的【天赋·起势】提升1级。可叠加', permanent:true},
-  armor:{name:'盔甲', desc:'使主角的【天赋·格挡】和【天赋·坚守】各提升1级。可叠加', permanent:true},
+  dagger:{name:'匕首', desc:'主角攻击力+20，使用攻击型技能后有3%概率回复本次伤害50%的生命。可叠加，每件独立生效。', permanent:true},
+  leather:{name:'皮衣', desc:'主角防御力+20，受击时有3%概率回复12%生命值。可叠加，每件独立生效。', permanent:true},
+  ironSword:{name:'铁剑', desc:'主角攻击力+30，使用攻击型技能后获得4%伤害加成。可叠加，每件独立生效。', permanent:true},
+  armor:{name:'盔甲', desc:'主角最大生命+50、防御力+20，受击时有2%概率使本次伤害降为0、3%概率回复12%生命值。可叠加。', permanent:true},
   roadmap:{name:'路线图', desc:'探索中，若地图上有稀有动物，会将其所在格用特殊颜色标记。每次进入被标记的格子后，消耗1张路线图', permanent:true},
   caiyunPendant:{name:'裁云挂件', desc:'半透晶石制成的薄片挂件，内部封存着被风儿裁出的浅白云纹，常作为赠予珍视之人的饰物。可赠予同伴，使其好感度+10', permanent:true},
   goodCard:{name:'好人卡', desc:'勿以善小而不为。睡觉时获得1金币。可叠加', permanent:true},
@@ -120,21 +120,15 @@ function itemUsable(k){ return !!FOOD[k]; }
 function foodHeal(k){ const camp=G && G.inventory && G.inventory.campfire>0; const base=FOOD[k]? FOOD[k].heal : 0; const add = camp ? (k==='fruit'?1 : k==='rawMeat'?2 : k==='cookedMeat'?4 : 0) : 0; let v = base+add; if(G && G.team && G.team.indexOf('luyouyou')>=0){ v = Math.round(v * (k==='cookedMeat'?1.75:1.25)); } return v; }
 
 function grantPermanentItem(key){ G.inventory[key]=(G.inventory[key]||0)+1; switch(key){
-  case 'club': bumpPro('crit'); break;
-  case 'cloth': bumpPro('block'); break;
-  case 'dagger': bumpPro('blood'); break;
-  case 'leather': bumpPro('hold'); break;
-  case 'ironSword': bumpPro('momentum'); break;
-  case 'armor': bumpPro('block'); bumpPro('hold'); break;
   case 'tent': G.hero.apCap=(G.hero.apCap||5)+1; G.hero.actionPoint=(G.hero.actionPoint||0)+1; break;
   case 'broom': G.vehicles=G.vehicles||[]; G.vehicles.push({key:'broom', uses:(VEHICLES.broom&&VEHICLES.broom.uses)||2}); break;
+  /* club/dagger/ironSword/cloth/leather/armor 的效果由 combat.js 里的属性计算统一从 G.inventory 读取 */
 }
 G.records=G.records||{};
 if(key==='fruit' && !G.records.fruitFirstOwned){ G.records.fruitFirstOwned=true; }
 if(key==='cookedMeat' && !G.records.cookedMeatFirstOwned){ G.records.cookedMeatFirstOwned=true; }
 if(key==='broom' && !G.records.nonWalkVehicleOwned){ G.records.nonWalkVehicleOwned=true; }
 }
-function bumpPro(talent){ G.proLevels=G.proLevels||{}; G.proLevels[talent]=(G.proLevels[talent]||1)+1; }
 
 /* ==================== 状态库（ST） ====================
    kind: buff/debuff/neutral
@@ -490,15 +484,17 @@ const PROTAGONIST = {
   key:'pro', name:'主角', element:null, color:null,
   base:{atk:10, maxHp:100, def:0, escapeSpeed:100, hp:100},
   /* 天赋（kind='talent'） —— 永久生效，编入编队即自动激活 */
-  passives:[
-    {id:'tactic', name:'战术布置', kind:'talent', desc:'只攻击1名敌人时，将其设置为【重点目标】。我方单位在攻击时优先攻击该目标。场上至多存在1名【重点目标】。'},
-    {id:'crit',   name:'暴击',     kind:'talent', level:1, scal:{atk:{base:10,grow:10}, crit:{base:3,grow:2,pct:true}}, desc:'攻击力+{atk}，暴击率+{crit}。'},
-    {id:'blood',  name:'嗜血',     kind:'talent', level:1, scal:{atk:{base:20,grow:20}, prob:{base:3,grow:3,pct:true}}, desc:'攻击力+{atk}，使用攻击型技能后有{prob}概率回复生命值，回复量相当于本次伤害的50%。'},
-    {id:'momentum', name:'起势', kind:'talent', level:1, scal:{atk:{base:30,grow:30}, dmg:{base:4,grow:4,pct:true}}, desc:'攻击力+{atk}，使用攻击型技能后获得{dmg}伤害加成。'},
-    {id:'block',  name:'格挡',     kind:'talent', level:1, scal:{hp:{base:50,grow:50}, prob:{base:2,grow:2,pct:true}}, desc:'最大生命+{hp}，受到攻击时有{prob}概率使本次伤害降为0。'},
-    {id:'hold',   name:'坚守',     kind:'talent', level:1, scal:{def:{base:20,grow:20}, prob:{base:3,grow:3,pct:true}}, desc:'防御力+{def}，受到攻击时有{prob}概率回复12%生命值。'},
-    {id:'selfPhys', name:'我在', kind:'talent', desc:'物理伤害加成+50%。本局战斗中，每造成过1种不同属性的元素伤害后，物理伤害加成-20%，其余所有元素伤害加成各+10%。'},
-  ],
+    passives:[
+      {id:'tactic', name:'战术布置', kind:'talent', desc:'只攻击1名敌人时，将其设置为【重点目标】。我方单位在攻击时优先攻击该目标。场上至多存在1名【重点目标】。'},
+      {id:'selfPhys', name:'我在', kind:'talent', desc:'物理伤害加成+50%。本局战斗中，每造成过1种不同属性的元素伤害后，物理伤害加成-20%，其余所有元素伤害加成各+10%。'},
+    ],
+    /* 主角属性来自永久物品叠加（club/dagger/ironSword/cloth/leather/armor）
+       - club(木棒)×n  → atk+10n, crit率+3n%
+       - dagger(匕首)×n → atk+20n, 攻击后3n%概率回复伤害50%生命
+       - ironSword(铁剑)×n → atk+30n, 攻击后获得4n%伤害加成（起势）
+       - cloth(布衣)×n  → maxHp+50n, 受击2n%概率完全抵消本次伤害（格挡）
+       - leather(皮衣)×n → def+20n, 受击3n%概率回复12%生命（坚守）
+       - armor(盔甲)×n  → maxHp+100, def+20, 受击2%抵消, 受击3%回12%（等价布衣+皮衣各+1） */
   /* 技能（kind='active'|'auto'|'link'）—— 编入技能组才能用 */
   skills:[
     /* 自动技能 */
@@ -871,7 +867,7 @@ window.SKILL_ICON_MAP = {
   'commune':     {file:'magic.svg',       label:'灵'},
   'chaos':       {file:'star.svg',        label:'乱'},
   'absorb':      {file:'sparkle.svg',     label:'汲'},
-  'shift':       {file:'spark.svg',       label:'移'},
+  'shift':       {file:'ghost.svg',       label:'移'},
   // 夏阳 xiayang
   'inspire':     {file:'heart.svg',       label:'鼓舞'},
   'quench':      {file:'fire.svg',        label:'淬'},
@@ -901,3 +897,11 @@ window.SKILL_KIND_CSS = {
 window.getSkillIcon = function(skillId){
   return window.SKILL_ICON_MAP && window.SKILL_ICON_MAP[skillId] || {file:'sparkle.svg', label: skillId?.[0]||'?'};
 };
+
+/* 获取角色羁绊（主角返回默认占位）*/
+function getBond(key){
+  if(key==='pro') return { level:0, affinity:0 };
+  if(G && G.bonds && G.bonds[key]) return G.bonds[key];
+  return { level:0, affinity:0 };
+}
+function bondLevel(key){ return getBond(key).level; }

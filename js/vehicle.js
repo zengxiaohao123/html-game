@@ -69,7 +69,7 @@ function consumeVehicleForMove(){
       log(`<b>${def.name}</b> 今日已用完，已自动切换回徒步跋涉。`);
     }
   }
-  /* === 启程任务·便捷出行：徒步跋涉不计入 === */
+  /* === 启程任务·便捷出行：徒步跋涉 / 疾行 不视为使用载具 === */
   if(G && v.key!=='walk' && v.key!=='dash'){ G.records=G.records||{}; G.records.qCarCount=(G.records.qCarCount||0)+1; }
   if(!(def.infinite||v.uses==null||v.uses===Infinity)){
     v.uses-=1;

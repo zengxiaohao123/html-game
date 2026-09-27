@@ -29,13 +29,23 @@ window.flowLabel = function(){
 
 function newGame(){
   const bonds={}; for(const k in ALLIES){ bonds[k]={level:1, affinity:10}; }
-  // day=0 留给第 0 幕开场剧情使用，afterPlayed 会推进到 1
+  const defaultTeam=['pro','xiayang','luyouyou'];
+  const defaultSkillGroup = buildDefaultSkillGroup(defaultTeam);
+  // 4 个独立编队：第一个默认主角+夏阳+陆悠悠，后三个初始为空
+  const formations = [
+    { team: defaultTeam.slice(), skillGroup: defaultSkillGroup.map(s=>({...s})) },
+    { team: [], skillGroup: [] },
+    { team: [], skillGroup: [] },
+    { team: [], skillGroup: [] },
+  ];
   return { day:0, region:'wild', hero:{atk:10,maxHp:100,hp:100,def:0,escapeSpeed:100,health:30,actionPoint:5,apCap:5,facing:'up',
       psyStress:0, depress:false, clearMindBuff:{day:0, atkUp:0, dr:0}},
     inventory:{wood:0,fruit:0,flax:0,rawMeat:0,coin:20,emptyBottle:0,iron:0,blueStar:0,blueStarPowder:0,amethyst:0,clearMind:0},
     records:{slain:{}, wins:0, losses:0, mentalGoodDays:0, qCraftDone:false, qFruitCount:0, qMeatCount:0, qCarCount:0,
       fruitFirstOwned:false, cookedMeatFirstOwned:false, qCraftAvail:false, nonWalkVehicleOwned:true},
-    team:['pro','xiayang','luyouyou'], skillGroup:buildDefaultSkillGroup(['pro','xiayang','luyouyou']), proLevels:{}, alliesPermAtk:{}, bonds,
+    team: defaultTeam.slice(), skillGroup: defaultSkillGroup.map(s=>({...s})),
+    formations, activeFormation: 0,
+    proLevels:{}, alliesPermAtk:{}, bonds,
     vehicles:[{key:'walk'},{key:'dash'},{key:'dragon',uses:3},{key:'mushroom',uses:3},{key:'carriage',uses:2},{key:'carpet',uses:1},{key:'qiaoyu'}], vehicleSel:0, map:null, px:0, py:0, st:null, lootLog:[] };
 }
 function standardVehicles(){ return [{key:'walk'},{key:'dash'},{key:'dragon',uses:3},{key:'mushroom',uses:3},{key:'carriage',uses:2},{key:'carpet',uses:1},{key:'qiaoyu'}]; }
@@ -141,7 +151,14 @@ function handleKeys(ev){
   if(isInFlow()) return;   // 事件中不可移动
   let dx=0,dy=0;
   if(k==='w'){dy=-1;} else if(k==='s'){dy=1;} else if(k==='a'){dx=-1;} else if(k==='d'){dx=1;} else return;
-  const nx=G.px+dx, ny=G.py+dy; if(nx<0||ny<0||nx>=G.map.n||ny>=G.map.n) return; moveExplore(nx,ny,1);
+  const nx=G.px+dx, ny=G.py+dy;
+  // 朝向先改好（无论能不能进都要朝）
+  G.hero.facing = dirToFacing(dx,dy);
+  // 地图边界 / obstacle / void：只改朝向，不消耗行动力，不移动
+  if(nx<0||ny<0||nx>=G.map.n||ny>=G.map.n){ refreshHUD(); renderMap(); return; }
+  const target = G.map.cells[ny*G.map.n+nx];
+  if(!target || target.terrain==='obstacle' || target.terrain==='void'){ refreshHUD(); renderMap(); return; }
+  moveExplore(nx,ny,1);
 }
 document.addEventListener('keydown', handleKeys, true);
 function sleep(){

@@ -725,13 +725,9 @@ function itemDetailHTML(key){
     body = `回复 <span class="lvlup">${foodHeal(key)}</span> 点生命${add}（已计入篝火、烹饪天赋加成）。`;
   } else if(key==='clearMind'){
     body = `心理压力<span style="color:#d9534f">+4</span>，立即回满生命值与行动力并解除 ${termHTML('depress','抑郁')} 状态，本日内主角攻击力+25%、受到的伤害-25%。`;
-  } else if(ITEMS[key] && ITEMS[key].permanent && (ITEMS[key].desc||'').indexOf('天赋')>=0){
-    const map={club:'crit',cloth:'block',dagger:'blood',leather:'hold',ironSword:'momentum'};
-    if(map[key]){ const tid=map[key]; const tname=(PROTAGONIST.passives.find(p=>p.id===tid)||{}).name || tid; const lv=(G&&G.proLevels&&G.proLevels[tid])||1; body=`使主角【天赋·${tname}】升为 <span class="lvlup">${lv+1}</span> 级（当前 ${lv} 级）。`; }
-    else body = ITEMS[key].desc || '';
-  } else if(key==='armor'){ const lv=(G&&G.proLevels&&G.proLevels.block)||1; body=`使【格挡】升为 <span class="lvlup">${lv+2}</span> 级、【坚守】升为 <span class="lvlup">${((G&&G.proLevels&&G.proLevels.hold)||1)+1}</span> 级。`; }
-  else { body = itemDesc(key)||'（暂无说明）'; }
-  /* === lore 蓝色文学描述：优先 ITEMS.lore，其次 RES_LORE（资源专用） === */
+  } else {
+    body = itemDesc(key) || '（暂无说明）';
+  }
   const lore = (ITEMS[key] && ITEMS[key].lore) || RES_LORE[key] || '';
   return lore ? `${body}<div class="item-lore">${lore}</div>` : body;
 }
@@ -861,9 +857,7 @@ function modalBack(){ if(modalStack.length){ const p=modalStack.pop(); qs('#moda
 
 function openCharacters(){ renderCharacters(); }
 
-
 let charPageKey='pro'; let charPageTab='skills';
-function openCharacters(){ renderCharacters(); }
 function renderCharacters(){
   const keys=['pro',...Object.keys(ALLIES)];
   const tabs=keys.map(k=>`<button class="ctab ${k===charPageKey?'on':''}" data-k="${k}">${getChar(k).name}</button>`).join('');
@@ -923,39 +917,38 @@ window.setCharPageTab=function(id){
 /* ---- Tab 1：天赋 + 技能 展示（只读，但可以看到哪些已编入技能组） ---- */
 function charShowcase(key, c){
   c = c || getChar(key);
-  const slots = G.skillGroup || [];
   const talents = (c.passives||[]).map(p => {
     const name = p.scal? talentDisplayName(key,p) : p.name;
     const desc = p.scal? lvDescText(p,entryLevel(key,p)) : terms(p.desc);
-    return `<div class="charTalent"><span class="cat talent">天赋</span>${name}：${desc}</div>`;
+    return `<div class="charTalent" style="color:#fff"><span class="cat talent">天赋</span>${name}：${desc}</div>`;
   }).join('') || '<div class="nohint">（该角色没有天赋）</div>';
 
   const skills = (c.skills||[]).map(s => {
-    const inGroup = slots.find(sl => sl.charKey===key && sl.skillId===s.id);
     const kindCss = SKILL_KIND_CSS[s.kind] || SKILL_KIND_CSS.auto;
     const icon = getSkillIcon(s.id);
     const iconBg = `assets/skills/${icon.file}`;
-    const dmgHint = skillDamagePreview(key,s) != null ? ` · 约${R(skillDamagePreview(key,s))}点` : '';
-    const cd = s.cd ? ` · 冷却${s.cd}` : '';
-    const usedByMe = (c.skills||[]).filter(x=>x.kind===s.kind).length>1;
-    const sameKindHint = usedByMe ? '' : '';
-    return `<div class="charSkill">
+    // 规范化描述：把"约X点"/"冷却X"换成玩家友好文案
+    const parts = [];
+    if(s.formula) parts.push(`效果：${s.formula}`);
+    if(s.cd) parts.push(`冷却：${s.cd} 回合`);
+    const extra = parts.length ? `<div class="nohint" style="margin-left:72px;color:#aaa;font-size:12px">${parts.join(' · ')}</div>` : '';
+    return `<div class="charSkill" style="color:#fff">
       <span class="sg-tile sg-${s.kind}" style="float:left;margin-right:10px">
         <div class="sg-tile-icon" style="background-image:url('${iconBg}')"></div>
         <div class="sg-tile-label">${s.name.replace(/^(自动|主动|连携)·/,'')}</div>
       </span>
-      <b>${s.name}</b>${inGroup?` <span class="carry">[已编入槽${inGroup.slot}]</span>`:''}
-      <div class="nohint" style="margin-left:72px">${terms(s.desc)}${dmgHint}${cd}</div>
+      <b style="color:#fff">${s.name}</b>
+      <div class="nohint" style="margin-left:72px;color:#fff">${terms(s.desc)}</div>
+      ${extra}
       <div style="clear:both"></div>
     </div>`;
   }).join('') || '<div class="nohint">（该角色没有技能）</div>';
 
   return `
-    <div class="sec"><b>天赋</b></div>
+    <div class="sec" style="color:#fff"><b>天赋</b></div>
     ${talents}
-    <div class="sec"><b>技能</b>（常规技能统一在编队界面「编辑技能组」中管理；这里仅展示）</div>
+    <div class="sec" style="color:#fff"><b>技能</b></div>
     ${skills}
-    <div class="nohint" style="margin-top:8px">想要调整编入哪些技能 / 顺序 / 多角色混搭？去 <b>编队</b> → <b>编辑技能组</b>。</div>
   `;
 }
 
@@ -996,96 +989,253 @@ function charBondTab(key,c){ c=c||getChar(key); if(key==='pro') return '<p>主�
 function charStoryTab(key,c){ c=c||getChar(key); if(key==='pro') return '<p>属于你的故事，才刚刚开始……</p>'; return `<p>关于 <b>${c.name}</b> 的故事，正在撰写中，敬请期待。</p>`; }
 
 let skillPickSel={};
-function openFormation(){ if(isInFlow()){ log(`${flowLabel()}中无法使用该功能。`); return; } renderFormation(); }
-function eligibleSwapChars(){ const keys=['pro']; for(const k in ALLIES){ if(bondLevel(k)>=1) keys.push(k); } return keys; }
-let swapOpen=false, swapJustOpened=false; let swapTeam=[];
-function openSwap(){ swapTeam=G.team.slice(); swapOpen=true; swapJustOpened=true; renderFormation(); }
-function toggleSwapChar(k){ const idx=swapTeam.indexOf(k); if(idx>=0){ swapTeam.splice(idx,1); } else { if(swapTeam.length>=3){ log('队伍最多 3 人。'); return; } if(!eligibleSwapChars().includes(k)){ log('该角色羁绊等级不足，暂不可加入编队。'); return; } swapTeam.push(k); } renderFormation(); }
-function applySwap(){ if(!swapTeam.includes('pro') || swapTeam.length<1){ swapOpen=false; swapJustOpened=false; renderFormation(); log('新的队伍不合规则（必须包含主角且至少 1 人），本次换人未生效。'); return; } G.team=swapTeam.slice(); swapOpen=false; swapJustOpened=false; renderFormation(); }
-function renderSwapPanel(){ const cells=eligibleSwapChars().map(k=>{ const c=getChar(k); const idx=swapTeam.indexOf(k); const inTeam=idx>=0; const sub=k==='pro'? '' : `<div class="selem">${c.element?ELEM[c.element].zh:'无'}</div><div class="sbond">羁绊 ${bondLevel(k)}</div>`; const badge=inTeam?`<div class="snum">${idx+1}</div>`:''; return `<div class="schar ${inTeam?'in':''}" onclick="toggleSwapChar('${k}')">${badge}<div class="sname">${c.name}</div>${sub}</div>`; }).join(''); return `<div class="swap-overlay"><div class="swap-head">选择上场的同伴（点击切换，主角可暂离队，退出时若不合规则则还原）</div><div class="swap-grid">${cells}</div><div class="swap-foot"><button class="mbtn small" onclick="applySwap()">确认</button></div></div>`; }
-function renderFormation(){
-  const teamView = swapOpen ? swapTeam : G.team;
-  const slots = G.skillGroup || [];
-  // 预览：每个角色在全局技能组里编入了哪些技能
-  const cols = teamView.map(k => {
+/* ==================== 编队（Formation） ====================
+   4 个独立队列 G.formations[0..3]；G.activeFormation 是当前启用的。
+   每个队列含 { team:[key1,key2,key3], skillGroup:[...独立技能组] }。
+   启用某个队列时同步更新 G.team / G.skillGroup。 */
+
+/* ---- 辅助 ---- */
+window.eligibleCharsForFormation = function(){
+  const keys=['pro'];
+  for(const k in ALLIES){
+    if(!G.bonds || !G.bonds[k]) continue;
+    if(G.bonds[k].level >= 1) keys.push(k);
+  }
+  return keys;
+};
+
+function ensureFormations(){
+  if(!G.formations || G.formations.length<4){
+    // 老存档没有 formations，构造一个
+    G.formations = [
+      { team:(G.team||['pro']).slice(), skillGroup:(G.skillGroup||[]).map(s=>({...s})) },
+      { team:[], skillGroup:[] },
+      { team:[], skillGroup:[] },
+      { team:[], skillGroup:[] },
+    ];
+  }
+  if(G.activeFormation==null || G.activeFormation==undefined) G.activeFormation = 0;
+}
+
+/* ---- 角色选择 modal（编队/快捷编队通用） ----
+   mode: 'team-slot' —— 点击某队列某角色格时打开，已选角色亮绿框
+   mode: 'quick'     —— 快捷编队，已选角色亮绿框+序号123
+   callback: 用户确认后调用 callback(teamArray) */
+let __charSelectState = null; // { mode, team:[], title, onDone }
+function openCharSelectModal(mode, initialTeam, title, onDone){
+  ensureFormations();
+  __charSelectState = { mode: mode||'team-slot', team: (initialTeam||[]).slice(), title, onDone };
+  renderCharSelectModal();
+}
+function renderCharSelectModal(){
+  const S = __charSelectState;
+  if(!S) return;
+  const eligible = eligibleCharsForFormation();
+  // 每个角色一个 tile；mode='quick' 时已选显示序号
+  const tiles = eligible.map(k => {
     const c = getChar(k); if(!c) return '';
-    const ele = k==='pro' ? '无属性' : (ELEM[c.element]?.zh || '无属性');
-    const inGroup = slots.filter(s => s.charKey===k);
-    const skillsPreview = inGroup.length
-      ? inGroup.map(s => { const sk = (c.skills||[]).find(x=>x.id===s.skillId); return `<span class="fskill carried">[${s.slot}] ${sk?sk.name:s.skillId}</span>`; }).join('')
-      : '<span class="nohint">（未编入技能组）</span>';
-    return `<div class="fcol">
-      <div class="fcol-head">${c.name}</div>
-      <div class="fcol-name">${c.name} · ${ele}</div>
-      <div class="fcol-skills-label">全局技能组中：</div>
-      <div class="fcol-skills">${skillsPreview}</div>
-      <button class="mbtn small" onclick="openSwap()">替换</button>
+    const idx = S.team.indexOf(k);
+    const picked = idx >= 0;
+    const numBadge = S.mode==='quick' && picked ? `<div class="csnum">${idx+1}</div>` : '';
+    const bg = c.color || '#444';
+    const fg = c.element ? '#fff' : '#fff'; // 文字白色（元素色只做边框色，背景浅）
+    // 用元素色做 tile 背景色的淡版 + 白色文字
+    const eleBg = c.element ? ELEM[c.element]?.c || '#444' : '#555';
+    return `<div class="cs-tile ${picked?'picked':''}" data-k="${k}"
+      style="border:2px solid ${eleBg};background:rgba(255,255,255,${picked?0.25:0.08});color:#fff"
+      title="${c.name}${c.element?'（'+ELEM[c.element].zh+'）':''}">
+      ${numBadge}
+      <div class="cs-tname">${c.name}</div>
+      ${c.element?`<div class="cs-tele">${ELEM[c.element].zh}</div>`:''}
     </div>`;
   }).join('');
+  const hint = S.mode==='quick'
+    ? '点击角色加入（最多3个，按点击顺序编号1→2→3），再点已选中的角色可取消。'
+    : '点击角色加入，再点已选中的角色可取消（不检查主角）。';
+  const footer = S.mode==='team-slot'
+    ? `<button class="mbtn small" onclick="confirmCharSelect()">确认替换</button>`
+    : `<button class="mbtn small" onclick="confirmCharSelect()">确认快捷编队</button>`;
+  openModal(S.title || '选择角色',
+    `<div class="cs-hint">${hint} 当前已选 ${S.team.length}/3。</div>
+     <div class="cs-grid">${tiles}</div>
+     <div class="cs-foot">${footer}</div>`,
+    'wide', {replace:true});
+  qs('#modalBody').querySelectorAll('.cs-tile').forEach(b => {
+    b.onclick = () => {
+      const k = b.dataset.k;
+      const idx = S.team.indexOf(k);
+      if(idx >= 0){
+        S.team.splice(idx,1);
+      } else {
+        if(S.team.length >= 3){ log('最多3人。'); return; }
+        S.team.push(k);
+      }
+      renderCharSelectModal();
+    };
+  });
+}
+window.confirmCharSelect = function(){
+  const S = __charSelectState; if(!S) return;
+  const team = S.team.slice();
+  const onDone = S.onDone;
+  __charSelectState = null;
+  closeModal();
+  if(typeof onDone === 'function') onDone(team);
+};
 
+/* ---- 编队主界面 ---- */
+function openFormation(){ if(isInFlow()){ log(`${flowLabel()}中无法使用该功能。`); return; } ensureFormations(); renderFormation(); }
+
+function renderFormation(){
+  ensureFormations();
+  const F = G.formations;
+  const lines = F.map((fm, i) => {
+    const isActive = i === G.activeFormation;
+    const team = fm.team || [];
+    // 三个角色 tile（可空）
+    const nameCells = [0,1,2].map(pos => {
+      const k = team[pos];
+      if(!k){
+        return `<div class="fm-ctile empty" data-pos="${pos}" data-fm="${i}"
+          onclick="openCharSelectAt(${i}, ${pos})">+ 空缺</div>`;
+      }
+      const c = getChar(k); if(!c) return '';
+      const eleBg = c.element ? ELEM[c.element]?.c : '#7a7a7a';
+      return `<div class="fm-ctile" data-pos="${pos}" data-fm="${i}"
+        style="border:2px solid ${eleBg};background:rgba(255,255,255,0.08);color:#fff"
+        onclick="openCharSelectAt(${i}, ${pos})">
+        ${c.name}
+        ${c.element?`<div class="fm-ctele">${ELEM[c.element].zh}</div>`:''}
+      </div>`;
+    }).join('');
+    // 技能组预览
+    const skillShort = (fm.skillGroup||[]).map(s => {
+      const c = getChar(s.charKey);
+      const sk = (c?.skills||[]).find(x=>x.id===s.skillId);
+      if(!sk) return '';
+      const kindCls = 'k-'+sk.kind;
+      return `<span class="fm-skillchip ${kindCls}" title="${sk.name} —— ${c?.name||''}">${sk.name.replace(/^(自动|主动|连携)·/,'')}</span>`;
+    }).join('') || '<span class="nohint">（未编入技能）</span>';
+    // 按钮
+    const activeTag = isActive ? `<span class="fm-active-tag">✓ 当前启用</span>` : '';
+    const heroOk = team.includes('pro');
+    return `<div class="fm-row ${isActive?'active':''}">
+      <div class="fm-row-title">
+        <b>队列 ${i+1}</b>
+        ${activeTag}
+      </div>
+      <div class="fm-cells">${nameCells}</div>
+      <div class="fm-skills">${skillShort}</div>
+      <div class="fm-btns">
+        <button class="mbtn tiny" onclick="openQuickFormation(${i})">快捷编队</button>
+        <button class="mbtn tiny" onclick="renderSkillGroupEditorFor(${i})">编辑技能组</button>
+        <button class="mbtn tiny ${isActive?'':heroOk?'primary':'dis'}"
+          ${isActive?'disabled':''}
+          ${!isActive && !heroOk?'disabled title=\"队列中必须包含主角\"':''}
+          onclick="activateFormation(${i})">${isActive?'已启用':'启用队列'}</button>
+      </div>
+    </div>`;
+  }).join('');
   openModal('编队',
-    `<div class="form-head">
-       <span class="form-title">当前编队</span>
-       <button class="mbtn small" onclick="openSwap()">快捷编队</button>
-       <button class="mbtn small primary" onclick="renderSkillGroupEditor()">编辑技能组</button>
+    `<div class="fm-head">
+       <span class="fm-head-tip">共 4 个队列，每个队列独立维护队伍成员与技能组；同一时刻仅启用 1 个。启用时必须包含主角。</span>
      </div>
-     <div class="form-wrap"><div class="form-cols">${cols}</div></div>
-     ${swapOpen ? renderSwapPanel() : ''}`,
+     <div class="fm-rows-wrap">${lines}</div>`,
     'full', {replace:true});
 }
 
-/* ============ 技能组编辑器（全新） ============ */
-
-
-
-/* ============================================================
-   技能组编辑器（大重做 v2）
-   - 按 kind 分组显示：自动 → 主动 → 连携（kind 顺序不可拖动）
-   - 同一 kind 内部可以拖拽排序
-   - 图标格化：每个技能是方形图标+名字，背景色按 kind 着色
-   - 左侧「技能组」（已编入，点击卸下） / 右侧「可选」（未编入，点击编入）
-   - 支持拖拽从右侧拖到左侧，以及左侧内部重排
-   ============================================================ */
-let sgEditorCache = null;
-
-window.sgNewEditor = function(){
-  sgEditorCache = {
-    group: (G.skillGroup || []).map(s => ({...s})),
-    picked: G.team[0] || 'pro',
-  };
+/* ---- 角色 tile 点击：在该队列某格打开选择 modal ---- */
+window.openCharSelectAt = function(fmIdx, pos){
+  ensureFormations();
+  const curTeam = (G.formations[fmIdx].team || []).slice();
+  openCharSelectModal('team-slot', curTeam, `队列 ${fmIdx+1} · 选择角色（点击任一角色替换/取消，共 3 格）`, (newTeam) => {
+    G.formations[fmIdx].team = newTeam.slice(0,3);
+    // 如果 fmIdx 正好是 activeFormation，同步 G.team
+    if(fmIdx === G.activeFormation){
+      G.team = G.formations[fmIdx].team.slice();
+      G.skillGroup = normalizeSkillGroup(G.formations[fmIdx].skillGroup);
+    }
+    renderFormation();
+  });
+};
+/* ---- 快捷编队：整队重选 ---- */
+window.openQuickFormation = function(fmIdx){
+  ensureFormations();
+  openCharSelectModal('quick', (G.formations[fmIdx].team||[]).slice(0,3), `队列 ${fmIdx+1} · 快捷编队`, (newTeam) => {
+    G.formations[fmIdx].team = newTeam.slice();
+    // 归一化该队列的技能组（清掉不属于新队的技能）
+    const newTeamSet = new Set(G.formations[fmIdx].team);
+    G.formations[fmIdx].skillGroup = G.formations[fmIdx].skillGroup.filter(s => newTeamSet.has(s.charKey));
+    // 若该技能组为空则用默认
+    if(!G.formations[fmIdx].skillGroup.length){
+      G.formations[fmIdx].skillGroup = buildDefaultSkillGroup(G.formations[fmIdx].team).map(s=>({...s}));
+    }
+    if(fmIdx === G.activeFormation){
+      G.team = G.formations[fmIdx].team.slice();
+      G.skillGroup = normalizeSkillGroup(G.formations[fmIdx].skillGroup);
+    }
+    renderFormation();
+  });
+};
+/* ---- 启用队列 ---- */
+window.activateFormation = function(fmIdx){
+  ensureFormations();
+  const fm = G.formations[fmIdx];
+  if(!fm.team || !fm.team.includes('pro')){
+    alertDialog('无法启用', '该队列必须包含主角。');
+    return;
+  }
+  G.activeFormation = fmIdx;
+  G.team = fm.team.slice();
+  G.skillGroup = normalizeSkillGroup(fm.skillGroup);
+  log(`已启用队列 ${fmIdx+1}。`);
+  renderFormation();
 };
 
-function _sgIconEl(skill, charKey, opts){
-  /* 返回一个方形图标格 HTML，按 kind 着色、内含图标+名字+kind 小标签 */
-  if(!skill) return '';
-  const kind = skill.kind || 'auto';
-  const icon = getSkillIcon(skill.id);
-  const ownerName = charKey ? (getChar(charKey)?.name || '?') : '';
-  const disabledCls = opts && opts.disabled ? ' disabled' : '';
-  /* 只有 group 里的 tile（可重排）才 draggable；pick 里的只可点击 */
-  const needDrag = opts && opts.draggable;
-  const dndAttrs = needDrag ? `draggable="true" data-skill-id="${skill.id}" data-char-key="${charKey||''}"` : `data-skill-id="${skill.id}" data-char-key="${charKey||''}"`;
-  const bgImg = `background-image:url('assets/skills/${icon.file}')`;
-  return `<div class="sg-tile sg-${kind}${disabledCls}" ${dndAttrs} title="${skill.name}（${ownerName}）">
-      <div class="sg-tile-icon" style="${bgImg}"></div>
-      <div class="sg-tile-label">${skill.name.replace(/^(自动|主动|连携)·/,'')}</div>
-      ${opts && opts.showOwner ? `<div class="sg-tile-owner">${ownerName}</div>` : ''}
-    </div>`;
-}
-
-window.renderSkillGroupEditor = function(){
-  sgNewEditor();
-  renderSkillGroupEditorBody();
-  openModal('技能组编辑器', sgEditorHTML(), 'full', {replace:true});
+/* ==================== 技能组编辑器（三大块布局） ====================
+   左上图：可选技能（点击加入，不支持拖拽）
+   右上：选中的技能的具体描述
+   下方：当前技能组（按 auto→active→link 分段；同 kind 内可拖拽排序；点击已编入 tile = 卸下；无 slot 序号）
+*/
+let sgEditorCache = null;
+let sgEditorFmIdx = 0;
+window.renderSkillGroupEditorFor = function(fmIdx){
+  ensureFormations();
+  sgEditorFmIdx = fmIdx;
+  const fm = G.formations[fmIdx];
+  sgEditorCache = {
+    group: (fm.skillGroup || []).map(s => ({...s})),
+    pickedDesc: null, // 当前鼠标选中的技能（用于右上描述区）
+  };
+  openModal(`技能组编辑器 · 队列 ${fmIdx+1}`, sgEditorHTML(), 'full', {replace:true});
+  _bindSkillGroupEditorEvents();
 };
 
 function sgEditorHTML(){
   const E = sgEditorCache;
-  // 按 kind 把 group 切片，并给每个 kind 段打不可拖动的分割头
+  // ===== 左上：可选技能 =====
+  // 按角色分栏，每栏列出未编入的 skill
+  const pickedSet = new Set(E.group.map(s => s.charKey+'::'+s.skillId));
+  const fmTeam = G.formations[sgEditorFmIdx]?.team || G.team || [];
+  let pickCols = '';
+  for(const ck of fmTeam){
+    const c = getChar(ck); if(!c) continue;
+    const owned = (c.skills||[]).filter(s => !pickedSet.has(ck+'::'+s.id));
+    if(!owned.length) continue;
+    const tiles = owned.map(s => sgPickTileHTML(s, ck, false)).join('');
+    const ele = ck==='pro' ? '无属性' : (ELEM[c.element]?.zh || '');
+    pickCols += `
+      <div class="sg-pick-col">
+        <div class="sg-pick-head">${c.name}${ele?` · ${ele}`:''}</div>
+        <div class="sg-pick-grid" data-pick-char="${ck}">${tiles}</div>
+      </div>`;
+  }
+  if(!pickCols) pickCols = '<div class="nohint">所有角色的技能都已编入。</div>';
+
+  // ===== 下方：当前技能组（三大段：auto → active → link）
   const kindsOrder = ['auto','active','link'];
-  const kindLabels = {auto:'自动技能', active:'主动技能', link:'连携技能'};
+  const kindLabels = {auto:'自动技能（按自动阶段依次释放）', active:'主动技能（主角行动时玩家释放）', link:'连携技能（满足条件时可释放）'};
   let groupSections = '';
-  let slotNum = 1;
   for(const k of kindsOrder){
     const rows = E.group.filter(s => {
       const sk = (getChar(s.charKey)?.skills || []).find(x => x.id===s.skillId);
@@ -1094,218 +1244,185 @@ function sgEditorHTML(){
     if(!rows.length) continue;
     const tiles = rows.map(s => {
       const sk = (getChar(s.charKey)?.skills || []).find(x => x.id===s.skillId);
-      const tile = _sgIconEl(sk, s.charKey, {showOwner:true, draggable:true});
-      return `<div class="sg-slot-wrap" data-slot="${slotNum}" data-kind="${k}" data-char="${s.charKey}" data-skill="${s.skillId}">
-        <span class="sg-slot-num">${slotNum}</span>
-        ${tile}
-        <button class="sg-slot-del" title="卸下此技能"
-          onclick="sgRemoveSlotByData(this)">×</button>
-      </div>`;
+      return sgPickTileHTML(sk, s.charKey, true, s.skillId, s.charKey);
     }).join('');
     groupSections += `
-      <div class="sg-kind-section sg-kind-${k}">
+      <div class="sg-kind-section sg-kind-${k}" data-kind="${k}">
         <div class="sg-kind-head">
           <span class="sg-kind-label">${kindLabels[k]}</span>
-          <span class="sg-kind-hint">（同类型内可拖拽排序 · 类型顺序固定）</span>
+          <span class="sg-kind-hint">（同类型内可拖拽排序 · 跨类型不可）</span>
         </div>
-        <div class="sg-slot-row" data-kind="${k}">${tiles}</div>
+        <div class="sg-slot-row">${tiles}</div>
       </div>`;
-    slotNum += rows.length;
   }
-  if(!slotNum){ groupSections = `<div class="nohint" style="padding:14px">技能组还是空的。点右边的技能加入，或从右侧拖进来。</div>`; }
+  if(!groupSections) groupSections = `<div class="nohint" style="padding:14px">技能组还是空的。从左上方点技能加入吧。</div>`;
 
-  // 可选区：遍历队伍里所有角色的所有技能，排除已编入的
-  const pickedSet = new Set(E.group.map(s => s.charKey+'::'+s.skillId));
-  let pickCols = '';
-  for(const ck of G.team){
-    const c = getChar(ck); if(!c) continue;
-    const owned = (c.skills||[]).filter(s => !pickedSet.has(ck+'::'+s.id));
-    if(!owned.length) continue;
-    const tiles = owned.map(s => _sgIconEl(s, ck, {})).join('');
-    const ele = ck==='pro' ? '无属性' : (ELEM[c.element]?.zh || '');
-    pickCols += `
-      <div class="sg-pick-col">
-        <div class="sg-pick-head">${c.name}${ele?` · ${ele}`:''}</div>
-        <div class="sg-pick-grid" data-pick-char="${ck}">${tiles}</div>
-      </div>`;
+  // ===== 右上：当前鼠标选中技能的描述 =====
+  let descHTML = '<div class="sg-detail-empty">鼠标悬停或点击左侧/下方的技能即可查看具体描述。</div>';
+  if(E.pickedDesc){
+    descHTML = `<div class="sg-detail-name">${E.pickedDesc.ownerName} · ${E.pickedDesc.name}</div>
+      <div class="sg-detail-kind sg-kind-${E.pickedDesc.kind}">${sgKindLabel(E.pickedDesc.kind)}</div>
+      <div class="sg-detail-body">${terms(E.pickedDesc.desc)}</div>
+      ${E.pickedDesc.formula?`<div class="sg-detail-formula">效果：${E.pickedDesc.formula}</div>`:''}
+      ${E.pickedDesc.cd?`<div class="sg-detail-formula">冷却：${E.pickedDesc.cd} 回合</div>`:''}`;
   }
 
   return `
-  <div class="sg-editor-big">
-    <div class="sg-col sg-col-group">
-      <div class="sg-col-head">
-        <span>我的技能组（${E.group.length} 槽）</span>
-        <div class="sg-head-btns">
-          <button class="mbtn tiny" onclick="sgResetDefault()">恢复默认</button>
-          <button class="mbtn tiny primary" onclick="sgSave()">保存并返回编队</button>
+  <div class="sg-editor-grid">
+    <div class="sg-editor-top">
+      <div class="sg-col sg-col-pick">
+        <div class="sg-col-head">
+          <span>可选技能（点击加入）</span>
         </div>
+        <div class="sg-pick-wrap">${pickCols}</div>
       </div>
-      <div class="sg-kind-blocks" id="sgGroupContainer">${groupSections}</div>
+      <div class="sg-col sg-col-detail">
+        <div class="sg-col-head"><span>技能描述</span></div>
+        <div class="sg-detail-wrap" id="sgDetailWrap">${descHTML}</div>
+      </div>
     </div>
-    <div class="sg-col sg-col-pick">
-      <div class="sg-col-head"><span>可选技能（点击编入，或拖拽到左侧）</span></div>
-      <div class="sg-pick-wrap">${pickCols}</div>
-      ${!pickCols ? '<div class="nohint">你已将所有角色的技能都编入了技能组。</div>' : ''}
+    <div class="sg-editor-bottom">
+      <div class="sg-col sg-col-group">
+        <div class="sg-col-head">
+          <span>当前技能组（共 ${E.group.length} 个）</span>
+          <div class="sg-head-btns">
+            <button class="mbtn tiny" onclick="sgResetDefault()">恢复默认</button>
+            <button class="mbtn tiny primary" onclick="sgSave()">保存</button>
+          </div>
+        </div>
+        <div class="sg-kind-blocks" id="sgGroupContainer">${groupSections}</div>
+      </div>
     </div>
   </div>
   `;
 }
 
-function renderSkillGroupEditorBody(){
-  qs('#modalBody').innerHTML = sgEditorHTML();
-  _bindSkillGroupEditorDrag();
-  _bindSkillGroupEditorClicks();
+function sgPickTileHTML(skill, charKey, inGroup, skillId_override, charKey_override){
+  if(!skill) return '';
+  const kind = skill.kind || 'auto';
+  const icon = getSkillIcon(skill.id);
+  const iconBg = `assets/skills/${icon.file}`;
+  const char = getChar(charKey);
+  const ownerName = char?.name || '';
+  const click = inGroup
+    ? `onclick="sgRemoveAndRedraw('${charKey_override}', '${skillId_override}')"`
+    : `onclick="sgAddFromPick('${charKey}','${skill.id}')"`;
+  // 拖拽：仅下方已编入（同 kind 内可排序）才 draggable
+  const draggable = inGroup;
+  const dndAttrs = draggable
+    ? `draggable="true" data-skill-id="${skillId_override}" data-char-key="${charKey_override}"`
+    : '';
+  return `<div class="sg-tile sg-${kind}${draggable?' sg-drag':''}"
+    ${dndAttrs}
+    data-skill-id="${skill.id}" data-char-key="${charKey}" data-in-group="${inGroup?'1':'0'}"
+    ${click}
+    data-hover-desc="${encodeURIComponent(JSON.stringify({name:skill.name, desc:skill.desc, kind:kind, formula:skill.formula||'', cd:skill.cd||0, ownerName:ownerName}))}">
+    <div class="sg-tile-icon" style="background-image:url('${iconBg}')"></div>
+    <div class="sg-tile-label">${skill.name.replace(/^(自动|主动|连携)·/,'')}</div>
+    <div class="sg-tile-owner">${ownerName}</div>
+  </div>`;
 }
 
-function _bindSkillGroupEditorDrag(){
-  /* 拖拽：
-     - 从右侧可选 → 左侧：拖到某个 kind-section，放入末尾；
-     - 左侧内部：只允许在同 kind-section 内重排（跨 kind 自动拒绝）。
-     用原生 HTML5 drag & drop 事件。 */
+function sgKindLabel(k){ return SKILL_KIND_CSS[k]?.label || k; }
+
+/* ---- 事件绑定 ---- */
+function _bindSkillGroupEditorEvents(){
   const root = qs('#modalBody'); if(!root) return;
-  const groupContainer = qs('#sgGroupContainer');
-  if(!groupContainer) return;
-  let dragging = null; // {source:'group'|'pick', skillId, charKey, kind}
-  groupContainer.querySelectorAll('.sg-tile').forEach(el => {
-    el.addEventListener('dragstart', e => {
-      dragging = {
-        skillId: el.dataset.skillId,
-        charKey: el.dataset.charKey,
-      };
-      // 判断 kind：在左侧则从 slot-wrap 的 data-kind 拿；在右侧从 tile 自己 class
-      const wrap = el.closest('.sg-slot-wrap');
-      if(wrap){
-        dragging.source = 'group';
-        dragging.kind = wrap.dataset.kind;
-      } else {
-        dragging.source = 'pick';
-        const sec = el.closest('.sg-pick-col');
-        dragging.charKey = sec?.dataset.pickChar || el.dataset.charKey;
-        const c = getChar(dragging.charKey);
-        const sk = (c?.skills||[]).find(x => x.id===dragging.skillId);
-        dragging.kind = sk?.kind || 'auto';
-      }
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', 'x');
-      el.classList.add('sg-dragging');
-    });
-    el.addEventListener('dragend', e => {
-      el.classList.remove('sg-dragging');
-      root.querySelectorAll('.sg-drop-hover').forEach(n => n.classList.remove('sg-drop-hover'));
-      dragging = null;
-    });
+
+  // 鼠标悬停/点击任意 tile → 更新右上描述
+  root.querySelectorAll('.sg-tile').forEach(tile => {
+    const setDesc = () => {
+      const enc = tile.dataset.hoverDesc; if(!enc) return;
+      try {
+        sgEditorCache.pickedDesc = JSON.parse(decodeURIComponent(enc));
+        // 直接替换右上 HTML（不要整块重绘）
+        const wrap = qs('#sgDetailWrap');
+        if(wrap){
+          const d = sgEditorCache.pickedDesc;
+          wrap.innerHTML = `<div class="sg-detail-name">${d.ownerName} · ${d.name}</div>
+            <div class="sg-detail-kind sg-kind-${d.kind}">${sgKindLabel(d.kind)}</div>
+            <div class="sg-detail-body">${terms(d.desc)}</div>
+            ${d.formula?`<div class="sg-detail-formula">效果：${d.formula}</div>`:''}
+            ${d.cd?`<div class="sg-detail-formula">冷却：${d.cd} 回合</div>`:''}`;
+        }
+      } catch(e){}
+    };
+    tile.addEventListener('mouseenter', setDesc);
+    tile.addEventListener('click', ()=>{ setDesc(); });
   });
 
-  // 左侧 kind-section 作为 drop 区（section 级别）
+  // 下方 kind-section 作为 drop 区（同 kind 内可重排）
   root.querySelectorAll('.sg-kind-section').forEach(sec => {
     sec.addEventListener('dragover', e => { e.preventDefault(); sec.classList.add('sg-drop-hover'); });
     sec.addEventListener('dragleave', () => sec.classList.remove('sg-drop-hover'));
     sec.addEventListener('drop', e => {
-      e.preventDefault();
-      sec.classList.remove('sg-drop-hover');
-      if(!dragging) return;
+      e.preventDefault(); sec.classList.remove('sg-drop-hover');
+      if(!_sgDragging) return;
       const targetKind = sec.dataset.kind;
-      if(dragging.kind !== targetKind){
-        log('不能跨技能类型拖拽（顺序已冻结：自动→主动→连携）。'); return;
-      }
-      if(dragging.source === 'group'){
-        // 同 kind 内部移动：把被拖的 slot 从原位拿出来，插到该 kind 末尾
-        const from = sgEditorCache.group.findIndex(s => s.charKey===dragging.charKey && s.skillId===dragging.skillId);
-        if(from<0) return;
-        const [moved] = sgEditorCache.group.splice(from,1);
-        // 找到目标 kind 的末尾 index
-        const kindRows = sgEditorCache.group.filter(s => {
-          const sk = (getChar(s.charKey)?.skills||[]).find(x => x.id===s.skillId);
-          return sk?.kind === targetKind;
-        });
-        // 插在 kind 末尾
-        let insertAt = sgEditorCache.group.length;
-        // 简化：直接 push 再后处理，最后 normalize 会按 kind 重排
-        sgEditorCache.group.push(moved);
-      } else {
-        // 从 pick 加进来
-        const exists = sgEditorCache.group.some(s => s.charKey===dragging.charKey && s.skillId===dragging.skillId);
-        if(exists){ log('该技能已在技能组。'); return; }
-        sgEditorCache.group.push({ slot: sgEditorCache.group.length+1, charKey: dragging.charKey, skillId: dragging.skillId });
-      }
-      renderSkillGroupEditorBody();
+      if(_sgDragging.kind !== targetKind){ log('不能跨技能类型拖拽排序。'); return; }
+      // 在 sgEditorCache.group 里把 _sgDragging 这一项移到该 kind 末尾
+      const idx = sgEditorCache.group.findIndex(s => s.charKey===_sgDragging.charKey && s.skillId===_sgDragging.skillId);
+      if(idx<0) return;
+      const [moved] = sgEditorCache.group.splice(idx,1);
+      sgEditorCache.group.push(moved);
+      // normalizeSkillGroup 按 kind 重排一次
+      sgEditorCache.group = normalizeSkillGroup(sgEditorCache.group);
+      renderSkillGroupEditorFor(sgEditorFmIdx);
+    });
+  });
+
+  // 下方 tile 自身 draggable：dragstart 记录 kind
+  root.querySelectorAll('#sgGroupContainer .sg-tile').forEach(tile => {
+    tile.addEventListener('dragstart', e => {
+      const wrap = tile.closest('.sg-kind-section');
+      _sgDragging = {
+        skillId: tile.dataset.skillId,
+        charKey: tile.dataset.charKey,
+        kind: wrap?.dataset.kind || 'auto',
+      };
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', 'x');
+      tile.classList.add('sg-dragging');
+    });
+    tile.addEventListener('dragend', e => {
+      tile.classList.remove('sg-dragging');
+      _sgDragging = null;
     });
   });
 }
+let _sgDragging = null;
 
-function _bindSkillGroupEditorClicks(){
-  const root = qs('#modalBody'); if(!root) return;
-  // 右侧可选：点击一个 tile → 直接加入（放到对应 kind 末尾）
-  root.querySelectorAll('.sg-pick-grid .sg-tile').forEach(tile => {
-    tile.addEventListener('click', () => {
-      const skillId = tile.dataset.skillId;
-      const charKey = tile.dataset.charKey;
-      const exists = sgEditorCache.group.some(s => s.charKey===charKey && s.skillId===skillId);
-      if(exists){ log('该技能已在技能组。'); return; }
-      sgEditorCache.group.push({ slot: sgEditorCache.group.length+1, charKey, skillId });
-      renderSkillGroupEditorBody();
-    });
-  });
-}
-
-window.sgRemoveSlotByData = function(btn){
-  const wrap = btn.closest('.sg-slot-wrap'); if(!wrap) return;
-  const charKey = wrap.dataset.char, skillId = wrap.dataset.skill;
-  sgEditorCache.group = sgEditorCache.group.filter(s => !(s.charKey===charKey && s.skillId===skillId));
-  renderSkillGroupEditorBody();
-};
-
-window.sgRemoveSlot = function(n){
-  // 旧兼容（按 slot 号删）
-  sgEditorCache.group = sgEditorCache.group.filter(s => s.slot !== n);
-  renderSkillGroupEditorBody();
-};
-
-window.sgAddToSlot = function(charKey, skillId){
-  // 旧兼容
-  if(sgEditorCache.group.some(s => s.charKey===charKey && s.skillId===skillId)) return;
+/* ---- 加入 / 卸下 ---- */
+window.sgAddFromPick = function(charKey, skillId){
+  ensureFormations();
+  if(sgEditorCache.group.some(s => s.charKey===charKey && s.skillId===skillId)){ log('该技能已在技能组。'); return; }
   sgEditorCache.group.push({ slot: sgEditorCache.group.length+1, charKey, skillId });
-  renderSkillGroupEditorBody();
+  sgEditorCache.group = normalizeSkillGroup(sgEditorCache.group);
+  renderSkillGroupEditorFor(sgEditorFmIdx);
 };
-
-window.sgAddNewSlot = function(){ /* 新架构下不再手动加空槽，直接从 pick 加 */ };
-window.sgSelectSlot = function(){};
-window.sgMoveSlotUp = function(){};
-window.sgMoveSlotDown = function(){};
-
+window.sgRemoveAndRedraw = function(charKey, skillId){
+  sgEditorCache.group = sgEditorCache.group.filter(s => !(s.charKey===charKey && s.skillId===skillId));
+  renderSkillGroupEditorFor(sgEditorFmIdx);
+};
 window.sgResetDefault = function(){
-  sgEditorCache.group = buildDefaultSkillGroup(G.team);
-  renderSkillGroupEditorBody();
+  const team = G.formations[sgEditorFmIdx]?.team || [];
+  sgEditorCache.group = buildDefaultSkillGroup(team).map(s=>({...s}));
+  renderSkillGroupEditorFor(sgEditorFmIdx);
 };
-
 window.sgSave = function(){
-  // 按 kind 重排：auto → active → link；然后每 kind 内保持输入顺序
-  const g = normalizeSkillGroup(sgEditorCache.group);
-  // normalizeSkillGroup 只按输入顺序排。我们要 kind 有序
-  const kindsOrder = ['auto','active','link'];
-  const kindBuckets = {};
-  for(const s of g){
-    const sk = (getChar(s.charKey)?.skills||[]).find(x => x.id===s.skillId);
-    const k = sk?.kind || 'auto';
-    if(!kindBuckets[k]) kindBuckets[k] = [];
-    kindBuckets[k].push({...s});
-  }
-  const final = [];
-  let slot = 1;
-  for(const k of kindsOrder){
-    for(const s of (kindBuckets[k] || [])){ s.slot = slot++; final.push(s); }
-  }
+  ensureFormations();
+  const final = normalizeSkillGroup(sgEditorCache.group);
   if(!final.length){ log('技能组不能为空。'); return; }
-  G.skillGroup = final;
+  G.formations[sgEditorFmIdx].skillGroup = final.map(s=>({...s}));
+  // 若保存的是当前启用队列，同步 G.skillGroup
+  if(sgEditorFmIdx === G.activeFormation){
+    G.skillGroup = final;
+  }
   sgEditorCache = null;
   closeModal();
   renderFormation();
 };
 
-
-
-
-function openTasks(){ openModal('任务', renderTasksHTML(), 'full', {replace:true}); }
 window.selectTask=function(id){ if(id!==taskSel && TASKS.some(t=>t.id===id)){ taskSel=id; openTasks(); } };
 let shopQty={}; let shopMsg='';
 function openShop(){ if(isInFlow()){ log(`${flowLabel()}中无法使用该功能。`); return; } if(G){ shopMsg=''; renderShop(); } }

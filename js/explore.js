@@ -10,8 +10,8 @@ function onCellClick(x,y){
   if(mapDragMoved) return;
   const m=G.map; const c=m.cells[y*m.n+x]; previewCell={x,y};
   let info=`<b>位置 (${x+1},${y+1})</b><br>`;
-  if(c.terrain==='void'){ info+='不可通行（地图之外）。'; prompt(info); goBtnDisabled(); return; }
-  if(c.terrain==='obstacle'){ info+='山脉障碍，无法通行。'; prompt(info); goBtnDisabled(); return; }
+  if(c.terrain==='void'){ info+='不可通行（地图之外）。'; prompt(info); goBtnForFaceOnly(x,y,'地图边界'); return; }
+  if(c.terrain==='obstacle'){ info+='山脉障碍，无法通行。'; prompt(info); goBtnForFaceOnly(x,y,'山脉'); return; }
   const ct=c.content&&c.content.type;
   if(ct==='battle'){ const subTxt = c.content.sub==='hard' ? '一场艰难战斗' : (c.content.sub==='boss' ? '一场boss战' : '一场普通战斗'); info+=`前方遭遇${subTxt}<br>移动过去将进入战斗。`; }
   else if(ct==='loot' && !c.content.done) info+='此处有战利品可拾取。';
@@ -20,6 +20,18 @@ function onCellClick(x,y){
   else info+='空地。';
   prompt(info);
   goBtnForMove(x,y);
+}
+/* 仅用于改朝向的"前往"：不消耗行动力，不移动 */
+function goBtnForFaceOnly(x,y,reason){
+  const go=qs('#goBtn');
+  go.style.display='block'; go.disabled=false; go.classList.remove('disabled');
+  go.textContent=`前往（仅朝向前方：${reason}）`;
+  go.onclick=()=>{
+    const ox=G.px, oy=G.py;
+    G.hero.facing=dirToFacing(x-ox, y-oy);
+    log(`你朝${reason}的方向看了看，但那是无法进入的区域。`);
+    go.style.display='none'; renderMap();
+  };
 }
 function goBtnDisabled(){ const go=qs('#goBtn'); go.style.display='block'; go.disabled=true; go.classList.add('disabled'); go.textContent='无法前往'; go.onclick=null; }
 function goBtnForMove(x,y){
