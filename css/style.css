@@ -764,3 +764,44 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 .tileInfo .ti-title{ font-weight:700; color:#d9b64a; margin-bottom:2px; }
 .tileInfo .ti-row{ display:flex; gap:8px; flex-wrap:wrap; }
 .tileInfo .ti-tag{ display:inline-block; padding:0 4px; margin-right:3px; border-radius:3px; background:rgba(255,255,255,0.1); font-size:10px; }
+
+/* === combat.js 批次 1 新增样式 === */
+
+/* 地块：元素附着 / 结界 */
+.cell.attach{ transition: background 0.35s ease; }
+.cell.zone{ outline: 2px solid #ffce4d; outline-offset: -2px; box-shadow: 0 0 6px rgba(255,206,77,0.4) inset; }
+
+/* 实体 emoji 图标 */
+.entIcon{ position: relative; z-index: 2; font-size: 22px; line-height: 1; pointer-events: none; }
+.entIcon.proIcon{ filter: drop-shadow(0 1px 2px rgba(0,0,0,0.7)); }
+.entIcon.enemyIcon{ filter: drop-shadow(0 1px 2px rgba(0,0,0,0.7)); }
+.entIcon.allyIcon{ filter: drop-shadow(0 1px 2px rgba(0,0,0,0.7)); }
+
+/* 敌人血条（贴 cell 底部） */
+.entHpEnemy{ position:absolute; left:2px; right:2px; bottom:2px; height:4px; background:#ff5a5a; border-radius:2px; z-index:3; box-shadow:0 0 2px rgba(0,0,0,0.6); }
+
+/* 盟友角色卡血条 */
+.allyCard .allyHpBar{ height:4px; background:#1a1d26; border-radius:2px; margin-top:4px; overflow:hidden; }
+.allyCard .allyHpBar::after{ content:''; display:block; height:100%; background:linear-gradient(90deg,#46c66a,#2da94f); border-radius:2px; }
+.allyCard.dead{ opacity:0.35; }
+.allyCard .allyName{ font-weight:700; display:block; margin-bottom:2px; }
+.allyCard .allyHp{ font-size:12px; opacity:0.85; }
+
+/* 技能 tag 里的 key + name 子节点 */
+.skillTag{ display:inline-flex; align-items:center; gap:8px; }
+.skillTag .skKey{ display:inline-block; min-width:20px; text-align:center; padding:1px 6px; border-radius:10px; background:rgba(255,255,255,0.1); font-size:11px; font-weight:700; color:#ffd97a; }
+.skillTag .skName{ font-weight:700; }
+.skillTag.selected{ outline:2px solid #d9b64a; outline-offset:-2px; background:#4d4213; }
+
+/* 护盾高亮 */
+#charAttrs .shield{ color:#a0c8ff; font-weight:700; }
+
+/* 状态条：无状态 */
+.stchip.none{ color: #6b6f7e; font-style: italic; }
+
+/* 技能详情区 */
+#skillDetail .sd-title{ font-size:16px; font-weight:800; color:#ffd97a; margin-bottom:4px; }
+#skillDetail .sd-meta{ font-size:12px; opacity:0.8; margin-bottom:8px; padding:4px 6px; background:rgba(255,255,255,0.05); border-radius:4px; }
+#skillDetail .sd-desc{ font-size:13px; line-height:1.6; color:#c8cde0; margin-bottom:8px; }
+#skillDetail .sd-hint{ font-size:12px; opacity:0.65; color:#9ea3b4; }
+#skillDetail{ padding:8px; background:rgba(0,0,0,0.2); border-radius:6px; border:1px solid rgba(255,255,255,0.08); }
