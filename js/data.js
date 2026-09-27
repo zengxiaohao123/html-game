@@ -497,15 +497,15 @@ const PROTAGONIST = {
   /* 技能（kind='active'|'auto'|'link'）—— 编入技能组才能用 */
   skills:[
     /* 自动技能 */
-    {id:'slash',   name:'自动·斩击',   kind:'auto',   type:'physical', target:'front2', mult:1.0, cd:1, formula:'攻击力×100%', desc:'对前方直线1格（前方直线2格范围的紧邻1格）的敌人造成相当于攻击力100%的物理伤害。'},
-    {id:'balance', name:'自动·均衡',   kind:'auto',   type:'physical', target:'front2', mult:0.7, cd:1, formula:'攻击力×70%', desc:'对前方直线1格的敌人造成相当于攻击力70%的物理伤害。获得持续1回合的40%【减伤】。'},
+    {id:'slash',   name:'斩击',   kind:'auto',   type:'physical', target:'front2', mult:1.0, cd:1, formula:'攻击力×100%', desc:'对前方直线1格（前方直线2格范围的紧邻1格）的敌人造成相当于攻击力100%的物理伤害。'},
+    {id:'balance', name:'均衡',   kind:'auto',   type:'physical', target:'front2', mult:0.7, cd:1, formula:'攻击力×70%', desc:'对前方直线1格的敌人造成相当于攻击力70%的物理伤害。获得持续1回合的40%【减伤】。'},
     /* 主动技能 */
-    {id:'desperation', name:'主动·拼命', kind:'active', type:'physical', target:'front2', mult:1.6, cd:1, formula:'攻击力×160%', desc:'对前方直线1格的敌人造成相当于攻击力160%的物理伤害。自身流失10%生命值（可致死）。'},
-    {id:'commune',   name:'主动·通灵', kind:'active', type:'physical', target:'front2', mult:0.7, cd:1, formula:'攻击力×70%', desc:'对前方直线1格的敌人造成相当于攻击力70%的物理伤害。攻击前吸收2格距离内的至多3个元素附着，每吸收一个，技能倍率+40%。'},
+    {id:'desperation', name:'拼命', kind:'active', type:'physical', target:'front2', mult:1.6, cd:1, formula:'攻击力×160%', desc:'对前方直线1格的敌人造成相当于攻击力160%的物理伤害。自身流失10%生命值（可致死）。'},
+    {id:'commune',   name:'通灵', kind:'active', type:'physical', target:'front2', mult:0.7, cd:1, formula:'攻击力×70%', desc:'对前方直线1格的敌人造成相当于攻击力70%的物理伤害。攻击前吸收2格距离内的至多3个元素附着，每吸收一个，技能倍率+40%。'},
     /* 连携技能 */
-    {id:'chaos',  name:'连携·乱魔',   kind:'link', type:'physical', target:'dist2', mult:0, cd:5, trigger:'elem4', formula:'吸收所有元素附着', desc:'当2格距离内存在4个及以上的元素附着时可以使用。吸收2格距离内的所有元素附着。冷却：5回合。'},
-    {id:'absorb', name:'连携·汲取',   kind:'link', type:'physical', target:'self',   mult:0, cd:3, trigger:'allyApplyElem', formula:'吸收1个附着', desc:'我方角色施加元素附着时可以使用。吸收该元素附着（至多1个），使3回合内的下一次攻击的伤害类型改为对应的元素伤害。冷却时间：3回合。'},
-    {id:'shift',  name:'连携·移形',   kind:'link', type:'physical', target:'self',   mult:0, cd:1, trigger:'afterVehicleMove', formula:'施加指定附着', desc:'使用载具移动后可以使用。移动后对所在地块施加指定元素附着。具体的元素类型可在战斗前在角色技能页面调整。冷却时间：1回合。'},
+    {id:'chaos',  name:'乱魔',   kind:'link', type:'physical', target:'dist2', mult:0, cd:5, trigger:'elem4', formula:'吸收所有元素附着', desc:'当2格距离内存在4个及以上的元素附着时可以使用。吸收2格距离内的所有元素附着。冷却：5回合。'},
+    {id:'absorb', name:'汲取',   kind:'link', type:'physical', target:'self',   mult:0, cd:3, trigger:'allyApplyElem', formula:'吸收1个附着', desc:'我方角色施加元素附着时可以使用。吸收该元素附着（至多1个），使3回合内的下一次攻击的伤害类型改为对应的元素伤害。冷却时间：3回合。'},
+    {id:'shift',  name:'移形',   kind:'link', type:'physical', target:'self',   mult:0, cd:1, trigger:'afterVehicleMove', formula:'施加指定附着', desc:'使用载具移动后可以使用。移动后对所在地块施加指定元素附着。具体的元素类型可在战斗前在角色技能页面调整。冷却时间：1回合。'},
   ],
   /* 初始技能组槽位（编队后重排，这里只是默认值） */
   defaultSkillIds:['slash','balance','desperation','commune','chaos','absorb'],
@@ -525,17 +525,17 @@ const XIAYANG = {
   ],
   skills:[
     /* 自动技能 */
-    {id:'inspire',  name:'自动·鼓舞',  kind:'auto', type:'physical', target:'self', mult:0, cd:1, scal:{heal:{base:20,grow:10}, buff:{base:25,grow:10}}, formula:'治疗+元素吸收+buff', desc:'为主角回复相当于夏阳攻击力{heal}%的生命值。吸收周围9格的1个火元素，若吸收成功，则使攻击力最高的我方角色攻击力+{buff}。'},
-    {id:'quench',   name:'自动·淬火',  kind:'auto', type:'fire',    target:'front2', mult:1.0, cd:1, formula:'攻击力×100%', desc:'对前方直线1格的敌人造成相当于100%攻击力的火属性伤害。'},
-    {id:'ignite',   name:'自动·引燃',  kind:'auto', type:'fire',    target:'dist2', mult:0, cd:1, formula:'施加燃烧', desc:'对最近的1名未处于【燃烧】状态的敌人施加持续5回合的【燃烧】。'},
+    {id:'inspire',  name:'鼓舞',  kind:'auto', type:'physical', target:'self', mult:0, cd:1, scal:{heal:{base:20,grow:10}, buff:{base:25,grow:10}}, formula:'治疗+元素吸收+buff', desc:'为主角回复相当于夏阳攻击力{heal}%的生命值。吸收周围9格的1个火元素，若吸收成功，则使攻击力最高的我方角色攻击力+{buff}。'},
+    {id:'quench',   name:'淬火',  kind:'auto', type:'fire',    target:'front2', mult:1.0, cd:1, formula:'攻击力×100%', desc:'对前方直线1格的敌人造成相当于100%攻击力的火属性伤害。'},
+    {id:'ignite',   name:'引燃',  kind:'auto', type:'fire',    target:'dist2', mult:0, cd:1, formula:'施加燃烧', desc:'对最近的1名未处于【燃烧】状态的敌人施加持续5回合的【燃烧】。'},
     /* 主动技能 */
-    {id:'prairie',  name:'主动·燎原',  kind:'active', type:'fire',    target:'front3', mult:0.8, cd:5, applyElem:'fire', applyElemDur:3, burnDur:3, formula:'攻击力×80% + 燃烧3回合', desc:'对前方直线3格的所有敌人造成相当于80%攻击力的火元素伤害并施加持续3回合的【燃烧】。冷却时间：5回合。'},
-    {id:'wish',     name:'主动·众愿',  kind:'active', type:'fire',    target:'adj5',   mult:1.6, cd:3, stealAlliesAtk:0.2, formula:'偷取+160%火伤', desc:'【偷取】其余我方角色各20%攻击力，然后对周围5格的随机1名敌人造成相当于160%攻击力的火元素伤害。冷却时间：3回合。'},
-    {id:'carnival', name:'主动·爆炸狂欢', kind:'active', type:'fire', target:'adj9', mult:1.5, cd:8, applyElem:'fire', formula:'攻击力×150% + 火元素附着', desc:'对周围9格造成相当于150%攻击力的火元素伤害。冷却时间：8回合。'},
-    {id:'sources',  name:'主动·万火之源', kind:'active', type:'physical', target:'dist3', mult:0, cd:3, formula:'吸收火元素附着→攻击力+', desc:'吸收3格距离内的所有火元素附着。每吸收1个，攻击力+10%，持续3回合。冷却时间：3回合。'},
+    {id:'prairie',  name:'燎原',  kind:'active', type:'fire',    target:'front3', mult:0.8, cd:5, applyElem:'fire', applyElemDur:3, burnDur:3, formula:'攻击力×80% + 燃烧3回合', desc:'对前方直线3格的所有敌人造成相当于80%攻击力的火元素伤害并施加持续3回合的【燃烧】。冷却时间：5回合。'},
+    {id:'wish',     name:'众愿',  kind:'active', type:'fire',    target:'adj5',   mult:1.6, cd:3, stealAlliesAtk:0.2, formula:'偷取+160%火伤', desc:'【偷取】其余我方角色各20%攻击力，然后对周围5格的随机1名敌人造成相当于160%攻击力的火元素伤害。冷却时间：3回合。'},
+    {id:'carnival', name:'爆炸狂欢', kind:'active', type:'fire', target:'adj9', mult:1.5, cd:8, applyElem:'fire', formula:'攻击力×150% + 火元素附着', desc:'对周围9格造成相当于150%攻击力的火元素伤害。冷却时间：8回合。'},
+    {id:'sources',  name:'万火之源', kind:'active', type:'physical', target:'dist3', mult:0, cd:3, formula:'吸收火元素附着→攻击力+', desc:'吸收3格距离内的所有火元素附着。每吸收1个，攻击力+10%，持续3回合。冷却时间：3回合。'},
     /* 连携技能 */
-    {id:'blaze',    name:'连携·炽燃',  kind:'link', type:'fire', target:'dist2', mult:0.8, cd:2, trigger:'anyBurned', formula:'80%火伤×至多3名', desc:'有敌人正处于【燃烧】状态时可以使用。对处于【燃烧】状态下的至多3名敌人造成相当于80%攻击力的火属性伤害。若没有符合条件的敌人，则改为攻击最近的1名敌人。冷却：2回合。'},
-    {id:'annihilate', name:'连携·焚灭', kind:'link', type:'fire', target:'adj9', mult:1.4, cd:2, trigger:'counter_fireAbsorb', counterAt4:'adj9', counterAt9:'adj25', formula:'一段140% / 二段220%', desc:'本场战斗中累计吸收过4个火元素附着后可以使用一段。累计吸收过9个火元素附着后改为使用二段。冷却时间：2回合。一段：对周围9格所有敌人造成相当于140%攻击力的火属性伤害。二段：对周围25格所有敌人造成相当于220%攻击力的火元素伤害。'},
+    {id:'blaze',    name:'炽燃',  kind:'link', type:'fire', target:'dist2', mult:0.8, cd:2, trigger:'anyBurned', formula:'80%火伤×至多3名', desc:'有敌人正处于【燃烧】状态时可以使用。对处于【燃烧】状态下的至多3名敌人造成相当于80%攻击力的火属性伤害。若没有符合条件的敌人，则改为攻击最近的1名敌人。冷却：2回合。'},
+    {id:'annihilate', name:'焚灭', kind:'link', type:'fire', target:'adj9', mult:1.4, cd:2, trigger:'counter_fireAbsorb', counterAt4:'adj9', counterAt9:'adj25', formula:'一段140% / 二段220%', desc:'本场战斗中累计吸收过4个火元素附着后可以使用一段。累计吸收过9个火元素附着后改为使用二段。冷却时间：2回合。一段：对周围9格所有敌人造成相当于140%攻击力的火属性伤害。二段：对周围25格所有敌人造成相当于220%攻击力的火元素伤害。'},
   ],
   defaultSkillIds:['inspire','quench','ignite','prairie','wish','carnival','blaze'],
 };
@@ -553,16 +553,16 @@ const LUYOOUYOU = {
   ],
   skills:[
     /* 自动技能 */
-    {id:'skillshot', name:'自动·精巧射击', kind:'auto', type:'physical', target:'dist2', mult:1.0, cd:1, formula:'攻击力×100%', desc:'对2格距离内的随机1名敌人造成相当于100%攻击力的物理伤害。'},
-    {id:'aim',      name:'自动·屏息瞄准', kind:'auto', type:'physical', target:'self', mult:0, cd:2, formula:'下一次暴击率+100%', desc:'下一次攻击的暴击率+100%，不可叠加。冷却时间：2回合。'},
+    {id:'skillshot', name:'精巧射击', kind:'auto', type:'physical', target:'dist2', mult:1.0, cd:1, formula:'攻击力×100%', desc:'对2格距离内的随机1名敌人造成相当于100%攻击力的物理伤害。'},
+    {id:'aim',      name:'屏息瞄准', kind:'auto', type:'physical', target:'self', mult:0, cd:2, formula:'下一次暴击率+100%', desc:'下一次攻击的暴击率+100%，不可叠加。冷却时间：2回合。'},
     /* 主动技能 */
-    {id:'arrow',    name:'主动·脱身矢',  kind:'active', type:'physical', target:'line2', mult:1.0, cd:3, knockback:1, formula:'攻击力×100% + 击退1格', desc:'对前方直线2格的所有敌人造成相当于100%攻击力的物理伤害并将其击退1格。冷却时间：3回合。'},
-    {id:'bindWind', name:'主动·风止',    kind:'active', type:'physical', target:'dist3', mult:0.8, cd:4, bind:1, nTargets:2, rand:true, formula:'攻击力×80% + 束缚1回合', desc:'对3格距离内的随机2名敌人造成相当于80%攻击力的物理伤害、施加持续1回合的【束缚】。冷却时间：4回合。'},
-    {id:'soar',     name:'主动·腾空击',  kind:'active', type:'physical', target:'adj9', mult:1.0, cd:3, applyElem:'wind', formula:'攻击力×100% + 风元素附着', desc:'对自身所在地块施加风元素附着，对周围9格的敌人造成相当于100%攻击力的风元素属性伤害。冷却时间：3回合。'},
+    {id:'arrow',    name:'脱身矢',  kind:'active', type:'physical', target:'line2', mult:1.0, cd:3, knockback:1, formula:'攻击力×100% + 击退1格', desc:'对前方直线2格的所有敌人造成相当于100%攻击力的物理伤害并将其击退1格。冷却时间：3回合。'},
+    {id:'bindWind', name:'风止',    kind:'active', type:'physical', target:'dist3', mult:0.8, cd:4, bind:1, nTargets:2, rand:true, formula:'攻击力×80% + 束缚1回合', desc:'对3格距离内的随机2名敌人造成相当于80%攻击力的物理伤害、施加持续1回合的【束缚】。冷却时间：4回合。'},
+    {id:'soar',     name:'腾空击',  kind:'active', type:'physical', target:'adj9', mult:1.0, cd:3, applyElem:'wind', formula:'攻击力×100% + 风元素附着', desc:'对自身所在地块施加风元素附着，对周围9格的敌人造成相当于100%攻击力的风元素属性伤害。冷却时间：3回合。'},
     /* 连携技能 */
-    {id:'weakPoint',name:'连携·弱点击破',kind:'link', type:'physical', target:'dist3', mult:1.3, cd:4, trigger:'enemyCharging', bind:3, critBoost:true, formula:'攻击力×130% + 暴击+100% + 束缚3回合', desc:'3格距离内有敌人正在【蓄力】时可以使用。对该敌人造成相当于130%攻击力的物理伤害、施加持续3回合的【束缚】。本次攻击暴击率+100%。冷却时间：4回合。'},
-    {id:'eye',      name:'连携·风暴眼',  kind:'link', type:'wind',    target:'dist2', mult:0.8, cd:0, trigger:'counter_diffuse', formula:'80%风元素伤害', desc:'我方单位累计触发4次扩散反应后可以使用。锁定2格内的随机1名敌人，对其2格距离内的所有敌人造成相当于80%攻击力的风元素伤害。随后清空计数。'},
-    {id:'windRise', name:'连携·风起',    kind:'link', type:'wind',    target:'adj5', mult:0.35, cd:5, trigger:'allyApplyFireWaterThunderIce', vuln:0.35, vulnDur:3, formula:'30%风元素伤害 + 易伤3回合', desc:'我方单位对敌人所在地块施加火/水/雷/冰附着时可以使用。对该敌人（至多1名）造成相当于30%攻击力的风元素伤害、施加持续3回合的35%【易伤】。冷却时间：5回合。'},
+    {id:'weakPoint',name:'弱点击破',kind:'link', type:'physical', target:'dist3', mult:1.3, cd:4, trigger:'enemyCharging', bind:3, critBoost:true, formula:'攻击力×130% + 暴击+100% + 束缚3回合', desc:'3格距离内有敌人正在【蓄力】时可以使用。对该敌人造成相当于130%攻击力的物理伤害、施加持续3回合的【束缚】。本次攻击暴击率+100%。冷却时间：4回合。'},
+    {id:'eye',      name:'风暴眼',  kind:'link', type:'wind',    target:'dist2', mult:0.8, cd:0, trigger:'counter_diffuse', formula:'80%风元素伤害', desc:'我方单位累计触发4次扩散反应后可以使用。锁定2格内的随机1名敌人，对其2格距离内的所有敌人造成相当于80%攻击力的风元素伤害。随后清空计数。'},
+    {id:'windRise', name:'风起',    kind:'link', type:'wind',    target:'adj5', mult:0.35, cd:5, trigger:'allyApplyFireWaterThunderIce', vuln:0.35, vulnDur:3, formula:'30%风元素伤害 + 易伤3回合', desc:'我方单位对敌人所在地块施加火/水/雷/冰附着时可以使用。对该敌人（至多1名）造成相当于30%攻击力的风元素伤害、施加持续3回合的35%【易伤】。冷却时间：5回合。'},
   ],
   defaultSkillIds:['skillshot','aim','arrow','bindWind','soar','weakPoint','windRise'],
 };
@@ -818,22 +818,63 @@ function buildDefaultSkillGroup(team){
   return out;
 }
 
-/* 校验+归一化：缺 slot 编号的自动补；非法 charKey / 不存在 skillId 的丢弃 */
-function normalizeSkillGroup(group){
+/* 校验+归一化：kind 分块排序 active→auto→link；上限检查；槽5+禁 active；非法条目丢弃 */
+function normalizeSkillGroup(group, teamSize){
   if(!Array.isArray(group)) return [];
+  teamSize = teamSize || (G && G.team ? G.team.length : 1);
+  const maxSlots = Math.min(10, 4 + teamSize);
+  // 先过滤非法条目 + 查出每个 skill 的 kind
+  const validated = [];
   const team = (G && G.team) || ['pro'];
-  const out = [];
-  let nextSlot = 1;
   for(const s of group){
     if(!s || !s.charKey || !s.skillId) continue;
     if(!team.includes(s.charKey)) continue;
     const c = getChar(s.charKey);
     if(!c) continue;
-    const sk = c.skills && c.skills.find(x=>x.id===s.skillId);
+    const sk = (c.skills||[]).find(x=>x.id===s.skillId);
     if(!sk) continue;
-    out.push({ slot: nextSlot++, charKey: s.charKey, skillId: s.skillId });
+    validated.push({ charKey: s.charKey, skillId: s.skillId, kind: sk.kind });
   }
-  return out;
+  // kind 分块 + 块内按原始 validated 顺序（加入顺序）
+  const active = validated.filter(s => s.kind === 'active');
+  const auto   = validated.filter(s => s.kind === 'auto');
+  const link   = validated.filter(s => s.kind === 'link');
+  const activeSorted = active.sort((a,b) => validated.indexOf(a) - validated.indexOf(b));
+  const autoSorted   = auto.sort((a,b)   => validated.indexOf(a)   - validated.indexOf(b));
+  const linkSorted   = link.sort((a,b)   => validated.indexOf(a)   - validated.indexOf(b));
+  // 组合：active → auto → link
+  let combined = [...activeSorted, ...autoSorted, ...linkSorted];
+  // 去掉 active 在槽 5+ 的
+  combined = combined.filter((s, i) => !(i >= 4 && s.kind === 'active'));
+  // 截断到上限
+  combined = combined.slice(0, maxSlots);
+  // 空组保底：至少保留 1 个
+  if (combined.length === 0 && validated.length > 0){
+    combined = [validated[0]];
+  }
+  // 补 slot 编号
+  let slot = 1;
+  return combined.map(s => ({ slot: slot++, charKey: s.charKey, skillId: s.skillId }));
+}
+
+/* 校验函数：返回 true/false，检查 group 是否满足所有约束 */
+function validateSkillGroup(group, teamSize){
+  teamSize = teamSize || (G && G.team ? G.team.length : 1);
+  const maxSlots = Math.min(10, 4 + teamSize);
+  if (!Array.isArray(group)) return false;
+  if (group.length < 1 || group.length > maxSlots) return false;
+  for (let i = 0; i < group.length; i++){
+    const s = group[i];
+    if (!s || !s.skillId || !s.charKey) return false;
+    const c = getChar(s.charKey);
+    if (!c) return false;
+    const sk = (c.skills||[]).find(x => x.id === s.skillId);
+    if (!sk) return false;
+    if (sk.kind !== 'active' && sk.kind !== 'auto' && sk.kind !== 'link') return false;
+    // 槽 5+ 不能放 active
+    if (i >= 4 && sk.kind === 'active') return false;
+  }
+  return true;
 }
 
 /* 战斗运行态：从 G.skillGroup 复制一份完整的运行态槽 */
@@ -905,3 +946,26 @@ function getBond(key){
   return { level:0, affinity:0 };
 }
 function bondLevel(key){ return getBond(key).level; }
+
+/* 好感度变化：修改 bonds[key].affinity，自动回写羁绊等级（每 10 好感度 = 1 级，最低 -999，最高 999）*/
+function gainAffinity(key, amount){
+  if(key==='pro') return;
+  G = G || {};
+  G.bonds = G.bonds || {};
+  if(!G.bonds[key]) G.bonds[key] = { level:0, affinity:0 };
+  const b = G.bonds[key];
+  b.affinity = Math.max(-999, Math.min(999, (b.affinity || 0) + (amount || 0)));
+  b.level = Math.max(0, Math.floor(b.affinity / 10));
+}
+
+/* 不可作为礼物赠送的物品 key */
+const GIFT_EXCLUDE = ['coin','campfire','herb','rawHerb','wood','stone','iron'];
+
+/* 根据礼物 key + 角色 key 返回好感等级匹配度（0=讨厌, 1=一般, 2=喜欢, 3=挚爱） */
+function itemLoveLevel(key, it){
+  const L = ITEM_LOVE[key] || {};
+  if(L.three && L.three[it]) return 3;
+  if(L.two && L.two[it]) return 2;
+  if(L.one && L.one.includes(it)) return 1;
+  return 0;
+}

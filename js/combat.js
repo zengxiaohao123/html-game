@@ -1282,6 +1282,13 @@ function _phaseAutoSkills(cs){
     // 设置 actor（兼容旧 castSkill）
     cs.actor = { who: 'ally', key: ownerKey };
     cs.currentChar = ownerKey;
+    // 修复 4a：自动技能释放前 owner 自动校准朝向到目标方向
+    const autoPool = skillEnemies(sk, ownerEntity, ownerEntity.facing);
+    if(autoPool && autoPool.length){
+      const tgt = autoPool[0];
+      ownerEntity.facing = dirToFacing(Math.sign(tgt.x - ownerEntity.x), Math.sign(tgt.y - ownerEntity.y));
+      if(ownerKey === 'pro') G.hero.facing = ownerEntity.facing;
+    }
     // 尝试插入连携（auto 可以被 link 打断 → 允许插入）
     if(_tryLinkInsert(cs)) return;
     // 释放
@@ -1553,6 +1560,13 @@ function tryFlee(){
   log(`逃跑概率：${Math.round(rate)}%`);
   if(Math.random()*100 < rate){
     log('逃跑成功！');
+    // 修复 3：逃跑成功也要还原位置（endCombat('escape') 不走 _endCombatVictory）
+    const entry = cs.entryCell ? cs.entryCell.split(',') : null;
+    if(entry){
+      G.px = parseInt(entry[0]);
+      G.py = parseInt(entry[1]);
+      if(cs?.hero && cs.hero.facing) G.hero.facing = cs.hero.facing;
+    }
     endCombat('escape');
   } else {
     log('逃跑失败！');
@@ -1682,6 +1696,13 @@ function checkCombatEnd(){
 }
 function _endCombatVictory(){
   const cs = combatState; if(!cs) return;
+  // 修复 3：还原进入战斗前的位置
+  const entry = cs.entryCell ? cs.entryCell.split(',') : null;
+  if(entry){
+    G.px = parseInt(entry[0]);
+    G.py = parseInt(entry[1]);
+    if(cs?.hero && cs.hero.facing) G.hero.facing = cs.hero.facing;
+  }
   const enemies = cs.defeated.slice();
   combatState = null;
   grantRewardItems(enemies, true);
@@ -1693,6 +1714,12 @@ function _endCombatVictory(){
 }
 function _endCombatDefeat(){
   const cs = combatState; if(!cs) return;
+  // 修复 3：还原进入战斗前的位置
+  const entry = cs.entryCell ? cs.entryCell.split(',') : null;
+  if(entry){
+    G.px = parseInt(entry[0]);
+    G.py = parseInt(entry[1]);
+  }
   combatState = null;
   switchMode('story');
   log('战斗失败，被敌人击倒。');
@@ -1832,115 +1859,117 @@ function updateCombatUI(){
   const cur = chars.find(c=>c.key===cs.currentChar) || chars[0];
   const actorKey = (cs.actor && cs.actor.who==='ally') ? cs.actor.key : null;
 
-  // ===== 顶部：角色卡一行 =====
-  const charCards = chars.map(c => {
+  // === 边框颜色（kind 决定，固定不变）===
+  const kindBorderCSS = {
+    active: '#ff6b6b',   // 红边框 = 主动
+    auto:   '#5c9bff',   // 蓝边框 = 自动
+    link:   '#ffcc4d',   // 黄边框 = 连携
+  };
+  const kindBorder = kindBorderCSS;  // 避免下面拼写错误
+
+  // === 第一行左：角色名字 tile（点切换）===
+  const charTiles = chars.map(c => {
     const csk = cs.ally[c.key];
     const deadCls = csk?.dead ? ' dead' : '';
     const actorCls = c.key===actorKey ? ' actor' : '';
+    const eleBg = c.element ? (ELEM[c.element]?.c || '#555') : '#7a7a7a';
+    const curCls = c.key===cs.currentChar ? ' cb-cur' : '';
     const hp = c.key==='pro' ? (cs.hero.hp||0) : (csk?.hp || 0);
     const maxHp = c.key==='pro' ? heroineMaxHp() : (csk?.maxHp || c.base?.maxHp || 100);
     const hpPct = Math.max(0, Math.min(100, (hp/(maxHp||1))*100));
-    const eleBg = c.element ? (ELEM[c.element]?.c || '#555') : '#7a7a7a';
-    return `<div class="cb-char-card ${c.key===cs.currentChar?'on':''}${deadCls}${actorCls}" data-k="${c.key}"
-      style="border:2px solid ${eleBg}">
+    return `<div class="cb-char ${curCls}${deadCls}${actorCls}" data-k="${c.key}" style="border-left:4px solid ${eleBg}">
       <div class="cb-char-name">${c.name}</div>
-      <div class="cb-char-ele">${c.element?ELEM[c.element].zh:'无'} · ${hp}/${maxHp}</div>
       <div class="cb-char-hpbar"><i style="width:${hpPct}%;background:${eleBg}"></i></div>
     </div>`;
   }).join('');
 
-  // ===== 顶部：全局技能组一行（按 kind 分块）=====
+  // === 第一行右：技能组一行（主动→自动→link 混排）===
   const slots = cs.slots || [];
   if(!cs.selSlot) cs.selSlot = slots[0]?.slot || 1;
-  const kindsOrder = ['auto','active','link'];
-  const kindLabels = {auto:'自动', active:'主动', link:'连携'};
-  let skillGroupRow = '';
-  for(const k of kindsOrder){
-    const row = slots.filter(s => {
-      const sk = (getChar(s.charKey)?.skills||[]).find(x=>x.id===s.skillId);
-      return sk && sk.kind===k;
-    });
-    if(!row.length) continue;
-    const tiles = row.map(s => {
-      const { c, sk } = skillGroupResolve(s);
-      if(!sk) return '';
-      const cd = s.cd || 0;
-      const isSel = s.slot === cs.selSlot;
-      const isMyTurn = (cs.actor?.who==='ally' && cs.actor.key===s.charKey);
-      const icon = getSkillIcon(s.skillId);
-      return `<div class="sg-tile sg-${sk.kind} sg-combat${isSel?' sg-sel':''}${cd>0?' sg-cd':''}${isMyTurn?' sg-myturn':''}"
-        data-slot="${s.slot}" title="${sk.name} —— ${c?.name||''}">
-        <div class="sg-tile-icon" style="background-image:url('assets/skills/${icon.file}')"></div>
-        <div class="sg-tile-label">${sk.name.replace(/^(自动|主动|连携)·/,'')}</div>
-        ${cd>0?`<div class="sg-cd-badge">${cd}</div>`:''}
-      </div>`;
-    }).join('');
-    skillGroupRow += `<div class="cb-skills-kind cb-sk-${k}">
-      <div class="cb-skills-kind-label">${kindLabels[k]}</div>
-      <div class="cb-skills-tiles">${tiles}</div>
+  // 确保排序：active 先 auto 先 link
+  slots.sort((a,b) => {
+    const oa = a.kind==='active' ? 0 : a.kind==='auto' ? 1 : 2;
+    const ob = b.kind==='active' ? 0 : b.kind==='auto' ? 1 : 2;
+    if (oa !== ob) return oa - ob;
+    return (a._order||0) - (b._order||0);
+  });
+  const skillTiles = slots.map(s => {
+    const { c, sk } = skillGroupResolve(s);
+    if(!sk) return '';
+    const cd = s.cd || 0;
+    const kindCls = sk.kind;  // active / auto / link
+    const isMyTurn = (cs.actor?.who==='ally' && cs.actor.key===s.charKey);
+    const cdMask = cd > 0 ? ' sg-cd' : '';
+    const selMask = (s.slot === cs.selSlot) ? ' sg-sel' : '';
+    const icon = getSkillIcon(s.skillId);
+    // 边框颜色 = kind（红/蓝/黄），**固定不变**，选中/不选中颜色一致
+    const borderColor = kindBorder[kindCls] || '#999';
+    return `<div class="sg-tile sg-combat sg-${kindCls}${selMask}${cdMask}${isMyTurn?' sg-myturn':''}"
+      data-slot="${s.slot}" style="border:2px solid ${borderColor} !important"
+      title="${sk.name} — ${c?.name||''}">
+      <div class="sg-tile-icon" style="background-image:url('assets/skills/${icon.file}')"></div>
+      <div class="sg-tile-label">${sk.name}</div>
+      ${cd>0?`<div class="sg-cd-badge">${cd}</div>`:''}
     </div>`;
-  }
+  }).join('');
 
-  // ===== 第二行：当前角色属性 =====
+  // === 第二行：属性 + 右侧绿色方形逃跑按钮 ===
   const curAttrs = charAttrsHTML(cur.key);
+  const fleeRate = calcEscapeRate();
 
-  // ===== 第三行：buff/debuff =====
+  // === 第三行：状态栏 ===
   const statuses = cur.key==='pro' ? heroStatusesWithDepress(cs) : (cs.ally[cur.key]?.statuses || {});
   const stBar = cur.key==='pro' ? statusBarHTML(statuses, cs.field) : statusBarHTML(statuses, null);
 
-  // ===== 第四行：天赋 =====
+  // === 第四行：天赋 ===
   const talents = (cur.passives||[]).map((p,i) => {
     const name = p.scal ? talentDisplayName(cur.key,p) : p.name;
     return `<span class="talentTag" data-k="${cur.key}" data-i="${i}"><span class="cat talent">天赋</span>${name}</span>`;
   }).join('');
 
-  // ===== 右侧：技能详情 + 圆形逃跑按钮 =====
+  // === 右侧 skillDetail ===
   const selSlotObj = slots.find(x => x.slot === cs.selSlot);
-  let detailHtml = '<div class="cb-detail-empty">点击左侧技能组中的技能查看详情。点一次选中，属主是当前行动角色且无冷却时再点一次释放。</div>';
+  let detailHtml = '<div class="cb-detail-empty">点击左侧技能查看详情。点击一次选中；属主是当前行动角色且无冷却时，再点一次释放。</div>';
   if(selSlotObj){
     const { c, sk } = skillGroupResolve(selSlotObj);
     if(sk){
       const dmg = skillDamagePreview(selSlotObj.charKey, sk);
       detailHtml = `<div class="cb-detail-head">${c?.name||'?'} · ${sk.name}</div>
-        <div class="cb-detail-kind sg-kind-${sk.kind}">${kindLabels[sk.kind]||''}</div>
         <div class="cb-detail-desc">${terms(sk.desc||'')}</div>
         <div class="cb-detail-meta">
           ${sk.formula?`<span>效果：${sk.formula}</span>`:''}
           ${dmg!=null?`<span>预期伤害：约 ${dmg}</span>`:''}
-          <span>冷却：${sk.cd||0} 回合（当前剩 ${selSlotObj.cd||0}）</span>
+          <span>冷却：${sk.cd||0} 回合（剩余 ${selSlotObj.cd||0}）</span>
         </div>`;
     }
   }
-  const fleeRate = calcEscapeRate();
 
-  // ===== 写入 DOM =====
+  // === 写入 DOM ===
   qs('#allyBar').innerHTML = `
-    <div class="cb-all-row">${charCards}</div>
-    <div class="cb-skills-row">${skillGroupRow || '<span class="nohint">（技能组为空）</span>'}</div>
+    <div class="cb-row1">
+      <div class="cb-chars">${charTiles}</div>
+      <div class="cb-skills">${skillTiles || '<span class="nohint">（技能组为空）</span>'}</div>
+    </div>
   `;
-  qs('#charAttrs').innerHTML = curAttrs;
-  qs('#statusBar').innerHTML = stBar;
-  qs('#skillList').innerHTML = '';
-  qs('#talentBox').innerHTML = talents || '<span class="nohint">（无天赋）</span>';
-  qs('#skillDetail').innerHTML = `
-    <div class="cb-skill-detail">${detailHtml}</div>
+  qs('#charAttrs').innerHTML = `
+    <div class="cb-attrs-left">${curAttrs}</div>
     <div class="cb-flee-wrap">
-      <button class="cb-flee-btn" id="cbFleeBtn" title="尝试逃跑">
+      <button class="cb-flee-btn" id="cbFleeBtn" title="尝试逃跑" style="background:#1a3a30;border:2px solid #4fd1c5;color:#a9f0c9">
         <span class="cb-flee-icon">🛸</span>
-        <span class="cb-flee-text">逃跑</span>
-        <span class="cb-flee-rate">${Math.round(fleeRate)}%</span>
+        <span class="cb-flee-text">逃跑 ${Math.round(fleeRate)}%</span>
       </button>
     </div>
   `;
+  qs('#statusBar').innerHTML = stBar;
+  qs('#skillList').innerHTML = '';
+  qs('#talentBox').innerHTML = talents || '<span class="nohint">（无天赋）</span>';
+  qs('#skillDetail').innerHTML = `<div class="cb-skill-detail">${detailHtml}</div>`;
 
-  // ===== 事件绑定 =====
-  qs('#allyBar').querySelectorAll('.cb-char-card').forEach(b => {
+  // === 事件绑定 ===
+  qs('#allyBar').querySelectorAll('.cb-char').forEach(b => {
     b.onclick = () => {
       const k = b.dataset.k;
-      if(cs.currentChar !== k){
-        cs.currentChar = k;
-        updateCombatUI(); renderCombatMap();
-      }
+      if(cs.currentChar !== k){ cs.currentChar = k; updateCombatUI(); renderCombatMap(); }
     };
   });
   qs('#allyBar').querySelectorAll('.sg-combat').forEach(tile => {
@@ -1950,7 +1979,11 @@ function updateCombatUI(){
       if(!slot) return;
       if(cs.selSlot === n){
         if(cs.actor?.who==='ally' && cs.actor.key===slot.charKey && (slot.cd||0)===0){
-          castSkill(slot.charKey, true, slot);
+          // 修复 4：手动释放前设置 actor/currentChar 到正确 owner（队友也可主动释放）
+          const ownerKey = slot.charKey;
+          cs.actor = { who:'ally', key: ownerKey };
+          cs.currentChar = ownerKey;
+          castSkill(ownerKey, true, slot);
           return;
         }
       }
@@ -2072,6 +2105,19 @@ function castSkill(charKey, manual, slotEntry){
   if(!hasValidTarget(skill)){
     if(manual) log(`「${skill.name}」当前没有可命中的目标。`);
     return;
+  }
+
+  // 修复 4b：手动释放前 owner 自动校准朝向到目标方向
+  if(manual){
+    const ownerEntity = cs.entities[charKey];
+    if(ownerEntity){
+      const mPool = skillEnemies(skill, ownerEntity, ownerEntity.facing);
+      if(mPool && mPool.length){
+        const tgt = mPool[0];
+        ownerEntity.facing = dirToFacing(Math.sign(tgt.x - ownerEntity.x), Math.sign(tgt.y - ownerEntity.y));
+        if(charKey === 'pro') G.hero.facing = ownerEntity.facing;
+      }
+    }
   }
 
   // 释放

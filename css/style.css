@@ -262,7 +262,7 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 
 /* ===== 弹窗右上角关闭按钮 ===== */
 .modal{position:relative;}
-.modal-x{position:absolute; top:10px; right:16px; background:none; border:none; color:var(--txt-dim); font-size:22px; line-height:1; cursor:pointer; z-index:999; padding:4px 8px; border-radius:4px;}
+.modal-x{position:absolute; top:10px; right:16px; background:none; border:none; color:var(--txt-dim); font-size:22px; line-height:1; cursor:pointer; z-index:10; padding:4px 8px; border-radius:4px;}
 .modal-x:hover{color:#fff; background:#2c3040;}
 
 /* ===== 任务系统 ===== */
@@ -687,3 +687,55 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 .fm-actions button:hover{ background:rgba(255,255,255,0.12); }
 .fm-actions .fm-activate{ background:linear-gradient(120deg,#2d5a47,#1a3a30); border-color:#4fa887; color:#a9f0c9; }
 .fm-actions .fm-activate:hover{ background:linear-gradient(120deg,#3d7a57,#2a5a40); }
+
+/* ===== 战斗 UI v3 ===== */
+#combatLeft{ display:flex; flex-direction:column; gap:6px; min-height:0; }
+.cb-row1{ display:flex; gap:10px; margin-bottom:4px; }
+.cb-chars{ display:flex; gap:4px; flex:none; }
+.cb-char{
+  min-width:48px; padding:4px 10px 5px; background:rgba(255,255,255,0.05);
+  border-radius:4px; cursor:pointer; transition:all .15s; text-align:center;
+  box-sizing:border-box;
+}
+.cb-char:hover{ background:rgba(255,255,255,0.1); }
+.cb-char.cb-cur{ box-shadow:inset 0 0 0 2px #d9b64a; background:rgba(217,182,74,0.15); }
+.cb-char.dead{ opacity:0.35; filter:grayscale(1); }
+.cb-char.actor{ animation:actorGlow 1.2s infinite; }
+.cb-char-name{ font-size:13px; font-weight:700; color:#fff; }
+.cb-char-hpbar{ height:3px; background:rgba(0,0,0,0.5); margin-top:3px; border-radius:2px; overflow:hidden; }
+.cb-char-hpbar > i{ display:block; height:100%; }
+.cb-skills{ flex:1; min-width:0; display:flex; flex-wrap:wrap; gap:4px; align-items:center; padding:4px; background:rgba(0,0,0,0.18); border-radius:4px; }
+.sg-tile.sg-combat{ width:54px; height:54px; border-radius:6px; background:rgba(255,255,255,0.06); overflow:hidden; position:relative; text-align:center; transition:transform .1s; cursor:pointer; }
+.sg-tile.sg-combat:hover{ transform:translateY(-2px); background:rgba(255,255,255,0.12); }
+.sg-tile.sg-combat.sg-sel{ transform:translateY(-3px); }
+.sg-tile.sg-combat.sg-cd{ filter:grayscale(0.7); opacity:0.5; cursor:not-allowed; }
+.sg-tile.sg-combat.sg-myturn{ box-shadow:0 0 0 2px #d9b64a, 0 0 10px #d9b64a50; }
+.sg-tile.sg-combat .sg-tile-icon{ width:34px; height:34px; margin:2px auto 0; background-size:contain; background-repeat:no-repeat; background-position:center; }
+.sg-tile.sg-combat .sg-tile-label{ font-size:10px; color:#fff; line-height:1.1; padding:0 1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sg-tile.sg-combat .sg-cd-badge{ position:absolute; top:1px; right:1px; width:15px; height:15px; line-height:15px; font-size:10px; font-weight:700; background:#000; color:#ff9494; border-radius:50%; text-align:center; }
+
+#charAttrs{ display:flex; align-items:center; gap:8px; flex:none; padding:4px 8px; background:rgba(0,0,0,0.25); border-radius:4px; margin:0; }
+.cb-attrs-left{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; flex:1; min-width:0; }
+.cb-flee-wrap{ flex:none; padding-left:8px; }
+.cb-flee-btn{ background:#1a3a30; border:2px solid #4fd1c5; color:#a9f0c9; border-radius:4px; padding:6px 14px; font-size:12px; cursor:pointer; font-family:inherit; transition:all .15s; display:flex; gap:4px; align-items:center; }
+.cb-flee-btn:hover{ background:#2a5a40; }
+#statusBar{ flex:none; }
+#talentBox{ flex:none; }
+
+.cb-skill-detail{ padding:8px; background:rgba(0,0,0,0.25); border-radius:6px; min-height:0; overflow-y:auto; }
+.cb-detail-head{ font-size:15px; font-weight:700; color:#d9b64a; margin-bottom:4px; }
+.cb-detail-desc{ color:#ffffff; margin-bottom:8px; line-height:1.5; }
+.cb-detail-meta{ display:flex; flex-direction:column; gap:2px; font-size:12px; color:#bfbfbf; }
+.cb-detail-empty{ color:#9aa0ac; font-style:italic; }
+
+/* ===== 技能组编辑器 v3：扁平一行布局 ===== */
+.sg-group-row-flat{ display:flex; gap:8px; flex-wrap:wrap; padding:8px; background:rgba(0,0,0,0.25); border-radius:6px; min-height:72px; align-items:flex-start; }
+.sg-group-row-flat.sg-drop-hover{ background:rgba(79,209,197,0.15); outline:2px dashed #4fd1c5; outline-offset:-2px; }
+.sg-group-row-flat .sg-tile{ width:60px; height:74px; border-radius:6px; background:rgba(255,255,255,0.06); overflow:hidden; position:relative; text-align:center; cursor:pointer; transition:transform .15s, box-shadow .15s; }
+.sg-group-row-flat .sg-tile:hover{ transform:translateY(-2px); background:rgba(255,255,255,0.12); }
+.sg-group-row-flat .sg-tile.sg-sel{ box-shadow:0 0 0 2px #d9b64a, 0 0 12px #d9b64a50; transform:translateY(-3px); }
+.sg-group-row-flat .sg-tile.sg-dragging{ opacity:0.4; }
+.sg-group-row-flat .sg-tile.sg-drop-hover{ box-shadow:0 0 0 2px #4fd1c5, 0 0 12px #4fd1c550; transform:translateY(-3px); }
+.sg-group-row-flat .sg-tile .sg-tile-icon{ width:36px; height:36px; margin:2px auto 0; background-size:contain; background-repeat:no-repeat; background-position:center; }
+.sg-group-row-flat .sg-tile .sg-tile-label{ font-size:10px; color:#fff; line-height:1.1; padding:0 2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sg-group-row-flat .sg-tile .sg-tile-owner{ font-size:9px; color:#9aa0ac; margin-top:1px; }
