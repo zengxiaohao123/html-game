@@ -67,35 +67,6 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 #storyBody{flex:1; overflow-y:auto; padding:8px 10px; font-size:14.5px; line-height:1.8; min-height:0; position:relative;}
 #storyBody .story-para{position:relative;}
 #storyBody .speaker{color:var(--gold); font-weight:700;}
-#combatZone h4, #storyBox h4{flex:none;}
-#combatMain{flex:1; display:flex; gap:8px; min-height:0; overflow:hidden; padding-top:2px;}
-#combatLeft{flex:1.35; display:flex; flex-direction:column; min-width:0; min-height:0;}
-#combatRight{flex:1; background:var(--panel2); border:1px solid var(--line); border-radius:4px; padding:8px; overflow-y:auto; min-width:0;}
-.panel-subtitle{padding:3px 2px; font-size:12px; color:var(--txt-dim); border-bottom:1px solid var(--line); margin-bottom:6px; font-weight:600;}
-#allyBar{display:flex; gap:8px; flex-wrap:wrap; margin:2px 0 8px;}
-.allyCard{flex:1; min-width:110px; padding:9px 12px; background:var(--panel2); border:1px solid var(--line); cursor:pointer; border-radius:6px; text-align:center;}
-.allyCard.active{outline:3px solid var(--gold); outline-offset:-1px; background:#2c3040;}
-.allyName{font-size:16px; font-weight:700; color:#fff; line-height:1.2; position:relative; z-index:1;}
-.allyElem{font-size:12px; color:var(--txt-dim); margin-top:3px;}
-#charAttrs{display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:0 0 6px; padding:0;}
-.attr{background:var(--panel2); border:1px solid var(--line); border-radius:4px; padding:3px 10px; font-size:13px;}
-.attr b{color:var(--gold); font-size:16px; margin-right:3px;}
-#statusBar{margin-bottom:10px; flex:none;}
-.stbar{display:flex; gap:6px; overflow-x:auto; overflow-y:hidden; padding:4px 0; min-height:30px; align-items:center;}
-.stbar::-webkit-scrollbar{height:5px;}
-.stchip{flex:none; white-space:nowrap; padding:4px 10px; border-radius:5px; font-size:13px; background:var(--panel2); border:1px solid var(--line); cursor:pointer;}
-.st-buff{border-color:var(--gold); color:#ffe9a3;}
-.st-debuff{border-color:var(--bad); color:#ffb0b0;}
-.st-neutral{border-color:var(--line); color:#cfd4dc;}
-.stlabel{flex:none; font-size:12px; color:var(--txt-dim); align-self:center; font-weight:600;}
-.stempty{flex:none; font-size:13px; color:var(--txt-dim);}
-#skillList{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;}
-.skillTag{position:relative; padding:10px 16px 10px 14px; background:var(--panel2); border:2px solid var(--line); cursor:pointer; border-radius:6px; font-size:15px; font-weight:600;}
-.skillTag.attack{border-color:var(--fire); color:#ffd0d0;}
-.skillTag.skill{color:#9fd4ff; border-color:#4a9bff;}
-.skillTag.active{background:#4d4213; border-color:var(--gold);}
-.skillTag.escape{border-color:#2fd47a; color:#a9f0c9;}
-.skillTag.escape.active{background:#17452c; border-color:#2fd47a;}
 .skillNum{display:inline-block; width:20px; height:20px; line-height:20px; text-align:center; background:#000a; border-radius:50%; font-size:12px; margin-right:7px; color:var(--txt);}
 .usedMark{font-size:11px; color:var(--bad); margin-left:6px;}
 #talentBox{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:auto; padding-bottom:2px;}
@@ -583,8 +554,6 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 }
 
 /* ============ 战斗 UI v2（任务7：大重做） ============ */
-#combatZone{ background: radial-gradient(ellipse at top, #1c1a2f 0%, #0e0d1a 100%); }
-#combatMain{ gap:12px; padding:8px; }
 
 /* --- 角色卡一行 --- */
 .cb-all-row{ display:flex; gap:8px; margin-bottom:8px; }
@@ -690,7 +659,6 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 
 
 /* ===== 战斗 UI v4 — 严格 4 行 ===== */
-#combatLeft{ display:flex; flex-direction:column; gap:4px; min-height:0; max-height:100%; overflow:hidden; }
 .cb-row1{ display:flex; gap:8px; align-items:flex-start; overflow:hidden; }
 .cb-chars{ display:flex; gap:4px; flex:none; }
 .cb-char{ width:48px; height:48px; min-width:48px; border-radius:4px; cursor:pointer; transition:all .12s; position:relative; display:flex; align-items:center; justify-content:center; overflow:hidden; }
@@ -781,10 +749,6 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 .entHpEnemy{ position:absolute; left:2px; right:2px; bottom:2px; height:4px; background:#ff5a5a; border-radius:2px; z-index:3; box-shadow:0 0 2px rgba(0,0,0,0.6); }
 
 /* 盟友角色卡血条 */
-.allyCard .allyHpBar{ height:4px; background:#1a1d26; border-radius:2px; margin-top:4px; overflow:hidden; }
-.allyCard .allyHpBar::after{ content:''; display:block; height:100%; background:linear-gradient(90deg,#46c66a,#2da94f); border-radius:2px; }
-.allyCard.dead{ opacity:0.35; }
-.allyCard .allyName{ font-weight:700; display:block; margin-bottom:2px; }
 .allyCard .allyHp{ font-size:12px; opacity:0.85; }
 
 /* 技能 tag 里的 key + name 子节点 */
@@ -802,6 +766,85 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 /* 技能详情区 */
 #skillDetail .sd-title{ font-size:16px; font-weight:800; color:#ffd97a; margin-bottom:4px; }
 #skillDetail .sd-meta{ font-size:12px; opacity:0.8; margin-bottom:8px; padding:4px 6px; background:rgba(255,255,255,0.05); border-radius:4px; }
+/* === 战斗底部技能区（规格 3.1 四行严格排版） === */
+#bottom.mode-combat #combatZone{ height: 250px; display:flex; flex-direction:column; gap:4px; background:radial-gradient(ellipse at top, #1c1a2f 0%, #0e0d1a 100%); padding:6px 8px; border-radius:6px; border:1px solid var(--line); overflow:hidden; }
+
+/* row1：角色卡 + 属性面板（并排左对齐） */
+#bottom.mode-combat #row1{ flex:none; height:50px; display:flex; align-items:center; gap:12px; }
+#bottom.mode-combat #row1Chars{ display:flex; gap:6px; }
+#bottom.mode-combat #row1Chars .charTile{ width:48px; height:48px; flex:none; display:flex; align-items:center; justify-content:center; font-size:20px; font-weight:800; color:#fff; background:#22263a; border:1px solid var(--line); border-radius:6px; cursor:pointer; user-select:none; transition:border-color 0.15s; }
+#bottom.mode-combat #row1Chars .charTile:hover{ border-color:#8a7a2a; }
+#bottom.mode-combat #row1Chars .charTile.faction-ally{ color:#ffeaa7; }
+#bottom.mode-combat #row1Attrs{ display:flex; gap:6px; flex:1; overflow:hidden; }
+#bottom.mode-combat #row1Attrs .attrChip{ background:#22263a; border:1px solid var(--line); border-radius:4px; padding:3px 10px; font-size:13px; color:#cfd4dc; white-space:nowrap; flex:none; }
+#bottom.mode-combat #row1Attrs .attrChip b{ color:#d9b64a; font-size:14px; margin-left:3px; }
+#bottom.mode-combat #row1Attrs .attrChip .attrHp b.hp{ color:#7bd68e; }
+
+/* row2：全局技能组 + 逃跑按钮 */
+#bottom.mode-combat #row2{ flex:none; height:58px; display:flex; align-items:center; gap:12px; }
+#bottom.mode-combat #skillGroup{ display:flex; gap:6px; flex:1; overflow:hidden; }
+#bottom.mode-combat .skillTile{ width:58px; height:58px; flex:none; position:relative; background:#22263a; border:1px solid var(--line); border-radius:6px; cursor:pointer; overflow:hidden; }
+#bottom.mode-combat .skillTile:hover{ border-color:#8a7a2a; }
+#bottom.mode-combat .skillTile .stName{ position:absolute; bottom:1px; left:0; right:0; text-align:center; font-size:11px; color:#cfd4dc; line-height:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding:0 2px; }
+#bottom.mode-combat .skillTile .stIcon{ position:absolute; top:4px; left:0; right:0; text-align:center; font-size:18px; color:#fff; line-height:1; }
+#bottom.mode-combat .skillTile .stKind{ position:absolute; top:2px; left:2px; font-size:10px; line-height:1; padding:1px 3px; border-radius:3px; font-weight:700; }
+#bottom.mode-combat .skillTile .stKind.active{ background:#1e6b3a; color:#fff; }
+#bottom.mode-combat .skillTile .stKind.auto{ background:#1f4a80; color:#fff; }
+#bottom.mode-combat .skillTile .stKind.link{ background:#8a7a2a; color:#fff; }
+#bottom.mode-combat .skillTile .stCd{ position:absolute; top:-2px; right:-2px; min-width:16px; height:16px; line-height:16px; background:#d9534f; color:#fff; font-size:11px; font-weight:700; text-align:center; border-radius:8px; border:1px solid #222; box-shadow:0 0 4px rgba(0,0,0,0.6); }
+#bottom.mode-combat .skillTile.used{ filter:grayscale(100%); opacity:0.4; cursor:not-allowed; }
+#bottom.mode-combat .skillTile.cooling{ filter:grayscale(50%); opacity:0.7; }
+#bottom.mode-combat .skillTile.selected{ outline:2px solid #d9b64a; outline-offset:-2px; }
+#bottom.mode-combat .skillTile.elem-fire   .stIcon{ color:#e74c3c; }
+#bottom.mode-combat .skillTile.elem-water  .stIcon{ color:#4a9bff; }
+#bottom.mode-combat .skillTile.elem-grass  .stIcon{ color:#5fd96b; }
+#bottom.mode-combat .skillTile.elem-thunder .stIcon{ color:#c05bff; }
+#bottom.mode-combat .skillTile.elem-ice    .stIcon{ color:#4fd8d8; }
+#bottom.mode-combat .skillTile.elem-wind   .stIcon{ color:#78c7f2; }
+#bottom.mode-combat .skillTile.elem-rock   .stIcon{ color:#b09a73; }
+#bottom.mode-combat .skillTile.elem-physical .stIcon{ color:#cfd4dc; }
+#bottom.mode-combat #fleeBtn{ width:40px; height:40px; flex:none; background:#3a1e2a; border:1px solid #d9534f; border-radius:6px; color:#ffb0b0; font-size:13px; font-weight:700; cursor:pointer; letter-spacing:1px; }
+#bottom.mode-combat #fleeBtn:hover{ background:#4a2535; }
+#bottom.mode-combat #fleeBtn:disabled{ opacity:0.4; cursor:not-allowed; }
+
+/* row3：状态芯片（左） + 天赋标签（右） */
+#bottom.mode-combat #row3{ flex:none; height:40px; display:flex; gap:8px; overflow:hidden; }
+#bottom.mode-combat #statusChips{ flex:1; min-width:0; display:flex; gap:4px; align-items:center; overflow-x:auto; overflow-y:hidden; padding:2px 0; }
+#bottom.mode-combat #statusChips::-webkit-scrollbar{ height:4px; }
+#bottom.mode-combat .stchip{ flex:none; white-space:nowrap; padding:3px 8px; border-radius:4px; font-size:12px; cursor:pointer; }
+#bottom.mode-combat .stchip.buff{ background:rgba(217,182,74,0.12); border:1px solid #d9b64a; color:#ffe9a3; }
+#bottom.mode-combat .stchip.debuff{ background:rgba(217,83,79,0.12); border:1px solid #d9534f; color:#ffb0b0; }
+#bottom.mode-combat #talentTags{ flex:none; display:flex; gap:4px; align-items:center; padding:2px 0; overflow:hidden; }
+#bottom.mode-combat .talentTag{ flex:none; padding:2px 7px; background:#1a1d26; border:1px solid #3a3f50; border-radius:3px; font-size:11px; color:#8a8f9f; cursor:pointer; white-space:nowrap; }
+
+/* row4：技能描述面板（右侧独占，按规格） */
+#bottom.mode-combat #row4{ flex:none; height:98px; display:flex; overflow:hidden; }
+#bottom.mode-combat #skillDesc{ flex:1; background:#181a2a; border:1px solid #3a3f50; border-radius:6px; padding:6px 10px; overflow-y:auto; font-size:13px; line-height:1.6; color:#cfd4dc; }
+#bottom.mode-combat #skillDesc .sd-head{ display:flex; align-items:baseline; gap:8px; margin-bottom:4px; }
+#bottom.mode-combat #skillDesc .sd-kind{ font-size:10px; padding:1px 5px; border-radius:3px; font-weight:700; }
+#bottom.mode-combat #skillDesc .sd-kind.active{ background:#1e6b3a; color:#fff; }
+#bottom.mode-combat #skillDesc .sd-kind.auto{ background:#1f4a80; color:#fff; }
+#bottom.mode-combat #skillDesc .sd-kind.link{ background:#8a7a2a; color:#fff; }
+#bottom.mode-combat #skillDesc .sd-name{ font-size:15px; font-weight:800; color:#d9b64a; }
+#bottom.mode-combat #skillDesc .sd-cd{ font-size:11px; color:#8a8f9f; }
+#bottom.mode-combat #skillDesc .sd-meta{ font-size:11px; color:#8a8f9f; margin-bottom:4px; }
+#bottom.mode-combat #skillDesc .sd-desc{ color:#cfd4dc; white-space:pre-wrap; }
+#bottom.mode-combat #skillDesc .sd-empty{ color:#6b6f7e; font-style:italic; }
+
+/* === 地图：地块元素附着背景 + 结界边框 + 实体 === */
+.cell.zone{ outline:2px solid #ffce4d; outline-offset:-2px; box-shadow:0 0 6px rgba(255,206,77,0.4) inset; }
+.cell.attach::before{ content:''; position:absolute; inset:0; border-radius:inherit; background:rgba(128,128,128,0.1); }
+.cell.elem-fire   .attach-bg{ background:rgba(231, 76, 60, 0.35); }
+.cell.elem-water  .attach-bg{ background:rgba(52, 152, 219, 0.35); }
+.cell.elem-grass  .attach-bg{ background:rgba(46, 204, 113, 0.35); }
+.cell.elem-thunder .attach-bg{ background:rgba(155, 89, 182, 0.35); }
+.cell.elem-ice    .attach-bg{ background:rgba(120, 190, 255, 0.35); }
+.cell.elem-wind   .attach-bg{ background:rgba(200, 220, 240, 0.35); }
+.cell.elem-rock   .attach-bg{ background:rgba(160, 140, 120, 0.35); }
+.cell .attach-bg{ position:absolute; inset:0; border-radius:inherit; pointer-events:none; opacity:0.55; }
+.cell .entIcon{ position:relative; z-index:2; font-size:20px; pointer-events:none; }
+.cell .entHpEnemy{ position:absolute; left:2px; right:2px; bottom:2px; height:3px; background:#ff5a5a; border-radius:2px; z-index:3; box-shadow:0 0 2px rgba(0,0,0,0.6); }
+
 #skillDetail .sd-desc{ font-size:13px; line-height:1.6; color:#c8cde0; margin-bottom:8px; }
 #skillDetail .sd-hint{ font-size:12px; opacity:0.65; color:#9ea3b4; }
 #skillDetail{ padding:8px; background:rgba(0,0,0,0.2); border-radius:6px; border:1px solid rgba(255,255,255,0.08); }

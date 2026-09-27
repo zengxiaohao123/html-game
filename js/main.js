@@ -131,10 +131,70 @@ function handleKeys(ev){
   }
   if(combatState){
     const cs=combatState;
-    if(k==='q'){ if(cs.ally[cs.currentChar] && cs.ally[cs.currentChar].selSkill==='flee'){ tryFlee(); } else { castSkill(cs.currentChar, true); } }
-    else if(k==='w'){ combatMove(0,-1); } else if(k==='s'){ combatMove(0,1); } else if(k==='a'){ combatMove(-1,0); } else if(k==='d'){ combatMove(1,0); }
-    else if(ev.key==='1'||ev.key==='2'||ev.key==='3'||ev.key==='4'){ const cur=getChar(cs.currentChar); let skills; if(cur.selectedSkillIds && cur.selectedSkillIds.length>0){ skills=cur.skills.filter(s=>cur.selectedSkillIds.includes(s.id)); } else { skills=cur.skills.filter(s=>s.kind==='active'); } const idx=+ev.key-1; if(idx<skills.length) selectSkill(cs.currentChar, skills[idx].id); else if(idx===skills.length) selectSkill(cs.currentChar, 'flee'); }
-    else if(ev.key==='f1'||ev.key==='f2'||ev.key==='f3'){ const chars=getTeamChars(); const idx=+ev.key.slice(1)-1; if(chars[idx]){ cs.currentChar=chars[idx].key; updateCombatUI(); renderCombatMap(); } }
+    const curPhase = cs.phase;
+    const isManual = curPhase==='playerManual';
+    const linkOpen = !!(cs.linkWindow && cs.linkWindow.open);
+    // 硬控制（批次 2：允许按键但效果空转）
+    const hardCtrl = !!((cs.entities||{}).pro?.hardControl);
+    if(k==='q'){
+      if(hardCtrl){ log('☠ 硬控制中，无法行动。'); return; }
+      if(linkOpen){
+        window.combat.triggerLink();
+      } else {
+        // 释放当前选中的 active 技能（规格：先选中再释放）
+        if(cs.selectedSkillId && isManual){
+          const curKey = cs.selectedSkillKey || cs.currentChar || 'pro';
+          const skills = window.combat._charSkills ? window.combat._charSkills(curKey) : [];
+          const slotIdx = skills.findIndex(s=>s.id===cs.selectedSkillId && s.kind==='active');
+          if(slotIdx>=0) window.combat.tryCastSkill(slotIdx);
+          else log('当前选中的不是可释放技能');
+        } else {
+          log('请先用 1/2/3/4 或点击选中一个技能');
+        }
+      }
+    }
+    else if(k==='w' || k==='a' || k==='s' || k==='d'){
+      if(hardCtrl){ log('☠ 硬控制中，无法移动。'); return; }
+      if(linkOpen){ log('连携窗口中，先决定是否触发连携'); return; }
+      if(!isManual){ log('敌方回合中，你无法行动'); return; }
+      const dx = k==='a'?-1:k==='d'?1:0;
+      const dy = k==='w'?-1:k==='s'?1:0;
+      window.combat.movePro(dx,dy);
+    }
+    else if(k===' '){
+      if(hardCtrl){ log('☠ 硬控制中，无法跳过。'); return; }
+      if(!isManual || linkOpen) return;
+      window.combat.skipTurn();
+    }
+    else if(ev.key==='1'||ev.key==='2'||ev.key==='3'||ev.key==='4'){
+      // 规格：1/2/3/4 只选中技能 tile，不释放
+      const idx = +ev.key - 1;
+      const curKey = cs.currentChar || 'pro';
+      const skills = (function(){
+        if(curKey==='pro'){
+          const heroSkills = (G.hero?.skills||[]).slice();
+          const defaultIds = G.hero?.selectedSkillIds || G.hero?.defaultSkillIds || heroSkills.map(s=>s.id);
+          return heroSkills.filter(s => defaultIds.includes(s.id) && s.kind!=='auto' && s.kind!=='link');
+        }
+        const c = (G.team||[]).find(x=>x.key===curKey);
+        if(!c) return [];
+        return (c.activeSkills||[]).filter(s=>s.kind==='active');
+      })();
+      if(idx<skills.length){
+        cs.selectedSkillId = skills[idx].id;
+        cs.selectedSkillKey = curKey;
+        log(`▸ 选中技能：${skills[idx].name}（按 Q 释放）`);
+        if(typeof window.updateCombatUI==='function') window.updateCombatUI();
+      }
+    }
+    else if(ev.key==='f1'||ev.key==='f2'||ev.key==='f3'){
+      const chars = [{key:'pro',name:'主角'}].concat((G.team||[]).map(c=>({key:c.key,name:c.name})));
+      const idx = +ev.key.slice(1)-1;
+      if(idx<chars.length){
+        cs.currentChar = chars[idx].key;
+        if(typeof window.updateCombatUI==='function') window.updateCombatUI();
+      }
+    }
     return;
   }
   if(!G||!G.map) return; if(qs('#modalOverlay').classList.contains('show')) return; if(ev.repeat) return;
