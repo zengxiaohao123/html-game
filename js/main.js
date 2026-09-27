@@ -141,7 +141,15 @@ function handleKeys(ev){
   if(isInFlow()) return;   // 事件中不可移动
   let dx=0,dy=0;
   if(k==='w'){dy=-1;} else if(k==='s'){dy=1;} else if(k==='a'){dx=-1;} else if(k==='d'){dx=1;} else return;
-  const nx=G.px+dx, ny=G.py+dy; if(nx<0||ny<0||nx>=G.map.n||ny>=G.map.n) return; moveExplore(nx,ny,1);
+  const nx=G.px+dx, ny=G.py+dy;
+  G.hero.facing = dirToFacing(dx,dy);
+  if(nx<0||ny<0||nx>=G.map.n||ny>=G.map.n){ return; }
+  if(!passable(nx,ny)){
+    log('前方无法进入。你只是改变了朝向。');
+    refreshHUD(); renderMap();
+    return;
+  }
+  moveExplore(nx,ny,1);
 }
 document.addEventListener('keydown', handleKeys, true);
 function sleep(){

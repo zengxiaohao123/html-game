@@ -105,7 +105,7 @@ function renderVehicles(){
   }).join('');
   const selDef=curVehicleDef();
   openModal('载具',
-    `<p class="mhint">点击选择当前移动方式。载具移动需先<i>点击目标格子</i>再点「前往」。探索按各载具规则消耗行动力；战斗中视为一次移动。${selDef.exploreOnly?'当前「疾行」仅探索可用。':''}</p>`+
+    `<p class="mhint">点击选择当前移动方式。载具移动需先<i>点击目标格子</i>再点「前往」。探索按各载具规则消耗行动力；战斗中视为一次移动。<b>徒步跋涉、疾行不视为载具</b>，不计入任务「便捷出行」的 6 次计数。${selDef.exploreOnly?'当前「疾行」仅探索可用。':''}</p>`+
     `<div class="vgrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;align-items:stretch">${grid||'<span class="stempty">暂无载具</span>'}</div>`, 'full', {replace:true});
 }
 window.selVehicle=function(i){

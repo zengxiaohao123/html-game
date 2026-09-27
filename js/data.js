@@ -492,11 +492,6 @@ const PROTAGONIST = {
   /* 天赋（kind='talent'） —— 永久生效，编入编队即自动激活 */
   passives:[
     {id:'tactic', name:'战术布置', kind:'talent', desc:'只攻击1名敌人时，将其设置为【重点目标】。我方单位在攻击时优先攻击该目标。场上至多存在1名【重点目标】。'},
-    {id:'crit',   name:'暴击',     kind:'talent', level:1, scal:{atk:{base:10,grow:10}, crit:{base:3,grow:2,pct:true}}, desc:'攻击力+{atk}，暴击率+{crit}。'},
-    {id:'blood',  name:'嗜血',     kind:'talent', level:1, scal:{atk:{base:20,grow:20}, prob:{base:3,grow:3,pct:true}}, desc:'攻击力+{atk}，使用攻击型技能后有{prob}概率回复生命值，回复量相当于本次伤害的50%。'},
-    {id:'momentum', name:'起势', kind:'talent', level:1, scal:{atk:{base:30,grow:30}, dmg:{base:4,grow:4,pct:true}}, desc:'攻击力+{atk}，使用攻击型技能后获得{dmg}伤害加成。'},
-    {id:'block',  name:'格挡',     kind:'talent', level:1, scal:{hp:{base:50,grow:50}, prob:{base:2,grow:2,pct:true}}, desc:'最大生命+{hp}，受到攻击时有{prob}概率使本次伤害降为0。'},
-    {id:'hold',   name:'坚守',     kind:'talent', level:1, scal:{def:{base:20,grow:20}, prob:{base:3,grow:3,pct:true}}, desc:'防御力+{def}，受到攻击时有{prob}概率回复12%生命值。'},
     {id:'selfPhys', name:'我在', kind:'talent', desc:'物理伤害加成+50%。本局战斗中，每造成过1种不同属性的元素伤害后，物理伤害加成-20%，其余所有元素伤害加成各+10%。'},
   ],
   /* 技能（kind='active'|'auto'|'link'）—— 编入技能组才能用 */
@@ -901,3 +896,11 @@ window.SKILL_KIND_CSS = {
 window.getSkillIcon = function(skillId){
   return window.SKILL_ICON_MAP && window.SKILL_ICON_MAP[skillId] || {file:'sparkle.svg', label: skillId?.[0]||'?'};
 };
+
+/* 获取角色羁绊（主角返回默认占位）*/
+function getBond(key){
+  if(key==='pro') return { level:0, affinity:0 };
+  if(G && G.bonds && G.bonds[key]) return G.bonds[key];
+  return { level:0, affinity:0 };
+}
+function bondLevel(key){ return getBond(key).level; }
