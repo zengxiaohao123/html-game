@@ -49,31 +49,130 @@
    跨模块全局裸工具函数（被 main.js / ui.js / explore.js / event.js / craft.js 等引用）
    —— 这堆函数必须在 IIFE 外面，因为 script 加载顺序是 combat.js 先于 ui.js/event.js，
       这些文件顶层就会直接调用 window.heroDisplayMaxHp 等
+   —— tierValue / entryLevel / vTier 复用 js/data.js 的实现（后者后加载会覆盖，
+      所以本文件不再重新定义 stub）
    ======================================================= */
-function heroDisplayMaxHp(){ return (window.G && window.G.hero) ? (window.G.hero.maxHp ?? 100) : 100; }
-function heroDisplayAtk(){ return charAtk('pro'); }
-function heroDisplayDef(){ return totalHeroDefense(); }
-function heroDisplayCrit(){ return Math.round(baseCritRate('pro')); }
-function heroDisplayDodge(){ return 0; }
-function heroDisplaySpeed(){ return (window.G && window.G.hero) ? (window.G.hero.speed ?? 30) : 30; }
 
 function charBaseAtk(k){
-  if(k==='pro') return (window.G && window.G.hero) ? (window.G.hero.atk ?? 10) : 10;
+  const G = window.G || {};
+  if(k==='pro'){
+    return (G.hero && G.hero.atk) != null ? G.hero.atk : 10;
+  }
   const c = typeof getChar === 'function' ? getChar(k) : null;
   return c?.base?.atk ?? 35;
 }
+
+/** charAtk(k) —— 角色当前攻击力（含天赋叠加 + 战斗中 buff） */
 function charAtk(k){
-  if(k==='pro') return Math.round(charBaseAtk('pro'));
-  return Math.round(charBaseAtk(k));
+  const G = window.G || {};
+  let a = charBaseAtk(k);
+  const c = typeof getChar === 'function' ? getChar(k) : null;
+  // 角色自身 scal.atk / scal.self 天赋叠加
+  if(c && c.passives && typeof entryLevel === 'function' && typeof tierValue === 'function'){
+    for(const p of c.passives){
+      const lv = entryLevel(k, p);
+      if(p.scal?.atk)  a += tierValue(p, lv, 'atk');
+      if(p.scal?.self) a += tierValue(p, lv, 'self');
+    }
+  }
+  // 主角额外叠加：队友 passives 里的 scal.pro 字段（如夏阳 fearless +proAtk）
+  if(k==='pro' && G.team && typeof ALLIES !== 'undefined'){
+    for(const ally of G.team){
+      const ac = ALLIES[ally];
+      if(!ac || !ac.passives) continue;
+      for(const p of ac.passives){
+        const lv = typeof entryLevel === 'function' ? entryLevel(ally, p) : 1;
+        if(p.scal?.pro) a += tierValue(p, lv, 'pro');
+        // 兼容旧字段名 proAtk（夏阳 fearless 用的）
+        if(p.scal?.proAtk) a += tierValue(p, lv, 'proAtk');
+      }
+    }
+  }
+  // 抑郁：攻击力强制归零
+  if(G.hero && G.hero.depress && k==='pro') a = 0;
+  // 战斗中临时增益
+  if(window.combatState && window.combatState.ally && window.combatState.ally[k]){
+    const s = window.combatState.ally[k];
+    a += (s.flatAtk||0) + (s.gain||0) - (s.stolen||0);
+    const st = s.statuses;
+    if(st && st.atkUp) a += Math.round(charBaseAtk(k)*0.25);
+  }
+  return Math.round(a);
 }
+
 function totalHeroDefense(){
-  const base = (window.G && window.G.hero) ? (window.G.hero.def ?? 0) : 0;
-  return Math.max(0, base);
+  const G = window.G || {};
+  let d = (G.hero && G.hero.def) || 0;
+  // 主角 hold 天赋加成
+  const pro = typeof getChar === 'function' ? getChar('pro') : null;
+  const hold = pro?.passives?.find(p => p.id==='hold');
+  if(hold && hold.scal?.def && typeof entryLevel==='function' && typeof tierValue==='function'){
+    d += tierValue(hold, entryLevel('pro', hold), 'def');
+  }
+  if(G.hero && G.hero.depress) d = 0;  // 抑郁：防御强制归零
+  return Math.max(0, Math.min(99999, d));
 }
-function baseCritRate(k){ return 0.05 * 100; }  // 简化版，固定 5%
-function vTier(v){ return (v||0).toString(); }
-// 注意：tierValue 和 entryLevel 的真正实现都在 js/data.js 里，
-// 战斗系统通过全局 window.tierValue / window.entryLevel 复用，不再重复定义 stub
+
+/** 主角最大生命（含天赋叠加 + 陆悠悠烹饪 +100） */
+function heroDisplayMaxHp(){
+  const G = window.G || {};
+  let m = (G.hero && G.hero.maxHp) || 100;
+  const pro = typeof getChar === 'function' ? getChar('pro') : null;
+  if(pro && pro.passives && typeof entryLevel==='function' && typeof tierValue==='function'){
+    for(const p of pro.passives){
+      const lv = entryLevel('pro', p);
+      if(p.scal?.hp) m += tierValue(p, lv, 'hp');
+    }
+  }
+  if(G.team && G.team.indexOf('luyouyou') >= 0) m += 100;  // 烹饪天赋
+  return m;
+}
+/** heroineMaxHp —— 旧别名 */
+function heroineMaxHp(){ return heroDisplayMaxHp(); }
+
+function heroDisplayAtk(){ return charAtk('pro'); }
+function heroDisplayDef(){ return totalHeroDefense(); }
+
+function baseCritRate(k){
+  let r = 0;
+  const c = typeof getChar === 'function' ? getChar(k) : null;
+  if(!c) return 5;  // 默认 5%
+  const pick = (k==='pro' && c.passives?.find(p=>p.id==='crit'))
+            || (k==='luyouyou' && c.passives?.find(p=>p.id==='windSpirit'))
+            || null;
+  if(pick && pick.scal?.crit && typeof tierValue==='function' && typeof entryLevel==='function'){
+    r += tierValue(pick, entryLevel(k, pick), 'crit');
+  }
+  return Math.max(0, Math.min(100, Math.round(r)));
+}
+function charCritRate(k){
+  let r = baseCritRate(k);
+  const cs = window.combatState;
+  if(cs && cs.ally){
+    if(cs.ally[k]?.statuses?.crit) r += 100;           // 屏息
+    if(cs.ally.pro?.statuses?.crit && k==='pro') r += 100;  // 比翼效果
+  }
+  return Math.max(0, Math.min(100, r));
+}
+
+function heroDodgeRate(){
+  const G = window.G || {};
+  if(!(G.team && G.team.indexOf('luyouyou') >= 0)) return 0;
+  const fl = typeof getChar === 'function' ? getChar('luyouyou') : null;
+  const dance = fl?.passives?.find(p => p.id==='dance');
+  if(!dance || !dance.scal?.dodge) return 0;
+  if(typeof tierValue==='function' && typeof entryLevel==='function'){
+    return tierValue(dance, entryLevel('luyouyou', dance), 'dodge');
+  }
+  return 0;
+}
+
+function heroDisplayCrit(){ return baseCritRate('pro'); }
+function heroDisplayDodge(){ return heroDodgeRate(); }
+function heroDisplaySpeed(){ return (window.G && window.G.hero) ? (window.G.hero.speed ?? 30) : 30; }
+
+// tierValue / entryLevel / vTier / lvDescText / itemLoveLevel / R / talentDisplayName
+// 都在 js/data.js 里定义，自动挂 window，不再重复定义 stub
 
 
 (function () {

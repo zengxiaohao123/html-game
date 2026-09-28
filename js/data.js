@@ -617,8 +617,13 @@ function entryLevel(ck, p){
     : ((G.bonds && G.bonds[ck] && G.bonds[ck].level) || 1);
   return lv;
 }
-function tierValue(p, lv){
-  const s = p.scal || {};
+/** tierValue(p, lv[, field])
+ *  两参数: 返回整个 scal 展开对象 {atk:65, dodge:'8%'}  —— lvDescText 用
+ *  三参数: 返回单个字段值 tierValue(p, lv, 'atk')        —— combat.js / main.js 用
+ */
+function tierValue(p, lv, field){
+  if(!p || !p.scal) return field != null ? 0 : {};
+  const s = p.scal;
   const out = {};
   for(const k in s){
     const v = s[k];
@@ -627,14 +632,11 @@ function tierValue(p, lv){
     out[k] = Math.round(base + grow*(lv||1));
     if(v.pct) out[k] = out[k]+'%';
   }
+  if(field != null) return out[field] ?? 0;
   return out;
 }
-function vTier(pk, fk, lv){
-  const p = typeof pk==='string' ? pk : (pk.id || pk.name);
-  const def = ALLIES[p] ? ALLIES[p].passives.find(x=>x.id===p||x.name===p) : null;
-  if(!def) return 0;
-  return tierValue(def, lv)[fk] || 0;
-}
+/** vTier(passiveObj, field, lv) —— 兼容旧调用（三参数版 tierValue 的别名） */
+function vTier(p, fk, lv){ return tierValue(p, lv, fk); }
 
 /* ==================== 敌人定义 ====================
    保留旧 ENEMIES 数据结构。target 字段统一用新范围函数名（见 rangeOf）。
@@ -968,16 +970,6 @@ function gainAffinity(key, amount){
 
 /* 不可作为礼物赠送的物品 key */
 const GIFT_EXCLUDE = ['coin','campfire','herb','rawHerb','wood','stone','iron'];
-
-/* 根据礼物 key + 角色 key 返回好感等级匹配度（0=讨厌, 1=一般, 2=喜欢, 3=挚爱） */
-function itemLoveLevel(key, it){
-  const L = ITEM_LOVE[key] || {};
-  if(L.three && L.three[it]) return 3;
-  if(L.two && L.two[it]) return 2;
-  if(L.one && L.one.includes(it)) return 1;
-  return 0;
-}
-
 
 /* combat.js / explore.js / map.js 等跨文件模块都要访问的全局数据 —— 显式挂 window */
 window.PROTAGONIST = PROTAGONIST;
