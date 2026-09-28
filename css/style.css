@@ -485,8 +485,8 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
    技能图标格（方形，按 kind 着色）
    ============================================================ */
 .sg-tile{
-  width:56px; height:64px;
-  border-radius:8px; border:2px solid #444;
+  width:62px; height:70px;                          /* 原 56×64 → +10% 视觉放大 */
+  border-radius:9px; border:2px solid #444;
   background:#1c1f27; color:#fff;
   display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
   cursor:grab; position:relative;
@@ -511,15 +511,14 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
   border-color:#cfb34a;
 }
 
-/* 图标本体：32px × 32px，SVG 作为 background */
+/* 图标本体：33px × 33px（原 30×30 → +10%），SVG 作为 background */
 .sg-tile-icon{
-  width:30px; height:30px; flex-shrink:0;
+  width:33px; height:33px; flex-shrink:0;
   background-repeat:no-repeat; background-position:center; background-size:contain;
   filter:drop-shadow(0 1px 1px rgba(0,0,0,.6)) brightness(0) invert(1);
-  /* brightness(0) invert(1) 把彩色 icon 全部变白 —— 这样 iconify 的彩色 SVG 也能在 kind 底色上和谐 */
 }
 .sg-tile-label{
-  font-size:10px; line-height:11px; text-align:center; max-width:52px;
+  font-size:11px; line-height:12px; text-align:center; max-width:58px;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   font-weight:500; letter-spacing:.5px;
 }
@@ -777,7 +776,7 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
   display: flex; align-items: center;
   /* row 自身不加 flex:none，由单独 selector 指定 */
 }
-#bottom.mode-combat #cbRow1{ flex: none; height: 66px; padding-top: 8px; }  /* #1+3: 整体下移（之前 4px → 现在 8px） */
+#bottom.mode-combat #cbRow1{ flex: none; height: 76px; padding-top: 4px; }  /* 原 66px → 76px 以容纳 70px 的 tile + 8px padding-top 合计 74px */
 #bottom.mode-combat #cbRow2{ flex: none; height: 42px; gap: 8px; }
 #bottom.mode-combat #cbRow3{ flex: none; height: 38px; }
 #bottom.mode-combat #cbRow4{ flex: none; height: 38px; }
@@ -789,15 +788,15 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 #bottom.mode-combat #cbRow1{ gap: 20px; }          /* 角色卡组和技能组之间额外加大 gap */
 #bottom.mode-combat #cbCharCards{ display: flex; gap: 6px; flex: 0 0 auto; }
 #bottom.mode-combat #cbCharCards .charTile{
-  /* 与 sg-tile 完全同尺寸 */
-  width: 56px; height: 64px; flex: none;
+  /* 与 sg-tile 完全同尺寸（62×70，+10% 视觉放大） */
+  width: 62px; height: 70px; flex: none;
   /* 显示全名（不再是首字）：flex column 让文字换行 */
   display: flex; align-items: center; justify-content: center;
   flex-direction: column; gap: 2px;
-  font-size: 11px; font-weight: 700; color: #fff;
+  font-size: 12px; font-weight: 700; color: #fff;
   text-align: center;
   /* 与 sg-tile 同圆角/边框风格 —— 边框颜色在 JS _renderCharCards 里按角色 color 内联 */
-  background: #22263a; border: 2px solid #666; border-radius: 8px;
+  background: #22263a; border: 2px solid #666; border-radius: 9px;
   cursor: pointer; user-select: none;
   transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
   padding: 4px 2px; overflow: hidden;

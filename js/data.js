@@ -812,10 +812,34 @@ function buildDefaultSkillGroup(team){
     const pool = (c.defaultSkillIds||[]).slice(0, take);
     for(const sid of pool){
       slot++;
-      out.push({ slot, charKey: ck, skillId: sid });
+      const sk = (c.skills||[]).find(x=>x.id===sid);
+      out.push({ slot, charKey: ck, skillId: sid, kind: sk?.kind || 'auto' });
     }
   }
-  return out;
+  // 必须强制 active→auto→link 统一顺序（用户明确要求）
+  const kindsOrder = ['active','auto','link'];
+  const kindBuckets = {};
+  for(const s of out){
+    if(!kindBuckets[s.kind]) kindBuckets[s.kind] = [];
+    kindBuckets[s.kind].push(s);
+  }
+  const final = [];
+  let nslot = 0;
+  for(const k of kindsOrder){
+    for(const s of (kindBuckets[k] || [])){ final.push({ ...s, slot: ++nslot }); }
+  }
+  // active 总量 ≤4 约束
+  if(final.filter(s=>s.kind==='active').length > 4){
+    final.sort((a,b)=> a.slot-b.slot);  // 先按 slot 恢复
+    const keptActive = [];
+    const dropped = [];
+    for(const s of final){
+      if(s.kind==='active' && keptActive.length >= 4) { dropped.push(s); continue; }
+      keptActive.push(s);
+    }
+    return keptActive;
+  }
+  return final;
 }
 
 /* 校验+归一化：kind 分块排序 active→auto→link；上限检查；active 总量 ≤4；非法条目丢弃 */
