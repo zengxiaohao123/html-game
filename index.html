@@ -40,20 +40,26 @@
       <div id="storyBody"></div>
     </div>
     <div id="combatZone">
-      <div id="row1">
-        <div id="row1Chars"></div>
-        <div id="row1Attrs"></div>
+      <!-- 左栏：四行严格排版（高度硬锁死） -->
+      <div id="cbLeft">
+        <div id="cbRow1" class="cb-row">
+          <div id="cbCharCards"></div>
+          <div id="cbSkillGroup"></div>
+        </div>
+        <div id="cbRow2" class="cb-row">
+          <div id="cbAttrs"></div>
+          <button id="cbFleeBtn" class="cb-flee-btn" onclick="tryFlee()" title="逃跑（手动阶段、行动计数=0、主角无硬控时可用）">逃跑</button>
+        </div>
+        <div id="cbRow3" class="cb-row">
+          <div id="cbStatusChips"></div>
+        </div>
+        <div id="cbRow4" class="cb-row">
+          <div id="cbTalentTags"></div>
+        </div>
       </div>
-      <div id="row2">
-        <div id="skillGroup"></div>
-        <button id="fleeBtn" class="squareBtn" onclick="tryFlee()">逃跑</button>
-      </div>
-      <div id="row3">
-        <div id="statusChips"></div>
-        <div id="talentTags"></div>
-      </div>
-      <div id="row4">
-        <div id="skillDesc"></div>
+      <!-- 右栏：技能描述面板（独立区域，不参与四行排版） -->
+      <div id="cbRight">
+        <div id="cbSkillDesc">点击左侧技能图标查看详情</div>
       </div>
     </div>
   </div>

@@ -18,6 +18,8 @@ function switchMode(m){
     try { finishCurrentFragment(); } catch(e){}
     const sc = qs('#storyControls'); if(sc) sc.style.display='none';
     try { renderIconbar(); } catch(e){ console.warn('switchMode combat renderIconbar fail',e.message); }
+    // 战斗模式：订阅 Combat 事件（只订阅一次；再次进入战斗时重订阅安全）
+    try { _subscribeCombatEvents(); } catch(e){ console.warn('switchMode combat subscribe fail', e.message); }
   }
 }
 function clearLog(){ qs('#logBody').innerHTML=''; }
@@ -749,7 +751,69 @@ function refreshHUD(){ if(!G) return;
   const psy = Math.max(-100, Math.min(100, (h.psyStress||0)));
   qs('#hud').innerHTML=`<span class="stat">健康 <b>${h.health}</b></span>`+`<span class="stat">天数 <b>${G.day}</b></span>`+`<span class="stat">区域 <b>${G.region==='wild'?'野外':'城市'}</b></span>`+`<span class="stat">攻击 <b>${heroDisplayAtk()}</b></span>`+`<span class="stat">防御 <b>${heroDisplayDef()}</b></span>`+`<span class="stat">生命 <b class="${hpCls}">${h.hp}/${mHp}</b></span>`+`<span class="stat">金币 <b>${G.inventory.coin}</b></span>`+`<span class="stat">行动力 <b>${h.actionPoint}/${h.apCap}</b></span>`+`<span class="stat">心理压力 <b>${psy}</b></span>`+depress;
 }
-function renderIconbar(){ if(!G) return; const show=[[ '任务',openTasks],['编队',openFormation],['角色',openCharacters],['背包',openInventory],['睡觉',sleep],['设置',openSettings],['商店',openShop],['合成',openCraft],['载具',openVehicles]]; const blocked = (isInFlow()) ? new Set(['编队','睡觉','商店','合成']) : new Set(); qs('#iconbar').innerHTML=show.map(([t,f],i)=>`<button class="icobtn${t==='睡觉'?' sleep':''}${blocked.has(t)?' dis':''}" data-i="${i}">${t}</button>`).join(''); qs('#iconbar').querySelectorAll('.icobtn').forEach(b=>b.onclick=()=>show[+b.dataset.i][1]()); }
+/* === iconbar 精确禁用规则（docs/06 §七·五） ===
+   btnKey ∈ { tasks(任务), formation(编队), chars(角色), bag(背包),
+              sleep(睡觉), shop(商店), craft(合成), save(存档), vehicle(载具), settings(设置) }
+   mode ∈ { explore, story, combat }
+   返回值：
+     true        → 完整可交互
+     'readonly'  → 可以打开，但禁用有实际影响的操作（接任务/领奖励/赠予/交互/聊天/改形态）
+     false       → 完全禁用
+*/
+function iconButtonStatus(btnKey, mode) {
+  const RULE = {
+    explore: { tasks:true, formation:true, chars:true, bag:true, sleep:true, shop:true, craft:true, save:true, vehicle:true, settings:true },
+    story:   { tasks:'readonly', formation:false, chars:'readonly', bag:false, sleep:false, shop:false, craft:false, save:true, vehicle:true, settings:true },
+    combat:  { tasks:'readonly', formation:false, chars:'readonly', bag:false, sleep:false, shop:false, craft:false, save:true, vehicle:true, settings:true },
+  };
+  return (RULE[mode] && RULE[mode][btnKey] !== undefined) ? RULE[mode][btnKey] : true;
+}
+function _detectModeForIconbar() {
+  if (combatState) return 'combat';
+  if (isInStoryFlow()) return 'story';
+  return 'explore';
+}
+
+/* iconbar 完整按钮表（包含 §七·五 要求的存档、载具两个按钮） */
+const ICONBAR_BUTTONS = [
+  { key:'tasks',     label:'任务',   handler: openTasks,    warnReadonly: '剧情/战斗中只可查看任务，禁止接取/领取奖励。' },
+  { key:'formation', label:'编队',   handler: openFormation,warnReadonly: null },
+  { key:'chars',     label:'角色',   handler: openCharacters,warnReadonly: '剧情/战斗中只能查看角色，禁止交互/赠予/聊天/改形态。' },
+  { key:'bag',       label:'背包',   handler: openInventory,warnReadonly: null },
+  { key:'sleep',     label:'睡觉',   handler: sleep,        warnReadonly: null, sleep:true },
+  { key:'shop',      label:'商店',   handler: openShop,     warnReadonly: null },
+  { key:'craft',     label:'合成',   handler: openCraft,    warnReadonly: null },
+  { key:'vehicle',   label:'载具',   handler: openVehicles, warnReadonly: null },
+  { key:'save',      label:'存档',   handler: () => openSettings(), warnReadonly: null },
+  { key:'settings',  label:'设置',   handler: openSettings, warnReadonly: null },
+];
+
+function renderIconbar(){
+  if(!G) return;
+  const mode = _detectModeForIconbar();
+  const root = qs('#iconbar');
+  root.innerHTML = '';
+  ICONBAR_BUTTONS.forEach((btn, i) => {
+    const status = iconButtonStatus(btn.key, mode);
+    const dis = (status === false);
+    const readonly = (status === 'readonly');
+    const tip = dis ? `当前场景（${labelOfMode(mode)}）下该按钮禁用（规格 §七·五）`
+               : readonly ? btn.warnReadonly || '当前场景下只可查看，禁止有实际影响的操作。'
+               : '';
+    const el = document.createElement('button');
+    el.className = 'icobtn' + (btn.sleep ? ' sleep' : '') + (dis ? ' dis' : '');
+    if (dis) el.disabled = true;
+    if (tip) el.title = tip;
+    el.textContent = btn.label;
+    el.onclick = () => {
+      if (dis) return;
+      // readonly 模式下 iconbar 按钮仍可点（子界面内部会按 combatState 判断哪些操作禁用）
+      btn.handler();
+    };
+    root.appendChild(el);
+  });
+}
+function labelOfMode(m){ return { explore:'探索', story:'剧情', combat:'战斗' }[m] || m; }
 function log(msg){ const d=el(`<div class="logline">${msg}</div>`); const body=qs('#logBody'); body.appendChild(d); body.scrollTop=body.scrollHeight; /* 行动记录区无上限，仅战斗开始/结束/睡觉时清除 */ }
 function story(html){qs('#storyBody').insertAdjacentHTML('beforeend',`<div>${html}</div>`); qs('#storyBody').scrollTop=qs('#storyBody').scrollHeight;}
 function prompt(msg){qs('#promptZone').innerHTML=msg;}
@@ -1834,3 +1898,265 @@ window.log = log;
 window.renderMap = renderMap;
 window.refreshHUD = refreshHUD;
 window.tryFlee = typeof tryFlee!=='undefined' ? tryFlee : undefined;
+
+/* ============================================================
+   === 战斗 UI 渲染层（docs/06 §三 四行严格排版 + 右栏技能描述）===
+   全部通过 window.Combat 公开 API 拿数据，不读 _cs 私有字段
+   ============================================================ */
+
+/* 战斗模式初始化：切 mode='combat' 时由 switchMode 自动调 */
+function _subscribeCombatEvents(){
+  const C = window.Combat; if (!C) return;
+  C.onEvent('charSelected',       _renderAllCombat);
+  C.onEvent('skillSelected',      _renderSkillDesc);
+  C.onEvent('phaseChange',        () => { _updateFleeBtnState(); _renderAttrs(); });
+  C.onEvent('damageDone',         _renderAttrs);
+  C.onEvent('zoneCreated',       () => { renderMap(); });
+  C.onEvent('auraApplied',       () => { renderMap(); });
+  C.onEvent('linkWindowChange',  (p) => { /* 顶部黄色提示框 —— 后续加 */ });
+  C.onEvent('combatEnd',          (p) => {
+    if (p.win) log('—— 战斗胜利 ——');
+    else if (p.fled) log('—— 逃跑成功，视为本次遭遇跳过 ——');
+    else log('—— 战斗失败 ——');
+  });
+  C.onEvent('log', (t) => log(t));
+  // 初始渲染一次
+  _renderAllCombat();
+}
+
+/* 主渲染入口：任何事件变化都调它重绘四行 + 右栏 */
+function _renderAllCombat() {
+  _renderCharCards();
+  _renderSkillGroup();
+  _renderAttrs();
+  _renderStatusChips();
+  _renderTalentTags();
+  _renderSkillDesc();
+  _updateFleeBtnState();
+}
+
+/* 行 1 左半：角色卡 */
+function _renderCharCards() {
+  const cs = window.Combat && window.Combat.getState();
+  if (!cs) return;
+  const root = qs('#cbCharCards'); if (!root) return;
+  root.innerHTML = '';
+  const keys = ['pro', ...Object.keys(cs.allies)];
+  for (const k of keys) {
+    const tile = document.createElement('div');
+    tile.className = 'charTile';
+    if (k === cs.currentCharKey) tile.classList.add('selected');
+    const name = k === 'pro' ? '主角' : (window.Data && window.Data.getChar(k)?.name) || k;
+    tile.textContent = name[0];
+    tile.title = name + (k === cs.currentCharKey ? '（当前选中）' : '（点击切换）');
+    tile.onclick = () => window.Combat.selectChar(k);
+    root.appendChild(tile);
+  }
+}
+
+/* 行 1 右半：技能组（图标在上 + 名字在下，名字严格在图标下方）*/
+function _renderSkillGroup() {
+  const cs = window.Combat && window.Combat.getState();
+  if (!cs) return;
+  const root = qs('#cbSkillGroup'); if (!root) return;
+  root.innerHTML = '';
+  const Data = window.Data;
+  cs.skillGroup.forEach((slot, i) => {
+    const owner = Data.getChar(slot.ownerKey);
+    const sk = owner && (owner.skills || []).find(s => s.id === slot.skillId);
+    if (!sk) return;
+    const tile = document.createElement('div');
+    tile.className = 'skillTile';
+    if (slot.cd > 0) tile.classList.add('cooling');
+    if (cs.selectedSlotIdx === i) tile.classList.add('selected');
+    if (sk.type) tile.classList.add('elem-' + sk.type);
+
+    // icon：技能名字第一个字（简化），实际应该用技能 svg 资源
+    const icon = document.createElement('div');
+    icon.className = 'stIcon';
+    icon.textContent = (sk.name || '?')[0];
+    icon.title = sk.name;
+
+    // kind 徽章（非冷却时显示）
+    const kindLabel = sk.kind === 'active' ? '主' : sk.kind === 'auto' ? '自' : '连';
+    const kindBadge = document.createElement('span');
+    kindBadge.className = 'stKind ' + sk.kind;
+    kindBadge.textContent = kindLabel;
+    icon.appendChild(kindBadge);
+
+    // 冷却数字徽章（冷却时显示，覆盖 kindBadge）
+    if (slot.cd > 0) {
+      const cdBadge = document.createElement('span');
+      cdBadge.className = 'stCd';
+      cdBadge.textContent = slot.cd;
+      icon.appendChild(cdBadge);
+    }
+
+    // 名字（严格在图标下方）
+    const name = document.createElement('div');
+    name.className = 'stName';
+    name.textContent = sk.name;
+
+    tile.appendChild(icon);
+    tile.appendChild(name);
+
+    // 点击：第一次 → 选中并切描述；第二次（同一 slot）→ 主动释放
+    tile.onclick = () => {
+      if (cs.selectedSlotIdx === i) {
+        // 第二次点 → 释放（只有 active 能放）
+        window.Combat.castSkill(i);
+      } else {
+        window.Combat.selectSkill(i);
+      }
+    };
+    root.appendChild(tile);
+  });
+}
+
+/* 行 2 左半：属性面板（主角全显 / 队友只显 攻击+暴击）*/
+function _renderAttrs() {
+  const cs = window.Combat && window.Combat.getState();
+  if (!cs) return;
+  const root = qs('#cbAttrs'); if (!root) return;
+  root.innerHTML = '';
+
+  const key = cs.currentCharKey;
+  const ent = (key === 'pro') ? cs.hero : cs.allies[key];
+  if (!ent) return;
+
+  const chip = (label, inner) => {
+    const el = document.createElement('span');
+    el.className = 'attrChip';
+    el.innerHTML = label + ' ' + inner;
+    root.appendChild(el);
+  };
+  const hp = ent.hp !== undefined ? ent.hp : ent.maxHp;
+  const showFull = (key === 'pro');
+  // 名字 chip
+  chip('', `<b>${ent.name || (key === 'pro' ? '主角' : window.Data && window.Data.getChar(key)?.name || key)}</b>`);
+  // HP chip
+  const hpChip = document.createElement('span');
+  hpChip.className = 'attrChip';
+  hpChip.innerHTML = `生命 <b class="hp">${hp}/${ent.maxHp || 100}</b>`;
+  root.appendChild(hpChip);
+  // 攻击 chip
+  chip('攻击', `<b>${ent.atk ?? 0}</b>`);
+  // 队友简化：只显攻击 + 暴击
+  if (showFull) {
+    chip('防御', `<b>${ent.def ?? 0}</b>`);
+    chip('速度', `<b>${ent.speed ?? 30}</b>`);
+    chip('暴击', `<b>${Math.round((ent.critRate ?? 0.05) * 100)}%</b>`);
+  } else {
+    const crit = window.Data ? (window.Data.getChar(key)?.critRate ?? 0.05) : 0.05;
+    chip('暴击', `<b>${Math.round(crit * 100)}%</b>`);
+  }
+}
+
+/* 行 2 右半：方形小逃跑按钮状态 */
+function _updateFleeBtnState() {
+  const cs = window.Combat && window.Combat.getState();
+  const btn = qs('#cbFleeBtn');
+  if (!btn) return;
+  if (!cs) { btn.disabled = true; btn.title = '未进入战斗'; btn.textContent = '逃跑'; return; }
+
+  // canFlee 严格按规格：手动阶段 + actionCountThisTurn === 0 + 主角无硬控
+  const isManual = cs.phase === 'manual';
+  const cnt = cs.hero.actionCountThisTurn || 0;
+  const hasHard = (cs.hero.buffs || []).some(b => b.id === 'frozen' || b.id === 'bind' || b.id === 'sleep');
+  const canFlee = isManual && cnt === 0 && !hasHard;
+
+  btn.disabled = !canFlee;
+  if (!canFlee) {
+    let reason = [];
+    if (!isManual) reason.push('非手动阶段');
+    if (cnt !== 0) reason.push(`行动计数=${cnt}（需=0）`);
+    if (hasHard) reason.push('主角被硬控制');
+    btn.title = '当前无法逃跑：' + reason.join('；');
+    btn.textContent = '逃跑';
+  } else {
+    // 计算当前逃跑概率（规格公式）
+    const enemyMaxSpd = Math.max(...cs.enemies.map(e => (e.speed || 4) * ((e.hp / e.maxHp) || 0)));
+    const prob = Math.max(0, Math.min(100, (cs.hero.speed || 30) - enemyMaxSpd));
+    btn.title = `当前逃跑概率 = ${Math.floor(prob)}%（主角速度 - max(敌人速度 × 剩余HP%)）`;
+    btn.textContent = `逃跑 ${Math.floor(prob)}%`;
+  }
+}
+
+/* 行 3：状态芯片（整行）*/
+function _renderStatusChips() {
+  const cs = window.Combat && window.Combat.getState();
+  if (!cs) return;
+  const root = qs('#cbStatusChips'); if (!root) return;
+  root.innerHTML = '';
+
+  const key = cs.currentCharKey;
+  const ent = (key === 'pro') ? cs.hero : cs.allies[key];
+  const buffs = (ent && ent.buffs) || [];
+  const ST = (window.Data && window.Data.ST) || {};
+  for (const b of buffs) {
+    const def = ST[b.id];
+    if (!def) continue;
+    const chip = document.createElement('span');
+    chip.className = 'stchip ' + (def.kind === 'buff' ? 'buff' : 'debuff');
+    const rounds = b.turnsLeft !== undefined ? ` · ${b.turnsLeft}回合` : '';
+    chip.textContent = def.name + rounds;
+    chip.dataset.desc = def.desc || '';
+    chip.dataset.name = def.name;
+    root.appendChild(chip);
+  }
+}
+
+/* 行 4：天赋标签（整行）*/
+function _renderTalentTags() {
+  const cs = window.Combat && window.Combat.getState();
+  if (!cs) return;
+  const root = qs('#cbTalentTags'); if (!root) return;
+  root.innerHTML = '';
+
+  const key = cs.currentCharKey;
+  const char = window.Data && window.Data.getChar(key);
+  const passives = char && char.passives ? char.passives.filter(p => p.kind === 'talent') : [];
+  passives.forEach((t, idx) => {
+    const tag = document.createElement('span');
+    tag.className = 'talentTag';
+    tag.textContent = t.name;
+    tag.dataset.k = key; tag.dataset.i = idx;
+    root.appendChild(tag);
+  });
+}
+
+/* 右栏：技能描述面板（独立区域，不参与四行排版）*/
+function _renderSkillDesc() {
+  const cs = window.Combat && window.Combat.getState();
+  const Data = window.Data;
+  const root = qs('#cbSkillDesc'); if (!root) return;
+  if (!cs || cs.selectedSlotIdx == null) {
+    root.innerHTML = '<div class="sd-empty">点击左侧技能图标查看详情</div>';
+    return;
+  }
+  const slot = cs.skillGroup[cs.selectedSlotIdx];
+  if (!slot) { root.innerHTML = '<div class="sd-empty">（无技能）</div>'; return; }
+  const owner = Data.getChar(slot.ownerKey);
+  const sk = owner && (owner.skills || []).find(s => s.id === slot.skillId);
+  if (!sk) { root.innerHTML = '<div class="sd-empty">技能数据缺失</div>'; return; }
+
+  const kind = sk.kind === 'active' ? {zh:'主动', cls:'active'}
+             : sk.kind === 'auto'   ? {zh:'自动', cls:'auto'}
+             : sk.kind === 'link'   ? {zh:'连携', cls:'link'}
+             : {zh:sk.kind||'', cls:''};
+
+  let html = `<div class="sd-head">
+    <span class="sd-kind ${kind.cls}">${kind.zh}</span>
+    <span class="sd-name">${sk.name}</span>
+  </div>`;
+  html += `<div class="sd-cd">冷却 ${sk.cd || 1} 回合 · ${sk.mult ? '倍率 '+sk.mult : '无倍率'}${sk.type ? ' · 元素 '+sk.type : ''}</div>`;
+  if (sk.desc) html += `<div class="sd-desc">${terms(sk.desc)}</div>`;
+  root.innerHTML = html;
+}
+
+/* window 全局 tryFlee：html 里 <button id="cbFleeBtn" onclick="tryFlee()">（蓝图里没写 onclick，但旧 id 用过，保持兼容）*/
+window.tryFlee = function() {
+  if (window.Combat) return window.Combat.flee();
+  log('未进入战斗');
+  return false;
+};

@@ -130,71 +130,63 @@ function handleKeys(ev){
     return;
   }
   if(combatState){
-    const cs=combatState;
-    const curPhase = cs.phase;
-    const isManual = curPhase==='playerManual';
-    const linkOpen = !!(cs.linkWindow && cs.linkWindow.open);
-    // 硬控制（批次 2：允许按键但效果空转）
-    const hardCtrl = !!((cs.entities||{}).pro?.hardControl);
-    if(k==='q'){
-      if(hardCtrl){ log('☠ 硬控制中，无法行动。'); return; }
-      if(linkOpen){
-        window.combat.triggerLink();
-      } else {
-        // 释放当前选中的 active 技能（规格：先选中再释放）
-        if(cs.selectedSkillId && isManual){
-          const curKey = cs.selectedSkillKey || cs.currentChar || 'pro';
-          const skills = window.combat._charSkills ? window.combat._charSkills(curKey) : [];
-          const slotIdx = skills.findIndex(s=>s.id===cs.selectedSkillId && s.kind==='active');
-          if(slotIdx>=0) window.combat.tryCastSkill(slotIdx);
-          else log('当前选中的不是可释放技能');
-        } else {
-          log('请先用 1/2/3/4 或点击选中一个技能');
-        }
-      }
-    }
-    else if(k==='w' || k==='a' || k==='s' || k==='d'){
-      if(hardCtrl){ log('☠ 硬控制中，无法移动。'); return; }
-      if(linkOpen){ log('连携窗口中，先决定是否触发连携'); return; }
-      if(!isManual){ log('敌方回合中，你无法行动'); return; }
+    const C = window.Combat;
+    if (!C) return;
+    const cs = C.getState(); if (!cs) return;
+    const phase = cs.phase;
+    const isManual = phase === 'manual';
+    const hardCtrl = (cs.hero.buffs || []).some(b => b.id === 'frozen' || b.id === 'bind' || b.id === 'sleep');
+
+    // W/A/S/D —— 移动（或转向）
+    if (k==='w' || k==='a' || k==='s' || k==='d') {
+      if (!isManual) { log('敌方回合中，你无法行动'); return; }
+      // 硬控制：允许按键发出但效果空转（规格要求）
       const dx = k==='a'?-1:k==='d'?1:0;
       const dy = k==='w'?-1:k==='s'?1:0;
-      window.combat.movePro(dx,dy);
+      C.move(dx, dy);
+      try{ ev.preventDefault(); ev.stopPropagation(); }catch(e){}
+      return;
     }
-    else if(k===' '){
-      if(hardCtrl){ log('☠ 硬控制中，无法跳过。'); return; }
-      if(!isManual || linkOpen) return;
-      window.combat.skipTurn();
+    // F —— 跳过回合
+    if (k==='f') {
+      if (!isManual) return;
+      C.skipTurn();
+      try{ ev.preventDefault(); ev.stopPropagation(); }catch(e){}
+      return;
     }
-    else if(ev.key==='1'||ev.key==='2'||ev.key==='3'||ev.key==='4'){
-      // 规格：1/2/3/4 只选中技能 tile，不释放
+    // E —— 连携使用
+    if (k==='e') {
+      C.tryLinkUse();
+      try{ ev.preventDefault(); ev.stopPropagation(); }catch(e){}
+      return;
+    }
+    // Q —— 释放当前选中的 active 技能
+    if (k==='q') {
+      if (cs.selectedSlotIdx != null) {
+        C.castSkill(cs.selectedSlotIdx);
+      } else {
+        log('请先用 1/2/3/4 或鼠标点击选中一个技能');
+      }
+      try{ ev.preventDefault(); ev.stopPropagation(); }catch(e){}
+      return;
+    }
+    // 1/2/3/4 —— 选中技能（不释放！规格）
+    if (ev.key==='1'||ev.key==='2'||ev.key==='3'||ev.key==='4') {
+      // 数字键对应 slotIdx = key - 1。如果 slotIdx 超出 skillGroup.length 就忽略
       const idx = +ev.key - 1;
-      const curKey = cs.currentChar || 'pro';
-      const skills = (function(){
-        // 统一用 data.js 暴露的 getChar：getChar(key) 返回 PROTAGONIST / ALLIES 里的完整对象
-        const c = getChar(curKey);
-        if(!c) return [];
-        const pool = c.skills || [];
-        const ids = c.selectedSkillIds || c.defaultSkillIds || pool.map(s=>s.id);
-        const filtered = pool.filter(s => ids.includes(s.id) && s.kind==='active');
-        // 按 skill.kind 排序（active 先）
-        filtered.sort((a,b) => ({active:0, auto:1, link:2}[a.kind]||9) - ({active:0, auto:1, link:2}[b.kind]||9));
-        return filtered;
-      })();
-      if(idx<skills.length){
-        cs.selectedSkillId = skills[idx].id;
-        cs.selectedSkillKey = curKey;
-        log(`▸ 选中技能：${skills[idx].name}（按 Q 释放）`);
-        if(typeof window.updateCombatUI==='function') window.updateCombatUI();
+      if (idx < cs.skillGroup.length) {
+        C.selectSkill(idx);
       }
+      try{ ev.preventDefault(); ev.stopPropagation(); }catch(e){}
+      return;
     }
-    else if(ev.key==='f1'||ev.key==='f2'||ev.key==='f3'){
-      const chars = [{key:'pro',name:'主角'}].concat((G.team||[]).map(c=>({key:c.key,name:c.name})));
-      const idx = +ev.key.slice(1)-1;
-      if(idx<chars.length){
-        cs.currentChar = chars[idx].key;
-        if(typeof window.updateCombatUI==='function') window.updateCombatUI();
-      }
+    // F1/F2/F3 —— 选中角色（主角 / 队友）
+    if (ev.key==='f1'||ev.key==='f2'||ev.key==='f3') {
+      const keys = ['pro', ...Object.keys(cs.allies)];
+      const idx = +ev.key.slice(1) - 1;
+      if (idx < keys.length) C.selectChar(keys[idx]);
+      try{ ev.preventDefault(); ev.stopPropagation(); }catch(e){}
+      return;
     }
     return;
   }

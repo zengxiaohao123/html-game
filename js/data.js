@@ -965,3 +965,25 @@ window.getTeamChars = getTeamChars;
 window.ALLIES_MAP = Object.assign({}, ALLIES);
 window.ENEMIES = ENEMIES;
 window.rollCombatEvent = rollCombatEvent;
+
+/* ==================== window.Data namespace（单一导入入口） ====================
+   所有跨模块读取的纯数据 / 纯函数统一挂在这里，避免 reactions.js 自己再定义 ELEMENTS。 */
+window.Data = window.Data || {};
+Object.assign(window.Data, {
+  // 元素
+  ELEM, ELEM_LIST, ELEM_ZH,
+  // 地形
+  TERRAIN_DEFS, TERRAIN_KEYS, ALWAYS_ELEMENT_TERRAINS,
+  // 资源 / 物品
+  RES_ZH, RES_DESC, RES_LORE, ITEMS, SHOP_ITEMS, FOOD, NATURAL_RESOURCES, CITY_RESOURCES,
+  MAX_SAVES,
+  // 状态 / 词条
+  ST, TERMS, TERM_KEYS,
+  // 范围
+  rangeOf,
+  // 角色 / 敌人
+  PROTAGONIST, XIAYANG, LUYOOUYOU, ALLIES, ENEMIES,
+  // helpers
+  getChar, getTeamChars, lvDescText, tierValue, itemName, itemDesc,
+  itemLoveLevel, rollCombatEvent,
+});
