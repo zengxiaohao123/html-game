@@ -1973,9 +1973,49 @@ function _subscribeCombatEvents(){
   C.onEvent('auraApplied',       () => { renderMap(); });
   C.onEvent('linkWindowChange',  (p) => { /* 顶部黄色提示框 —— 后续加 */ });
   C.onEvent('combatEnd',          (p) => {
-    if (p.win) log('—— 战斗胜利 ——');
-    else if (p.fled) log('—— 逃跑成功，视为本次遭遇跳过 ——');
-    else log('—— 战斗失败 ——');
+    const cs = window.Combat && window.Combat.getState();
+    // 1) 标记战斗 cell 为 done（胜利 / 逃跑 都做；失败也视为"遭遇过了"但不标 done —— 还能重打）
+    const cell = cs && cs.refCell;
+    if (cell && cell.content && !p.win && !p.fled) {
+      // 失败：不标 done，让玩家下次还能碰上
+    } else if (cell && cell.content) {
+      cell.content.done = true;
+    }
+    // 2) 胜利：给战利品（简单随机：金币 + 对应等级食材）
+    if (p.win && cs) {
+      const drop = Math.floor(5 + Math.random() * 20);
+      G.inventory.coin = (G.inventory.coin || 0) + drop;
+      // 稀有 / 紧急 / boss 额外战利品
+      if (cell?.content?.sub === 'boss') {
+        G.inventory.coin += 50;
+        if (G.team && G.team.indexOf('luyouyou') >= 0) {
+          const k = ['feather','spice','cookingHerb'][Math.floor(Math.random()*3)];
+          G.inventory[k] = (G.inventory[k] || 0) + 1;
+        }
+      } else if (cell?.content?.sub === 'hard') {
+        if (Math.random() < 0.5) {
+          G.inventory.herb = (G.inventory.herb || 0) + 1;
+        }
+      }
+      log(`—— 战斗胜利 —— 获得 ${drop} 金币`);
+    } else if (p.fled) {
+      log('—— 逃跑成功，视为本次遭遇跳过 ——');
+    } else {
+      log('—— 战斗失败 —— 你被送回起始位置');
+    }
+    // 3) 恢复主角位置（战斗开始时进入的格子）
+    if (cs && cs.refPos && G) {
+      G.px = cs.refPos.x; G.py = cs.refPos.y;
+    }
+    // 4) 清理 combat state + 切回 explore 模式
+    window.combatState = null;
+    if (window.Combat && typeof window.Combat.stopBattle === 'function') {
+      try { window.Combat.stopBattle(); } catch(e){}
+    }
+    window.switchMode && window.switchMode('explore');
+    window.renderMap && window.renderMap();
+    // 胜利后刷新 HUD
+    refreshHUD && refreshHUD();
   });
   C.onEvent('log', (t) => log(t));
   // 初始渲染一次

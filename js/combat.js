@@ -614,11 +614,19 @@ function heroDisplaySpeed(){ return (window.G && window.G.hero) ? (window.G.hero
     // 冷却：立即置满（下次 cd-1 在敌方回合末尾统一 tick）
     slot.cd = skill.cd || 1;
 
+    // 伤害源：实时取天赋叠加后的攻击力（depress/战斗中 buff 已在 charAtk 里处理）
+    const atkNow = (typeof charAtk === 'function') ? charAtk(owner.key) : (owner.atk || 0);
+    // 我方全局 buff：屏息 +10% 伤害（owner.buffs 里的屏息 debuff 被视为伤害 buff）
+    const breathHold = (owner.buffs || []).some(b => b.id === 'breathHold');
+    const breathBonus = breathHold ? 1.10 : 1.0;
+
     // 每个目标结算伤害
     for (const t of targets) {
       // 倍率伤害
       if (skill.mult && skill.mult > 0) {
-        let base = (owner.atk || 0) * skill.mult;
+        let base = atkNow * skill.mult;
+        // 我方 buff：屏息 +10%
+        base *= breathBonus;
         // 激化 buff：草/雷伤害 +10%/层；消耗 1 层
         const aggro = (owner.buffs || []).find(b => b.id === 'aggro');
         if (aggro && (skill.type === 'grass' || skill.type === 'thunder')) {
@@ -626,14 +634,36 @@ function heroDisplaySpeed(){ return (window.G && window.G.hero) ? (window.G.hero
           base *= bonus; aggro.layers = Math.max(0, (aggro.layers || 1) - 1);
           if (aggro.layers <= 0) owner.buffs = owner.buffs.filter(b => b !== aggro);
         }
-        const dmg = Math.max(1, Math.floor(base));
-        _applyHpDelta(cs, t, -dmg, skill.type || 'physical');
-        _emit(cs, 'damageDone', { attackerKey:owner.key, targetKey:t.key, damage:dmg, elem:skill.type || 'physical' });
-        _log(cs, `→ ${t.name||t.key} 受到 ${skill.type || '物理'} 伤害 ${dmg}`);
+        // 暴击判定（按 owner.critRate，或硬编码 5%）
+        let isCrit = false;
+        const critChance = owner.critRate != null ? owner.critRate : 0.05;
+        if (Math.random() < critChance) { isCrit = true; base *= 1.5; }
+        // 目标防御 / 抗性修正
+        let afterBase = base;
+        // 物理伤害 → 减 def
+        const elem = skill.type || 'physical';
+        if (elem === 'physical') {
+          const targetDef = t.def || 0;
+          afterBase = Math.max(1, afterBase - targetDef);
+        } else {
+          // 元素伤害 → 查敌人 res 表里的抗性（0.0~1.0），或用默认 0
+          const res = (t.res && t.res[elem]) || 0;
+          afterBase = afterBase * (1 - Math.max(0, Math.min(0.8, res)));
+        }
+        // 目标易伤 debuff → 伤害 +50%
+        const vuln = (t.buffs || []).some(b => b.id === 'vuln');
+        if (vuln) afterBase *= 1.5;
+
+        const dmg = Math.max(1, Math.floor(afterBase));
+        _applyHpDelta(cs, t, -dmg, elem);
+        _emit(cs, 'damageDone', { attackerKey:owner.key, targetKey:t.key, damage:dmg, elem, isCrit });
+        const critTag = isCrit ? '（暴击！）' : '';
+        _log(cs, `→ ${t.name||t.key} 受到 ${elem === 'physical' ? '物理' : elem + ' 元素'}伤害 ${dmg}${critTag}`);
       }
-      // 技能自带 buff（燃烧/冻结等）
+      // 技能自带 buff（燃烧/冻结/束缚/易伤）
       if (skill.burnDur) { _addBuff(t, { id:'burn', turnsLeft:skill.burnDur }); }
       if (skill.bind)   { _addBuff(t, { id:'bind', turnsLeft:skill.bind }); }
+      if (skill.freeze) { _addBuff(t, { id:'frozen', turnsLeft:skill.freeze }); }
       if (skill.vulnDur && skill.vuln) { _addBuff(t, { id:'vuln', turnsLeft:skill.vulnDur }); }
     }
 
@@ -736,10 +766,16 @@ function heroDisplaySpeed(){ return (window.G && window.G.hero) ? (window.G.hero
     _setPhase(cs, PHASES.ENEMY);
   }
   function _phaseEnemy(cs) {
-    // 敌方 AI 简易：朝目标逼近 + 普攻
-    for (const e of cs.enemies) {
-      if (!e || e.alive === false) continue;
-      if (_hasHardControl(e)) continue;
+    // 按规格顺序：先 triggerNode（先扣冻结/束缚持续时间！）→ 再检查硬控 → 再 AI
+    const order = cs.enemies.filter(e => e && e.alive !== false)
+      .slice()
+      .sort((a, b) => (a.x+a.y) - (b.x+b.y) || (a.key||'').localeCompare(b.key||''));
+    for (const e of order) {
+      _triggerEntityNode(cs, e);
+      if (_hasHardControl(e)) {
+        _log(cs, `${e.name||e.key} 被硬控制，跳过本回合`);
+        continue;
+      }
       _enemyAct(cs, e);
     }
     _setPhase(cs, PHASES.SUMMONS);
@@ -895,14 +931,19 @@ function heroDisplaySpeed(){ return (window.G && window.G.hero) ? (window.G.hero
     if (_hasHardControl(cs.hero)) { _log(cs, '被硬控制，无法释放'); return false; }
     const hero = cs.hero;
     const plan = _castSkillPlan(cs, slotIdx, hero);
+    const skill = slot.skill;
+    // 纯自 buff（target==='self'）：自身就是合法目标，允许释放
+    const selfBuff = skill && skill.target === 'self';
     if (!plan || plan.targets.length === 0) {
-      // 纯自 buff 技能 target==='self' 时 plan.targets 会有 self
-      if (!(slot.skillId && slot.skill.target === 'self')) {
+      if (!selfBuff) {
         _log(cs, '当前没有可命中的目标'); return false;
       }
     }
-    _dealSkill(cs, plan || _castSkillPlan(cs, slotIdx, hero));
-    // 冷却 + 行动计数已在 _dealSkill 里处理
+    // ensure plan 存在（纯自 buff 也应该有，保险起见）
+    const finalPlan = plan || _castSkillPlan(cs, slotIdx, hero) || {
+      slot, skill, targets: [hero], owner: hero,
+    };
+    _dealSkill(cs, finalPlan);
     return true;
   }
 
@@ -1071,12 +1112,17 @@ function heroDisplaySpeed(){ return (window.G && window.G.hero) ? (window.G.hero
       currentCharKey: 'pro',
       selectedSlotIdx: null,
       actionCountThisTurn: 0,
-      // 主角
+      // 主角（数值从天赋叠加函数取；depress 会在 charAtk/totalHeroDefense 里处理）
       hero: {
         key:'pro', name:'主角', faction:'ally', alive:true,
         x: heroStart.x, y: heroStart.y, facing: heroStart.facing,
-        maxHp: 100, hp: 100, atk: 10, def: 0, speed: 30,
-        critRate: 0.05, dodgeRate: 0,
+        maxHp: heroDisplayMaxHp(),
+        hp: (window.G && window.G.hero) ? (window.G.hero.hp ?? heroDisplayMaxHp()) : heroDisplayMaxHp(),
+        atk: charAtk('pro'),
+        def: totalHeroDefense(),
+        speed: (window.G && window.G.hero) ? (window.G.hero.speed ?? 30) : 30,
+        critRate: (typeof baseCritRate === 'function' ? baseCritRate('pro') : 5) / 100,
+        dodgeRate: (typeof heroDodgeRate === 'function' ? heroDodgeRate() : 0) / 100,
         buffs: [], autoUses: 1,
         // 残存时间计时
         remnantTimer: null,
@@ -1101,16 +1147,17 @@ function heroDisplaySpeed(){ return (window.G && window.G.hero) ? (window.G.hero
       },
     };
 
-    // 队友
+    // 队友（有 buff/debuff 列表，可挂冻结/束缚/屏息/比翼等；但没有 HP/DEF/受伤系统）
     for (const k of teamKeys) {
       if (k === 'pro') continue;
       const def = Data.getChar(k); if (!def) continue;
       cs.allies[k] = {
         key: def.key, name: def.name, faction:'ally', alive:true,
         x: heroStart.x, y: heroStart.y, facing:'up',
-        maxHp: def.base?.maxHp || 100, hp: def.base?.maxHp || 100,
-        atk: def.base?.atk || 10, def: def.base?.def || 0,
-        speed: def.base?.escapeSpeed || 4, buffs: [], autoUses: 1,
+        // atk 走天赋叠加（队友 scal.atk / scal.self 以及主角 scal.pro 都加进来）
+        atk: (typeof charAtk === 'function') ? charAtk(k) : (def.base?.atk || 35),
+        critRate: (typeof baseCritRate === 'function' ? baseCritRate(k) : 5) / 100,
+        buffs: [], autoUses: 1,
       };
     }
 
@@ -1132,53 +1179,60 @@ function heroDisplaySpeed(){ return (window.G && window.G.hero) ? (window.G.hero
       });
     }
 
-    // 技能组（flat，按 active→auto→link 排序；允许 override）
+    // 技能组（flat，按 active→auto→link 排序；每个 slot 都必须挂完整 skill 定义）
+    const kOrder = { active:0, auto:1, link:2 };
+
+    // 统一的技能组构建 helper：给一个 slot 原始条目，挂上完整 skill 定义
+    function _buildSlot(rawSlot, slotIdx) {
+      const ownerKey = rawSlot.ownerKey || rawSlot.charKey;
+      const skillId = rawSlot.skillId;
+      let sk = rawSlot.skill || null;
+      if (!sk && ownerKey && skillId) {
+        const c = window.Data.getChar(ownerKey);
+        sk = c ? (c.skills||[]).find(s => s.id === skillId) : null;
+      }
+      const kind = rawSlot.kind || (sk && sk.kind) || 'active';
+      return {
+        slotIdx, skillId, skillName: (sk && sk.name) || rawSlot.skillName || skillId,
+        ownerKey, kind, cd: 0, skill: sk,
+      };
+    }
+
     const groupOverride = opts.skillGroupOverride;
+    let rawSlots = null;
+
     if (groupOverride && Array.isArray(groupOverride)) {
-      cs.skillGroup = groupOverride.map((g, i) => ({
-        slotIdx: i, skillId: g.skillId, skillName: g.skillName,
-        ownerKey: g.ownerKey, kind: g.kind, cd: 0,
-      }));
+      rawSlots = groupOverride;
     } else {
       // 兜底：如果 G.skillGroup 已由编队编辑器保存 → 直接用它；
       // 否则用 buildDefaultSkillGroup 的默认数量（pro:3, xiayang:2, luyouyou:2）
-      let src = null;
       try { src = (typeof G !== 'undefined' && G && G.skillGroup) || null; } catch(e) { src = null; }
       if (src && src.length) {
-        cs.skillGroup = src.map((g, i) => {
-          const c = window.Data.getChar(g.charKey || g.ownerKey);
-          const sk = c ? (c.skills||[]).find(s => s.id === g.skillId) : null;
-          return { slotIdx: i, skillId: g.skillId, skillName: sk ? sk.name : g.skillId, ownerKey: g.charKey || g.ownerKey, kind: sk ? sk.kind : 'active', cd: 0 };
-        });
-        // 统一强制 active→auto→link 顺序（不管来源是编辑器 / buildDefaultSkillGroup / 存档）
-        const kOrder = { active:0, auto:1, link:2 };
-        cs.skillGroup.sort((a, b) => {
-          const ka = kOrder[a.kind] ?? 9, kb = kOrder[b.kind] ?? 9;
-          if (ka !== kb) return ka - kb;
-          // 同 kind 内部：按原 slotIdx 保持稳定顺序
-          return (a.slotIdx || 0) - (b.slotIdx || 0);
-        });
-        cs.skillGroup.forEach((s, i) => s.slotIdx = i);
+        rawSlots = src;
       } else {
         const list = [];
-        let slotIdx = 0;
         const perChar = { pro:3, xiayang:2, luyouyou:2 };
-        for (const tk of ['pro', ...Object.keys(cs.allies)]) {
+        for (const tk of teamKeys) {
           const def = Data.getChar(tk); if (!def) continue;
           const take = perChar[tk] || 2;
           const ids = (def.defaultSkillIds||[]).slice(0, take);
           for (const sid of ids) {
             const sk = (def.skills || []).find(s => s.id === sid);
             if (!sk) continue;
-            list.push({ slotIdx: slotIdx++, skillId: sid, skillName: sk.name, ownerKey: tk, kind: sk.kind, cd: 0 });
+            list.push({ ownerKey: tk, skillId: sid, kind: sk.kind, skillName: sk.name, skill: sk });
           }
         }
-        const kOrder = { active:0, auto:1, link:2 };
-        list.sort((a, b) => (kOrder[a.kind] ?? 9) - (kOrder[b.kind] ?? 9));
-        list.forEach((s, i) => s.slotIdx = i);
-        cs.skillGroup = list;
+        rawSlots = list;
       }
     }
+
+    // 全部 buildSlot + 强制 active→auto→link 排序
+    cs.skillGroup = rawSlots
+      .map((r, i) => _buildSlot(r, i))
+      .filter(s => s.skill)  // 没有 skill 定义的 slot 丢弃（避免 _dealSkill 里崩）
+      .sort((a, b) => (kOrder[a.kind] ?? 9) - (kOrder[b.kind] ?? 9)
+                     || (a.slotIdx || 0) - (b.slotIdx || 0));
+    cs.skillGroup.forEach((s, i) => s.slotIdx = i);
 
     // 清掉旧 _cs，挂新的
     if (_cs && _cs._loopHandle) _stopLoop(_cs);
@@ -1270,23 +1324,29 @@ window.startCombat = function(target) {
     enemies.push({ key: protoKey + '_' + (++ek), proto: protoKey, x: ex, y: ey });
   }
 
-  // 切 mode='combat'（ui 层 switchMode 会自动调 _subscribeCombatEvents 订阅事件）
-  if (typeof window.switchMode === 'function') window.switchMode('combat');
-  if (typeof window.renderMap === 'function') window.renderMap();
-
   const teamKeys = (G && G.team) ? G.team.slice() : ['pro', 'xiayang', 'luyouyou'];
 
-  // 建地图快照
-  const cells = (G && G.map && G.map.cells) ? G.map.cells.slice() : null;
+  // 建地图快照（元素附着要完整拷贝）
+  const rawCells = (G && G.map && G.map.cells) ? G.map.cells : null;
+  const cells = rawCells ? rawCells.map(c => ({ ...c, aura: c.aura || null })) : null;
 
-  // 调用新 API
-  Combat.startBattle(enemies, {
+  // 先调用 startBattle 把 cs 挂好（window.combatState）
+  const cs = Combat.startBattle(enemies, {
     mapSnapshot: cells,
     mapN,
     teamKeys,
     heroStart: { x: px, y: py, facing: (G && G.hero && G.hero.facing) || 'up' },
     skillGroupOverride: null,  // 用默认编队共用技能组（active→auto→link）
   });
+
+  // 把 G.map 里那个触发战斗的 cell 引用 + 主角进入前位置存在 cs 上
+  // 战斗结束时（胜利/逃跑）要把 cell.content.done = true 并恢复主角到这个格子
+  cs.refCell = (G && G.map && typeof target === 'object') ? target : null;
+  cs.refPos = { x: px, y: py };
+
+  // 再切 mode='combat' + 渲染（此时 cs 已挂，renderMap 能画出敌人）
+  if (typeof window.switchMode === 'function') window.switchMode('combat');
+  if (typeof window.renderMap === 'function') window.renderMap();
 };
 
 window.reenterCombat = function(snap) {
