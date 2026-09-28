@@ -966,6 +966,32 @@ window.ALLIES_MAP = Object.assign({}, ALLIES);
 window.ENEMIES = ENEMIES;
 window.rollCombatEvent = rollCombatEvent;
 
+/* ---- 跨模块通用工具函数兜底（之前在重构时丢失，现在集中定义） ---- */
+
+/** R(x) —— 取整/约简数字（ui.js / charPageLayout 里频繁使用） */
+function R(x){
+  if (x == null || isNaN(x)) return 0;
+  return Math.round(Number(x));
+}
+window.R = R;
+
+/** talentDisplayName(ck, p) —— 有 scal 的天赋按等级显示名字；否则返回 p.name */
+function talentDisplayName(ck, p){
+  if (!p) return '';
+  if (!p.scal) return p.name || p.id || '';
+  const lv = entryLevel(ck, p);
+  return (p.name || p.id || '') + `（Lv.${lv}）`;
+}
+window.talentDisplayName = talentDisplayName;
+
+/** skillDamagePreview(key, skill) —— 技能伤害预览（简化版：charAtk × mult） */
+function skillDamagePreview(key, skill){
+  if (!skill || !skill.mult || !skill.atkFn) return null;
+  const atk = typeof charAtk === 'function' ? charAtk(key) : 35;
+  return Math.round(atk * skill.mult);
+}
+window.skillDamagePreview = skillDamagePreview;
+
 /* ==================== window.Data namespace（单一导入入口） ====================
    所有跨模块读取的纯数据 / 纯函数统一挂在这里，避免 reactions.js 自己再定义 ELEMENTS。 */
 window.Data = window.Data || {};

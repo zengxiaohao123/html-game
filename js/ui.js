@@ -2079,6 +2079,31 @@ function _renderSkillGroup() {
     };
     root.appendChild(tile);
   });
+
+  /* ===== 逃跑 tile —— 永远追加在技能组最右侧（独立于技能组上限，不是真正的技能）=====
+     尺寸 56×64（和 sg-tile 完全一致）、绿色边框、自定义图标、文字 "逃跑"
+     不可用时（非手动阶段/行动计数>0/主角硬控）变灰
+  */
+  const fleeTile = document.createElement('div');
+  fleeTile.className = 'sg-tile cb-flee-tile';
+  fleeTile.title = '逃跑（手动阶段、行动计数=0、主角无硬控时可用）';
+
+  const fleeIcon = document.createElement('div');
+  fleeIcon.className = 'sg-tile-icon';
+  fleeIcon.style.backgroundImage = "url('assets/skills/flee.svg')";
+  fleeTile.appendChild(fleeIcon);
+
+  const fleeLabel = document.createElement('div');
+  fleeLabel.className = 'sg-tile-label';
+  fleeLabel.textContent = '逃跑';
+  fleeTile.appendChild(fleeLabel);
+
+  fleeTile.onclick = () => {
+    if (typeof window.tryFlee === 'function') window.tryFlee();
+  };
+  root.appendChild(fleeTile);
+  // 逃跑 tile 状态刷新（根据 cs 动态增减 .disabled 类）
+  _updateFleeBtnState();
 }
 
 /* 行 2 左半：属性面板（主角全显 / 队友只显 攻击+暴击）*/
@@ -2098,54 +2123,49 @@ function _renderAttrs() {
     el.innerHTML = label + ' ' + inner;
     root.appendChild(el);
   };
-  const hp = ent.hp !== undefined ? ent.hp : ent.maxHp;
-  const showFull = (key === 'pro');
-  // 注意：不再单独渲染名字 chip（bug #4 修复）——角色身份由 row1 的 charCard 承担
-  // HP chip
-  const hpChip = document.createElement('span');
-  hpChip.className = 'attrChip';
-  hpChip.innerHTML = `生命 <b class="hp">${hp}/${ent.maxHp || 100}</b>`;
-  root.appendChild(hpChip);
-  // 攻击 chip
-  chip('攻击', `<b>${ent.atk ?? 0}</b>`);
-  // 队友简化：只显攻击 + 暴击
-  if (showFull) {
+  // 队友不涉及生命值、防御力系统，队友不会受伤 —— 只显示攻击属性
+  if (key === 'pro') {
+    const hp = ent.hp !== undefined ? ent.hp : ent.maxHp;
+    const hpChip = document.createElement('span');
+    hpChip.className = 'attrChip';
+    hpChip.innerHTML = `生命 <b class="hp">${hp}/${ent.maxHp || 100}</b>`;
+    root.appendChild(hpChip);
+    chip('攻击', `<b>${ent.atk ?? 0}</b>`);
     chip('防御', `<b>${ent.def ?? 0}</b>`);
     chip('速度', `<b>${ent.speed ?? 30}</b>`);
     chip('暴击', `<b>${Math.round((ent.critRate ?? 0.05) * 100)}%</b>`);
   } else {
+    // 队友：只显示攻击相关属性（无 HP/DEF）
+    const baseAtk = window.Data ? (window.Data.getChar(key)?.base?.atk ?? 35) : 35;
+    chip('攻击', `<b>${ent.atk ?? baseAtk}</b>`);
     const crit = window.Data ? (window.Data.getChar(key)?.critRate ?? 0.05) : 0.05;
     chip('暴击', `<b>${Math.round(crit * 100)}%</b>`);
   }
 }
 
-/* 行 2 右半：方形小逃跑按钮状态 */
+/* 逃跑 tile 状态刷新（挂在 #cbSkillGroup 末尾，不是 button 也没有 disabled 属性，用 .disabled 类） */
 function _updateFleeBtnState() {
   const cs = window.Combat && window.Combat.getState();
-  const btn = qs('#cbFleeBtn');
-  if (!btn) return;
-  if (!cs) { btn.disabled = true; btn.title = '未进入战斗'; btn.textContent = '逃跑'; return; }
+  const tile = qs('#cbSkillGroup .cb-flee-tile');
+  if (!tile) return;
+  if (!cs) { tile.classList.add('disabled'); tile.title = '未进入战斗'; return; }
 
-  // canFlee 严格按规格：手动阶段 + actionCountThisTurn === 0 + 主角无硬控
   const isManual = cs.phase === 'manual';
   const cnt = cs.hero.actionCountThisTurn || 0;
   const hasHard = (cs.hero.buffs || []).some(b => b.id === 'frozen' || b.id === 'bind' || b.id === 'sleep');
   const canFlee = isManual && cnt === 0 && !hasHard;
 
-  btn.disabled = !canFlee;
+  tile.classList.toggle('disabled', !canFlee);
   if (!canFlee) {
     let reason = [];
     if (!isManual) reason.push('非手动阶段');
     if (cnt !== 0) reason.push(`行动计数=${cnt}（需=0）`);
     if (hasHard) reason.push('主角被硬控制');
-    btn.title = '当前无法逃跑：' + reason.join('；');
-    btn.textContent = '逃跑';
+    tile.title = '当前无法逃跑：' + reason.join('；');
   } else {
-    // 计算当前逃跑概率（规格公式）
     const enemyMaxSpd = Math.max(...cs.enemies.map(e => (e.speed || 4) * ((e.hp / e.maxHp) || 0)));
     const prob = Math.max(0, Math.min(100, (cs.hero.speed || 30) - enemyMaxSpd));
-    btn.title = `当前逃跑概率 = ${Math.floor(prob)}%（主角速度 - max(敌人速度 × 剩余HP%)）`;
-    btn.textContent = `逃跑 ${Math.floor(prob)}%`;
+    tile.title = `逃跑概率 = ${Math.floor(prob)}%（主角速度 - max(敌人速度 × 剩余HP%)）`;
   }
 }
 

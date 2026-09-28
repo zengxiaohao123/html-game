@@ -777,7 +777,7 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
   display: flex; align-items: center;
   /* row 自身不加 flex:none，由单独 selector 指定 */
 }
-#bottom.mode-combat #cbRow1{ flex: none; height: 66px; }
+#bottom.mode-combat #cbRow1{ flex: none; height: 66px; padding-top: 4px; }  /* #1: 整体下移一点 */
 #bottom.mode-combat #cbRow2{ flex: none; height: 42px; gap: 8px; }
 #bottom.mode-combat #cbRow3{ flex: none; height: 38px; }
 #bottom.mode-combat #cbRow4{ flex: none; height: 38px; }
@@ -826,7 +826,28 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 }
 /* 冷却态：整个 tile 变灰 + 半透明 */
 #bottom.mode-combat .sg-tile.cooling{ filter: grayscale(70%); opacity: 0.55; cursor: not-allowed; }
-/* 注意 sg-sel 选中类在编辑器 css 590 行已定义（金色光晕），战斗界面直接复用 */
+
+/* #2 技能选中态：不改边框色（用户要求），只整体略微上移（能感觉到就行）
+   覆盖编辑器 .sg-tile.sg-sel 的金色 box-shadow */
+#bottom.mode-combat #cbSkillGroup .sg-tile.sg-sel{
+  box-shadow: none;            /* 去掉编辑器的金色光晕 */
+  transform: translateY(-3px); /* 整体上移 3px */
+}
+
+/* ============================================================
+   #5 逃跑 tile —— 永远挂在技能组最右侧
+   独立于技能组上限，不是真正的技能；尺寸 56×64（和 sg-tile 完全一致）
+   绿色边框（用户明确要求）+ 绿色半透明渐变底 + 奔跑小人图标
+   ============================================================ */
+#bottom.mode-combat #cbSkillGroup .cb-flee-tile{
+  background: linear-gradient(160deg,#1e4a3a 0%,#103025 100%);  /* 绿色渐变底 */
+  border-color: #4fd1c5;                                          /* 绿色边框 */
+  margin-left: 4px;                                                /* 和最后一个技能留点距离 */
+}
+#bottom.mode-combat #cbSkillGroup .cb-flee-tile.disabled{
+  filter: grayscale(80%); opacity: 0.45; cursor: not-allowed;
+  background: #22263a; border-color: #444;
+}
 
 /* 行 2 左半：当前角色属性面板 */
 #bottom.mode-combat #cbAttrs{
