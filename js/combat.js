@@ -72,8 +72,9 @@ function totalHeroDefense(){
 }
 function baseCritRate(k){ return 0.05 * 100; }  // 简化版，固定 5%
 function vTier(v){ return (v||0).toString(); }
-function tierValue(t){ return Number(t)||0; }
-function entryLevel(cell){ return 1; }
+// 注意：tierValue 和 entryLevel 的真正实现都在 js/data.js 里，
+// 战斗系统通过全局 window.tierValue / window.entryLevel 复用，不再重复定义 stub
+
 
 (function () {
 
