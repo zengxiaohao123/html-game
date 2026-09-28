@@ -595,10 +595,10 @@ function getTeamChars(){ return G.team.map(getChar).filter(Boolean); }
 function lvDescText(entry, level, ext){
   let d = entry.desc || '';
   if(entry.scal){
+    // tierValue 返回整个 scal 展开后的对象（{explore:40, combat:40, dodge:'8%'}）
+    const tVal = tierValue(entry, level);
     for(const key in entry.scal){
-      const s = entry.scal[key];
-      const v = tierValue(entry, level, key);
-      d = d.split('{'+key+'}').join(`<span class="lvlup">${v}${s.pct?'%':''}</span>`);
+      d = d.split('{'+key+'}').join(`<span class="lvlup">${tVal[key] ?? 0}</span>`);
     }
   }
   if(ext){
