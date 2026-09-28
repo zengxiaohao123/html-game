@@ -762,9 +762,9 @@ function refreshHUD(){ if(!G) return;
 */
 function iconButtonStatus(btnKey, mode) {
   const RULE = {
-    explore: { tasks:true, formation:true, chars:true, bag:true, sleep:true, shop:true, craft:true, save:true, vehicle:true, settings:true },
-    story:   { tasks:'readonly', formation:false, chars:'readonly', bag:false, sleep:false, shop:false, craft:false, save:true, vehicle:true, settings:true },
-    combat:  { tasks:'readonly', formation:false, chars:'readonly', bag:false, sleep:false, shop:false, craft:false, save:true, vehicle:true, settings:true },
+    explore: { tasks:true, formation:true, chars:true, bag:true, sleep:true, shop:true, craft:true, vehicle:true, settings:true },
+    story:   { tasks:'readonly', formation:false, chars:'readonly', bag:false, sleep:false, shop:false, craft:false, vehicle:true, settings:true },
+    combat:  { tasks:'readonly', formation:false, chars:'readonly', bag:false, sleep:false, shop:false, craft:false, vehicle:true, settings:true },
   };
   return (RULE[mode] && RULE[mode][btnKey] !== undefined) ? RULE[mode][btnKey] : true;
 }
@@ -780,6 +780,7 @@ function _detectModeForIconbar() {
 let ICONBAR_BUTTONS = null;
 function _ensureIconButtons() {
   if (ICONBAR_BUTTONS) return ICONBAR_BUTTONS;
+  // 规格：没有单独的"存档"按钮 —— 存档入口在「设置」模态框内
   ICONBAR_BUTTONS = [
     { key:'tasks',     label:'任务',   handler: openTasks,     warnReadonly: '剧情/战斗中只可查看任务，禁止接取/领取奖励。' },
     { key:'formation', label:'编队',   handler: openFormation, warnReadonly: null },
@@ -789,7 +790,6 @@ function _ensureIconButtons() {
     { key:'shop',      label:'商店',   handler: openShop,      warnReadonly: null },
     { key:'craft',     label:'合成',   handler: openCraft,     warnReadonly: null },
     { key:'vehicle',   label:'载具',   handler: openVehicles,  warnReadonly: null },
-    { key:'save',      label:'存档',   handler: () => openSettings(), warnReadonly: null },
     { key:'settings',  label:'设置',   handler: openSettings,  warnReadonly: null },
   ];
   return ICONBAR_BUTTONS;

@@ -77,6 +77,9 @@ function entryLevel(cell){ return 1; }
 
 (function () {
 
+  /* ==================== 状态（闭包内唯一） ==================== */
+  let _cs = null;  // 当前战斗状态对象（单例，同一时间只有一场战斗）
+
   /* ==================== 常量 ==================== */
   const PHASES = {
     ROUND_START: 'roundStart',
@@ -1059,6 +1062,12 @@ function entryLevel(cell){ return 1; }
     if (_cs && _cs._loopHandle) _stopLoop(_cs);
     _cs = cs;
     window.combatState = cs;  // 保留旧调用方式的兼容入口（ui.js / explore.js 里可能引用）
+
+    // ⚠️ 必须在 tick 之前切 UI mode —— 只有 mode='combat' 时 #combatZone 才 display:flex
+    // 不管走 Combat.startBattle 新 API 还是 window.startCombat 旧 shim 都会调到这里
+    if (typeof window.switchMode === 'function') {
+      try { window.switchMode('combat'); } catch(e) { console.warn('startBattle: switchMode fail', e.message); }
+    }
 
     // 切 phase → ROUND_START → 开始 tick
     _setPhase(cs, PHASES.ROUND_START);
