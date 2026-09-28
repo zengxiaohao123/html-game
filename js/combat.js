@@ -1040,22 +1040,35 @@ function entryLevel(cell){ return 1; }
         ownerKey: g.ownerKey, kind: g.kind, cd: 0,
       }));
     } else {
-      const list = [];
-      let slotIdx = 0;
-      for (const tk of ['pro', ...Object.keys(cs.allies)]) {
-        const def = Data.getChar(tk); if (!def) continue;
-        const ids = def.defaultSkillIds || (def.skills || []).filter(s => s.kind !== 'talent').map(s => s.id);
-        for (const sid of ids) {
-          const sk = (def.skills || []).find(s => s.id === sid);
-          if (!sk) continue;
-          list.push({ slotIdx: slotIdx++, skillId: sid, skillName: sk.name, ownerKey: tk, kind: sk.kind, cd: 0 });
+      // 兜底：如果 G.skillGroup 已由编队编辑器保存 → 直接用它；
+      // 否则用 buildDefaultSkillGroup 的默认数量（pro:3, xiayang:2, luyouyou:2）
+      let src = null;
+      try { src = (typeof G !== 'undefined' && G && G.skillGroup) || null; } catch(e) { src = null; }
+      if (src && src.length) {
+        cs.skillGroup = src.map((g, i) => {
+          const c = window.Data.getChar(g.charKey || g.ownerKey);
+          const sk = c ? (c.skills||[]).find(s => s.id === g.skillId) : null;
+          return { slotIdx: i, skillId: g.skillId, skillName: sk ? sk.name : g.skillId, ownerKey: g.charKey || g.ownerKey, kind: sk ? sk.kind : 'active', cd: 0 };
+        });
+      } else {
+        const list = [];
+        let slotIdx = 0;
+        const perChar = { pro:3, xiayang:2, luyouyou:2 };
+        for (const tk of ['pro', ...Object.keys(cs.allies)]) {
+          const def = Data.getChar(tk); if (!def) continue;
+          const take = perChar[tk] || 2;
+          const ids = (def.defaultSkillIds||[]).slice(0, take);
+          for (const sid of ids) {
+            const sk = (def.skills || []).find(s => s.id === sid);
+            if (!sk) continue;
+            list.push({ slotIdx: slotIdx++, skillId: sid, skillName: sk.name, ownerKey: tk, kind: sk.kind, cd: 0 });
+          }
         }
+        const kOrder = { active:0, auto:1, link:2 };
+        list.sort((a, b) => (kOrder[a.kind] ?? 9) - (kOrder[b.kind] ?? 9));
+        list.forEach((s, i) => s.slotIdx = i);
+        cs.skillGroup = list;
       }
-      // 排序：active → auto → link
-      const kOrder = { active:0, auto:1, link:2 };
-      list.sort((a, b) => (kOrder[a.kind] ?? 9) - (kOrder[b.kind] ?? 9));
-      list.forEach((s, i) => s.slotIdx = i);
-      cs.skillGroup = list;
     }
 
     // 清掉旧 _cs，挂新的
@@ -1139,7 +1152,12 @@ window.startCombat = function(target) {
       ex = Math.floor(Math.random() * mapN);
       ey = Math.floor(Math.random() * mapN);
       tries++;
-    } while ((Math.abs(ex - px) + Math.abs(ey - py) < 2) && tries < 30);
+      // 必须满足：离主角至少 2 格（曼哈顿） AND 不是障碍地块 AND 不是 void
+      const cell = (G && G.map && G.map.cells) ? G.map.cells[ey*mapN + ex] : null;
+      const isBlock = cell && (cell.terrain === 'obstacle' || cell.terrain === 'void');
+      const farEnough = (Math.abs(ex - px) + Math.abs(ey - py) >= 2);
+      if (farEnough && !isBlock) break;
+    } while (tries < 60);
     enemies.push({ key: protoKey + '_' + (++ek), proto: protoKey, x: ex, y: ey });
   }
 

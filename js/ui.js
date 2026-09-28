@@ -826,7 +826,58 @@ function log(msg){ const d=el(`<div class="logline">${msg}</div>`); const body=q
 function story(html){qs('#storyBody').insertAdjacentHTML('beforeend',`<div>${html}</div>`); qs('#storyBody').scrollTop=qs('#storyBody').scrollHeight;}
 function prompt(msg){qs('#promptZone').innerHTML=msg;}
 function terms(txt){ if(typeof txt!=='string') return txt; return txt.replace(/【([^】]+)】/g, (m,zh)=> TERM_KEYS[zh]? termHTML(TERM_KEYS[zh], zh) : `<b>${m}</b>`); }
-function renderMap(){ const m=G.map; const grid=qs('#mapGrid'); grid.style.gridTemplateColumns=`repeat(${m.n},44px)`; grid.innerHTML=''; for(let y=0;y<m.n;y++){ for(let x=0;x<m.n;x++){ const c=m.cells[y*m.n+x]; const cell=el('<div class="cell"></div>'); if(c.terrain==='obstacle'){cell.classList.add('obstacle');} else if(c.terrain==='void'){cell.classList.add('void');} if(c.terrain!=='void' && c.content && c.content.type) renderCellContent(cell,c); if(G.px===x&&G.py===y){cell.classList.add('player'); cell.classList.add('facing-'+G.hero.facing);} cell.dataset.x=x; cell.dataset.y=y; cell.addEventListener('click',()=>onCellClick(x,y)); grid.appendChild(cell); } } }
+function renderMap(){
+  const m = G.map; const grid = qs('#mapGrid');
+  grid.style.gridTemplateColumns = `repeat(${m.n},44px)`;
+  grid.innerHTML = '';
+  const cs = (window.Combat && window.Combat.getState()) || combatState;
+  // 战斗模式：主角坐标取自 cs.hero（startCombat 里 heroStart 改了坐标，G.px/py 可能没同步）
+  const heroX = cs ? (cs.hero && cs.hero.x !== undefined ? cs.hero.x : G.px) : G.px;
+  const heroY = cs ? (cs.hero && cs.hero.y !== undefined ? cs.hero.y : G.py) : G.py;
+
+  for (let y = 0; y < m.n; y++) {
+    for (let x = 0; x < m.n; x++) {
+      const c = m.cells[y*m.n + x];
+      const cell = el('<div class="cell"></div>');
+      if (c.terrain === 'obstacle') { cell.classList.add('obstacle'); }
+      else if (c.terrain === 'void') { cell.classList.add('void'); }
+      else if (c.terrain === 'river') { cell.classList.add('river'); }
+      else if (c.terrain === 'ice') { cell.classList.add('ice'); }
+      else if (c.terrain === 'grass') { cell.classList.add('grass'); }
+      else if (c.terrain === 'ground') { cell.classList.add('ground'); }
+
+      // 地块上的元素附着（aura）
+      if (c.aura) { cell.classList.add('aura'); cell.classList.add('aura-' + c.aura); }
+
+      if (c.terrain !== 'void' && c.content && c.content.type) {
+        if (!cs) { renderCellContent(cell, c); }
+        // 战斗模式下 cell.content 会被敌人占位覆盖，跳过探索图标
+      }
+
+      if (heroX === x && heroY === y) {
+        cell.classList.add('player');
+        cell.classList.add('facing-' + (cs ? (cs.hero && cs.hero.facing || 'up') : (G.hero && G.hero.facing || 'up')));
+      }
+
+      // 战斗模式：敌人实体画在对应格子上
+      if (cs) {
+        const enemiesHere = cs.enemies && cs.enemies.filter(e => e.x === x && e.y === y && e.alive !== false);
+        if (enemiesHere && enemiesHere.length) {
+          const first = enemiesHere[0];
+          const protoDef = window.Data && window.Data.ENEMIES ? window.Data.ENEMIES[first.proto || first.key] : null;
+          const icon = (protoDef && protoDef.icon) || '⚔';
+          cell.textContent = icon;
+          cell.classList.add('combat-enemy');
+          cell.title = (protoDef && protoDef.name || first.proto || first.key) + '（HP ' + first.hp + '/' + (first.maxHp || 100) + '）';
+        }
+      }
+
+      cell.dataset.x = x; cell.dataset.y = y;
+      cell.addEventListener('click', () => onCellClick(x, y));
+      grid.appendChild(cell);
+    }
+  }
+}
 function renderCellContent(cell,c){ if(c.content.type==='battle' && !c.content.done){ if(c.content.rare && (G.inventory.roadmap||0)>0){ cell.textContent='🐻'; cell.title='稀有动物'; cell.style.color='#ffd700'; } else if(c.content.sub==='hard'){ cell.textContent='⚠️'; cell.title='紧急作战'; cell.style.color='#ff6b6b'; } else if(c.content.sub==='boss'){ cell.textContent='💀'; cell.title='boss战'; } else { cell.textContent='⚔'; cell.title='作战'; } return; } else if(c.content.type==='loot' && !c.content.done){ cell.textContent='🎁'; cell.title='战利品'; } else if(c.content.type==='event' && !c.content.done){ cell.textContent='❓'; cell.title='事件'; } }
 function openSettings(){ const lbl = combatState? '存档（回本次战斗开始时）' : (isInStoryFlow()? '存档（回本次剧情开始时）' : '存档'); openModal('设置', `<div style="display:flex;flex-direction:column;gap:14px"><button class="mbtn big" onclick="saveMenuOpen()">${lbl}</button><button class="mbtn big" onclick="openReadSave()">读档</button><button class="mbtn big" onclick="closeModal();backToMenu()">返回主界面（不存档）</button></div>`, 'small'); const sm=qs('#modalOverlay .modal'); if(sm) sm.classList.add('settingz'); }
 function saveMenuOpen(){ openModal('选择存档位', buildSaveSlotHTML('save'), 'small'); }
@@ -1979,10 +2030,19 @@ function _renderSkillGroup() {
     if (cs.selectedSlotIdx === i) tile.classList.add('selected');
     if (sk.type) tile.classList.add('elem-' + sk.type);
 
-    // icon：技能名字第一个字（简化），实际应该用技能 svg 资源
+    // 图标：照抄技能组编辑器 —— 用 getSkillIcon(skillId).file 指向 assets/skills/*.svg
+    const iconDef = typeof getSkillIcon === 'function' ? getSkillIcon(slot.skillId) : null;
     const icon = document.createElement('div');
     icon.className = 'stIcon';
-    icon.textContent = (sk.name || '?')[0];
+    if (iconDef && iconDef.file) {
+      icon.style.backgroundImage = `url('assets/skills/${iconDef.file}')`;
+      icon.style.backgroundSize = 'contain';
+      icon.style.backgroundPosition = 'center';
+      icon.style.backgroundRepeat = 'no-repeat';
+    } else {
+      // 兜底：技能名首字
+      icon.textContent = (sk.name || '?')[0];
+    }
     icon.title = sk.name;
 
     // kind 徽章（非冷却时显示）
@@ -2040,8 +2100,7 @@ function _renderAttrs() {
   };
   const hp = ent.hp !== undefined ? ent.hp : ent.maxHp;
   const showFull = (key === 'pro');
-  // 名字 chip
-  chip('', `<b>${ent.name || (key === 'pro' ? '主角' : window.Data && window.Data.getChar(key)?.name || key)}</b>`);
+  // 注意：不再单独渲染名字 chip（bug #4 修复）——角色身份由 row1 的 charCard 承担
   // HP chip
   const hpChip = document.createElement('span');
   hpChip.className = 'attrChip';
@@ -2148,16 +2207,16 @@ function _renderSkillDesc() {
   const sk = owner && (owner.skills || []).find(s => s.id === slot.skillId);
   if (!sk) { root.innerHTML = '<div class="sd-empty">技能数据缺失</div>'; return; }
 
-  const kind = sk.kind === 'active' ? {zh:'主动', cls:'active'}
-             : sk.kind === 'auto'   ? {zh:'自动', cls:'auto'}
-             : sk.kind === 'link'   ? {zh:'连携', cls:'link'}
-             : {zh:sk.kind||'', cls:''};
+  const kindLabel = sk.kind === 'active' ? '主动' : sk.kind === 'auto' ? '自动' : sk.kind === 'link' ? '连携' : (sk.kind || '');
+  const kindCls   = sk.kind === 'active' ? 'active' : sk.kind === 'auto' ? 'auto' : sk.kind === 'link' ? 'link' : '';
+  const cd = slot.cd > 0 ? `冷却中 ${slot.cd} 回合` : `冷却 ${sk.cd || 1} 回合`;
 
+  // 首行：名字 + 类型徽章 + 冷却（用户要求：倍率、元素不再单独显示；自然信息已包含在 desc 里）
   let html = `<div class="sd-head">
-    <span class="sd-kind ${kind.cls}">${kind.zh}</span>
     <span class="sd-name">${sk.name}</span>
+    <span class="sd-kind ${kindCls}">${kindLabel}</span>
+    <span class="sd-cd">${cd}</span>
   </div>`;
-  html += `<div class="sd-cd">冷却 ${sk.cd || 1} 回合 · ${sk.mult ? '倍率 '+sk.mult : '无倍率'}${sk.type ? ' · 元素 '+sk.type : ''}</div>`;
   if (sk.desc) html += `<div class="sd-desc">${terms(sk.desc)}</div>`;
   root.innerHTML = html;
 }
