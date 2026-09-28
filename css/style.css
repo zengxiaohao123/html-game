@@ -780,7 +780,7 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
   display: flex; align-items: center;
   /* row 自身不加 flex:none，由单独 selector 指定 */
 }
-#bottom.mode-combat #cbRow1{ flex: none; height: 96px; padding-top: 2px; }  /* tile 88px + 2px padding-top + flex gap:4px 可居中 */
+#bottom.mode-combat #cbRow1{ flex: none; height: 92px; padding-top: 0; }  /* 装下 88px 高的 sg-tile 两行 label */
 #bottom.mode-combat #cbRow2{ flex: none; height: 42px; gap: 8px; }
 #bottom.mode-combat #cbRow3{ flex: none; height: 38px; }
 #bottom.mode-combat #cbRow4{ flex: none; height: 38px; }
@@ -792,19 +792,16 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 #bottom.mode-combat #cbRow1{ gap: 20px; }          /* 角色卡组和技能组之间额外加大 gap */
 #bottom.mode-combat #cbCharCards{ display: flex; gap: 6px; flex: 0 0 auto; }
 #bottom.mode-combat #cbCharCards .charTile{
-  /* 与 sg-tile 完全同尺寸（72×88） */
-  width: 72px; height: 88px; flex: none;
-  /* 全名 flex column 换行 */
-  display: flex; align-items: center; justify-content: flex-start;
-  flex-direction: column; gap: 2px;
-  font-size: 13px; font-weight: 700; color: #fff;
-  text-align: center; word-break: break-all;
-  /* 边框颜色 JS 里按角色 color 内联 */
-  background: #22263a; border: 2px solid #666; border-radius: 10px;
+  /* charTile 保持独立尺寸（56×64），只改 sg-tile（技能 tile） */
+  width: 56px; height: 64px; flex: none;
+  /* 全名单行显示（"主角""夏阳""陆悠悠"都是 2-3 字，单行够） */
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: #fff;
+  text-align: center;
+  background: #22263a; border: 2px solid #666; border-radius: 8px;
   cursor: pointer; user-select: none;
   transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
-  padding: 3px 2px; overflow: hidden;
-  box-sizing: border-box;
+  padding: 4px 2px; overflow: hidden;
 }
 #bottom.mode-combat #cbCharCards .charTile:hover{ transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,.6); }
 #bottom.mode-combat #cbCharCards .charTile.selected{ box-shadow: 0 0 0 2px #d9b64a, 0 0 12px #d9b64a60; }
