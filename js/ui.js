@@ -1062,10 +1062,9 @@ function charShowcase(key, c){
 
   const skills = (c.skills||[]).map(s => {
     const inGroup = slots.find(sl => sl.charKey===key && sl.skillId===s.id);
-    const kindCss = SKILL_KIND_CSS[s.kind] || SKILL_KIND_CSS.auto;
+    // kindCss / skillDamagePreview / R 三个辅助函数暂未定义，跳过 —— 伤害预览已在技能 desc.formula 里有文字说明
     const icon = getSkillIcon(s.id);
     const iconBg = `assets/skills/${icon.file}`;
-    const dmgHint = skillDamagePreview(key,s) != null ? ` · 约${R(skillDamagePreview(key,s))}点` : '';
     const cd = s.cd ? ` · 冷却${s.cd}` : '';
     const usedByMe = (c.skills||[]).filter(x=>x.kind===s.kind).length>1;
     const sameKindHint = usedByMe ? '' : '';
@@ -1075,7 +1074,7 @@ function charShowcase(key, c){
         <div class="sg-tile-label">${s.name.replace(/^(自动|主动|连携)·/,'')}</div>
       </span>
       <b>${s.name}</b>${inGroup?` <span class="carry">[已编入槽${inGroup.slot}]</span>`:''}
-      <div class="nohint" style="margin-left:72px;color:#ffffff">${terms(s.desc)}${dmgHint}${cd}</div>
+      <div class="nohint" style="margin-left:72px;color:#ffffff">${terms(s.desc)}${cd}</div>
       <div style="clear:both"></div>
     </div>`;
   }).join('') || '<div class="nohint">（该角色没有技能）</div>';
@@ -2005,8 +2004,13 @@ function _renderCharCards() {
     const tile = document.createElement('div');
     tile.className = 'charTile';
     if (k === cs.currentCharKey) tile.classList.add('selected');
-    const name = k === 'pro' ? '主角' : (window.Data && window.Data.getChar(k)?.name) || k;
-    tile.textContent = name[0];
+    const c = window.Data && window.Data.getChar(k);
+    const name = c?.name || k;
+    // 边框颜色按角色 color 字段；主角 color=null 时用默认金色
+    const borderColor = c?.color || '#d9b64a';
+    tile.style.borderColor = borderColor;
+    // 大小与 sg-tile（56×64）一致；显示全名（不再截取首字）
+    tile.textContent = name;
     tile.title = name + (k === cs.currentCharKey ? '（当前选中）' : '（点击切换）');
     tile.onclick = () => window.Combat.selectChar(k);
     root.appendChild(tile);
@@ -2020,58 +2024,54 @@ function _renderSkillGroup() {
   const root = qs('#cbSkillGroup'); if (!root) return;
   root.innerHTML = '';
   const Data = window.Data;
+  // 照抄技能组编辑器的 sg-tile HTML 结构（sg-tile sg-auto/active/link 自带 kind 渐变底色和边框）
   cs.skillGroup.forEach((slot, i) => {
     const owner = Data.getChar(slot.ownerKey);
     const sk = owner && (owner.skills || []).find(s => s.id === slot.skillId);
     if (!sk) return;
-    const tile = document.createElement('div');
-    tile.className = 'skillTile';
-    if (slot.cd > 0) tile.classList.add('cooling');
-    if (cs.selectedSlotIdx === i) tile.classList.add('selected');
-    if (sk.type) tile.classList.add('elem-' + sk.type);
-
-    // 图标：照抄技能组编辑器 —— 用 getSkillIcon(skillId).file 指向 assets/skills/*.svg
+    const kind = sk.kind || 'auto';
     const iconDef = typeof getSkillIcon === 'function' ? getSkillIcon(slot.skillId) : null;
+    const iconFile = iconDef && iconDef.file ? `assets/skills/${iconDef.file}` : null;
+    const labelText = sk.name.replace(/^(自动|主动|连携)·/,'');
+
+    const tile = document.createElement('div');
+    // sg-tile 是编辑器里已定义好的 56×64 / 2px border / flex column 样式
+    // sg-<kind> 自动给红(active)/蓝(auto)/黄(link)渐变背景色 + 对应边框色
+    tile.className = 'sg-tile sg-' + kind;
+    if (slot.cd > 0) tile.classList.add('cooling');
+    if (cs.selectedSlotIdx === i) tile.classList.add('sg-sel');  // 编辑器里的选中高亮类
+
+    // 图标本体（sg-tile-icon 是编辑器里已定义的 30×30 SVG 变白滤镜样式）
     const icon = document.createElement('div');
-    icon.className = 'stIcon';
-    if (iconDef && iconDef.file) {
-      icon.style.backgroundImage = `url('assets/skills/${iconDef.file}')`;
-      icon.style.backgroundSize = 'contain';
-      icon.style.backgroundPosition = 'center';
-      icon.style.backgroundRepeat = 'no-repeat';
+    icon.className = 'sg-tile-icon';
+    if (iconFile) {
+      icon.style.backgroundImage = `url('${iconFile}')`;
     } else {
-      // 兜底：技能名首字
       icon.textContent = (sk.name || '?')[0];
+      icon.style.filter = '';  // 没有 SVG 就别用 invert 滤镜了
+      icon.style.display = 'flex'; icon.style.alignItems = 'center'; icon.style.justifyContent = 'center';
+      icon.style.fontSize = '14px';
     }
     icon.title = sk.name;
+    tile.appendChild(icon);
 
-    // kind 徽章（非冷却时显示）
-    const kindLabel = sk.kind === 'active' ? '主' : sk.kind === 'auto' ? '自' : '连';
-    const kindBadge = document.createElement('span');
-    kindBadge.className = 'stKind ' + sk.kind;
-    kindBadge.textContent = kindLabel;
-    icon.appendChild(kindBadge);
+    // 名字标签（sg-tile-label 是编辑器里已定义的 10px 单行省略样式）
+    const name = document.createElement('div');
+    name.className = 'sg-tile-label';
+    name.textContent = labelText;
+    tile.appendChild(name);
 
-    // 冷却数字徽章（冷却时显示，覆盖 kindBadge）
+    // 冷却数字徽章（叠加在 sg-tile 右下角，覆盖 kind 渐变的显示）
     if (slot.cd > 0) {
       const cdBadge = document.createElement('span');
-      cdBadge.className = 'stCd';
+      cdBadge.className = 'sg-cd-badge';
       cdBadge.textContent = slot.cd;
-      icon.appendChild(cdBadge);
+      tile.appendChild(cdBadge);
     }
-
-    // 名字（严格在图标下方）
-    const name = document.createElement('div');
-    name.className = 'stName';
-    name.textContent = sk.name;
-
-    tile.appendChild(icon);
-    tile.appendChild(name);
 
     // 点击：第一次 → 选中并切描述；第二次（同一 slot）→ 主动释放
     tile.onclick = () => {
       if (cs.selectedSlotIdx === i) {
-        // 第二次点 → 释放（只有 active 能放）
         window.Combat.castSkill(i);
       } else {
         window.Combat.selectSkill(i);
