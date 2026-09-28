@@ -432,6 +432,9 @@ function heroDisplaySpeed(){ return (window.G && window.G.hero) ? (window.G.hero
         for (const t of pending) {
           applyAuraWithReaction(cs, t.x, t.y, elem, sourceKey);
         }
+        // 计数器：扩散反应触发一次 +1（counter_diffuse trigger 依赖）
+        cs.stats = cs.stats || { absorb: {}, reaction: {} };
+        cs.stats.reaction.diffuse = (cs.stats.reaction.diffuse || 0) + 1;
         break;
       }
 
@@ -674,25 +677,91 @@ function heroDisplaySpeed(){ return (window.G && window.G.hero) ? (window.G.hero
         applyAuraWithReaction(cs, c.x, c.y, skill.applyElem, owner.key);
         _emit(cs, 'auraApplied', { x:c.x, y:c.y, elem:skill.applyElem, sourceKey:owner.key });
       }
+      // 计数器：每次我方技能施加元素附着都累加到 stats.absorb[elem]
+      // （counter_fireAbsorb 等 trigger 依赖这个计数）
+      cs.stats = cs.stats || { absorb: {}, reaction: {} };
+      cs.stats.absorb[skill.applyElem] = (cs.stats.absorb[skill.applyElem] || 0) + cells.length;
     }
 
     // 行动计数（规格 §10.2：放主动/自动技能都算）
     cs.hero.actionCountThisTurn += (owner.key === 'pro') ? 1 : 0;
-    // 连携窗口 check
-    _checkLinkWindows(cs, owner);
+    // 连携窗口 check（ctx 含"刚才这个技能"的关键信息，供 trigger 判定）
+    _checkLinkWindows(cs, owner, {
+      skill,
+      targets,
+      applyElem: skill.applyElem || null,
+      wasAuto: skill.kind === 'auto',
+    });
   }
 
   /* ==================== 连携窗口队列 ==================== */
-  function _checkLinkWindows(cs, ownerJustActed) {
-    // 触发条件：任何我方角色放完任意技能都检查是否有连携条件满足
+  /** LINK_TRIGGERS —— link 技能的 trigger 字段判定函数表
+   *  每个函数签名: (cs, owner, ctx) => boolean
+   *  ctx: { skill, targets, applyElem, wasAuto } —— 刚才释放的技能上下文
+   *
+   *  数据来源: js/data.js 里的 link 技能 trigger 字段
+   */
+  const LINK_TRIGGERS = {
+    anyBurned: (cs) => cs.enemies.some(e => e.alive !== false && (e.buffs || []).some(b => b.id === 'burn')),
+
+    elem4: (cs, owner) => {
+      // 2 格内元素附着 ≥ 4
+      let n = 0;
+      for (let dy = -2; dy <= 2; dy++)
+        for (let dx = -2; dx <= 2; dx++) {
+          if (dx*dx + dy*dy > 4) continue;
+          const c = cs.map.cells[(owner.y + dy) * cs.map.n + (owner.x + dx)];
+          if (c && c.aura) n++;
+        }
+      return n >= 4;
+    },
+
+    allyApplyElem: (cs, owner, ctx) => !!ctx.applyElem,
+
+    allyApplyFireWaterThunderIce: (cs, owner, ctx) => {
+      const e = ctx.applyElem;
+      return !!e && ['fire','water','thunder','ice'].indexOf(e) >= 0;
+    },
+
+    afterVehicleMove: (cs) => !!cs._lastWasVehicleMove,  // 当前战斗没载具移动，留口子
+
+    enemyCharging: (cs) => cs.enemies.some(e => e.alive !== false && (e.buffs || []).some(b => b.id === 'charge' || b.id === 'inspire_charge')),
+
+    counter_fireAbsorb: (cs) => {
+      const n = (cs.stats && cs.stats.absorb && cs.stats.absorb.fire) || 0;
+      // 一段 4 次吸收；二段 9 次吸收（焚灭）—— 4 次就能用（战斗中自动升级到二段）
+      return n >= 4;
+    },
+
+    counter_diffuse: (cs) => {
+      const n = (cs.stats && cs.stats.reaction && cs.stats.reaction.diffuse) || 0;
+      return n >= 4;
+    },
+  };
+
+  function _checkLinkWindows(cs, ownerJustActed, ctx) {
+    // 触发条件：任何我方角色放完任意技能都检查
     if (!cs.pendingLinks) cs.pendingLinks = [];
     for (const slot of cs.skillGroup) {
       if (slot.kind !== 'link') continue;
       if (slot.cd > 0) continue;
-      // 触发条件简易：有 active 角色就能排队（实际触发条件需根据 trigger 字段匹配）
-      // 规格说"轮流排队给 2 秒窗口"
-      if (!cs.pendingLinks.find(p => p.slotIdx === slot.slotIdx)) {
+      const skill = slot.skill;
+      if (!skill) continue;
+      const tr = skill.trigger;
+      let ok = false;
+      if (!tr) {
+        // 没有 trigger 字段 → 任何技能释放都能触发（保守兜底）
+        ok = true;
+      } else if (LINK_TRIGGERS[tr]) {
+        ok = !!LINK_TRIGGERS[tr](cs, ownerJustActed, ctx || {});
+      } else {
+        // 未知 trigger → 放行但打 warn（开发时让我们知道新触发没实现）
+        console.warn('[Link] unknown trigger:', tr, 'for slot', slot.skillId);
+        ok = true;
+      }
+      if (ok && !cs.pendingLinks.find(p => p.slotIdx === slot.slotIdx)) {
         cs.pendingLinks.push({ slotIdx: slot.slotIdx, ownerKey: slot.ownerKey });
+        _log(cs, `连携条件满足：【${slot.skillName}】进入等待队列（2 秒内按 E 可使用）`);
       }
     }
     if (cs.pendingLinks.length > 0 && !cs.linkTimer) {
@@ -1139,6 +1208,8 @@ function heroDisplaySpeed(){ return (window.G && window.G.hero) ? (window.G.hero
       linkWindowOpen: false,
       linkTimer: null,
       windDashLeft: 0,
+      // 统计计数器（counter_fireAbsorb / counter_diffuse 等 trigger 用）
+      stats: { absorb: {}, reaction: {} },
       // 事件回调
       handlers: {
         phaseChange: [], log: [], combatEnd: [],
