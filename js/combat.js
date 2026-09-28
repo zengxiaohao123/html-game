@@ -1050,6 +1050,15 @@ function entryLevel(cell){ return 1; }
           const sk = c ? (c.skills||[]).find(s => s.id === g.skillId) : null;
           return { slotIdx: i, skillId: g.skillId, skillName: sk ? sk.name : g.skillId, ownerKey: g.charKey || g.ownerKey, kind: sk ? sk.kind : 'active', cd: 0 };
         });
+        // 统一强制 active→auto→link 顺序（不管来源是编辑器 / buildDefaultSkillGroup / 存档）
+        const kOrder = { active:0, auto:1, link:2 };
+        cs.skillGroup.sort((a, b) => {
+          const ka = kOrder[a.kind] ?? 9, kb = kOrder[b.kind] ?? 9;
+          if (ka !== kb) return ka - kb;
+          // 同 kind 内部：按原 slotIdx 保持稳定顺序
+          return (a.slotIdx || 0) - (b.slotIdx || 0);
+        });
+        cs.skillGroup.forEach((s, i) => s.slotIdx = i);
       } else {
         const list = [];
         let slotIdx = 0;

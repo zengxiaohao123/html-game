@@ -1966,7 +1966,7 @@ window.tryFlee = typeof tryFlee!=='undefined' ? tryFlee : undefined;
 function _subscribeCombatEvents(){
   const C = window.Combat; if (!C) return;
   C.onEvent('charSelected',       _renderAllCombat);
-  C.onEvent('skillSelected',      _renderSkillDesc);
+  C.onEvent('skillSelected',      () => { _renderSkillGroup(); _renderSkillDesc(); });
   C.onEvent('phaseChange',        () => { _updateFleeBtnState(); _renderAttrs(); });
   C.onEvent('damageDone',         _renderAttrs);
   C.onEvent('zoneCreated',       () => { renderMap(); });
