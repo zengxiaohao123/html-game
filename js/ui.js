@@ -774,26 +774,34 @@ function _detectModeForIconbar() {
   return 'explore';
 }
 
-/* iconbar 完整按钮表（包含 §七·五 要求的存档、载具两个按钮） */
-const ICONBAR_BUTTONS = [
-  { key:'tasks',     label:'任务',   handler: openTasks,    warnReadonly: '剧情/战斗中只可查看任务，禁止接取/领取奖励。' },
-  { key:'formation', label:'编队',   handler: openFormation,warnReadonly: null },
-  { key:'chars',     label:'角色',   handler: openCharacters,warnReadonly: '剧情/战斗中只能查看角色，禁止交互/赠予/聊天/改形态。' },
-  { key:'bag',       label:'背包',   handler: openInventory,warnReadonly: null },
-  { key:'sleep',     label:'睡觉',   handler: sleep,        warnReadonly: null, sleep:true },
-  { key:'shop',      label:'商店',   handler: openShop,     warnReadonly: null },
-  { key:'craft',     label:'合成',   handler: openCraft,    warnReadonly: null },
-  { key:'vehicle',   label:'载具',   handler: openVehicles, warnReadonly: null },
-  { key:'save',      label:'存档',   handler: () => openSettings(), warnReadonly: null },
-  { key:'settings',  label:'设置',   handler: openSettings, warnReadonly: null },
-];
+/* iconbar 精确禁用规则（docs/06 §七·五）
+   注意：handler 函数大多定义在 main.js 里，所以按钮表必须惰性初始化，
+   不能在 ui.js 顶层 const 里立即引用 —— 否则 main.js 还没加载到就 ReferenceError */
+let ICONBAR_BUTTONS = null;
+function _ensureIconButtons() {
+  if (ICONBAR_BUTTONS) return ICONBAR_BUTTONS;
+  ICONBAR_BUTTONS = [
+    { key:'tasks',     label:'任务',   handler: openTasks,     warnReadonly: '剧情/战斗中只可查看任务，禁止接取/领取奖励。' },
+    { key:'formation', label:'编队',   handler: openFormation, warnReadonly: null },
+    { key:'chars',     label:'角色',   handler: openCharacters,warnReadonly: '剧情/战斗中只能查看角色，禁止交互/赠予/聊天/改形态。' },
+    { key:'bag',       label:'背包',   handler: openInventory, warnReadonly: null },
+    { key:'sleep',     label:'睡觉',   handler: sleep,         warnReadonly: null, sleep:true },
+    { key:'shop',      label:'商店',   handler: openShop,      warnReadonly: null },
+    { key:'craft',     label:'合成',   handler: openCraft,     warnReadonly: null },
+    { key:'vehicle',   label:'载具',   handler: openVehicles,  warnReadonly: null },
+    { key:'save',      label:'存档',   handler: () => openSettings(), warnReadonly: null },
+    { key:'settings',  label:'设置',   handler: openSettings,  warnReadonly: null },
+  ];
+  return ICONBAR_BUTTONS;
+}
 
 function renderIconbar(){
   if(!G) return;
   const mode = _detectModeForIconbar();
   const root = qs('#iconbar');
   root.innerHTML = '';
-  ICONBAR_BUTTONS.forEach((btn, i) => {
+  const buttons = _ensureIconButtons();
+  buttons.forEach((btn, i) => {
     const status = iconButtonStatus(btn.key, mode);
     const dis = (status === false);
     const readonly = (status === 'readonly');

@@ -45,6 +45,36 @@
    ============================================================ */
 "use strict";
 
+/* =======================================================
+   跨模块全局裸工具函数（被 main.js / ui.js / explore.js / event.js / craft.js 等引用）
+   —— 这堆函数必须在 IIFE 外面，因为 script 加载顺序是 combat.js 先于 ui.js/event.js，
+      这些文件顶层就会直接调用 window.heroDisplayMaxHp 等
+   ======================================================= */
+function heroDisplayMaxHp(){ return (window.G && window.G.hero) ? (window.G.hero.maxHp ?? 100) : 100; }
+function heroDisplayAtk(){ return charAtk('pro'); }
+function heroDisplayDef(){ return totalHeroDefense(); }
+function heroDisplayCrit(){ return Math.round(baseCritRate('pro')); }
+function heroDisplayDodge(){ return 0; }
+function heroDisplaySpeed(){ return (window.G && window.G.hero) ? (window.G.hero.speed ?? 30) : 30; }
+
+function charBaseAtk(k){
+  if(k==='pro') return (window.G && window.G.hero) ? (window.G.hero.atk ?? 10) : 10;
+  const c = typeof getChar === 'function' ? getChar(k) : null;
+  return c?.base?.atk ?? 35;
+}
+function charAtk(k){
+  if(k==='pro') return Math.round(charBaseAtk('pro'));
+  return Math.round(charBaseAtk(k));
+}
+function totalHeroDefense(){
+  const base = (window.G && window.G.hero) ? (window.G.hero.def ?? 0) : 0;
+  return Math.max(0, base);
+}
+function baseCritRate(k){ return 0.05 * 100; }  // 简化版，固定 5%
+function vTier(v){ return (v||0).toString(); }
+function tierValue(t){ return Number(t)||0; }
+function entryLevel(cell){ return 1; }
+
 (function () {
 
   /* ==================== 常量 ==================== */
