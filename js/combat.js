@@ -1277,6 +1277,7 @@ function heroDisplaySpeed(){ return (window.G && window.G.hero) ? (window.G.hero
     } else {
       // 兜底：如果 G.skillGroup 已由编队编辑器保存 → 直接用它；
       // 否则用 buildDefaultSkillGroup 的默认数量（pro:3, xiayang:2, luyouyou:2）
+      let src = null;
       try { src = (typeof G !== 'undefined' && G && G.skillGroup) || null; } catch(e) { src = null; }
       if (src && src.length) {
         rawSlots = src;
@@ -1349,7 +1350,7 @@ function heroDisplaySpeed(){ return (window.G && window.G.hero) ? (window.G.hero
      window.reenterCombat(c)       c 是 G.combat（从存档读回来的快照）
    
    新签名：
-     Combat.startBattle(enemies, opts?)  enemies 是数组 [{key, proto, x, y}, ...]
+     window.Combat.startBattle(enemies, opts?)  enemies 是数组 [{key, proto, x, y}, ...]
    ============================================== */
 window.startCombat = function(target) {
   // 从 target 里提 enemy proto key
@@ -1400,7 +1401,7 @@ window.startCombat = function(target) {
   const cells = rawCells ? rawCells.map(c => ({ ...c, aura: c.aura || null })) : null;
 
   // 先调用 startBattle 把 cs 挂好（window.combatState）
-  const cs = Combat.startBattle(enemies, {
+  const cs = window.Combat.startBattle(enemies, {
     mapSnapshot: cells,
     mapN,
     teamKeys,
@@ -1427,7 +1428,7 @@ window.reenterCombat = function(snap) {
     proto: e.proto || (e.constructor && e.constructor.name === 'Object' ? Object.keys(window.Data.ENEMIES)[0] : 'slime'),
     x: e.x, y: e.y,
   }));
-  Combat.startBattle(enemies, {
+  window.Combat.startBattle(enemies, {
     mapSnapshot: snap.mapCells || null,
     mapN: snap.mapN || 9,
     teamKeys: snap.teamKeys || (G && G.team) || ['pro', 'xiayang', 'luyouyou'],
