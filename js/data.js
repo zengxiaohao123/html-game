@@ -981,6 +981,10 @@ window.getTeamChars = getTeamChars;
 window.ALLIES_MAP = Object.assign({}, ALLIES);
 window.ENEMIES = ENEMIES;
 window.rollCombatEvent = rollCombatEvent;
+// 天赋计算必需的工具函数（combat.js 顶层天赋叠加函数裸调用）
+window.tierValue = tierValue;
+window.entryLevel = entryLevel;
+window.lvDescText = lvDescText;
 
 /* ---- 跨模块通用工具函数兜底（之前在重构时丢失，现在集中定义） ---- */
 

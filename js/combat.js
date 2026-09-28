@@ -1310,11 +1310,9 @@ function heroDisplaySpeed(){ return (window.G && window.G.hero) ? (window.G.hero
     _cs = cs;
     window.combatState = cs;  // 保留旧调用方式的兼容入口（ui.js / explore.js 里可能引用）
 
-    // ⚠️ 必须在 tick 之前切 UI mode —— 只有 mode='combat' 时 #combatZone 才 display:flex
-    // 不管走 Combat.startBattle 新 API 还是 window.startCombat 旧 shim 都会调到这里
-    if (typeof window.switchMode === 'function') {
-      try { window.switchMode('combat'); } catch(e) { console.warn('startBattle: switchMode fail', e.message); }
-    }
+    // 注意：switchMode('combat') 必须在 Combat 挂到 window 之后调——
+    // 否则 _subscribeCombatEvents 里 window.Combat 还是 undefined 直接 return
+    // 所以这里不在 startBattle 内部切 mode，让 window.startCombat shim / reenterCombat 外部调
 
     // 切 phase → ROUND_START → 开始 tick
     _setPhase(cs, PHASES.ROUND_START);
@@ -1429,7 +1427,6 @@ window.reenterCombat = function(snap) {
     proto: e.proto || (e.constructor && e.constructor.name === 'Object' ? Object.keys(window.Data.ENEMIES)[0] : 'slime'),
     x: e.x, y: e.y,
   }));
-  if (typeof window.switchMode === 'function') window.switchMode('combat');
   Combat.startBattle(enemies, {
     mapSnapshot: snap.mapCells || null,
     mapN: snap.mapN || 9,
@@ -1437,6 +1434,9 @@ window.reenterCombat = function(snap) {
     heroStart: { x: (snap.hero && snap.hero.x) || 1, y: (snap.hero && snap.hero.y) || 1, facing: (snap.hero && snap.hero.facing) || 'up' },
     skillGroupOverride: snap.skillGroup || null,
   });
+  // 同上：startBattle 内部不再切 mode，等 Combat 挂好后外部统一切
+  if (typeof window.switchMode === 'function') window.switchMode('combat');
+  if (typeof window.renderMap === 'function') window.renderMap();
 };
 
 /* 旧 combat.js.bak 里遗留的 tryCastSkill / combatMove 等 API —— 全部已废弃，
