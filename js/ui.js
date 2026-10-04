@@ -859,16 +859,29 @@ function renderMap(){
         cell.classList.add('facing-' + (cs ? (cs.hero && cs.hero.facing || 'up') : (G.hero && G.hero.facing || 'up')));
       }
 
-      // 战斗模式：敌人实体画在对应格子上
+      // 战斗模式：敌人实体画在对应格子上（支持多实体叠放 + avatar 素材图）
       if (cs) {
         const enemiesHere = cs.enemies && cs.enemies.filter(e => e.x === x && e.y === y && e.alive !== false);
         if (enemiesHere && enemiesHere.length) {
+          const protoDef = window.Data && window.Data.ENEMIES ? window.Data.ENEMIES : {};
+          // 多实体叠放：用 cell.dataset.entities 记录，由外部的循环定时器切换显示
+          cell.dataset.entities = enemiesHere.map(e => e.key).join(',');
+          // 默认显示第一个
           const first = enemiesHere[0];
-          const protoDef = window.Data && window.Data.ENEMIES ? window.Data.ENEMIES[first.proto || first.key] : null;
-          const icon = (protoDef && protoDef.icon) || '⚔';
-          cell.textContent = icon;
-          cell.classList.add('combat-enemy');
-          cell.title = (protoDef && protoDef.name || first.proto || first.key) + '（HP ' + first.hp + '/' + (first.maxHp || 100) + '）';
+          const def = protoDef[first.proto || first.key];
+          const avatar = (def && def.avatar) ? def.avatar : null;
+          if (avatar) {
+            cell.classList.add('combat-enemy', 'has-avatar');
+            cell.style.backgroundImage = `url('${avatar}')`;
+            cell.textContent = '';
+          } else {
+            const icon = (def && def.icon) || '⚔';
+            cell.textContent = icon;
+            cell.classList.add('combat-enemy');
+          }
+          cell.title = (def && def.name || first.proto || first.key) +
+                       '（HP ' + first.hp + '/' + (first.maxHp || 100) + '）' +
+                       (enemiesHere.length > 1 ? ' — 此格有 ' + enemiesHere.length + ' 个单位' : '');
         }
       }
 

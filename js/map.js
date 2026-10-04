@@ -1,61 +1,119 @@
 /* ============================================================
-   js/map.js —— 模块：地图与探索（地图生成）
-   每日随机地图：边长随天数渐进（并加大每日随机波动）、保底连通。
-   内部每个有效格子独立按概率分配内容：
-     空地30% / 事件25% / 战斗30% / 奖励10% / 山5%（山=障碍，不可通行）。
-   有效地图为内区 n×n，其外再包一圈「地图外」(void) 边框。
+   js/map.js —— 模块：地图生成（每日全新）
+   
+   新机制：
+   · 地图固定为 3×3 回字形（方案 A），只有最外一圈 8 格可通行
+   · 中心 1 格 + 地图最外圈 1 格 均为 void（不可进入、不可附着）
+   · 每一格都可能允许实体进入；允许的格上可以叠放任意数量的实体
+   · 地形、地块内容每日重新生成
+   · 地图大小固定，不会因为天数变化（除非道具/剧情）
+
+   数据结构：
+     Cell = {
+       x, y,                          // 坐标
+       terrain,                       // 'ground' | 'void'  (地形效果以后重做)
+       passable: true|false,          // 是否允许实体进入
+       content: { type, done?, ... }  // 地块内容（探索时显示）
+       attach: null | 'fire'|...     // 元素附着（战斗结束保留）
+       entities: []                   // 叠放在此格上的所有实体 id（支持多实体）
+     }
+
+   对外暴露：generateMap(day, opts?) -> { n, cells, ring, px, py, terrain[][] }
    ============================================================ */
 "use strict";
 
-function mapSizeForDay(day){
-  const ref=[[1,4],[20,6],[50,8],[100,9],[150,12]];
-  let n=4;
-  for(const [d,s] of ref){ if(day>=d) n=s; }
-  const jitter=Math.round((Math.random()-0.5)*4);
-  return Math.max(4, n+jitter);
-}
+/** 基础配置 */
+const MAP_BASE_SIZE = 5;  // 3×3 回字 = 5×5 带 void 边框（void 边框 1 格 + 外圈 3×3 + 中心 1）
+// 实际上我们就直接生成 5×5 网格，外圈一圈 void，次外圈一圈可通行（8 格），中心 1 格 void
 
-function generateMap(day){
-  const inner=mapSizeForDay(day);
-  const n=inner+2; const off=1;
-  const cells=[];
-  for(let i=0;i<n*n;i++) cells.push({terrain:'void', content:'empty', idx:i});
-  for(let y=0;y<inner;y++)for(let x=0;x<inner;x++){ const ci=(y+off)*n+(x+off); cells[ci]=rollCell(day); cells[ci].idx=ci;
-    if(cells[ci].content&&cells[ci].content.type==='battle' && isRareEnemy(cells[ci].content.key)){ cells[ci].content.rare=true; }
+/**
+ * 生成一日的新地图
+ * @param {number} day  第几天（影响地块内容概率等）
+ * @param {object} [opts] 可选覆盖 { size, extraInner: true } — 复杂剧情下可能内部加地块
+ */
+function generateMap(day, opts = {}){
+  const S = opts.size || MAP_BASE_SIZE;
+  const n = S;
+  const cells = [];
+
+  // --- 1. 构建 5×5 网格 ---
+  for(let y = 0; y < n; y++){
+    for(let x = 0; x < n; x++){
+      const isOuter = (x === 0 || y === 0 || x === n-1 || y === n-1);
+      const isCenter = (x === Math.floor(n/2) && y === Math.floor(n/2));
+      let terrain, passable;
+      if(isOuter || isCenter){
+        terrain = 'void';
+        passable = false;
+      } else {
+        terrain = 'ground';
+        passable = true;
+      }
+      cells.push({
+        x, y, terrain, passable,
+        content: null,       // 下面统一初始化
+        attach: null,
+        entities: [],
+      });
+    }
   }
-  ensureConnectivity(cells,n);
-  let start=null; const allGround=[];
-  for(let y=off;y<off+inner;y++)for(let x=off;x<off+inner;x++){ if(cells[y*n+x].terrain==='ground') allGround.push({x,y}); }
-  if(allGround.length){ start=allGround[Math.floor(Math.random()*allGround.length)]; cells[start.y*n+start.x]={terrain:'ground', content:{type:'empty'}, idx:start.y*n+start.x}; }
-  else start={x:off,y:off};
-  return {n, cells, px:start.x, py:start.y};
+
+  // --- 2. 取所有可通行格（即"回"字那一圈）---
+  const ringCells = cells.filter(c => c.passable);
+
+  // --- 3. 为每一格随机分配 content ---
+  for(const c of ringCells){
+    c.content = rollContent(day);
+  }
+
+  // --- 4. 主角出生点：随机挑一格，把它强制改为 empty（避免一出生就踩雷）---
+  const startIdx = Math.floor(Math.random() * ringCells.length);
+  const startCell = ringCells[startIdx];
+  startCell.content = { type: 'empty' };
+
+  return {
+    n,
+    cells,
+    size: n,
+    px: startCell.x,
+    py: startCell.y,
+    // 保留旧接口别名
+    ring: ringCells.map(c => ({ x: c.x, y: c.y })),
+    terrain: cells.map(c => c.terrain),
+  };
 }
 
-function rollCell(day){
-  const r=Math.random();
-  if(r<0.05) return {terrain:'obstacle', content:'empty'};
-  if(r<0.35){ const ev=rollCombatEvent(day); return {terrain:'ground', content:{type:'battle', sub:ev.sub, key:ev.key, done:false}}; }
-  if(r<0.45) return {terrain:'ground', content:{type:'loot', done:false}};
-  if(r<0.70) return {terrain:'ground', content:{type:'event', done:false}};
-  return {terrain:'ground', content:{type:'empty'}};
+/**
+ * 随机一个地块内容（按概率）
+ * 概率后续可调；当前：battle 40% / event 35% / loot 15% / reward 5% / emergency 5%
+ */
+function rollContent(day){
+  const r = Math.random();
+  if(r < 0.40) return { type: 'battle',    sub: 'normal', done: false };
+  if(r < 0.55) return { type: 'emergency', sub: 'hard',   done: false };
+  if(r < 0.75) return { type: 'event',     done: false };
+  if(r < 0.90) return { type: 'loot',      done: false };
+  if(r < 0.95) return { type: 'reward',    sub: 'boss',   done: false };
+  return { type: 'empty' };
 }
 
-function ensureConnectivity(cells,n){
-  const idx=(x,y)=>y*n+x; const inb=(x,y)=>x>=0&&y>=0&&x<n&&y<n;
-  const ground=[]; for(let y=0;y<n;y++)for(let x=0;x<n;x++)if(cells[idx(x,y)].terrain==='ground')ground.push([x,y]);
-  const visited=new Map(); const stack=[ground[0]];
-  if(ground[0]) visited.set(ground[0][0]+','+ground[0][1],1);
-  const fwd=[[1,0],[-1,0],[0,1],[0,-1]];
-  while(stack.length){ const [cx,cy]=stack.pop(); for(const [dx,dy] of fwd){ const nx=cx+dx,ny=cy+dy; if(!inb(nx,ny))continue; const cell=cells[idx(nx,ny)]; if(cell.terrain!=='ground')continue; if(visited.has(nx+','+ny))continue; visited.set(nx+','+ny,1); stack.push([nx,ny]); } }
-  markBridge(cells,n,visited);
+/** 取 cell 辅助（避免到处写 y*n+x）*/
+function cellAt(map, x, y){
+  if(!map) return null;
+  if(x < 0 || y < 0 || x >= map.n || y >= map.n) return null;
+  return map.cells[y * map.n + x];
 }
-function markBridge(cells,n,visited){
-  const idx=(x,y)=>y*n+x; const inb=(x,y)=>x>=0&&y>=0&&x<n&&y<n;
-  const fwd=[[1,0],[-1,0],[0,1],[0,-1]];
-  for(let y=0;y<n;y++)for(let x=0;x<n;x++){ const c=cells[idx(x,y)]; if(c.terrain!=='ground')continue; if(visited.has(x+','+y))continue; for(const [dx,dy] of fwd){ const nx=x+dx,ny=y+dy; if(!inb(nx,ny))continue; if(cells[idx(nx,ny)].terrain==='obstacle'){ cells[idx(nx,ny)].terrain='ground'; }else if(visited.has(nx+','+ny)){ visited.set(x+','+y,1); expandVisited(cells,n,x,y,visited); break; } } }
+
+/** 判断一个格是否可进入（passable + 非 void）*/
+function isEnterable(map, x, y){
+  const c = cellAt(map, x, y);
+  return c && c.passable === true;
 }
-function expandVisited(cells,n,x,y,visited){
-  const idx=(x0,y0)=>y0*n+x0; const inb=(a,b)=>a>=0&&b>=0&&a<n&&b<n;
-  const stack=[[x,y]]; visited.set(x+','+y,1); const fwd=[[1,0],[-1,0],[0,1],[0,-1]];
-  while(stack.length){ const [cx,cy]=stack.pop(); for(const [dx,dy] of fwd){ const nx=cx+dx,ny=cy+dy; if(!inb(nx,ny))continue; if(cells[idx(nx,ny)].terrain!=='ground')continue; if(visited.has(nx+','+ny))continue; visited.set(nx+','+ny,1); stack.push([nx,ny]); } }
+
+/** 判断一个格是否在回字圈上 */
+function isOnRing(map, x, y){
+  const c = cellAt(map, x, y);
+  return c && c.terrain === 'ground';
 }
+
+window.GenerateMap = { generateMap, rollContent, cellAt, isEnterable, isOnRing };

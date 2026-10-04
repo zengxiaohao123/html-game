@@ -195,14 +195,15 @@ function handleKeys(ev){
   let dx=0,dy=0;
   if(k==='w'){dy=-1;} else if(k==='s'){dy=1;} else if(k==='a'){dx=-1;} else if(k==='d'){dx=1;} else return;
   const nx=G.px+dx, ny=G.py+dy;
-  G.hero.facing = dirToFacing(dx,dy);
-  if(nx<0||ny<0||nx>=G.map.n||ny>=G.map.n){ return; }
-  if(!passable(nx,ny)){
-    log('前方无法进入。你只是改变了朝向。');
-    refreshHUD(); renderMap();
-    return;
+  // 新回字形机制：统一走 stepToCell（相邻格 1 行动力、原地踏步 1 行动力）
+  // stepToCell 内部会校验相邻性和可进入性
+  if(!window.stepToCell){
+    // 防御性兜底
+    if(nx<0||ny<0||nx>=G.map.n||ny>=G.map.n){ return; }
+    G.hero.facing = dirToFacing(dx,dy);
+  } else {
+    window.stepToCell(nx, ny);
   }
-  moveExplore(nx,ny,1);
 }
 document.addEventListener('keydown', handleKeys, true);
 function sleep(){

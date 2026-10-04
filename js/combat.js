@@ -864,7 +864,11 @@ function heroDisplaySpeed(){ return (window.G && window.G.hero) ? (window.G.hero
         attacked = true; break;
       }
     }
-    if (attacked) return;
+    if (attacked) {
+      // 攻击完再检查一次（可能本来就在主角格上）
+      if (typeof _checkCollisionDamage === 'function') _checkCollisionDamage(cs, e);
+      return;
+    }
     // 移动：朝 hero 方向 1 格
     const dx = Math.sign(hero.x - e.x), dy = Math.sign(hero.y - e.y);
     const tryDir = [[dx,dy],[dx,0],[0,dy]];
@@ -874,9 +878,13 @@ function heroDisplaySpeed(){ return (window.G && window.G.hero) ? (window.G.hero
       if (!_inBounds(cs, nx, ny)) continue;
       const cell = cs.map.cells[ny * cs.map.n + nx];
       if (cell.terrain === 'void' || cell.terrain === 'obstacle') continue;
-      if (_entAt(cs, nx, ny)) continue;
+      // 新机制：允许敌人走到主角格上（触发碰撞伤害），但仍禁止走到其他敌人/友军召唤物/队友格
+      const blocker = _entAt(cs, nx, ny);
+      if (blocker && blocker.key !== (cs.hero && cs.hero.key)) continue;
       e.facing = (mx===1?'right':mx===-1?'left':my===1?'down':my===-1?'up':e.facing);
       e.x = nx; e.y = ny;
+      // 移动后立即检查碰撞伤害（敌人撞上主角）
+      if (typeof _checkCollisionDamage === 'function') _checkCollisionDamage(cs, e);
       return;
     }
   }
@@ -1351,73 +1359,154 @@ function heroDisplaySpeed(){ return (window.G && window.G.hero) ? (window.G.hero
    
    新签名：
      window.Combat.startBattle(enemies, opts?)  enemies 是数组 [{key, proto, x, y}, ...]
+   ============================================== *//* =============================================
+   window.startCombat 新机制：回字形 + 敌人进攻点 + 碰撞伤害 + 地块隐藏/恢复
+   
+   进入战斗瞬间：
+   1. 记录主角位置朝向快照（cs.refPos / cs.refFacing）
+   2. 隐藏所有地块 content（存 _contentSnapshot，content 设为 {type:'hidden'}）
+   3. 随机选一圈上远离主角的一格作为"敌人进攻点"（抽象概念，不属于实体）
+   4. 初始敌人从进攻点生成（可以叠放多个）
+   5. 给每个敌人补 collisionCooldownRound = -1（本回合碰撞伤害冷却）
+
+   战斗结束：
+   由 _onCombatEndHook 挂在 cs.handlers.combatEnd 上，自动恢复主角位置、
+   恢复地块 content、把 refCell 标 done（胜利/逃跑时）。
+   
+   新增 API：
+   · window.CombatOnEnemyMove(cs, enemy) — enemyAI 每步移动后调，检查碰撞伤害
    ============================================== */
-window.startCombat = function(target) {
-  // 从 target 里提 enemy proto key
-  let protoKey, sub='', done=false, rare=false;
-  if (typeof target === 'string') { protoKey = target; }
-  else if (target && target.content) {
-    const ct = target.content;
-    protoKey = ct.key; sub = ct.sub || ''; done = !!ct.done; rare = !!ct.rare;
-    // 标记该格已进入战斗（避免重复触发）
-    if (target && typeof target.content !== 'undefined') {
-      // done 标记等战斗结束由 ui.js 里 win/fail 回调设置
-    }
-  } else { protoKey = String(target); }
+const ALL_SLIMES = ['slime', 'fireSlime', 'waterSlime', 'thunderSlime', 'iceSlime', 'windSlime', 'rockSlime'];
 
-  if (!protoKey) { console.warn('startCombat: 无法解析敌人'); return; }
+window.startCombat = function(target, opts) {
+  opts = opts || {};
+  const pool = opts.enemyPool || 'normal';
 
-  // 估算当前地图上敌人起始位置（避开主角）
-  const mapN = (G && G.map && G.map.n) || 9;
-  const px = G && G.px !== undefined ? G.px : 1;
-  const py = G && G.py !== undefined ? G.py : 1;
+  // ====== 1. 敌人数量（暂时固定按池决定）======
+  let count = 2 + Math.floor(Math.random() * 2);       // normal: 2-3
+  if (pool === 'emergency') count = 3 + Math.floor(Math.random() * 2);  // 3-4
+  if (pool === 'boss')      count = 1;                  // boss 先占位
 
-  // 敌人数量：普通 2-3 只，紧急 3-4 只，boss 1 只
-  let count = 2 + Math.floor(Math.random() * 2);  // 2 或 3
-  if (sub === 'hard') count = 3 + Math.floor(Math.random() * 2);  // 3 或 4
-  if (sub === 'boss') count = 1;
-
+  // 从敌人池随机挑 count 个
   const enemies = [];
-  let ek = 0;
   for (let i = 0; i < count; i++) {
-    let ex, ey, tries = 0;
-    do {
-      ex = Math.floor(Math.random() * mapN);
-      ey = Math.floor(Math.random() * mapN);
-      tries++;
-      // 必须满足：离主角至少 2 格（曼哈顿） AND 不是障碍地块 AND 不是 void
-      const cell = (G && G.map && G.map.cells) ? G.map.cells[ey*mapN + ex] : null;
-      const isBlock = cell && (cell.terrain === 'obstacle' || cell.terrain === 'void');
-      const farEnough = (Math.abs(ex - px) + Math.abs(ey - py) >= 2);
-      if (farEnough && !isBlock) break;
-    } while (tries < 60);
-    enemies.push({ key: protoKey + '_' + (++ek), proto: protoKey, x: ex, y: ey });
+    const protoKey = ALL_SLIMES[Math.floor(Math.random() * ALL_SLIMES.length)];
+    enemies.push({ key: protoKey + '_' + (i + 1), proto: protoKey, x: null, y: null });
   }
 
+  // ====== 2. 地图 + 主角快照 ======
+  const mapN = (G && G.map && G.map.n) || 5;
+  const px = G && G.px !== undefined ? G.px : 1;
+  const py = G && G.py !== undefined ? G.py : 1;
   const teamKeys = (G && G.team) ? G.team.slice() : ['pro', 'xiayang', 'luyouyou'];
 
-  // 建地图快照（元素附着要完整拷贝）
+  // ====== 3. 隐藏所有地块 content（UI 上不显示图标，地形/附着不变）======
   const rawCells = (G && G.map && G.map.cells) ? G.map.cells : null;
+  if (rawCells) {
+    for (const c of rawCells) {
+      if (!c._contentSnapshot && c.content) {
+        c._contentSnapshot = c.content;
+        c.content = { type: 'hidden', _origType: c.content.type };
+      } else if (!c._contentSnapshot) {
+        c._contentSnapshot = c.content;  // null 也存
+      }
+    }
+  }
   const cells = rawCells ? rawCells.map(c => ({ ...c, aura: c.aura || null })) : null;
 
-  // 先调用 startBattle 把 cs 挂好（window.combatState）
+  // ====== 4. 选"敌人进攻点"——一圈上远离主角的可通行格 ======
+  let spawnPoint = null;
+  if (rawCells) {
+    const candidates = rawCells.filter(c =>
+      c.passable === true &&
+      Math.abs(c.x - px) + Math.abs(c.y - py) >= 2
+    );
+    if (candidates.length > 0) {
+      spawnPoint = candidates[Math.floor(Math.random() * candidates.length)];
+    } else {
+      const any = rawCells.filter(c => c.passable === true);
+      spawnPoint = any.length > 0 ? any[0] : null;
+    }
+  }
+
+  // 把初始敌人放在进攻点（新机制支持多实体叠放）
+  if (spawnPoint) {
+    for (const e of enemies) { e.x = spawnPoint.x; e.y = spawnPoint.y; }
+  }
+
+  // ====== 5. 调 Combat.startBattle 挂 cs ======
   const cs = window.Combat.startBattle(enemies, {
-    mapSnapshot: cells,
-    mapN,
-    teamKeys,
+    mapSnapshot: cells, mapN, teamKeys,
     heroStart: { x: px, y: py, facing: (G && G.hero && G.hero.facing) || 'up' },
-    skillGroupOverride: null,  // 用默认编队共用技能组（active→auto→link）
+    skillGroupOverride: null,
   });
 
-  // 把 G.map 里那个触发战斗的 cell 引用 + 主角进入前位置存在 cs 上
-  // 战斗结束时（胜利/逃跑）要把 cell.content.done = true 并恢复主角到这个格子
-  cs.refCell = (G && G.map && typeof target === 'object') ? target : null;
-  cs.refPos = { x: px, y: py };
+  // ====== 6. 挂载新机制字段 ======
+  cs.refPos      = { x: px, y: py };
+  cs.refFacing   = (G && G.hero && G.hero.facing) || 'up';
+  cs.refCell     = (G && G.map && typeof target === 'object') ? target : null;
+  cs.enemySpawn  = spawnPoint ? { x: spawnPoint.x, y: spawnPoint.y } : null;
+  cs.enemyPoolDef = pool;
 
-  // 再切 mode='combat' + 渲染（此时 cs 已挂，renderMap 能画出敌人）
+  // 给初始敌人补碰撞冷却字段
+  for (const e of cs.enemies) { e.collisionCooldownRound = -1; }
+
+  // ====== 7. 订阅 combatEnd 事件，挂恢复钩子 ======
+  if (cs.handlers && cs.handlers.combatEnd && !cs.handlers.combatEnd.includes(_onCombatEndHook)) {
+    cs.handlers.combatEnd.push(_onCombatEndHook);
+  }
+
+  // ====== 8. 切 mode + 渲染 ======
   if (typeof window.switchMode === 'function') window.switchMode('combat');
   if (typeof window.renderMap === 'function') window.renderMap();
 };
+
+/** 战斗结束钩子：恢复主角位置朝向 + 恢复地图 content snapshot + refCell 标 done */
+function _onCombatEndHook(cs, payload) {
+  if (!cs || !G || !G.map) return;
+  const rp = cs.refPos || { x: G.px, y: G.py };
+  G.px = rp.x; G.py = rp.y;
+  G.hero.facing = cs.refFacing || 'up';
+
+  // 恢复地图 content
+  const cells = G.map.cells;
+  if (cells) {
+    for (const c of cells) {
+      if ('_contentSnapshot' in c) {
+        c.content = c._contentSnapshot;
+        delete c._contentSnapshot;
+      }
+    }
+  }
+
+  // 胜利/逃跑 → 进入点永久标记 empty
+  if (cs.refCell && payload && (payload.outcome === 'victory' || payload.outcome === 'flee')) {
+    cs.refCell.content = { type: 'empty', done: true };
+    cs.refCell._contentSnapshot = null;
+  }
+
+  if (typeof window.renderMap === 'function') window.renderMap();
+  if (typeof window.refreshHUD === 'function') window.refreshHUD();
+}
+
+/** 碰撞伤害检查：敌人移动或停下在主角格 → 造成 100% atk 物理伤害，每回合每敌人限 1 次
+ *  enemyAI 的敌人每步移动后请调 window.CombatOnEnemyMove(cs, enemy) */
+function _checkCollisionDamage(cs, enemy) {
+  if (!cs || !enemy || !enemy.alive) return;
+  if (enemy.collisionCooldownRound === cs.round) return;  // 本回合已触发过
+  const hero = cs.hero;
+  if (!hero || !hero.alive) return;
+  if (enemy.x !== hero.x || enemy.y !== hero.y) return;
+
+  const dmg = enemy.atk || 10;
+  hero.hp = Math.max(0, hero.hp - dmg);
+  enemy.collisionCooldownRound = cs.round;
+  if (typeof _log === 'function') _log(cs, `💥 【碰撞】${enemy.name} 撞上主角，造成 ${dmg} 点物理伤害！`);
+  if (typeof _emit === 'function') _emit(cs, 'damageDone', { attackerKey: enemy.key, targetKey: hero.key, damage: dmg, elem: 'physical', collision: true });
+
+  if (hero.hp <= 0 && typeof _checkBattleEnd === 'function') _checkBattleEnd(cs);
+}
+window.CombatOnEnemyMove = function(cs, enemy) { _checkCollisionDamage(cs, enemy); };
 
 window.reenterCombat = function(snap) {
   // 从存档读回来的 G.combat 快照：里面有 enemies / cells / skillGroup / round 等
