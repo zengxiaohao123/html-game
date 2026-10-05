@@ -179,5 +179,9 @@ window.showActTitle = showActTitle;
 window.storyAdvanceDayToOne = ()=>{
   if(!G) return;
   if(G.day < 1) G.day = 1;
+  // 调 _enterExploreMode（main.js 里定义的全局函数）
+  if (typeof window._enterExploreMode === 'function') {
+    setTimeout(() => window._enterExploreMode(), 300);
+  }
   try{ refreshHUD(); }catch(e){}
 };
