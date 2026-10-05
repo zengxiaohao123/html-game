@@ -121,10 +121,14 @@
   // forceEndStoryFlow：强制结束当前剧情播放
   window.forceEndStoryFlow = function() {
     _clearTimer();
-    _queue = []; _cursor = 0; _typing = false;
+    const done = _done;  // 保存
+    _queue = []; _cursor = 0; _typing = false; _done = null;
     if (typeof window.mainStoryPlaying !== 'undefined') window.mainStoryPlaying = false;
     finishCurrentFragment();
     if (typeof window.renderIconbar === 'function') renderIconbar();
+    if (typeof done === 'function') {
+      try { done(); } catch(e) {}
+    }
   };
 
   // markChoice：标记本段带选项
@@ -177,6 +181,8 @@
     if (_typing) {
       _clearTimer();
       _typing = false;
+      // 跳过当前段的剩余内容，继续下一段
+      if (_cursor <= _queue.length) _playNext();
       return;
     }
     // 如果还没到末尾 → 播下一段
@@ -184,7 +190,11 @@
       _playNext();
       return;
     }
-    // 已经播完
+    // 已经播完 → 调 done
+    if (_done) {
+      const d = _done; _done = null;
+      try { d(); } catch(e) {}
+    }
   };
 
   // === storyStartFragment：入口 ===
@@ -286,9 +296,13 @@
     const skipBtn = qs('#skipBtn');
     if (skipBtn) {
       skipBtn.addEventListener('click', () => {
-        // 跳到当前段结尾 → 再点一次跳过全部
-        if (_typing) { _clearTimer(); _typing = false; }
-        else { forceEndStoryFlow(); }
+        // 跳到结尾：清队列，直接调 done
+        _clearTimer(); _typing = false;
+        const done = _done;
+        _cursor = _queue.length; _queue = []; _done = null;
+        if (typeof window.mainStoryPlaying !== 'undefined') window.mainStoryPlaying = false;
+        finishCurrentFragment();
+        if (typeof done === 'function') { try { done(); } catch(e) {} }
       });
     }
   });
