@@ -431,7 +431,7 @@ function changleResolve(slot, predType){
 
 function startEvent(x, y, slotOverride){
   // 需求1：进入事件格即把该格变为空地（防止事件内战斗结束后格子残留）
-  const gcell=G.map.cells[y*G.map.width+x];
+  const gcell=G.map.cells[y*G.map.n+x];
   if(gcell && gcell.content) gcell.content={type:'empty'};
   let slot = slotOverride || (gcell && gcell.content.slot) || {};
   let ev;
@@ -623,7 +623,7 @@ function enterEventBattle(enemyKey){
   const cell=s? s.cell : null;
   const x=cell?cell.x:G.px, y=cell?cell.y:G.py;
   // 该格已为空地，转为战斗格；战斗结束 endCombat 会清空 entryCell(=当前格)
-  if(G.map.cells[y*G.map.width+x]) G.map.cells[y*G.map.width+x].content={type:'battle', sub:'event', key:enemyKey};
+  if(G.map.cells[y*G.map.n+x]) G.map.cells[y*G.map.n+x].content={type:'battle', sub:'event', key:enemyKey};
   if(G) delete G.activeEvent;
   eventState=null;
   unlockEventUI();

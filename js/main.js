@@ -128,6 +128,33 @@ function switchMode(mode) {
   }
 }
 
+// ---------------------------------------------------------------
+// UI 对象 polyfill（旧 ui.js 是全局函数形式，main.js 用 UI.xxx）
+// ---------------------------------------------------------------
+const UI = {
+  init() {
+    // 旧 ui.js 没有 init 函数，这里空操作
+  },
+  refreshAll() {
+    try { refreshHUD(); } catch(e) {}
+    try { renderMap(); } catch(e) {}
+    try { _renderCharCards(); } catch(e) {}
+    try { _renderSkillGroup(); } catch(e) {}
+    try { renderIconbar(); } catch(e) {}
+  },
+  refreshMap() { try { renderMap(); } catch(e) {} },
+  refreshHUD() { try { refreshHUD(); } catch(e) {} },
+  toast(msg) {
+    // 旧 ui.js 没有 toast，用简单 alert 或自定义小弹层
+    const el = document.createElement('div');
+    el.textContent = msg;
+    el.style.cssText = 'position:fixed; top:16px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.75); color:#fff; padding:8px 16px; border-radius:6px; z-index:9999; pointer-events:none;';
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2000);
+  },
+};
+window.UI = UI;
+
 window.G = G;
 window.switchMode = switchMode;
 window.renderMainMenu = renderMainMenu;
@@ -166,6 +193,20 @@ window.startCombat = function(opt) {
 if (typeof window.gainAffinity !== 'function') window.gainAffinity = () => {};
 if (typeof window.ALLIES === 'undefined') window.ALLIES = [];
 if (typeof window.RES_ZH === 'undefined') window.RES_ZH = {};
+
+// 旧 ui.js / save.js 依赖的缺失全局 —— 一次性 polyfill
+if (typeof window.isInStoryFlow !== 'function') {
+  window.isInStoryFlow = () => G.mode === 'story' || !!window.mainStoryPlaying;
+}
+if (typeof window.isInFlow !== 'function') {
+  window.isInFlow = () => window.isInStoryFlow();
+}
+if (typeof window.heroDisplayMaxHp !== 'function') {
+  window.heroDisplayMaxHp = () => G.hero ? (G.hero.maxHp || 100) : 100;
+}
+if (typeof window.heroineMaxHp !== 'function') {
+  window.heroineMaxHp = () => G.hero ? (G.hero.maxHp || 100) : 100;
+}
 
 
 // ===== 开发调试快捷键（跳过剧情） =====

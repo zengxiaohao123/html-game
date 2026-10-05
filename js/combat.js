@@ -87,6 +87,11 @@ function START_COMBAT(map, heroX, heroY, scene) {
   const heroCell = MAP.getCell(mapCopy, heroX, heroY);
   if (heroCell) heroCell.entities.push(COMBAT.heroEntity);
 
+  // === 旧 ui.js 兼容注入 ===
+  Object.defineProperty(COMBAT, 'hero', { get() { return COMBAT.heroEntity; }, configurable: true });
+  Object.defineProperty(COMBAT, 'enemies', { get() { return (COMBAT.entities || []).filter(e => e.faction === 'enemy'); }, configurable: true });
+  window.combatState = COMBAT;
+
   // 7. UI 切换
   G.mode = 'combat';
   UI.switchMode('combat');
@@ -478,6 +483,23 @@ function enemyAI(enemy, done) {
 //   拐弯按当前顺/逆时针方向；特殊情况走不动改为随便走一步
 //   受我方伤害后，受击时切换方向（在 takeDamage 里处理）
 // ---------------------------------------------------------------
+// 蹦蹦跳跳：顺时针/逆时针双向
+function toggleHopDir(enemy) {
+  if (!enemy.moveLogic) return;
+  const cur = enemy.moveLogic.currentDir || enemy.moveLogic.defaultDir;
+  const dirs = ['up','right','down','left'];
+  const idx = dirs.indexOf(cur);
+  if (idx === -1) return;
+  // 顺时针 = idx+1; 逆时针 = idx-1
+  // 用 moveLogic.directionMul (默认+1 顺时针, -1 逆时针)
+  const mul = enemy.moveLogic.directionMul || 1;
+  const nextIdx = (idx + mul + 4) % 4;
+  enemy.moveLogic.currentDir = dirs[nextIdx];
+  // 反向 mul
+  enemy.moveLogic.directionMul = -mul;
+  UI.log(`${enemy.name} 切换方向 → ${enemy.moveLogic.currentDir}`);
+}
+
 function hop(enemy, done) {
   const from = { x: enemy.x, y: enemy.y };
   const map = COMBAT.map;
@@ -668,7 +690,18 @@ function applyAffinityAttach(enemy) {
 // ---------------------------------------------------------------
 function handleSlimeDeath(slime) {
   if (!slime.onDeath) return;
-  if (slime.onDeath.kind === 'selfDestruct') {
+  if (slime.onDeath && slime.onDeath.kind === 'windSwirl') {
+    // 风史莱姆天赋·风旋
+    const aliveEnemies = COMBAT.entities.filter(e => !e.dead && e.faction === 'enemy' && e.key !== slime.key);
+    if (aliveEnemies.length === 0) {
+      // 只剩它一个敌人 → 战斗还没结束（可能有自爆中立）但没其他敌 → 风旋不触发
+      UI.log(`${slime.name} 倒下，没有风旋。`);
+    } else {
+      triggerWindSwirl(slime);
+    }
+  }
+
+  if (slime.onDeath && slime.onDeath.kind === 'selfDestruct') {
     // 生成"即将爆炸的火史莱姆"—— 中立阵营，不视为敌人
     // 挂一个 duration = 2 的 buff 在自身（作为延迟爆炸的行动节点）
     const selfDestruct = {
@@ -995,3 +1028,17 @@ function endCombat({ outcome }) {
   UI.refreshAll();
 }
 
+
+// 旧 ui.js 兼容：暴露 window.combatState 和 window.Combat API
+// START_COMBAT 末尾会把 COMBAT 赋值给 window.combatState
+window.Combat = {
+  getState: () => COMBAT,
+  endCombat: endCombat,
+};
+
+// 在 START_COMBAT 里加 window.combatState 赋值（动态注入：在 COMBAT={} 定义后立即设）
+// 我们用 Proxy 自动同步，避免 START_COMBAT 代码大改
+Object.defineProperty(window, 'combatState', {
+  get() { return COMBAT; },
+  configurable: true,
+});

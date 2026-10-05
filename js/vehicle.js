@@ -30,13 +30,13 @@ function curVehicleUsable(){
   if(!(def.infinite||v.uses==null||v.uses===Infinity) && v.uses<=0) return false;
   return true;
 }
-function _inMap(x,y){ const m=G.map; return x>=0&&y>=0&&x<m.width && y<m.height; }
-function _entAt(x,y){ return !!(COMBAT && MAP.getCell(COMBAT.map, x, y)?.entities?.length > 0); }
-function _free(x,y){ return _inMap(x,y) && G.map.cells[y*G.map.width+x].terrain==='normal' && !_entAt(x,y); }
+function _inMap(x,y){ const m=G.map; return x>=0&&y>=0&&x<m.n&&y<m.n; }
+function _entAt(x,y){ return !!(combatState && combatState.enemies.some(e=>e.x===x&&e.y===y)); }
+function _free(x,y){ return _inMap(x,y) && G.map.cells[y*G.map.n+x].terrain==='ground' && !_entAt(x,y); }
 
 function vehicleTargetCost(def, from, tx, ty){
   if(!def || !def.mode) return null;
-  if(!_inMap(tx,ty) || G.map.cells[ty*G.map.width+tx].terrain!=='normal') return null;
+  if(!_inMap(tx,ty) || G.map.cells[ty*G.map.n+tx].terrain!=='ground') return null;
   if(_entAt(tx,ty)) return null;
   const dx=tx-from.x, dy=ty-from.y;
   if(dx===0&&dy===0) return null;

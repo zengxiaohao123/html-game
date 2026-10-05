@@ -99,6 +99,22 @@
   if (typeof window.prompt !== 'function') window.prompt = () => {};
   if (typeof window.renderMainStoryOptions !== 'function') window.renderMainStoryOptions = () => {};
   if (typeof window.isInFlow !== 'function') window.isInFlow = () => !!window.mainStoryPlaying;
+  if (typeof window.isInStoryFlow !== 'function') window.isInStoryFlow = () => !!window.mainStoryPlaying;
+  if (typeof window.heroDisplayMaxHp !== 'function') window.heroDisplayMaxHp = () => (window.G && window.G.hero) ? (window.G.hero.maxHp || 100) : 100;
+  if (typeof window.heroineMaxHp !== 'function') window.heroineMaxHp = () => (window.G && window.G.hero) ? (window.G.hero.maxHp || 100) : 100;
+  if (typeof window.sleep !== 'function') window.sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  if (typeof window.backToMenu !== 'function') window.backToMenu = () => { if(window.G) window.G.mode='menu'; if(document.body) document.body.className=''; };
+  if (typeof window.applySwap !== 'function') window.applySwap = () => {};
+  if (typeof window.bringToFront !== 'function') window.bringToFront = () => {};
+  if (typeof window.castSkill !== 'function') window.castSkill = () => {};
+  if (typeof window.flee !== 'function') window.flee = () => {};
+  if (typeof window.skillSlots !== 'undefined') { /* 保留原 */ } else { window.skillSlots = []; }
+  if (typeof window.SHOP_ITEMS === 'undefined') window.SHOP_ITEMS = [];
+  if (typeof window.MAX_SAVES === 'undefined') window.MAX_SAVES = 8;
+  if (typeof window.FOOD === 'undefined') window.FOOD = {};
+  if (typeof window.ENEMIES === 'undefined') window.ENEMIES = {};
+  if (typeof window.PROTAGONIST === 'undefined') window.PROTAGONIST = null;
+  if (typeof window.ALLIES === 'undefined') window.ALLIES = {};
 
   // 关键：storyAdvanceDayToOne —— main_story 的 seg_000_opening.afterPlayed 会调这个
   // 必须返回一个会推进 day 到 1 的版本

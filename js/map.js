@@ -40,14 +40,28 @@ function generateMap(opts = {}) {
 
   const cells = [];
 
+  // 地形概率（外圈可通行）：ground/grass/river/ice/obstacle
+  const TERRAIN_PROBS = [
+    { t: 'ground',   p: 0.55 },  // 空地（最多）
+    { t: 'grass',    p: 0.15 },  // 草地
+    { t: 'river',    p: 0.10 },  // 河流（通行减速）
+    { t: 'ice',      p: 0.10 },  // 冰面（打滑）
+    { t: 'obstacle', p: 0.10 },  // 障碍（不可通行）
+  ];
+  const rollTerrain = () => {
+    const r = Math.random(); let acc = 0;
+    for (const t of TERRAIN_PROBS) { acc += t.p; if (r <= acc) return t.t; }
+    return 'ground';
+  };
+
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const outer = isOuterRing(x, y, width, height);
       let terrain, content;
 
       if (outer) {
-        terrain = 'normal';  // 外圈默认可通行；具体地形设计待设计者给出
-        content = rollContent();   // 独立 roll 一个 content.type
+        terrain = rollTerrain();  // 外圈：随机地形
+        content = terrain === 'obstacle' ? null : rollContent();   // 障碍没 content
       } else {
         terrain = 'void';   // 内部默认 void
         content = null;     // 内部没有 content
@@ -57,14 +71,18 @@ function generateMap(opts = {}) {
         x, y,
         terrain,
         content: content ? { type: content, done: false } : null,
-        attach: null,              // 元素附着，生成时清空
+        attach: null,              // 元素附着，生成时清空（旧字段名 = aura，这里统一用 attach）
         entities: [],              // 实体列表（空数组）
         isEnemySpawnPoint: false,  // 战斗态专用标记
       });
     }
   }
 
-  return { width, height, cells };
+  // 兼容旧代码：方形时加 .n；矩形时用 Math.max(width,height) 兜底（旧 renderMap 会取 .n）
+  const mapObj = { width, height, cells };
+  if (width === height) mapObj.n = width;  // 旧 ui.js 用 m.n
+  else mapObj.n = Math.max(width, height);
+  return mapObj;
 }
 
 // ---------------------------------------------------------------
