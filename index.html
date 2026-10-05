@@ -1,145 +1,302 @@
-﻿<!DOCTYPE html>
-<html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>在成为勇者之前</title>
-<!-- 字体：霞鹜文楷（LXGW WenKai）—— 免费可商用，jsDelivr CDN，font-display:swap 保证不阻塞文字渲染 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
-
 <script>
-// ===== storyStartFragment 紧急 polyfill（main_story/index.js 引用）=====
+/* ============================================================
+   剧情打字引擎（story engine）
+   提供: storyPush / storyRunNext / storySetSpeaker / storyStartFragment
+         storyMarkChoice / finishCurrentFragment / storyAutoMode
+         forceEndStoryFlow / showActTitle / prompt
+         lockEventUI / unlockEventUI
+   ============================================================ */
 (function() {
-  if (typeof window.storyStartFragment !== 'function') {
-    window.storyStartFragment = function(segments, done, opts) {
-      setTimeout(() => { if (typeof done === 'function') done(); }, 200);
+  'use strict';
+
+  // ======== 内部状态 ========
+  let _queue = [];           // 当前待播段落数组
+  let _cursor = 0;           // 当前正在播第几个
+  let _done = null;          // 全部播完后的回调
+  let _typing = false;       // 是否正在打字
+  let _typeTimer = null;     // 打字计时器
+  let _skipBlocked = false;  // skipBlockedWhenChoice: 选项未出现前不能跳过
+  let _hasChoice = false;    // 本段带选项
+  let _choiceShown = false;  // 选项是否已显示
+  let _unreadContent = '';   // 攒的所有未显示 HTML（用于一次性显示）
+
+  // ======== DOM 快捷 ========
+  const qs = (sel) => document.querySelector(sel);
+  const storyBox = () => qs('#storyBox');
+  const storyBody = () => qs('#storyBody');
+  const storySpeaker = () => qs('#storySpeaker');
+  const speakerEl = () => storySpeaker();
+
+  // ======== 工具 ========
+  function _clearTimer() {
+    if (_typeTimer) { clearInterval(_typeTimer); _typeTimer = null; }
+  }
+  function _metaCommand(html) {
+    // 处理【屏幕抖动】【闪白】【黑屏】【回忆开始/结束】【act:xxx】
+    const cmdMap = {
+      '屏幕抖动': () => _shake(),
+      '抖动': () => _shake(),
+      '屏幕闪白': () => _flash(),
+      '闪白': () => _flash(),
+      '屏幕黑屏': () => _black(),
+      '黑屏': () => _black(),
+      '回忆开始': () => _flashback(true),
+      '进入回忆': () => _flashback(true),
+      '回忆结束': () => _flashback(false),
+      '退出回忆': () => _flashback(false),
+      '变回正常': () => _flashback(false),
     };
+    // 基础命令
+    for (const [kw, fn] of Object.entries(cmdMap)) {
+      if (html.includes('【' + kw + '】')) { fn(); return html.replace('【' + kw + '】', ''); }
+    }
+    // act:xxx 幕标题
+    const actMatch = html.match(/【act[:：](.+?)】/);
+    if (actMatch) { showActTitle(actMatch[1].trim()); return html.replace(actMatch[0], ''); }
+    return html;
   }
-  if (typeof window.finishCurrentFragment !== 'function') {
-    window.finishCurrentFragment = function() {};
+  function _shake() {
+    const app = qs('#app'); if (!app) return;
+    app.classList.add('fx-shake');
+    setTimeout(() => app.classList.remove('fx-shake'), 600);
   }
+  function _flash() {
+    const ov = document.createElement('div');
+    ov.className = 'screen-effect fx-flash';
+    document.body.appendChild(ov);
+    setTimeout(() => ov.remove(), 400);
+  }
+  function _black() {
+    const ov = document.createElement('div');
+    ov.className = 'screen-effect fx-black';
+    document.body.appendChild(ov);
+    setTimeout(() => ov.remove(), 2700);
+  }
+  function _flashback(on) {
+    const bottom = qs('#bottom'); if (!bottom) return;
+    if (on) bottom.classList.add('storyFlashback');
+    else bottom.classList.remove('storyFlashback');
+  }
+
+  // ======== 核心 API ========
+
+  // 设置说话人名字
+  window.storySetSpeaker = function(name) {
+    const el = speakerEl(); if (!el) return;
+    el.textContent = name || '';
+    if (name) el.style.display = '';
+    else el.style.display = 'none';
+  };
+
+  // 显示幕标题
+  window.showActTitle = function(title) {
+    const ov = qs('#actTitleOverlay'); if (!ov) return;
+    ov.innerHTML = `<div class="act-title-text">${title}</div>`;
+    ov.classList.add('show');
+    setTimeout(() => ov.classList.remove('show'), 5500);
+  };
+
+  // prompt：设 #promptZone（右侧面板）
+  window.prompt = function(html) {
+    const pz = qs('#promptZone'); if (!pz) return;
+    pz.innerHTML = html || '';
+  };
+
+  // finishCurrentFragment：清空 storyBox
+  window.finishCurrentFragment = function() {
+    const sb = storyBody(); if (!sb) return;
+    sb.innerHTML = '';
+    _queue = []; _cursor = 0; _typing = false; _hasChoice = false; _choiceShown = false;
+    _clearTimer();
+  };
+
+  // forceEndStoryFlow：强制结束当前剧情播放
+  window.forceEndStoryFlow = function() {
+    _clearTimer();
+    _queue = []; _cursor = 0; _typing = false;
+    if (typeof window.mainStoryPlaying !== 'undefined') window.mainStoryPlaying = false;
+    finishCurrentFragment();
+    if (typeof window.renderIconbar === 'function') renderIconbar();
+  };
+
+  // markChoice：标记本段带选项
+  window.storyMarkChoice = function() {
+    _hasChoice = true;
+    _skipBlocked = true;
+  };
+
+  // === 推一段 HTML（带打字机） ===
+  window.storyPush = function(html, cb) {
+    if (!html) { if (cb) cb(); return; }
+    const sb = storyBody(); if (!sb) { if (cb) cb(); return; }
+    // 处理元指令
+    let clean = _metaCommand(String(html));
+    if (!clean.trim()) { if (cb) cb(); return; }
+
+    if (window.storyAutoMode) {
+      // 自动模式：直接显示
+      sb.innerHTML += `<p class="story-para">${clean}</p>`;
+      sb.scrollTop = sb.scrollHeight;
+      if (cb) setTimeout(cb, 400);
+      return;
+    }
+
+    // 手动模式：打字机
+    _typing = true;
+    // 先加一个空段落
+    const para = document.createElement('p');
+    para.className = 'story-para';
+    sb.appendChild(para);
+
+    let idx = 0;
+    const chars = clean.split('');
+    _typeTimer = setInterval(() => {
+      if (idx >= chars.length) {
+        _clearTimer();
+        _typing = false;
+        sb.scrollTop = sb.scrollHeight;
+        if (cb) cb();
+        return;
+      }
+      para.innerHTML += chars[idx++];
+      if (idx % 4 === 0) sb.scrollTop = sb.scrollHeight;
+    }, 18);
+  };
+
+  // === storyRunNext：点一下继续 ===
+  window.storyRunNext = function() {
+    // 如果正在打字 → 直接跳到结尾
+    if (_typing) {
+      _clearTimer();
+      _typing = false;
+      return;
+    }
+    // 如果还没到末尾 → 播下一段
+    if (_cursor < _queue.length) {
+      _playNext();
+      return;
+    }
+    // 已经播完
+  };
+
+  // === storyStartFragment：入口 ===
+  window.storyStartFragment = function(segments, done, opts) {
+    opts = opts || {};
+    if (!Array.isArray(segments)) return;
+
+    // 清空旧状态
+    finishCurrentFragment();
+
+    _queue = segments;
+    _cursor = 0;
+    _done = done;
+    _skipBlocked = !!opts.skipBlockedWhenChoice;
+    _hasChoice = false; _choiceShown = false;
+
+    // 绑定点击事件（只绑一次）
+    if (!window.__storyClickBound) {
+      const sb = storyBox();
+      if (sb) {
+        sb.addEventListener('click', (e) => {
+          // 如果点到了 option 按钮（promptZone 里的 .ev-opt），不触发继续
+          if (e.target.closest('.ev-opt') || e.target.closest('#promptZone')) return;
+          // 自动模式下点击不跳过
+          if (window.storyAutoMode) return;
+          storyRunNext();
+        });
+        window.__storyClickBound = true;
+      }
+    }
+
+    // 开始播
+    if (_queue.length > 0) _playNext();
+    else { if (_done) _done(); }
+  };
+
+  function _playNext() {
+    if (_cursor >= _queue.length) {
+      // 全部播完
+      if (_done) _done();
+      return;
+    }
+    const seg = _queue[_cursor];
+    // seg 可以是 string 或 {speaker, html}
+    let html = '';
+    let speaker = null;
+    if (typeof seg === 'string') {
+      html = seg;
+    } else if (seg && typeof seg === 'object') {
+      html = seg.html || '';
+      speaker = seg.speaker || null;
+    }
+
+    if (speaker) storySetSpeaker(speaker);
+
+    // 元指令处理
+    html = _metaCommand(html);
+
+    _cursor++;
+
+    // 自动模式：直接 storyPush（内部会自动完整显示）
+    // 手动模式：storyPush 带打字机，结束后等点击
+    storyPush(html, () => {
+      if (window.storyAutoMode) {
+        setTimeout(() => _playNext(), 600);
+      }
+      // 手动模式下，等用户点击 storyBox 才会触发 storyRunNext → _playNext
+    });
+  }
+
+  // ======== UI 辅助 ========
+  window.lockEventUI = function() {
+    const bottom = qs('#bottom'); if (bottom) bottom.classList.add('mode-event-lock');
+    const go = qs('#goBtn'); if (go) go.style.display = 'none';
+    if (typeof window.renderIconbar === 'function') renderIconbar();
+  };
+  window.unlockEventUI = function() {
+    const bottom = qs('#bottom'); if (bottom) bottom.classList.remove('mode-event-lock');
+    if (typeof window.renderIconbar === 'function') renderIconbar();
+  };
+
+  // renderIconbar 空实现（main_story 依赖）
   if (typeof window.renderIconbar !== 'function') {
     window.renderIconbar = function() {};
   }
-})();
-</script>
 
-<script>
-// ===== main_story 紧急 polyfill（必须在 main_story/index.js 加载前可用）=====
-(function() {
-  const list = [
-    'storyStartFragment','storySetSpeaker','storyMarkChoice',
-    'storyPush','storyRunNext','storyAutoMode',
-    'finishCurrentFragment','finishMainStorySeg',
-    'renderIconbar','refreshHUD','showActTitle',
-  ];
-  for (const n of list) {
-    if (typeof window[n] !== 'function') {
-      window[n] = (...args) => {
-        if (n === 'storyStartFragment' && args.length >= 2 && typeof args[1] === 'function') {
-          setTimeout(() => args[1](), 250);
-        }
-      };
+  // 自动模式 flag
+  window.storyAutoMode = false;
+
+  // 切换自动模式按钮
+  window.addEventListener('DOMContentLoaded', () => {
+    const autoBtn = qs('#autoBtn');
+    if (autoBtn) {
+      autoBtn.addEventListener('click', () => {
+        window.storyAutoMode = !window.storyAutoMode;
+        autoBtn.classList.toggle('on', window.storyAutoMode);
+      });
     }
-  }
-  if (typeof window.mainStoryPlaying === 'undefined') window.mainStoryPlaying = false;
-})();
-</script>
-
-<script>
-// 兜底：补齐 main_story 任何可能遗漏的引用
-(function() {
-  const list = [
-    'forceEndStoryFlow', 'storyPush', 'storyRunNext',
-    'storyMarkChoice', 'storyAutoMode', 'finishCurrentFragment',
-    'finishMainStorySeg', 'renderIconbar', 'refreshHUD',
-    'showActTitle', 'unlockEventUI', 'storySetSpeaker',
-    'storyStartFragment',
-  ];
-  for (const n of list) {
-    if (typeof window[n] !== 'function') {
-      window[n] = function(...args) {
-        if (n === 'storyStartFragment' && args.length >= 2 && typeof args[1] === 'function') {
-          setTimeout(() => args[1](), 50);
-        }
-      };
+    const skipBtn = qs('#skipBtn');
+    if (skipBtn) {
+      skipBtn.addEventListener('click', () => {
+        // 跳到当前段结尾 → 再点一次跳过全部
+        if (_typing) { _clearTimer(); _typing = false; }
+        else { forceEndStoryFlow(); }
+      });
     }
-  }
-  if (typeof window.mainStoryPlaying === 'undefined') window.mainStoryPlaying = false;
-  if (typeof window.storyAutoMode === 'undefined') window.storyAutoMode = false;
+  });
+
 })();
 </script>
 
-
-<script>
-// ===== main_story 紧急 polyfill（HEAD 里，module 加载前执行）=====
-(function() {
-  // 基础存在性
-  const list = [
-    'storyStartFragment','storySetSpeaker','storyMarkChoice',
-    'storyPush','storyRunNext','storyAutoMode','finishCurrentFragment',
-    'finishMainStorySeg','forceEndStoryFlow','renderIconbar',
-    'refreshHUD','showActTitle','unlockEventUI',
-  ];
-  for (const n of list) {
-    if (typeof window[n] !== 'function') {
-      window[n] = function(...args) {
-        if (n === 'storyStartFragment' && args.length >= 2 && typeof args[1] === 'function') {
-          setTimeout(() => args[1](), 30);
-        }
-      };
-    }
-  }
-  if (typeof window.mainStoryPlaying === 'undefined') window.mainStoryPlaying = false;
-  if (typeof window.storyAutoMode === 'undefined') window.storyAutoMode = false;
-  if (typeof window.eventState === 'undefined') window.eventState = null;
-  if (typeof window.prompt !== 'function') window.prompt = () => {};
-  if (typeof window.renderMainStoryOptions !== 'function') window.renderMainStoryOptions = () => {};
-  if (typeof window.isInFlow !== 'function') window.isInFlow = () => !!window.mainStoryPlaying;
-  if (typeof window.isInStoryFlow !== 'function') window.isInStoryFlow = () => !!window.mainStoryPlaying;
-  if (typeof window.heroDisplayMaxHp !== 'function') window.heroDisplayMaxHp = () => (window.G && window.G.hero) ? (window.G.hero.maxHp || 100) : 100;
-  if (typeof window.heroineMaxHp !== 'function') window.heroineMaxHp = () => (window.G && window.G.hero) ? (window.G.hero.maxHp || 100) : 100;
-  if (typeof window.sleep !== 'function') window.sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  if (typeof window.backToMenu !== 'function') window.backToMenu = () => { if(window.G) window.G.mode='menu'; if(document.body) document.body.className=''; };
-  if (typeof window.applySwap !== 'function') window.applySwap = () => {};
-  if (typeof window.bringToFront !== 'function') window.bringToFront = () => {};
-  if (typeof window.castSkill !== 'function') window.castSkill = () => {};
-  if (typeof window.flee !== 'function') window.flee = () => {};
-  if (typeof window.skillSlots !== 'undefined') { /* 保留原 */ } else { window.skillSlots = []; }
-  if (typeof window.SHOP_ITEMS === 'undefined') window.SHOP_ITEMS = [];
-  if (typeof window.MAX_SAVES === 'undefined') window.MAX_SAVES = 8;
-  if (typeof window.FOOD === 'undefined') window.FOOD = {};
-  if (typeof window.ENEMIES === 'undefined') window.ENEMIES = {};
-  if (typeof window.PROTAGONIST === 'undefined') window.PROTAGONIST = null;
-  if (typeof window.ALLIES === 'undefined') window.ALLIES = {};
-
-  // 关键：storyAdvanceDayToOne —— main_story 的 seg_000_opening.afterPlayed 会调这个
-  // 必须返回一个会推进 day 到 1 的版本
-  window.storyAdvanceDayToOne = function() {
-    // 确保依赖都加载了
-    setTimeout(() => {
-      if (typeof G === 'undefined') return;
-      if (typeof MAP === 'undefined') return;
-      if (typeof switchMode !== 'function') return;
-      if (typeof UI === 'undefined' || typeof UI.refreshAll !== 'function') return;
-      if (G.day >= 1 && G.map) return;  // 已经推进过就不重复
-      G.day = 1;
-      G.map = MAP.generateMap();
-      const spawn = MAP.pickHeroSpawn(G.map, null);
-      G.px = spawn.x; G.py = spawn.y;
-      G.mode = 'explore';
-      switchMode('explore');
-      UI.refreshAll();
-      console.log('[storyAdvanceDayToOne] 推进到探索模式');
-    }, 100);
-  };
-})();
-</script>
-
-</head>
+</head></head>
 <body>
 <div id="app">
   <div id="hud"></div>
