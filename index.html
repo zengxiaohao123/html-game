@@ -9,6 +9,46 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
+
+<script>
+// ===== storyStartFragment 紧急 polyfill（main_story/index.js 引用）=====
+(function() {
+  if (typeof window.storyStartFragment !== 'function') {
+    window.storyStartFragment = function(segments, done, opts) {
+      setTimeout(() => { if (typeof done === 'function') done(); }, 200);
+    };
+  }
+  if (typeof window.finishCurrentFragment !== 'function') {
+    window.finishCurrentFragment = function() {};
+  }
+  if (typeof window.renderIconbar !== 'function') {
+    window.renderIconbar = function() {};
+  }
+})();
+</script>
+
+<script>
+// ===== main_story 紧急 polyfill（必须在 main_story/index.js 加载前可用）=====
+(function() {
+  const list = [
+    'storyStartFragment','storySetSpeaker','storyMarkChoice',
+    'storyPush','storyRunNext','storyAutoMode',
+    'finishCurrentFragment','finishMainStorySeg',
+    'renderIconbar','refreshHUD','showActTitle',
+  ];
+  for (const n of list) {
+    if (typeof window[n] !== 'function') {
+      window[n] = (...args) => {
+        if (n === 'storyStartFragment' && args.length >= 2 && typeof args[1] === 'function') {
+          setTimeout(() => args[1](), 250);
+        }
+      };
+    }
+  }
+  if (typeof window.mainStoryPlaying === 'undefined') window.mainStoryPlaying = false;
+})();
+</script>
+
 </head>
 <body>
 <div id="app">
