@@ -143,21 +143,32 @@ window.UI = (() => {
             div.appendChild(el('div', { class: 'layer layer-spawn' }, ['⚔']));
         }
 
-        // 敌人渲染（敌人在格子内部）
-        if (cell.unit && cell.unit.faction === 'enemy' && cell.unit.alive) {
-            div.appendChild(_renderEnemyInCell(cell.unit));
+        // 单位渲染（敌人在格子内部，player 也在这里渲染）
+        if (cell.unit && cell.unit.alive && (cell.unit.faction === 'enemy' || cell.unit.faction === 'player')) {
+            div.appendChild(_renderUnitInCell(cell.unit));
+            // player 加朝向指示（可选）
+            if (cell.unit.faction === 'player' && cell.unit.facing) {
+                div.appendChild(el('div', { class: 'hero-facing facing-' + cell.unit.facing }));
+            }
         }
 
         return div;
     }
 
-    function _renderEnemyInCell(enemy) {
-        const emoji = enemy.isSelfdestruct ? '💣' : _elementEmoji(enemy.element);
-        const entIcon = el('div', { class: 'entIcon enemyIcon', title: enemy.name + '  HP:' + enemy.hp + '/' + enemy.maxHp }, [emoji]);
-
-        const hpPct = Math.max(0, (enemy.hp / enemy.maxHp) * 100);
+    function _renderUnitInCell(unit) {
+        if (unit.faction === 'player') {
+            // 主角：金色圆球（用 hero-dot 样式）
+            const entIcon = el('div', { class: 'entIcon heroIcon', title: (unit.name || '勇者') + '  HP:' + unit.hp + '/' + unit.maxHp });
+            entIcon.appendChild(el('div', { class: 'hero-dot' }));
+            const hpPct = Math.max(0, (unit.hp / unit.maxHp) * 100);
+            const hpBar = el('div', { class: 'entHpEnemy', style: { width: hpPct + '%' } });
+            return el('div', {}, [entIcon, hpBar]);
+        }
+        // 敌人
+        const emoji = unit.isSelfdestruct ? '💣' : _elementEmoji(unit.element);
+        const entIcon = el('div', { class: 'entIcon enemyIcon', title: unit.name + '  HP:' + unit.hp + '/' + unit.maxHp }, [emoji]);
+        const hpPct = Math.max(0, (unit.hp / unit.maxHp) * 100);
         const hpBar = el('div', { class: 'entHpEnemy', style: { width: hpPct + '%' } });
-
         return el('div', {}, [entIcon, hpBar]);
     }
 
@@ -165,34 +176,15 @@ window.UI = (() => {
         return ({ fire:'🔥', water:'💧', grass:'🌿', thunder:'⚡', ice:'❄️', wind:'🌀', rock:'🪨' })[el] || '👾';
     }
 
-    // 主角指示器：绝对定位覆盖在 mapGrid 上
+    // 主角指示器：确保 grid 有 position:relative（cell 内已经渲染了 hero）
     function _renderHeroMarker(grid, map, gs) {
-        // 移除旧的 hero 层
-        qsa(grid, '.hero-overlay').forEach(n => n.remove());
-
-        const hero = gs.session ? gs.session.hero : gs.hero;
-        if (!hero || hero.x == null) return;
-
-        const heroDiv = el('div', {
-            class: 'hero-overlay',
-            style: {
-                position: 'absolute',
-                left: (hero.x * 44 + 8 + hero.x * 3) + 'px',   // mapGrid padding:8 + gap:3
-                top:  (hero.y * 44 + 8 + hero.y * 3) + 'px',
-                width: '44px', height: '44px',
-                pointerEvents: 'none',
-                zIndex: 100,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-            }
-        });
-        heroDiv.appendChild(el('div', { class: 'hero-dot' }));
-        grid.appendChild(heroDiv);
-
-        // 确保 mapGrid 有 position: relative
-        const computed = getComputedStyle(grid);
-        if (computed.position === 'static') grid.style.position = 'relative';
+        // 确保 mapGrid 有 position: relative（给绝对定位元素做包含块）
+        if (grid && typeof getComputedStyle !== 'undefined') {
+            try {
+                const computed = getComputedStyle(grid);
+                if (computed && computed.position === 'static') grid.style.position = 'relative';
+            } catch(e) { /* ignore */ }
+        }
     }
 
     // ============================================================
