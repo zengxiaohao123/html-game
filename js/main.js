@@ -55,12 +55,23 @@ function startNewGame() {
     const overlay = document.getElementById('menuOverlay');
     if (overlay) overlay.classList.remove('show');
 
-    // 先触发 main_story 第 0 幕剧情
-    const mainStoryMod = document.querySelector('script[src*="main_story"]');
+    // 先尝试触发 main_story 第 0 幕剧情
+    // main_story/index.js 是 <script type="module">，加载可能晚于普通 script
+    // 所以第一次调可能只有 HEAD polyfill（空函数）
+    let storyStarted = false;
     if (typeof window.triggerMainStorySeg === 'function') {
-        window.triggerMainStorySeg();  // 播剧情，剧情结束后 storyAdvanceDayToOne 会推进 day=1
-    } else {
+        try {
+            storyStarted = window.triggerMainStorySeg() === true;
+        } catch (e) { storyStarted = false; }
+    }
+
+    if (!storyStarted) {
+        // main_story 还没加载 —— 先进入探索模式保证 UI 可见
         _enterExploreMode();
+    } else {
+        // 剧情已触发 —— 切了 story 模式，等剧情播完后 storyAdvanceDayToOne 会推进 day=1 并进入探索
+        G.mode = 'story';
+        switchMode('story');
     }
 
     UI.refreshAll();
@@ -108,16 +119,27 @@ function _enterCombatMode(stageId) {
 }
 window._enterCombatMode = _enterCombatMode;
 
-// ===== 模式切换 =====
+// ===== 模式切换（核心修复！mode 类必须加到 #bottom 上，CSS 选择器才能命中）=====
 function switchMode(mode) {
     G.mode = mode;
+
+    // body 上也加一份（兼容可能的旧样式）
     document.body.className = document.body.className.replace(/mode-\w+/g, '').trim();
     document.body.classList.add('mode-' + mode);
 
+    // ★ 关键修复：CSS 规则是 #bottom.mode-story #storyBox / #bottom.mode-combat #combatZone
+    // 所以 mode 类必须加到 #bottom 上
+    const bottom = document.getElementById('bottom');
+    if (bottom) {
+        bottom.className = bottom.className.replace(/mode-\w+/g, '').trim();
+        bottom.classList.add('mode-' + mode);
+    }
+
+    // 清空内联 display（让 CSS 规则接管 show/hide）
     const sb = document.getElementById('storyBox');
     const cz = document.getElementById('combatZone');
-    if (sb)  sb.style.display  = (mode === 'story') ? '' : 'none';
-    if (cz)  cz.style.display  = (mode === 'combat') ? '' : 'none';
+    if (sb) sb.style.display = '';
+    if (cz) cz.style.display = '';
 }
 window.switchMode = switchMode;
 
