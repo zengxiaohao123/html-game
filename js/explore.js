@@ -1,33 +1,24 @@
-// ============================================================
-// explore.js —— 探索模式（重写版）
-// 规格参考：docs/04-探索与地图.md §二~§八
-// ============================================================
-
 window.EXPLORE = (() => {
-
     const MAP  = window.MAP;
     const RULES = window.RULES;
 
-    function createExplore(options = {}) {
-        const map = MAP.generate(9, 9, {});
+    function createExplore(options) {
+        options = options || {};
+        const map = MAP.generate();  // 不传尺寸，按 G.day 自动决定（day1=3x3, day2=5x5, day3+=9x9）
         const hero = {
             id: 'hero', name: '勇者', faction: 'player', isMainCharacter: true,
             atk: 20, def: 5, hp: 100, maxHp: 100,
-            status: {}, alive: true
+            status: {}, alive: true, facing: 'up'
         };
         MAP.placeUnit(map, hero, 0, map.height - 1);
 
-        return {
-            map, hero, visited: {}, stepCount: 0,
-            onEvent: options.onEvent || (() => {})
-        };
+        return { map, hero, visited: {}, stepCount: 0 };
     }
 
-    function move(session, dir, fromVehicle = false) {
+    function move(session, dir, fromVehicle) {
+        fromVehicle = !!fromVehicle;
         const [dx, dy] = dir;
-        const tx = session.hero.x + dx;
-        const ty = session.hero.y + dy;
-
+        const tx = session.hero.x + dx, ty = session.hero.y + dy;
         const check = RULES.canMoveTo(session.map, session.hero, tx, ty, { fromVehicle });
         if (!check.ok) return { ok: false, reason: check.reason };
 
@@ -35,20 +26,24 @@ window.EXPLORE = (() => {
         if (toCell.terrain === 'river') {
             MAP.moveUnit(session.map, session.hero, tx, ty);
             const result = RULES.handleRiverEnter(session.map, session.hero, true);
-            if (result && result.type === 'main_defeat') {
-                return { ok: false, reason: 'defeat_by_river' };
-            }
+            if (result && result.type === 'main_defeat') return { ok: false, reason: 'defeat_by_river' };
         }
 
         MAP.moveUnit(session.map, session.hero, tx, ty);
         session.stepCount++;
 
         const slide = RULES.processIceSlide(session.map, session.hero, dir, true, fromVehicle);
-        if (slide) {
-            MAP.moveUnit(session.map, session.hero, tx + slide.dx, ty + slide.dy);
-        }
+        if (slide) MAP.moveUnit(session.map, session.hero, tx + slide.dx, ty + slide.dy);
 
+        session.hero.facing = dirToFacing(dx, dy);
         return { ok: true, x: session.hero.x, y: session.hero.y };
+    }
+
+    function dirToFacing(dx, dy) {
+        if (dx === 1) return 'right';
+        if (dx === -1) return 'left';
+        if (dy === 1) return 'down';
+        return 'up';
     }
 
     function search(session) {
