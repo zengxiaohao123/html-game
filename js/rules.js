@@ -1,146 +1,199 @@
-/* ============================================================
-   js/rules.js —— 模块：范围计算 + 索敌规则（按技能 ruleTag 严格执行）
-   规格依据：docs/02-核心概念 · 索敌规则三条铁律 + docs/05-角色·技能·物品 · 技能范围类型
-   本文件纯函数模块，不读写全局状态 G / combatState。
-   ============================================================ */
-"use strict";
+// ============================================================
+// rules.js —— 游戏规则引擎（重写版）
+// 规格参考：docs/02-核心概念.md、docs/03-战斗系统.md、docs/04-探索与地图.md
+// ============================================================
 
-const ELEMENTS = ['fire','water','grass','thunder','ice','wind','rock'];
-const ROOT_DIRS = { up:[0,-1], down:[0,1], left:[-1,0], right:[1,0] };
+window.RULES = (() => {
 
-/** 把 facing 字符串（up/down/left/right）转成方向位移 [dx, dy] */
-function dirToOffset(facing){ return ROOT_DIRS[facing] || [0,-1]; }
+    const DATA = window.GAME_DATA;
+    const MAP  = window.MAP;
 
-/** 根据 range.type + 原点 + facing 计算范围内所有格子坐标 */
-function computeRange(rangeType, ox, oy, facing){
-  const cells = [];
-  switch(rangeType){
-    case 'self':
-      cells.push([ox, oy]);
-      break;
-    case 'self-area4': {
-      cells.push([ox,oy]);
-      cells.push([ox,oy-1],[ox+1,oy],[ox-1,oy],[ox,oy+1]);
-      break;
-    }
-    case 'selfArea3x3': {
-      for(let dx=-1; dx<=1; dx++) for(let dy=-1; dy<=1; dy++) cells.push([ox+dx, oy+dy]);
-      break;
-    }
-    case 'front1': case 'front2': case 'front3': case 'front6': {
-      const n = parseInt(rangeType.replace('front',''),10);
-      const [dx,dy] = dirToOffset(facing);
-      for(let i=1; i<=n; i++) cells.push([ox+dx*i, oy+dy*i]);
-      break;
-    }
-    case 'frontArea3x3': {
-      const [dx,dy] = dirToOffset(facing);
-      for(let side=-1; side<=1; side++){
-        for(let fwd=1; fwd<=3; fwd++){
-          cells.push([ox+dx*fwd + (dy===0?side:0), oy+dy*fwd + (dx===0?side:0)]);
+    // ===== 移动判定 =====
+    function canMoveTo(map, unit, tx, ty, options = {}) {
+        const { fromVehicle = false, forcedEnter = false } = options;
+        const cell = map.cellAt(tx, ty);
+        if (!cell) return { ok: false, reason: 'out_of_bounds' };
+        if (cell.unit && cell.unit !== unit) return { ok: false, reason: 'occupied' };
+        if (cell.terrain === 'river' && !forcedEnter) {
+            return { ok: false, reason: 'river_blocked' };
         }
-      }
-      break;
+        return { ok: true };
     }
-    case 'dist3': {
-      for(let dx=-3; dx<=3; dx++)
-        for(let dy=-3; dy<=3; dy++)
-          if(Math.abs(dx)+Math.abs(dy) <= 3 && !(dx===0&&dy===0))
-            cells.push([ox+dx, oy+dy]);
-      break;
+
+    // ===== 河流强制进入处理 =====
+    function handleRiverEnter(map, unit, isMainCharacter, forcedEnter = false) {
+        const cell = map.cellAt(unit.x, unit.y);
+        if (!cell || cell.terrain !== 'river') return null;
+        if (!isMainCharacter) {
+            unit.hp = 0;
+            unit.isDead = true;
+            return { type: 'unit_death', unit };
+        }
+        return { type: 'main_defeat', unit };
     }
-    case 'dist5': {
-      for(let dx=-5; dx<=5; dx++)
-        for(let dy=-5; dy<=5; dy++)
-          if(Math.abs(dx)+Math.abs(dy) <= 5 && !(dx===0&&dy===0))
-            cells.push([ox+dx, oy+dy]);
-      break;
+
+    // ===== 冰面滑动 =====
+    function processIceSlide(map, unit, dir, isMainCharacter, fromVehicle = false) {
+        if (!isMainCharacter || fromVehicle) return null;
+        const cell = map.cellAt(unit.x, unit.y);
+        if (!cell || cell.terrain !== 'ice') return null;
+        const [dx, dy] = dir;
+        const nextCell = map.cellAt(unit.x + dx, unit.y + dy);
+        if (!nextCell || !nextCell.passable || nextCell.unit) return null;
+        return { dx, dy };
     }
-    case 'area4': {
-      cells.push([ox,oy]);
-      cells.push([ox,oy-1],[ox+1,oy],[ox-1,oy],[ox,oy+1]);
-      break;
+
+    // ===== 防御获取（含地块岩元素加成） =====
+    function getEffectiveDefense(unit) {
+        const baseDef = unit.def || 0;
+        const bonus = unit.cellDefBonus || 0;
+        return Math.min(99999, Math.max(0, baseDef + bonus));
     }
-    default:
-      cells.push([ox,oy]);
-  }
-  return cells;
-}
 
-/** 过滤：范围内所有非外部地块 */
-function filterNonVoid(cells, map){
-  return cells.filter(([x,y]) => {
-    if(!map || y<0 || y>=map.n || x<0 || x>=map.n) return false;
-    const c = map.cells[y*map.n+x];
-    return c && c.terrain !== 'void';
-  });
-}
+    // ===== 伤害计算 =====
+    function calcDamage({ attacker, defender, baseAtk, atkRatio = 1.0, element = 'physical', fromStatus = false, cellMultiplier = 1.0 }) {
+        const atkValue = Math.floor(baseAtk * atkRatio);
+        const finalAtk = Math.floor(atkValue * cellMultiplier);
 
-/** 过滤：范围内的实体列表 */
-function filterEntities(cells, entities){
-  const out = [];
-  for(const [x,y] of cells){
-    for(const e of Object.values(entities)){
-      if(e && !e.dead && e.x===x && e.y===y) out.push(e);
+        const resist = defender.resist ? (defender.resist[element] ?? 0) : 0;
+        let afterResist = finalAtk;
+        if (resist !== 0) afterResist = Math.floor(finalAtk * (1 - resist));
+
+        let finalDamage = afterResist;
+        if (!fromStatus) {
+            const def = getEffectiveDefense(defender);
+            finalDamage = Math.max(1, afterResist - Math.floor(def * 0.5));
+        }
+
+        return { rawAtk: finalAtk, resist, finalDamage: Math.max(1, finalDamage) };
     }
-  }
-  return out;
-}
 
-/**
- * 索敌规则主函数。
- * ruleTag 取值 'default' | 'careful' | 'indiscriminate'
- * 返回 { attachCells: [[x,y], ...], damageEntities: [entity, ...] }
- * targetFaction: 当 ruleTag==='careful' 时必须传（'ally'|'enemy'|'self'|'all'）
- */
-function resolveTargeting(rangeType, ownerPos, ownerFacing, map, entities, ruleTag, targetFaction){
-  const allRange = computeRange(rangeType, ownerPos[0], ownerPos[1], ownerFacing);
-  const attachAll = filterNonVoid(allRange, map);
-  const ents = filterEntities(allRange, entities);
+    // ===== 元素附着施加 =====
+    function applyElementAttachToUnit(unit, element, duration = 2) {
+        if (!unit.status) unit.status = {};
+        unit.status[element + '_attach'] = { remaining: duration };
+        const existingAttach = _findOtherAttach(unit, element);
+        if (existingAttach) {
+            const reaction = DATA.getReaction(existingAttach, element);
+            if (reaction) return { reaction, newElement: element };
+        }
+        return null;
+    }
 
-  let attachCells = [], damageEntities = [];
+    function _findOtherAttach(unit, excludeElement) {
+        if (!unit.status) return null;
+        for (const key of Object.keys(unit.status)) {
+            if (key.endsWith('_attach')) {
+                const e = key.replace('_attach', '');
+                if (e !== excludeElement) return e;
+            }
+        }
+        return null;
+    }
 
-  if(ruleTag === 'indiscriminate'){
-    attachCells = attachAll;
-    damageEntities = ents.filter(e => !e.dead);  // 包括自身、队友、敌方、中立（除了明确不会被"可攻击"规则击中的）
-  } else if(ruleTag === 'careful'){
-    // 严格按描述筛选
-    const filtered = ents.filter(e => !e.dead && factionMatch(e.faction, targetFaction));
-    damageEntities = filtered;
-    attachCells = attachAll.filter(([x,y]) => filtered.some(e => e.x===x && e.y===y));
-  } else {
-    // default：范围所有地块 + 所有可攻击敌对实体
-    attachCells = attachAll;
-    damageEntities = ents.filter(e => !e.dead && e.faction === 'enemy');
-  }
+    // ===== 元素反应处理 =====
+    function resolveReaction(map, reaction, attacker, defender, baseDamage) {
+        const result = { reaction: reaction.name, damage: 0, effects: [] };
 
-  return { attachCells, damageEntities };
-}
+        switch (reaction.effect) {
+            case 'clear_all':   _clearAllAttaches(defender); break;
+            case 'clear_ice':   _clearAttach(defender, 'ice'); break;
+            case 'clear_grass': _clearAttach(defender, 'grass'); break;
+            case 'aoe_surround4': {
+                const cells = MAP.getAreaCells(map, defender.x, defender.y, 'surround4');
+                for (const c of cells) {
+                    if (c.unit && c.unit !== defender) {
+                        const dmg = calcDamage({ attacker, defender: c.unit, baseAtk: attacker.atk, atkRatio: reaction.atkRatio });
+                        c.unit.hp -= dmg.finalDamage;
+                        result.effects.push({ target: c.unit.id, damage: dmg.finalDamage });
+                    }
+                }
+                break;
+            }
+            case 'create_bloom':     _applyStatus(defender, 'bloom_field'); break;
+            case 'apply_electrocuted': _applyStatus(defender, 'electrocuted'); break;
+            case 'apply_freeze':     _applyStatus(defender, 'freeze'); break;
+            case 'apply_wind_mark':  _applyStatus(defender, 'wind_mark'); break;
+            case 'create_crystal':   _applyStatus(defender, 'crystallize'); break;
+            case 'pierce_def':       break;
+        }
 
-function factionMatch(actual, wanted){
-  if(wanted === 'all') return true;
-  return actual === wanted;
-}
+        const primary = reaction.primaryElement || reaction.id.split('_')[0];
+        const secondary = reaction.secondaryElement || '';
+        // 清除所有附着（简化处理）
+        _clearAllAttaches(defender);
 
-/** 判断某个实体是否是合法目标（至少满足 1 个：有地块可附着 / 有实体可命中 / 自身是合法目标） */
-function hasValidTargetForSkill(skill, ownerKey, ownerPos, ownerFacing, map, entities, selfIsValid=true){
-  const { attachCells, damageEntities } = resolveTargeting(
-    skill.range?.type || 'self',
-    ownerPos, ownerFacing,
-    map, entities,
-    skill.ruleTag || 'default',
-    skill.target || 'enemy'
-  );
-  if(attachCells.length > 0) return true;
-  if(damageEntities.length > 0) return true;
-  // 自身 buff：即使没有范围、没有敌人，也算合法目标
-  if(selfIsValid) return true;
-  return false;
-}
+        return result;
+    }
 
-window.rules = {
-  dirToOffset,
-  computeRange,
-  resolveTargeting,
-  hasValidTargetForSkill,
-};
+    function _applyStatus(unit, statusId) {
+        if (!unit.status) unit.status = {};
+        const def = DATA.STATUS_EFFECTS[statusId];
+        if (def) unit.status[statusId] = { remaining: def.duration };
+    }
+
+    function _clearAttach(unit, element) {
+        if (unit.status && unit.status[element + '_attach']) delete unit.status[element + '_attach'];
+    }
+
+    function _clearAllAttaches(unit) {
+        if (!unit.status) return;
+        for (const key of Object.keys(unit.status)) {
+            if (key.endsWith('_attach')) delete unit.status[key];
+        }
+    }
+
+    // ===== 地块元素效果对单位的应用 =====
+    function applyCellElementEffects(map, unit) {
+        const cell = map.cellAt(unit.x, unit.y);
+        if (!cell || !cell.attach) return;
+        const effect = DATA.ELEMENT_CELL_EFFECTS[cell.attach];
+        if (effect && effect.applyToUnit) effect.applyToUnit(unit);
+    }
+
+    // ===== 状态效果 tick =====
+    function tickStatusEffects(unit, attacker = null) {
+        const results = [];
+        if (!unit.status) return results;
+
+        for (const [statusId, state] of Object.entries(unit.status)) {
+            const def = DATA.STATUS_EFFECTS[statusId];
+            if (!def) continue;
+            if (def.tick && attacker) {
+                const dmg = calcDamage({
+                    attacker, defender: unit,
+                    baseAtk: attacker.atk,
+                    atkRatio: def.tick.damageRatio,
+                    element: def.tick.element,
+                    fromStatus: true
+                });
+                unit.hp -= dmg.finalDamage;
+                results.push({ statusId, damage: dmg.finalDamage });
+            }
+            state.remaining--;
+            if (state.remaining <= 0) delete unit.status[statusId];
+        }
+        return results;
+    }
+
+    function onTurnStart(map) {
+        MAP.refreshAlwaysAttach(map);
+    }
+
+    function getCellBgColor(cell) {
+        const terrain = DATA.TERRAINS[cell.terrain];
+        const baseColor = terrain.color;
+        if (cell.attach) {
+            const effect = DATA.ELEMENT_CELL_EFFECTS[cell.attach];
+            if (effect && effect.bgColor) return effect.bgColor;
+        }
+        return baseColor;
+    }
+
+    return {
+        canMoveTo, handleRiverEnter, processIceSlide,
+        calcDamage, applyElementAttachToUnit, resolveReaction,
+        applyCellElementEffects, tickStatusEffects, getEffectiveDefense,
+        onTurnStart, getCellBgColor
+    };
+})();
