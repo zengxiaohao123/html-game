@@ -1,61 +1,210 @@
-/* ============================================================
-   js/map.js —— 模块：地图与探索（地图生成）
-   每日随机地图：边长随天数渐进（并加大每日随机波动）、保底连通。
-   内部每个有效格子独立按概率分配内容：
-     空地30% / 事件25% / 战斗30% / 奖励10% / 山5%（山=障碍，不可通行）。
-   有效地图为内区 n×n，其外再包一圈「地图外」(void) 边框。
-   ============================================================ */
-"use strict";
+// =============================================================
+// map.js —— 回字形矩形地图生成器（完全重写）
+// 读取 04-探索与地图.md 规格
+// =============================================================
 
-function mapSizeForDay(day){
-  const ref=[[1,4],[20,6],[50,8],[100,9],[150,12]];
-  let n=4;
-  for(const [d,s] of ref){ if(day>=d) n=s; }
-  const jitter=Math.round((Math.random()-0.5)*4);
-  return Math.max(4, n+jitter);
+// ---------------------------------------------------------------
+// 常量：地块内容生成概率（每格独立 roll）
+// ---------------------------------------------------------------
+const MAP_CONTENT_PROBS = [
+  { type: 'empty',     p: 0.40 },  // 空地（普通空地搜索）
+  { type: 'event',     p: 0.20 },  // 事件（剧情）
+  { type: 'battle',    p: 0.20 },  // 作战（正常战斗）
+  { type: 'emergency', p: 0.10 },  // 紧急作战
+  { type: 'reward',    p: 0.05 },  // 奖励（Boss 级战斗）
+  { type: 'terrain',   p: 0.05 },  // 地形（也有空地搜索资源效果）
+];
+
+// ---------------------------------------------------------------
+// 默认地图尺寸（矩形，可被道具/特殊地图改写）
+// ---------------------------------------------------------------
+const MAP_DEFAULT_WIDTH  = 3;
+const MAP_DEFAULT_HEIGHT = 3;
+
+// ---------------------------------------------------------------
+// 判断某个坐标是不是"回字形外圈"
+// ---------------------------------------------------------------
+function isOuterRing(x, y, w, h) {
+  return (x === 0 || y === 0 || x === w - 1 || y === h - 1);
 }
 
-function generateMap(day){
-  const inner=mapSizeForDay(day);
-  const n=inner+2; const off=1;
-  const cells=[];
-  for(let i=0;i<n*n;i++) cells.push({terrain:'void', content:'empty', idx:i});
-  for(let y=0;y<inner;y++)for(let x=0;x<inner;x++){ const ci=(y+off)*n+(x+off); cells[ci]=rollCell(day); cells[ci].idx=ci;
-    if(cells[ci].content&&cells[ci].content.type==='battle' && isRareEnemy(cells[ci].content.key)){ cells[ci].content.rare=true; }
+// ---------------------------------------------------------------
+// 地图生成
+// ---------------------------------------------------------------
+// opts = { width?, height?, forceSize? }
+//   不传则用 MAP_DEFAULT_WIDTH/HEIGHT
+//   forceSize: 道具/特殊地图时强制指定 size
+function generateMap(opts = {}) {
+  const width  = opts.width  || MAP_DEFAULT_WIDTH;
+  const height = opts.height || MAP_DEFAULT_HEIGHT;
+
+  const cells = [];
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const outer = isOuterRing(x, y, width, height);
+      let terrain, content;
+
+      if (outer) {
+        terrain = 'normal';  // 外圈默认可通行；具体地形设计待设计者给出
+        content = rollContent();   // 独立 roll 一个 content.type
+      } else {
+        terrain = 'void';   // 内部默认 void
+        content = null;     // 内部没有 content
+      }
+
+      cells.push({
+        x, y,
+        terrain,
+        content: content ? { type: content, done: false } : null,
+        attach: null,              // 元素附着，生成时清空
+        entities: [],              // 实体列表（空数组）
+        isEnemySpawnPoint: false,  // 战斗态专用标记
+      });
+    }
   }
-  ensureConnectivity(cells,n);
-  let start=null; const allGround=[];
-  for(let y=off;y<off+inner;y++)for(let x=off;x<off+inner;x++){ if(cells[y*n+x].terrain==='ground') allGround.push({x,y}); }
-  if(allGround.length){ start=allGround[Math.floor(Math.random()*allGround.length)]; cells[start.y*n+start.x]={terrain:'ground', content:{type:'empty'}, idx:start.y*n+start.x}; }
-  else start={x:off,y:off};
-  return {n, cells, px:start.x, py:start.y};
+
+  return { width, height, cells };
 }
 
-function rollCell(day){
-  const r=Math.random();
-  if(r<0.05) return {terrain:'obstacle', content:'empty'};
-  if(r<0.35){ const ev=rollCombatEvent(day); return {terrain:'ground', content:{type:'battle', sub:ev.sub, key:ev.key, done:false}}; }
-  if(r<0.45) return {terrain:'ground', content:{type:'loot', done:false}};
-  if(r<0.70) return {terrain:'ground', content:{type:'event', done:false}};
-  return {terrain:'ground', content:{type:'empty'}};
+// ---------------------------------------------------------------
+// 按概率 roll 一个 content.type（每格独立）
+// ---------------------------------------------------------------
+function rollContent() {
+  const r = Math.random();
+  let acc = 0;
+  for (const c of MAP_CONTENT_PROBS) {
+    acc += c.p;
+    if (r <= acc) return c.type;
+  }
+  return 'empty';  // 兜底
 }
 
-function ensureConnectivity(cells,n){
-  const idx=(x,y)=>y*n+x; const inb=(x,y)=>x>=0&&y>=0&&x<n&&y<n;
-  const ground=[]; for(let y=0;y<n;y++)for(let x=0;x<n;x++)if(cells[idx(x,y)].terrain==='ground')ground.push([x,y]);
-  const visited=new Map(); const stack=[ground[0]];
-  if(ground[0]) visited.set(ground[0][0]+','+ground[0][1],1);
-  const fwd=[[1,0],[-1,0],[0,1],[0,-1]];
-  while(stack.length){ const [cx,cy]=stack.pop(); for(const [dx,dy] of fwd){ const nx=cx+dx,ny=cy+dy; if(!inb(nx,ny))continue; const cell=cells[idx(nx,ny)]; if(cell.terrain!=='ground')continue; if(visited.has(nx+','+ny))continue; visited.set(nx+','+ny,1); stack.push([nx,ny]); } }
-  markBridge(cells,n,visited);
+// ---------------------------------------------------------------
+// 取某个 cell 的工具函数
+// ---------------------------------------------------------------
+function getCell(map, x, y) {
+  if (x < 0 || y < 0 || x >= map.width || y >= map.height) return null;
+  return map.cells[y * map.width + x];
 }
-function markBridge(cells,n,visited){
-  const idx=(x,y)=>y*n+x; const inb=(x,y)=>x>=0&&y>=0&&x<n&&y<n;
-  const fwd=[[1,0],[-1,0],[0,1],[0,-1]];
-  for(let y=0;y<n;y++)for(let x=0;x<n;x++){ const c=cells[idx(x,y)]; if(c.terrain!=='ground')continue; if(visited.has(x+','+y))continue; for(const [dx,dy] of fwd){ const nx=x+dx,ny=y+dy; if(!inb(nx,ny))continue; if(cells[idx(nx,ny)].terrain==='obstacle'){ cells[idx(nx,ny)].terrain='ground'; }else if(visited.has(nx+','+ny)){ visited.set(x+','+y,1); expandVisited(cells,n,x,y,visited); break; } } }
+
+// ---------------------------------------------------------------
+// 判断 cell 是否在回字形外圈（可通行基础条件）
+// ---------------------------------------------------------------
+function isCellOuter(map, x, y) {
+  const c = getCell(map, x, y);
+  if (!c) return false;
+  return isOuterRing(x, y, map.width, map.height);
 }
-function expandVisited(cells,n,x,y,visited){
-  const idx=(x0,y0)=>y0*n+x0; const inb=(a,b)=>a>=0&&b>=0&&a<n&&b<n;
-  const stack=[[x,y]]; visited.set(x+','+y,1); const fwd=[[1,0],[-1,0],[0,1],[0,-1]];
-  while(stack.length){ const [cx,cy]=stack.pop(); for(const [dx,dy] of fwd){ const nx=cx+dx,ny=cy+dy; if(!inb(nx,ny))continue; if(cells[idx(nx,ny)].terrain!=='ground')continue; if(visited.has(nx+','+ny))continue; visited.set(nx+','+ny,1); stack.push([nx,ny]); } }
+
+// ---------------------------------------------------------------
+// 主角出生位置：优先沿用上一天位置，否则随机选外圈合法格
+// ---------------------------------------------------------------
+function pickHeroSpawn(map, prevPos) {
+  // 优先：上一天的位置仍然在新地图的外圈
+  if (prevPos) {
+    const c = getCell(map, prevPos.x, prevPos.y);
+    if (c && c.terrain !== 'void') {
+      return { x: prevPos.x, y: prevPos.y };
+    }
+  }
+  // 回退：随机选外圈合法格
+  const valid = [];
+  for (let y = 0; y < map.height; y++) {
+    for (let x = 0; x < map.width; x++) {
+      if (isOuterRing(x, y, map.width, map.height)) {
+        const c = getCell(map, x, y);
+        if (c && c.terrain !== 'void') valid.push({ x, y });
+      }
+    }
+  }
+  if (valid.length === 0) {
+    // 理论上不应该发生（至少有一圈外圈），兜底返回 (0,0)
+    return { x: 0, y: 0 };
+  }
+  return valid[Math.floor(Math.random() * valid.length)];
 }
+
+// ---------------------------------------------------------------
+// 在当前地图上选一个可用于敌人进攻点的格子
+//   条件：terrain !== 'void' 且当前不是进攻点
+//   opts = { preferNoOverlap? } —— 紧急作战时优先避免重叠多个进攻点
+// ---------------------------------------------------------------
+function pickEnemySpawnPoints(map, count = 1, opts = {}) {
+  const results = [];
+  const used = new Set();
+
+  for (let i = 0; i < count; i++) {
+    const candidates = [];
+    for (const cell of map.cells) {
+      if (cell.terrain === 'void') continue;
+      if (results.some(r => r.x === cell.x && r.y === cell.y)) continue;
+      if (used.has(`${cell.x},${cell.y}`)) continue;
+      candidates.push(cell);
+    }
+    if (candidates.length === 0) {
+      // 没合法候选了 —— 放弃这个，继续下一个
+      continue;
+    }
+    // 如果要优先避免重叠：选的时候排除与已选过的距离 < 某阈值的格子
+    if (opts.preferNoOverlap && results.length > 0) {
+      const filtered = candidates.filter(c =>
+        results.every(r => Math.abs(r.x - c.x) + Math.abs(r.y - c.y) >= 2)
+      );
+      const pool = filtered.length > 0 ? filtered : candidates;
+      const picked = pool[Math.floor(Math.random() * pool.length)];
+      results.push({ x: picked.x, y: picked.y });
+    } else {
+      const picked = candidates[Math.floor(Math.random() * candidates.length)];
+      results.push({ x: picked.x, y: picked.y });
+    }
+    used.add(`${results[results.length-1].x},${results[results.length-1].y}`);
+  }
+  return results;
+}
+
+// ---------------------------------------------------------------
+// 战斗开始时，把 pickEnemySpawnPoints 的结果标记到地块上
+// ---------------------------------------------------------------
+function markEnemySpawnPointsOnMap(map, spawnPoints) {
+  for (const { x, y } of spawnPoints) {
+    const cell = getCell(map, x, y);
+    if (cell) cell.isEnemySpawnPoint = true;
+  }
+}
+
+// ---------------------------------------------------------------
+// 清除所有敌人进攻点标记（战斗结束时）
+// ---------------------------------------------------------------
+function clearEnemySpawnPointMarks(map) {
+  for (const cell of map.cells) {
+    cell.isEnemySpawnPoint = false;
+  }
+}
+
+// ---------------------------------------------------------------
+// 清除所有元素附着（新地图生成时、或睡觉进下一天时调用）
+// ---------------------------------------------------------------
+function clearAllAttach(map) {
+  for (const cell of map.cells) {
+    cell.attach = null;
+  }
+}
+
+// ---------------------------------------------------------------
+// 导出
+// ---------------------------------------------------------------
+window.MAP = {
+  MAP_DEFAULT_WIDTH,
+  MAP_DEFAULT_HEIGHT,
+  MAP_CONTENT_PROBS,
+  isOuterRing,
+  generateMap,
+  getCell,
+  isCellOuter,
+  pickHeroSpawn,
+  pickEnemySpawnPoints,
+  markEnemySpawnPointsOnMap,
+  clearEnemySpawnPointMarks,
+  clearAllAttach,
+};

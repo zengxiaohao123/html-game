@@ -1,266 +1,59 @@
-/* ============================================================
-   js/main.js —— 模块：总览与入口
-   全局运行状态、主界面菜单、启动流程、新游戏/读档进世界、
-   睡觉进下一天、词条悬浮提示。本文件最后加载。
-   ============================================================ */
-"use strict";
-var G=null; var combatState=null; let previewCell=null;
+// =============================================================
+// main.js —— 全局状态 G + mode 切换
+// =============================================================
 
-/* 统一判断：是否处于"剧情流程锁定中"（主线剧情 / 事件 / 战斗）
-   任何想打开编队/睡觉/商店/合成/移动等操作的守卫都应该用这个函数
-   而非各自单独判断 ||eventState。这样主线剧情也会被自动锁上 */
-window.isInFlow = function(){
-  return !!combatState
-    || (typeof eventState !== 'undefined' && !!eventState)
-    || (typeof mainStoryPlaying !== 'undefined' && !!mainStoryPlaying);
-};
-/* 快捷版（仅剧情/事件，不含战斗）—— 战斗守卫仍然只检查 combatState */
-window.isInStoryFlow = function(){
-  return (typeof eventState !== 'undefined' && !!eventState)
-      || (typeof mainStoryPlaying !== 'undefined' && !!mainStoryPlaying);
-};
-/* 返回当前锁状态对应的中文标签（用于 log 提示） */
-window.flowLabel = function(){
-  if(!!combatState) return '战斗';
-  if(typeof mainStoryPlaying !== 'undefined' && !!mainStoryPlaying) return '剧情';
-  if(typeof eventState !== 'undefined' && !!eventState) return '事件';
-  return '流程';
+const G = {
+  mode: 'explore',   // 'explore' | 'combat' | 'story'
+  day: 1,            // day=0 为剧情静态画面，day=1 才生成第一张回字形地图
+  hero: null,        // hero entity 全局引用（主角的"状态数据"，不是 COMBAT 里的战斗实例）
+  map: null,         // 当前地图
+  px: 0, py: 0,      // 主角当前所在格坐标（探索模式下）
+  gameOver: false,
 };
 
-function newGame(){
-  const bonds={}; for(const k in ALLIES){ bonds[k]={level:1, affinity:10}; }
-  // day=0 留给第 0 幕开场剧情使用，afterPlayed 会推进到 1
-  return { day:0, region:'wild', hero:{atk:10,maxHp:100,hp:100,def:0,escapeSpeed:100,health:30,actionPoint:5,apCap:5,facing:'up',
-      psyStress:0, depress:false, clearMindBuff:{day:0, atkUp:0, dr:0}},
-    inventory:{wood:0,fruit:0,flax:0,rawMeat:0,coin:20,emptyBottle:0,iron:0,blueStar:0,blueStarPowder:0,amethyst:0,clearMind:0},
-    records:{slain:{}, wins:0, losses:0, mentalGoodDays:0, qCraftDone:false, qFruitCount:0, qMeatCount:0, qCarCount:0,
-      fruitFirstOwned:false, cookedMeatFirstOwned:false, qCraftAvail:false, nonWalkVehicleOwned:true},
-    team:['pro','xiayang','luyouyou'], skillGroup:buildDefaultSkillGroup(['pro','xiayang','luyouyou']), proLevels:{}, alliesPermAtk:{}, bonds,
-    vehicles:[{key:'walk'},{key:'dash'},{key:'dragon',uses:3},{key:'mushroom',uses:3},{key:'carriage',uses:2},{key:'carpet',uses:1},{key:'qiaoyu'}], vehicleSel:0, map:null, px:0, py:0, st:null, lootLog:[] };
-}
-function standardVehicles(){ return [{key:'walk'},{key:'dash'},{key:'dragon',uses:3},{key:'mushroom',uses:3},{key:'carriage',uses:2},{key:'carpet',uses:1},{key:'qiaoyu'}]; }
-function showMenu(){
-  // 回到主菜单前彻底清理故事引擎和 storyControls
-  finishCurrentFragment();
-  const sc = document.querySelector('#storyControls'); if(sc) sc.style.display='none';
-  document.querySelector('#menuOverlay').classList.add('show');
-  document.querySelector('#menuBtns').innerHTML=`<button class="mbtn" onclick="startNew()">新的游戏</button>`+`<button class="mbtn" onclick="openReadSave()">读取存档</button>`+`<button class="mbtn" onclick="openTutorial()">玩法简介</button>`;
-}
-function openTutorial(){ openModal('玩法简介', `探索：<b>点击地图格子再点「前往」</b>（信息区），或用 <b>WASD</b> 键移动。<br>进入下一天：点上方 <b>睡觉</b> 按钮。<br>遇敌进入回合战斗：点下方 <b>角色卡</b>（<b>F1/F2/F3</b>）切换角色；点 <b>技能</b>（<b>1/2/3</b>）选中，再点一次即主动使用（或按 <b>Q</b>）；移动（WASD/点击相邻格）后各角色自动释放已选技能。<br>战斗中点敌人可在右侧信息区查看<b>属性/意图/状态</b>，并可切到「详细技能」页查看其技能介绍。<br>状态栏记录单位身上的增益/减益（正面黄框、负面红框），<b>点击状态</b>可查看详情；技能描述中的【词条】<b>悬浮</b>可查看解释。<br>地图可<b>滚轮缩放</b>、<b>拖拽平移</b>（仅视觉）。`, 'small'); }
-window.addEventListener('load',()=>{
-  try { bindTooltip(); } catch(e){ console.warn('bindTooltip fail',e); }
-  try { switchMode('story'); } catch(e){ console.warn('switchMode fail',e); }
-  try {
-    const saves = loadSaves();
-    if(saves[1]) loadGame(1);
-  } catch(e){
-    console.warn('旧存档不兼容，跳过自动读档。错误:', e.message);
-    localStorage.removeItem('yysw_saves');
-  }
-  try { showMenu(); } catch(e){ console.error('showMenu fail',e); }
-});
-function showGameOver(){ qs('#goMsg').innerHTML='你的健康已归零，流浪在此终结。你仍可读取存档重新开始。'; qs('#gameoverOverlay').classList.add('show'); }
-function loadAfterGameOver(){ qs('#gameoverOverlay').classList.remove('show'); openReadSaveMenu(); }
-function backToMenu(){ combatState=null; qs('#gameoverOverlay').classList.remove('show'); showMenu(); }
-function startNew(){ qs('#menuOverlay').classList.remove('show'); G=newGame(); G.map=generateMap(G.day); G.px=G.map.px; G.py=G.map.py; // 问题3：按最新定义，初始 hp 等于 heroDisplayMaxHp()（天赋+队友已计入）
-  G.hero.hp = heroDisplayMaxHp(); loadIntoWorld(); }
-function loadIntoWorld(){ qs('#menuOverlay').classList.remove('show'); combatState=null; if(!G.map) G.map=generateMap(G.day); if(G.px===undefined||G.py===undefined){ G.px=G.map.px; G.py=G.map.py; } if(!G.vehicles||!G.vehicles.some(v=>v&&v.key==='dash')){ G.vehicles=standardVehicles(); G.vehicleSel=0; } if(!G.skillGroup) G.skillGroup=buildDefaultSkillGroup(G.team||['pro']); refreshHUD(); renderIconbar(); if(G.combat){ const c=G.combat; G.combat=null; reenterCombat(c); return; } const cur=G.map.cells[G.py*G.map.n+G.px]; if(cur && cur.content && cur.content.type==='event' && !cur.content.done){ switchMode('story'); renderMap(); startEvent(G.px,G.py); return; }
-  if(G.activeEvent && G.px===G.activeEvent.x && G.py===G.activeEvent.y){ switchMode('story'); renderMap(); startEvent(G.activeEvent.x, G.activeEvent.y, G.activeEvent.slot); return; }
-  switchMode('story'); renderMap(); ensureKeyFocus();
-  if(typeof window.triggerMainStorySeg==='function') window.triggerMainStorySeg();
-}
-function ensureKeyFocus(){ try{ if(document.body) document.body.setAttribute('tabindex','-1'); window.focus(); if(document.body) document.body.focus({preventScroll:true}); }catch(e){} }
-/* 快捷键 J/B/L/C/E 映射表（全部小写）。再次按下同一键时，若当前打开的界面是该键对应界面，则关闭。
-   ESC 仍保留退回一层/设置的逻辑（见 ui.js keydown 监听），右上角 ✕ 按钮也保留关闭功能。 */
-/* 快捷键表（全部小写）。所有快捷键仅主页面（非 modal、非战斗、非事件）可用于打开对应界面；
-   若当前已打开该界面，再次按下则关闭；若当前打开的是另一个界面，快捷键被忽略（必须先关掉）。
-   ESC 仍保留退回一层/设置的逻辑（ui.js keydown），右上角 ✕ 按钮也保留关闭功能。
-   说明：P（睡觉）不是 modal，直接触发下一天，按一次执行一次，不在 modal 里也没法「再次按下」。 */
-const HOTKEY_MODAL = {
-  j:{title:'任务',  open:openTasks},
-  b:{title:'背包',  open:openInventory},
-  l:{title:'编队',  open:openFormation},
-  c:{title:'角色',  open:openCharacters},
-  e:{title:'合成',  open:openCraft},
-  t:{title:'载具',  open:openVehicles},
-};
-const HOTKEY_ACTION = { p: sleep };   /* 非 modal 动作类快捷键 */
+// ---------------------------------------------------------------
+// 初始化
+// ---------------------------------------------------------------
+function initGame() {
+  // 初始化主角（简化模板，后续接完整角色数据）
+  G.hero = {
+    key: 'pro',
+    name: '主角',
+    facing: 'up',
+    hp: 100, maxHp: 100,
+    atk: 10, def: 0,
+    speed: 5,
+    actionPoint: 6, maxActionPoint: 6,
+    health: 100,
+    talent: null,
+  };
 
-function handleHotkeyToggle(k){
-  /* 1. modal 已打开时：只允许「同一键」关闭，其他键一律忽略（保持 guard 规则） */
-  if(qs('#modalOverlay').classList.contains('show')){
-    try{
-      const curTitle = qs('#modalTitle').textContent;
-      const cfg = HOTKEY_MODAL[k];
-      if(cfg && curTitle===cfg.title){ closeModal(); return; }
-      return;   // 其他键：modal 打开中一律忽略
-    }catch(e){}
-    return;
-  }
-  /* 2. modal 未打开但处于战斗/事件中：仅禁用与 iconbar.blocked 一致的那几个快捷键
-     （编队 L、睡觉 P、商店、合成 E）；角色 C、载具 T 等与按钮行为一致，仍可打开 */
-  if(isInFlow()){
-    const BLOCKED = { l:'编队', p:'睡觉', shop:'商店', e:'合成' };  // 与 iconbar blocked Set 同步
-    if(BLOCKED[k]){ log(`${flowLabel()}中无法使用该功能。`); return; }
-  }
-  /* 3. 主页面正常触发 */
-  const cfg = HOTKEY_MODAL[k]; if(cfg){ cfg.open(); return; }
-  const act = HOTKEY_ACTION[k]; if(act){ act(); return; }
+  // 跳过 day=0（剧情），直接从 day=1 开始
+  G.day = 1;
+  G.map = MAP.generateMap();
+  const spawn = MAP.pickHeroSpawn(G.map, null);
+  G.px = spawn.x; G.py = spawn.y;
+
+  UI.init();
+  UI.refreshAll();
 }
 
-function handleKeys(ev){
-  if(qs('#menuOverlay').classList.contains('show') || qs('#gameoverOverlay').classList.contains('show')) return;
-  const k=ev.key.toLowerCase();
-  /* ESC 处理：modal 开着 → 退回一层 / 关闭；否则 → 打开设置 */
-  if(k==='escape'){
-    const modalShown = qs('#modalOverlay').classList.contains('show');
-    if(modalShown){
-      modalBack();
-    } else {
-      openSettings();
-    }
-    try{ ev.preventDefault(); ev.stopPropagation(); }catch(e){}
-    return;
-  }
-  /* 所有热键都先过 handleHotkeyToggle 统一守卫；处理完后立刻吞掉事件，
-     防止它继续冒泡被 craft.js/vehicle.js 等其他文件里遗留的 keydown 监听器抢走 */
-  if(HOTKEY_MODAL[k] || HOTKEY_ACTION[k]){
-    handleHotkeyToggle(k);
-    try{ ev.preventDefault(); ev.stopPropagation(); }catch(e){}
-    return;
-  }
-  if(combatState){
-    const C = window.Combat;
-    if (!C) return;
-    const cs = C.getState(); if (!cs) return;
-    const phase = cs.phase;
-    const isManual = phase === 'manual';
-    const hardCtrl = (cs.hero.buffs || []).some(b => b.id === 'frozen' || b.id === 'bind' || b.id === 'sleep');
+// ---------------------------------------------------------------
+// 模式切换
+// ---------------------------------------------------------------
+function switchMode(mode) {
+  G.mode = mode;
+  document.body.classList.remove('mode-explore', 'mode-combat', 'mode-story');
+  document.body.classList.add(`mode-${mode}`);
+}
 
-    // W/A/S/D —— 移动（或转向）
-    if (k==='w' || k==='a' || k==='s' || k==='d') {
-      if (!isManual) { log('敌方回合中，你无法行动'); return; }
-      // 硬控制：允许按键发出但效果空转（规格要求）
-      const dx = k==='a'?-1:k==='d'?1:0;
-      const dy = k==='w'?-1:k==='s'?1:0;
-      C.move(dx, dy);
-      try{ ev.preventDefault(); ev.stopPropagation(); }catch(e){}
-      return;
-    }
-    // F —— 跳过回合
-    if (k==='f') {
-      if (!isManual) return;
-      C.skipTurn();
-      try{ ev.preventDefault(); ev.stopPropagation(); }catch(e){}
-      return;
-    }
-    // E —— 连携使用
-    if (k==='e') {
-      C.tryLinkUse();
-      try{ ev.preventDefault(); ev.stopPropagation(); }catch(e){}
-      return;
-    }
-    // Q —— 释放当前选中的 active 技能
-    if (k==='q') {
-      if (cs.selectedSlotIdx != null) {
-        C.castSkill(cs.selectedSlotIdx);
-      } else {
-        log('请先用 1/2/3/4 或鼠标点击选中一个技能');
-      }
-      try{ ev.preventDefault(); ev.stopPropagation(); }catch(e){}
-      return;
-    }
-    // 1/2/3/4 —— 选中技能（不释放！规格）
-    if (ev.key==='1'||ev.key==='2'||ev.key==='3'||ev.key==='4') {
-      // 数字键对应 slotIdx = key - 1。如果 slotIdx 超出 skillGroup.length 就忽略
-      const idx = +ev.key - 1;
-      if (idx < cs.skillGroup.length) {
-        C.selectSkill(idx);
-      }
-      try{ ev.preventDefault(); ev.stopPropagation(); }catch(e){}
-      return;
-    }
-    // F1/F2/F3 —— 选中角色（主角 / 队友）
-    if (ev.key==='f1'||ev.key==='f2'||ev.key==='f3') {
-      const keys = ['pro', ...Object.keys(cs.allies)];
-      const idx = +ev.key.slice(1) - 1;
-      if (idx < keys.length) C.selectChar(keys[idx]);
-      try{ ev.preventDefault(); ev.stopPropagation(); }catch(e){}
-      return;
-    }
-    return;
-  }
-  if(!G||!G.map) return; if(qs('#modalOverlay').classList.contains('show')) return; if(ev.repeat) return;
-  if(isInFlow()) return;   // 事件中不可移动
-  let dx=0,dy=0;
-  if(k==='w'){dy=-1;} else if(k==='s'){dy=1;} else if(k==='a'){dx=-1;} else if(k==='d'){dx=1;} else return;
-  const nx=G.px+dx, ny=G.py+dy;
-  G.hero.facing = dirToFacing(dx,dy);
-  if(nx<0||ny<0||nx>=G.map.n||ny>=G.map.n){ return; }
-  if(!passable(nx,ny)){
-    log('前方无法进入。你只是改变了朝向。');
-    refreshHUD(); renderMap();
-    return;
-  }
-  moveExplore(nx,ny,1);
-}
-document.addEventListener('keydown', handleKeys, true);
-function sleep(){
-  if(!G) return; if(isInFlow()){ log(`${flowLabel()}中无法使用该功能。`); return; }
-  if(G.hero.actionPoint>0 && !confirm('行动力尚未耗尽，仍确定直接「睡觉」进入下一天吗？')) return;
-  const inTeam=k=>G.team.indexOf(k)>=0;
-  /* === 前一天的心理健康判定 === */
-  const prevDay = G.day;
-  const wasDepressed = G.hero.depress;
-  G.day+=1;
-  /* === 启程任务·合成台：玩家第一次升到 day 2 时自动解锁 ===
-     避免玩家 day 2 后从没打开过合成界面就看不到任务 */
-  if(prevDay < 2 && G.day >= 2){
-    G.records = G.records || {};
-    G.records.qCraftAvail = true;
-  }
-  /* === 清除前一天的抑郁状态 === */
-  G.hero.depress=false;
-  /* === 明心浆 buff 当日生效、次日清除 === */
-  if(G.hero.clearMindBuff && G.hero.clearMindBuff.day===prevDay){
-    G.hero.clearMindBuff={day:0, atkUp:0, dr:0};
-  }
-  /* === 心理健康任务：前一天压力<=20 且没有抑郁，计数+1；否则清零 === */
-  G.records = G.records || {};
-  const stressNow = G.hero.psyStress||0;
-  if(stressNow<=20){ G.records.mentalGoodDays = (G.records.mentalGoodDays||0)+1; }
-  else { G.records.mentalGoodDays = 0; }
-  /* === 抑郁判定：以 max(0, psyStress)/100 为概率 === */
-  const pct = Math.max(0, stressNow)/100;
-  let depressThisDay = false;
-  if(Math.random() < pct){ depressThisDay=true; G.hero.depress=true; }
-  /* === 新一天的初始化 === */
-  G.hero.actionPoint=G.hero.apCap;
-  const nm=generateMap(G.day); G.map=nm; G.px=nm.px; G.py=nm.py; G.hero.facing='up';
-  const lines=[`你睡了一觉，进入第 ${G.day} 天。`];
-  if(depressThisDay){
-    lines.push(`<span style="color:#d9534f;font-weight:bold;line-height:1.6">&#x26A0; 你感到心中沉重无比，浑身的力气都像被抽空了。今日你处于 ${termHTML('depress','抑郁')} 状态！攻击、防御强制归零。</span>`);
-  }
-  let healGain=0, healthGain=0;
-  if((G.inventory.quilt||0)>0) healGain += 30*(G.inventory.quilt||0);
-  if(inTeam('xiayang')){ healGain*=2; healthGain*=2; }
-  if(healGain>0){ const before=G.hero.hp; G.hero.hp=Math.min(heroDisplayMaxHp(), G.hero.hp+healGain); const got=G.hero.hp-before; if(got>0) lines.push(`被子为你<span class="lvlup">回复 ${got}</span> 点生命。`); }
-  if(healthGain>0){ G.hero.health+=healthGain; lines.push(`健康 +${healthGain}。`); }
-  const trapN=G.inventory.trap||0; const trapGain={};
-  for(let i=0;i<trapN;i++){ if(Math.random()<0.5){ const k=NATURAL_RESOURCES[Math.floor(Math.random()*NATURAL_RESOURCES.length)]; G.inventory[k]=(G.inventory[k]||0)+1; trapGain[k]=(trapGain[k]||0)+1; } }
-  if(trapN>0){ const keys=Object.keys(trapGain); lines.push(keys.length? `陷阱收获自然资源：${keys.map(k=>RES_ZH[k]+'×'+trapGain[k]).join('，')}。` : '陷阱一无所获，风平浪静。'); }
-  if(inTeam('luyouyou')){ const sk=getChar('luyouyou').passives.find(p=>p.id==='skillful'); const pr=vTier(sk,'sleep',entryLevel('luyouyou',sk)); if(Math.random()*100<pr){ const k=NATURAL_RESOURCES[Math.floor(Math.random()*NATURAL_RESOURCES.length)]; G.inventory[k]=(G.inventory[k]||0)+1; lines.push(`巧手：获得 ${RES_ZH[k]}×1。`); } }
-  if((G.inventory.goodCard||0)>0){ const gc=G.inventory.goodCard||0; G.inventory.coin=(G.inventory.coin||0)+gc; lines.push(`好人卡：睡觉时获得 <b>${gc}</b> 金币。`); }
-  clearStory(); prompt('');
-  for(const l of lines) log(l);
-  refreshHUD(); renderMap(); renderIconbar();
-}
-function bindTooltip(){
-  document.addEventListener('mouseover',ev=>{ const t=ev.target.closest('.term'); if(!t)return; const tip=qs('#tooltip'); tip.style.display='block'; tip.textContent=t.title||TERMS[t.dataset.term]||''; bringToFront(tip); positionTip(tip,ev); });
-  document.addEventListener('mouseout',ev=>{ if(ev.target.closest('.term')) qs('#tooltip').style.display='none'; });
-  document.addEventListener('mousemove',ev=>{ positionTip(qs('#tooltip'),ev); });
-}
-/* 问题6修复：全局递增 z-index，后显示的悬浮层永远在上 */
-let __topZ=500;
-function bringToFront(el){ if(!el) return; __topZ++; el.style.zIndex=__topZ; }
-function positionTip(tip,ev){ const x=Math.min(ev.clientX+14, window.innerWidth-300); const y=ev.clientY+14; tip.style.left=x+'px'; tip.style.top=y+'px'; }
+// ---------------------------------------------------------------
+// 导出
+// ---------------------------------------------------------------
+window.G = G;
+window.switchMode = switchMode;
+window.initGame = initGame;
+// Legacy polyfill — 旧剧情模块引用的全局函数
+if (typeof window.showActTitle !== "function") window.showActTitle = () => {};
+if (typeof window.onModalX !== "function") window.onModalX = () => {};
+
