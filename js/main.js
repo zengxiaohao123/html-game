@@ -194,3 +194,32 @@ window.addEventListener('keydown', (e) => {
     UI.toast('F9：跳过剧情进入探索模式。');
   }
 });
+
+// ===== 最终兜底：不管什么情况，新游戏按钮按下后 8 秒一定进探索 =====
+// 用一个全局定时器，setTimeout 后强制检查
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    if (typeof G !== 'undefined' && G.day === 0 && G.mode === 'story') {
+      console.log('[FINAL-FALLBACK] load 8s later: force advance');
+      G.day = 1;
+      if (typeof MAP !== 'undefined' && typeof MAP.generateMap === 'function') {
+        G.map = MAP.generateMap();
+        const spawn = MAP.pickHeroSpawn(G.map, null);
+        G.px = spawn.x; G.py = spawn.y;
+      }
+      G.mode = 'explore';
+      if (typeof switchMode === 'function') switchMode('explore');
+      if (typeof UI !== 'undefined' && UI.refreshAll) UI.refreshAll();
+    }
+  }, 8000);
+});
+
+window.storyAdvanceDayToOneFallback = function() {
+  G.day = 1;
+  G.map = MAP.generateMap();
+  const spawn = MAP.pickHeroSpawn(G.map, null);
+  G.px = spawn.x; G.py = spawn.y;
+  G.mode = 'explore';
+  switchMode('explore');
+  UI.refreshAll();
+};

@@ -49,6 +49,80 @@
 })();
 </script>
 
+<script>
+// 兜底：补齐 main_story 任何可能遗漏的引用
+(function() {
+  const list = [
+    'forceEndStoryFlow', 'storyPush', 'storyRunNext',
+    'storyMarkChoice', 'storyAutoMode', 'finishCurrentFragment',
+    'finishMainStorySeg', 'renderIconbar', 'refreshHUD',
+    'showActTitle', 'unlockEventUI', 'storySetSpeaker',
+    'storyStartFragment',
+  ];
+  for (const n of list) {
+    if (typeof window[n] !== 'function') {
+      window[n] = function(...args) {
+        if (n === 'storyStartFragment' && args.length >= 2 && typeof args[1] === 'function') {
+          setTimeout(() => args[1](), 50);
+        }
+      };
+    }
+  }
+  if (typeof window.mainStoryPlaying === 'undefined') window.mainStoryPlaying = false;
+  if (typeof window.storyAutoMode === 'undefined') window.storyAutoMode = false;
+})();
+</script>
+
+
+<script>
+// ===== main_story 紧急 polyfill（HEAD 里，module 加载前执行）=====
+(function() {
+  // 基础存在性
+  const list = [
+    'storyStartFragment','storySetSpeaker','storyMarkChoice',
+    'storyPush','storyRunNext','storyAutoMode','finishCurrentFragment',
+    'finishMainStorySeg','forceEndStoryFlow','renderIconbar',
+    'refreshHUD','showActTitle','unlockEventUI',
+  ];
+  for (const n of list) {
+    if (typeof window[n] !== 'function') {
+      window[n] = function(...args) {
+        if (n === 'storyStartFragment' && args.length >= 2 && typeof args[1] === 'function') {
+          setTimeout(() => args[1](), 30);
+        }
+      };
+    }
+  }
+  if (typeof window.mainStoryPlaying === 'undefined') window.mainStoryPlaying = false;
+  if (typeof window.storyAutoMode === 'undefined') window.storyAutoMode = false;
+  if (typeof window.eventState === 'undefined') window.eventState = null;
+  if (typeof window.prompt !== 'function') window.prompt = () => {};
+  if (typeof window.renderMainStoryOptions !== 'function') window.renderMainStoryOptions = () => {};
+  if (typeof window.isInFlow !== 'function') window.isInFlow = () => !!window.mainStoryPlaying;
+
+  // 关键：storyAdvanceDayToOne —— main_story 的 seg_000_opening.afterPlayed 会调这个
+  // 必须返回一个会推进 day 到 1 的版本
+  window.storyAdvanceDayToOne = function() {
+    // 确保依赖都加载了
+    setTimeout(() => {
+      if (typeof G === 'undefined') return;
+      if (typeof MAP === 'undefined') return;
+      if (typeof switchMode !== 'function') return;
+      if (typeof UI === 'undefined' || typeof UI.refreshAll !== 'function') return;
+      if (G.day >= 1 && G.map) return;  // 已经推进过就不重复
+      G.day = 1;
+      G.map = MAP.generateMap();
+      const spawn = MAP.pickHeroSpawn(G.map, null);
+      G.px = spawn.x; G.py = spawn.y;
+      G.mode = 'explore';
+      switchMode('explore');
+      UI.refreshAll();
+      console.log('[storyAdvanceDayToOne] 推进到探索模式');
+    }, 100);
+  };
+})();
+</script>
+
 </head>
 <body>
 <div id="app">

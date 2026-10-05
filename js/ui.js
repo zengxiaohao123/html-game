@@ -1,45 +1,75 @@
 // =============================================================
-// ui.js —— UI 渲染层
-// 核心新逻辑：多实体堆叠 2 秒循环切换图标、主角用指示点、敌人进攻点标记
+// ui.js —— UI 渲染层（重写地图渲染：CDN 图标 + 居中覆盖 + 层次分明）
 // =============================================================
 
 // ---------------------------------------------------------------
-// 多实体循环切换当前显示哪个（2 秒频率）
+// 图标映射（lucide CDN SVG）
 // ---------------------------------------------------------------
-let _entityStackIdx = {};   // cellKey → 当前显示的实体 index
-let _entityStackTimer = null;
+const ICON = {
+  CDN: 'https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/',
+  SUF: '.svg',
+  key(name) { return this.CDN + name + this.SUF; },
+  content: {
+    battle:    'swords',
+    emergency: 'zap',
+    event:     'help-circle',
+    loot:      'package',
+    reward:    'gift',
+    terrain:   'mountain',
+  },
+  elem: {
+    fire:    'flame',
+    water:   'droplet',
+    grass:   'leaf',
+    thunder: 'zap',
+    ice:     'snowflake',
+    wind:    'wind',
+    rock:    'mountain-snow',
+  },
+  spawn: 'target',
+  hero:  'circle-dot',
+};
+
+const ELEM_COLORS = {
+  fire:    '#ff5533',
+  water:   '#4499ff',
+  grass:   '#55cc55',
+  thunder: '#ffcc33',
+  ice:     '#88ddff',
+  wind:    '#bbddbb',
+  rock:    '#aa8866',
+};
+
+// ---------------------------------------------------------------
+// 多实体 2 秒循环切换
+// ---------------------------------------------------------------
+let _stackIdx = {};
+let _stackTimer = null;
 const STACK_SWITCH_MS = 2000;
 
-function startStackRotationLoop() {
-  if (_entityStackTimer) return;
-  _entityStackTimer = setInterval(() => {
-    // 遍历 COMBAT.map（如果战斗中）或 G.map（探索中）
+function startStackLoop() {
+  if (_stackTimer) return;
+  _stackTimer = setInterval(() => {
     const map = (COMBAT && COMBAT.map) || G.map;
     if (!map) return;
     for (const c of map.cells) {
       if (c.entities && c.entities.length > 1) {
-        const key = `${c.x},${c.y}`;
-        _entityStackIdx[key] = ((_entityStackIdx[key] || 0) + 1) % c.entities.length;
+        const k = `${c.x},${c.y}`;
+        _stackIdx[k] = ((_stackIdx[k] || 0) + 1) % c.entities.length;
       }
     }
     refreshMapView();
   }, STACK_SWITCH_MS);
 }
-
-function stopStackRotationLoop() {
-  if (_entityStackTimer) {
-    clearInterval(_entityStackTimer);
-    _entityStackTimer = null;
-  }
-  _entityStackIdx = {};
+function stopStackLoop() {
+  if (_stackTimer) { clearInterval(_stackTimer); _stackTimer = null; }
+  _stackIdx = {};
 }
-
-function currentEntityIconForCell(cell) {
+function currentEnt(cell) {
   if (!cell.entities || cell.entities.length === 0) return null;
   if (cell.entities.length === 1) return cell.entities[0];
-  const key = `${cell.x},${cell.y}`;
-  const idx = _entityStackIdx[key] || 0;
-  return cell.entities[idx];
+  const k = `${cell.x},${cell.y}`;
+  return cell.entities[_stackIdx[k] || 0];
 }
 
 // ---------------------------------------------------------------
@@ -47,70 +77,52 @@ function currentEntityIconForCell(cell) {
 // ---------------------------------------------------------------
 const UI = {
   init() {
-    // 绑定键盘输入（main.js 之后调用）
     document.addEventListener('keydown', onKeydown);
-    // 开启多实体循环
-    startStackRotationLoop();
+    startStackLoop();
   },
-
   switchMode(mode) {
-    switchMode(mode);  // 调用 main.js 的全局函数
-    if (mode === 'explore') stopStackRotationLoop(); else startStackRotationLoop();
+    switchMode(mode);  // main.js 全局
+    if (mode === 'explore' || mode === 'combat') startStackLoop(); else stopStackLoop();
   },
-
-  refreshAll() {
-    refreshHUD();
-    refreshMap();
-  },
-
+  refreshAll() { UI.refreshHUD(); UI.refreshMap(); },
   refreshHUD() {
-    // 先不实现完整 HUD 结构，占位
     const el = document.getElementById('hud');
-    if (!el) return;
-    el.innerHTML = `
-      第 ${G.day} 天 · 行动力 ${G.hero.actionPoint}/${G.hero.maxActionPoint}
-      · HP ${G.hero.hp}/${G.hero.maxHp}
-      · 健康 ${G.hero.health}/100
-    `;
+    if (!el || !G.hero) return;
+    el.innerHTML = `第 ${G.day} 天 · 行动力 ${G.hero.actionPoint}/${G.hero.maxActionPoint} · HP ${G.hero.hp}/${G.hero.maxHp} · 健康 ${G.hero.health}/100`;
   },
-
   refreshMap() { refreshMapView(); },
-
-  refreshCombat() {
-    refreshMapView();
-    refreshCombatHUD();
-  },
-
+  refreshCombat() { refreshMapView(); refreshCombatHUD(); },
   toast(text) {
-    // 简易 toast
     let t = document.getElementById('_toast');
     if (!t) {
       t = document.createElement('div');
       t.id = '_toast';
-      t.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.8);color:#fff;padding:8px 16px;border-radius:6px;z-index:9999;pointer-events:none;opacity:0;transition:opacity .3s;';
+      Object.assign(t.style, {
+        position:'fixed',top:'20px',left:'50%',transform:'translateX(-50%)',
+        background:'rgba(0,0,0,.8)',color:'#fff',padding:'8px 16px',
+        borderRadius:'6px',zIndex:'9999',pointerEvents:'none',opacity:'0',transition:'opacity .3s'
+      });
       document.body.appendChild(t);
     }
-    t.textContent = text;
-    t.style.opacity = '1';
+    t.textContent = text; t.style.opacity = '1';
     clearTimeout(t._timer);
-    t._timer = setTimeout(() => { t.style.opacity = '0'; }, 1600);
+    t._timer = setTimeout(() => t.style.opacity = '0', 1600);
   },
-
-  log(text) {
-    // 简易日志（打印到控制台 + 追加到 #leftLog 或简易容器）
-    console.log(`[LOG] ${text}`);
-  },
-
-  showStatChoice(choices, count) {
-    // 后续接弹窗 UI，先 log
-    UI.log(`属性升级 ${count} 选 ${choices.length}`);
-  },
+  log(text) { console.log(`[LOG] ${text}`); },
+  showStatChoice(choices, count) { UI.log(`属性升级 ${count} 选 ${choices.length}`); },
 };
-
 window.UI = UI;
 
 // ---------------------------------------------------------------
-// 地图视图渲染（核心：主角指示点 + 多实体图标 + 进攻点标记 + 地块 content + 附着）
+// 地图渲染 —— 核心：层次分明 + 全部居中 + 图标优先
+//
+// 一个格子（.map-cell）的渲染层，全部用 absolute + inset:0 覆盖正中间：
+//   layer 0: 地形底色（background-color，整格）
+//   layer 1: 元素附着半透明覆盖（inset:0，整格）
+//   layer 2: 进攻点标记（图标，居中，z-index 2）
+//   layer 3: content 图标（居中，z-index 3）
+//   layer 4: 实体图标（居中，主角指示点 / 敌人头像，z-index 4）
+//   layer 5: 选中边框（outline，z-index 5）
 // ---------------------------------------------------------------
 function refreshMapView() {
   const map = (COMBAT && COMBAT.map) || G.map;
@@ -121,132 +133,142 @@ function refreshMapView() {
 
   grid.innerHTML = '';
   grid.style.display = 'grid';
-  grid.style.gridTemplateColumns = `repeat(${map.width}, 64px)`;
-  grid.style.gridTemplateRows = `repeat(${map.height}, 64px)`;
-  grid.style.gap = '2px';
+  grid.style.gridTemplateColumns = `repeat(${map.width}, 56px)`;
+  grid.style.gridTemplateRows    = `repeat(${map.height}, 56px)`;
+  grid.style.gap = '3px';
 
   for (let y = 0; y < map.height; y++) {
     for (let x = 0; x < map.width; x++) {
       const cell = MAP.getCell(map, x, y);
       const div = document.createElement('div');
       div.className = 'map-cell';
-      div.dataset.x = x;
-      div.dataset.y = y;
+      div.dataset.x = x; div.dataset.y = y;
 
-      // 地形底色
+      // layer 0: 地形底色
       if (cell.terrain === 'void') {
-        div.style.background = '#222';
+        div.classList.add('is-void');
       } else {
-        div.style.background = '#3a5';
+        div.classList.add('is-terrain');
       }
 
-      // content 图标（探索模式才显示；content._hidden === true 表示战斗中隐藏）
-      if (cell.content && !cell.content._hidden) {
-        const label = cell.contentLabel || contentIconLabel(cell.content.type);
-        const icon = document.createElement('div');
-        icon.className = 'cell-content';
-        icon.textContent = label;
-        div.appendChild(icon);
-      }
-
-      // 元素附着标记
+      // layer 1: 元素附着（半透明整格覆盖）
       if (cell.attach) {
         const at = document.createElement('div');
-        at.className = 'cell-attach';
-        at.textContent = DATA.ELEMENT_NAME_CN[cell.attach] || cell.attach;
-        at.style.cssText = 'position:absolute;top:2px;right:2px;font-size:10px;background:rgba(255,255,255,.7);padding:1px 4px;border-radius:3px;';
-        div.style.position = 'relative';
+        at.className = 'layer layer-attach';
+        at.style.background = ELEM_COLORS[cell.attach] || '#888';
+        at.style.opacity = '0.35';
         div.appendChild(at);
       }
 
-      // 敌人进攻点标记
+      // layer 2: 进攻点标记
       if (cell.isEnemySpawnPoint) {
-        const sp = document.createElement('div');
-        sp.className = 'spawn-point';
-        sp.textContent = 'X';   // 占位图标，等素材
-        sp.style.cssText = 'position:absolute;top:2px;left:2px;font-size:14px;color:red;font-weight:bold;';
-        div.style.position = 'relative';
+        const sp = iconLayer(ICON.key(ICON.spawn), 'layer layer-spawn');
+        sp.style.color = '#e44';
         div.appendChild(sp);
       }
 
-      // 实体（堆叠：只显示当前轮转到的那一个）
-      const cur = currentEntityIconForCell(cell);
-      if (cur) {
-        const ent = document.createElement('div');
-        ent.className = `entity ent-${cur.kind}`;
-        if (cur.key === 'pro') {
-          // 主角：指示点（圆形）
-          ent.innerHTML = `<div style="width:24px;height:24px;border-radius:50%;background:#ffcc00;border:2px solid #fff;position:relative;"><div style="position:absolute;top:50%;left:50%;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid #fff;transform:translate(-50%,-100%);${facingArrow(cur.facing)}"></div></div>`;
-        } else {
-          // 其他实体：显示名字 + 小色块区分阵营
-          ent.textContent = cur.name || cur.key;
-          ent.style.cssText = `color:#fff;padding:2px;font-size:12px;border-radius:4px;background:${factionColor(cur.faction)};`;
+      // layer 3: content 图标（只在探索模式、非 void 格显示）
+      if (cell.content && !cell.content._hidden && cell.terrain !== 'void') {
+        const name = ICON.content[cell.content.type];
+        if (name) {
+          div.appendChild(iconLayer(ICON.key(name), 'layer layer-content'));
         }
-        div.appendChild(ent);
       }
 
-      // 点击事件：选中地块 → 右侧 promptZone 更新
-      div.addEventListener('click', () => {
-        onCellClick(x, y);
-      });
+      // layer 4: 实体图标
+      const ent = currentEnt(cell);
+      if (ent) {
+        if (ent.key === 'pro') {
+          // 主角：圆圈指示点（带朝向小三角）
+          const h = document.createElement('div');
+          h.className = 'layer layer-hero';
+          // 中心圆点
+          h.innerHTML = `
+            <div class="hero-dot"></div>
+            <div class="hero-facing facing-${ent.facing}"></div>
+          `;
+          div.appendChild(h);
+        } else {
+          // 其他实体：用 entity 名字 + 一个色块背景（敌人头像素材后续你会给）
+          const e = document.createElement('div');
+          e.className = 'layer layer-entity';
+          e.textContent = (ent.name || ent.key).slice(0, 4);
+          e.style.background = factionBg(ent.faction);
+          div.appendChild(e);
+        }
+      }
 
+      div.addEventListener('click', () => onCellClick(x, y));
       grid.appendChild(div);
+    }
+  }
+
+  // 最后：把主角指示点补到它当前所在格（探索态和战斗态都画）
+  const heroPos = (() => {
+    if (G.mode === 'combat' && COMBAT && COMBAT.heroEntity) {
+      return { x: COMBAT.heroEntity.x, y: COMBAT.heroEntity.y, facing: COMBAT.heroEntity.facing };
+    }
+    if (G.hero && G.map) {
+      return { x: G.px, y: G.py, facing: G.hero.facing };
+    }
+    return null;
+  })();
+  if (heroPos) {
+    const cellDiv = grid.querySelector(`[data-x="${heroPos.x}"][data-y="${heroPos.y}"]`);
+    if (cellDiv && !cellDiv.querySelector('.layer-hero')) {
+      const h = document.createElement('div');
+      h.className = 'layer layer-hero';
+      h.innerHTML = `<div class="hero-dot"></div><div class="hero-facing facing-${heroPos.facing}"></div>`;
+      cellDiv.appendChild(h);
     }
   }
 }
 
-function factionColor(f) {
-  return ({ player: '#2a7', enemy: '#b44', neutral: '#888', summon_player: '#48c', summon_enemy: '#a64' })[f] || '#666';
+function iconLayer(src, cls) {
+  const el = document.createElement('div');
+  el.className = cls;
+  const img = document.createElement('img');
+  img.src = src;
+  img.onerror = function() { this.remove(); };  // 图标加载失败就静默
+  img.draggable = false;
+  el.appendChild(img);
+  return el;
 }
 
-function facingArrow(f) {
-  // 箭头指向表示朝向（CSS rotate）
-  const rot = ({ up: 0, right: 90, down: 180, left: 270 })[f] || 0;
-  return `transform:translate(-50%,-100%) rotate(${rot}deg);`;
-}
-
-function contentIconLabel(ct) {
-  const map = {
-    'empty':     '',        // 空地无图标
-    'terrain':   '山',      // 地形
-    'battle':    '⚔',
-    'emergency': '⚡',
-    'reward':    '★',
-    'event':     '?',
-    'loot':      '$',
-  };
-  return map[ct] || '';
+function factionBg(f) {
+  return ({ player:'#2a7', enemy:'#b44', neutral:'#888', summon_player:'#48c', summon_enemy:'#a64' })[f] || '#666';
 }
 
 // ---------------------------------------------------------------
-// 战斗 HUD 刷新
+// 战斗 HUD
 // ---------------------------------------------------------------
 function refreshCombatHUD() {
-  // 简易：在 leftLog 里显示回合计数
-  const grid = document.getElementById('combatInfo');
-  if (!grid) return;
-  grid.textContent = `回合 ${COMBAT.turn} · 阶段 ${COMBAT.phase}`;
+  const info = document.getElementById('combatInfo');
+  if (!info) return;
+  info.textContent = `回合 ${COMBAT.turn} · 阶段 ${COMBAT.phase}`;
 }
 
 // ---------------------------------------------------------------
-// 点击地块 → 前往按钮
+// 点击 / 前往
 // ---------------------------------------------------------------
-let _selectedCell = null;
+let _selCell = null;
 function onCellClick(x, y) {
-  _selectedCell = { x, y };
+  _selCell = { x, y };
   const prompt = document.getElementById('promptZone');
   const goBtn  = document.getElementById('goBtn');
   if (prompt) {
     const map = (COMBAT && COMBAT.map) || G.map;
-    const cell = MAP.getCell(map, x, y);
-    prompt.innerHTML = `(${x+1}, ${y+1}) · terrain: ${cell.terrain} · content: ${cell.content ? cell.content.type : 'none'} ${cell.entities && cell.entities.length ? `· 实体:${cell.entities.length}` : ''}`;
+    const c = MAP.getCell(map, x, y);
+    prompt.innerHTML = `(${x+1},${y+1}) · ${c.terrain}${c.attach?' · attach:'+c.attach:''}${c.content?' · '+c.content.type:''}`;
   }
   if (goBtn) {
-    const dist = G.mode === 'explore'
-      ? RULES.manhattan({ x: G.px, y: G.py }, { x, y })
-      : (COMBAT ? RULES.manhattan({ x: COMBAT.heroEntity.x, y: COMBAT.heroEntity.y }, { x, y }) : 99);
+    const heroPos = G.mode === 'explore'
+      ? { x: G.px, y: G.py }
+      : (COMBAT ? { x: COMBAT.heroEntity.x, y: COMBAT.heroEntity.y } : null);
+    if (!heroPos) { goBtn.disabled = true; goBtn.textContent = '—'; return; }
+    const dist = RULES.manhattan(heroPos, { x, y });
     goBtn.disabled = dist > 1;
-    goBtn.textContent = dist > 1 ? '太远了' : `前往 (${x+1}, ${y+1})`;
+    goBtn.textContent = dist > 1 ? '太远了' : `前往 (${x+1},${y+1})`;
     goBtn.onclick = () => {
       if (G.mode === 'explore') EXPLORE.tryExploreGoTo(x, y);
     };
@@ -254,20 +276,20 @@ function onCellClick(x, y) {
 }
 
 // ---------------------------------------------------------------
-// 键盘输入（通用：探索 / 战斗都用 WASD）
+// 键盘输入
 // ---------------------------------------------------------------
 function onKeydown(e) {
+  const k = e.key.toLowerCase();
   if (G.mode === 'explore') {
-    if (e.key === 'w' || e.key === 'W') EXPLORE.tryExploreMove('up');
-    else if (e.key === 's' || e.key === 'S') EXPLORE.tryExploreMove('down');
-    else if (e.key === 'a' || e.key === 'A') EXPLORE.tryExploreMove('left');
-    else if (e.key === 'd' || e.key === 'D') EXPLORE.tryExploreMove('right');
-  } else if (G.mode === 'combat') {
-    if (!COMBAT || COMBAT.phase !== 'playerManual' || COMBAT.ended) return;
-    if (e.key === 'w' || e.key === 'W') tryCombatMove('up');
-    else if (e.key === 's' || e.key === 'S') tryCombatMove('down');
-    else if (e.key === 'a' || e.key === 'A') tryCombatMove('left');
-    else if (e.key === 'd' || e.key === 'D') tryCombatMove('right');
-    else if (e.key === 'f' || e.key === 'F') tryCombatSkip();
+    if (k === 'w') EXPLORE.tryExploreMove('up');
+    else if (k === 's') EXPLORE.tryExploreMove('down');
+    else if (k === 'a') EXPLORE.tryExploreMove('left');
+    else if (k === 'd') EXPLORE.tryExploreMove('right');
+  } else if (G.mode === 'combat' && COMBAT && COMBAT.phase === 'playerManual' && !COMBAT.ended) {
+    if (k === 'w') tryCombatMove('up');
+    else if (k === 's') tryCombatMove('down');
+    else if (k === 'a') tryCombatMove('left');
+    else if (k === 'd') tryCombatMove('right');
+    else if (k === 'f') tryCombatSkip();
   }
 }

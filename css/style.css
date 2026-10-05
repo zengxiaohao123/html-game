@@ -945,3 +945,117 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:var(--bg
 #skillDetail .sd-desc{ font-size:13px; line-height:1.6; color:#c8cde0; margin-bottom:8px; }
 #skillDetail .sd-hint{ font-size:12px; opacity:0.65; color:#9ea3b4; }
 #skillDetail{ padding:8px; background:rgba(0,0,0,0.2); border-radius:6px; border:1px solid rgba(255,255,255,0.08); }
+
+/* =============================================================
+   地图渲染层样式（UI 重写）
+   ============================================================= */
+#mapGrid {
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+  transform-origin: 0 0;
+  width: max-content;
+}
+
+.map-cell {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.08);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.map-cell:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.35);
+  z-index: 10;
+}
+.map-cell.is-terrain {
+  background: linear-gradient(135deg, #4a7a3a, #5d9a48);
+}
+.map-cell.is-void {
+  background: #1a1a1a;
+  cursor: default;
+}
+.map-cell.is-void:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+/* 通用 layer：全部 absolute + inset:0，正中间 */
+.layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.layer img {
+  width: 28px;
+  height: 28px;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5));
+  pointer-events: none;
+}
+
+/* 层次 z-index */
+.layer-attach  { z-index: 1; }   /* 元素附着：半透明整格覆盖 */
+.layer-spawn   { z-index: 2; }   /* 敌人进攻点标记 */
+.layer-content { z-index: 3; }   /* 地块内容图标 */
+.layer-entity  { z-index: 4; }   /* 敌人/其他实体 */
+.layer-hero    { z-index: 5; }   /* 主角指示点（最高） */
+
+/* 进攻点图标：红色 */
+.layer-spawn img {
+  width: 24px;
+  height: 24px;
+  filter: drop-shadow(0 0 4px #f33) invert(20%) sepia(80%) saturate(500%);
+}
+
+/* 主角指示点 */
+.layer-hero {
+  pointer-events: none;
+}
+.hero-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffdd44, #cc9922);
+  border: 2px solid #fff;
+  box-shadow: 0 0 8px rgba(255, 220, 80, 0.7);
+}
+.hero-facing {
+  position: absolute;
+  width: 0; height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 10px solid #fff;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -14px) rotate(0deg);
+  transform-origin: center;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
+}
+.hero-facing.facing-up    { transform: translate(-50%, -14px) rotate(0deg); }
+.hero-facing.facing-right { transform: translate(-50%, -14px) rotate(90deg); }
+.hero-facing.facing-down  { transform: translate(-50%, -14px) rotate(180deg); }
+.hero-facing.facing-left  { transform: translate(-50%, -14px) rotate(270deg); }
+
+/* 实体（敌人/中立）简化色块 + 名字 */
+.layer-entity {
+  width: 36px;
+  height: 36px;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  inset: auto;
+  border-radius: 8px;
+  font-size: 10px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  border: 1px solid rgba(255,255,255,0.3);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
