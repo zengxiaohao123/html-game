@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -9,6 +9,136 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
+
+<script>
+// ===== storyStartFragment 紧急 polyfill（main_story/index.js 引用）=====
+(function() {
+  if (typeof window.storyStartFragment !== 'function') {
+    window.storyStartFragment = function(segments, done, opts) {
+      setTimeout(() => { if (typeof done === 'function') done(); }, 200);
+    };
+  }
+  if (typeof window.finishCurrentFragment !== 'function') {
+    window.finishCurrentFragment = function() {};
+  }
+  if (typeof window.renderIconbar !== 'function') {
+    window.renderIconbar = function() {};
+  }
+})();
+</script>
+
+<script>
+// ===== main_story 紧急 polyfill（必须在 main_story/index.js 加载前可用）=====
+(function() {
+  const list = [
+    'storyStartFragment','storySetSpeaker','storyMarkChoice',
+    'storyPush','storyRunNext','storyAutoMode',
+    'finishCurrentFragment','finishMainStorySeg',
+    'renderIconbar','refreshHUD','showActTitle',
+  ];
+  for (const n of list) {
+    if (typeof window[n] !== 'function') {
+      window[n] = (...args) => {
+        if (n === 'storyStartFragment' && args.length >= 2 && typeof args[1] === 'function') {
+          setTimeout(() => args[1](), 250);
+        }
+      };
+    }
+  }
+  if (typeof window.mainStoryPlaying === 'undefined') window.mainStoryPlaying = false;
+})();
+</script>
+
+<script>
+// 兜底：补齐 main_story 任何可能遗漏的引用
+(function() {
+  const list = [
+    'forceEndStoryFlow', 'storyPush', 'storyRunNext',
+    'storyMarkChoice', 'storyAutoMode', 'finishCurrentFragment',
+    'finishMainStorySeg', 'renderIconbar', 'refreshHUD',
+    'showActTitle', 'unlockEventUI', 'storySetSpeaker',
+    'storyStartFragment',
+  ];
+  for (const n of list) {
+    if (typeof window[n] !== 'function') {
+      window[n] = function(...args) {
+        if (n === 'storyStartFragment' && args.length >= 2 && typeof args[1] === 'function') {
+          setTimeout(() => args[1](), 50);
+        }
+      };
+    }
+  }
+  if (typeof window.mainStoryPlaying === 'undefined') window.mainStoryPlaying = false;
+  if (typeof window.storyAutoMode === 'undefined') window.storyAutoMode = false;
+})();
+</script>
+
+
+<script>
+// ===== main_story 紧急 polyfill（HEAD 里，module 加载前执行）=====
+(function() {
+  // 基础存在性
+  const list = [
+    'storyStartFragment','storySetSpeaker','storyMarkChoice',
+    'storyPush','storyRunNext','storyAutoMode','finishCurrentFragment',
+    'finishMainStorySeg','forceEndStoryFlow','renderIconbar',
+    'refreshHUD','showActTitle','unlockEventUI',
+  ];
+  for (const n of list) {
+    if (typeof window[n] !== 'function') {
+      window[n] = function(...args) {
+        if (n === 'storyStartFragment' && args.length >= 2 && typeof args[1] === 'function') {
+          setTimeout(() => args[1](), 30);
+        }
+      };
+    }
+  }
+  if (typeof window.mainStoryPlaying === 'undefined') window.mainStoryPlaying = false;
+  if (typeof window.storyAutoMode === 'undefined') window.storyAutoMode = false;
+  if (typeof window.eventState === 'undefined') window.eventState = null;
+  if (typeof window.prompt !== 'function') window.prompt = () => {};
+  if (typeof window.renderMainStoryOptions !== 'function') window.renderMainStoryOptions = () => {};
+  if (typeof window.isInFlow !== 'function') window.isInFlow = () => !!window.mainStoryPlaying;
+  if (typeof window.isInStoryFlow !== 'function') window.isInStoryFlow = () => !!window.mainStoryPlaying;
+  if (typeof window.heroDisplayMaxHp !== 'function') window.heroDisplayMaxHp = () => (window.G && window.G.hero) ? (window.G.hero.maxHp || 100) : 100;
+  if (typeof window.heroineMaxHp !== 'function') window.heroineMaxHp = () => (window.G && window.G.hero) ? (window.G.hero.maxHp || 100) : 100;
+  if (typeof window.sleep !== 'function') window.sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  if (typeof window.backToMenu !== 'function') window.backToMenu = () => { if(window.G) window.G.mode='menu'; if(document.body) document.body.className=''; };
+  if (typeof window.applySwap !== 'function') window.applySwap = () => {};
+  if (typeof window.bringToFront !== 'function') window.bringToFront = () => {};
+  if (typeof window.castSkill !== 'function') window.castSkill = () => {};
+  if (typeof window.flee !== 'function') window.flee = () => {};
+  if (typeof window.skillSlots !== 'undefined') { /* 保留原 */ } else { window.skillSlots = []; }
+  if (typeof window.SHOP_ITEMS === 'undefined') window.SHOP_ITEMS = [];
+  if (typeof window.MAX_SAVES === 'undefined') window.MAX_SAVES = 8;
+  if (typeof window.FOOD === 'undefined') window.FOOD = {};
+  if (typeof window.ENEMIES === 'undefined') window.ENEMIES = {};
+  if (typeof window.PROTAGONIST === 'undefined') window.PROTAGONIST = null;
+  if (typeof window.ALLIES === 'undefined') window.ALLIES = {};
+
+  // 关键：storyAdvanceDayToOne —— main_story 的 seg_000_opening.afterPlayed 会调这个
+  // 必须返回一个会推进 day 到 1 的版本
+  window.storyAdvanceDayToOne = function() {
+    // 确保依赖都加载了
+    setTimeout(() => {
+      if (typeof G === 'undefined') return;
+      if (typeof MAP === 'undefined') return;
+      if (typeof switchMode !== 'function') return;
+      if (typeof UI === 'undefined' || typeof UI.refreshAll !== 'function') return;
+      if (G.day >= 1 && G.map) return;  // 已经推进过就不重复
+      G.day = 1;
+      G.map = MAP.generateMap();
+      const spawn = MAP.pickHeroSpawn(G.map, null);
+      G.px = spawn.x; G.py = spawn.y;
+      G.mode = 'explore';
+      switchMode('explore');
+      UI.refreshAll();
+      console.log('[storyAdvanceDayToOne] 推进到探索模式');
+    }, 100);
+  };
+})();
+</script>
+
 </head>
 <body>
 <div id="app">
@@ -93,7 +223,6 @@
 <script src="js/save.js"></script>
 <script src="js/map.js"></script>
 <script src="js/rules.js"></script>
-<script src="js/reactions.js"></script>
 <script src="js/explore.js"></script>
 <script src="js/combat.js"></script>
 <script src="js/ui.js"></script>
