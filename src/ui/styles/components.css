@@ -1,0 +1,72 @@
+/* ============ 通用组件 / 主菜单 / 模态 ============ */
+
+button { cursor: pointer; font-family: inherit; }
+
+/* ---- 主菜单 ---- */
+.menu-wrap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at 50% 30%, #3a2f55, #1a1726 70%); overflow: hidden; }
+.menu-bg { position: absolute; inset: 0; opacity: .5;
+  background:
+    radial-gradient(circle at 20% 80%, rgba(216,169,67,.15), transparent 40%),
+    radial-gradient(circle at 80% 20%, rgba(126,98,200,.18), transparent 45%); }
+.menu-inner { position: relative; text-align: center; color: var(--paper); padding: 40px; }
+.game-title { font-size: 64px; letter-spacing: 12px; color: var(--gold-light);
+  text-shadow: 0 4px 24px rgba(216,169,67,.4), 0 2px 0 #5a3d12; margin-bottom: 10px; }
+.game-subtitle { color: #cfc2dd; letter-spacing: 4px; margin-bottom: 42px; }
+.menu-btns { display: flex; flex-direction: column; gap: 14px; align-items: center; }
+.mbtn {
+  min-width: 260px; padding: 13px 28px; font-size: 19px; color: var(--ink);
+  background: linear-gradient(180deg, var(--paper), var(--paper-deep));
+  border: 2px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-soft);
+  transition: transform .12s, box-shadow .12s, filter .12s;
+}
+.mbtn:hover { transform: translateY(-2px); filter: brightness(1.05); box-shadow: var(--shadow-deep); }
+.mbtn.primary { background: linear-gradient(180deg, var(--gold-light), var(--gold)); border-color: #8a6420; color: #3a2a08; font-weight: 700; }
+.mbtn.ghost { background: transparent; color: var(--paper); border-color: rgba(243,233,214,.4); min-width: auto; padding: 8px 20px; font-size: 15px; margin-top: 14px; }
+.menu-foot { margin-top: 38px; color: #8d80a5; font-size: 13px; letter-spacing: 2px; }
+
+/* ---- 模态 ---- */
+.modal-overlay { position: fixed; inset: 0; z-index: 8000;
+  background: rgba(15,12,25,.66); backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center; padding: 24px; }
+.modal { position: relative; max-height: 88vh; overflow: auto;
+  background: linear-gradient(180deg, var(--paper), var(--paper-deep));
+  border: 3px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-deep);
+  padding: 26px 30px; }
+.modal.paper { color: var(--ink); }
+.modal-x { position: absolute; top: 10px; right: 12px; width: 34px; height: 34px;
+  border: none; background: transparent; font-size: 26px; color: var(--ink-soft); }
+.modal-x:hover { color: var(--accent); }
+.panel-modal { width: min(880px, 96vw); }
+.panel-title { font-size: 26px; color: var(--accent); border-bottom: 2px dashed var(--line); padding-bottom: 10px; margin-bottom: 16px; }
+
+/* 存档 */
+.save-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px,1fr)); gap: 12px; margin: 14px 0; }
+.save-card { text-align: left; padding: 12px 14px; border: 2px solid var(--line); border-radius: 10px;
+  background: rgba(255,255,255,.35); }
+.save-card.empty { opacity: .5; }
+.save-card:not(.empty):hover { border-color: var(--accent); }
+.save-no { font-weight: 700; color: var(--accent); }
+.save-day { margin: 4px 0; }
+.save-time { font-size: 12px; color: var(--ink-faint); }
+.save-actions { display: flex; gap: 8px; margin-top: 8px; }
+
+.result-modal { text-align: center; min-width: 300px; }
+.result-modal h2 { font-size: 34px; color: var(--accent); margin-bottom: 12px; }
+
+.mini-btn { padding: 5px 12px; border: 1px solid var(--line); border-radius: 7px;
+  background: var(--paper); font-size: 14px; }
+.mini-btn:hover { background: var(--paper-dark); }
+.mini-btn.buy { background: #dcebc9; } .mini-btn.sell { background: #f0ddc0; }
+.mini-btn.del { background: #ecc9c9; }
+.mini-btn.disabled, .mini-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+.readonly-hint { color: var(--accent); font-size: 14px; margin-bottom: 8px; }
+.sep { margin-top: 18px; border-top: 2px dashed var(--line); padding-top: 10px; color: var(--accent); }
+
+/* 战斗提示飘字 */
+.battle-tip { position: fixed; left: 50%; top: 30%; transform: translate(-50%, 10px);
+  background: rgba(36,31,54,.92); color: var(--gold-light); border: 1px solid var(--gold);
+  padding: 10px 22px; border-radius: 10px; font-size: 20px; z-index: 8800;
+  opacity: 0; transition: all .3s; pointer-events: none; }
+.battle-tip.show { opacity: 1; transform: translate(-50%, 0); }

@@ -1,0 +1,95 @@
+/* ============ 战斗态 ============ */
+
+.battle-wrap { flex: 1; display: flex; flex-direction: column; position: relative;
+  background: radial-gradient(ellipse at 50% 0%, #33294f, #171323 70%); padding: 16px 24px 0; }
+
+.row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; align-items: end; }
+.enemy-row { padding-top: 20px; }
+.ally-row { padding-bottom: 8px; align-items: start; }
+
+.battle-slot { min-height: 150px; display: flex; align-items: center; justify-content: center;
+  border-radius: 14px; border: 2px dashed rgba(255,255,255,.08); }
+
+.unit-card { position: relative; width: 100%; max-width: 128px; border-radius: 14px; padding: 8px;
+  background: rgba(255,255,255,.07); border: 2px solid rgba(255,255,255,.18);
+  display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: default; }
+.unit-card.side-enemy { border-color: rgba(220,110,90,.5); }
+.unit-card.side-ally.leader { border-color: var(--gold); box-shadow: 0 0 16px rgba(216,169,67,.35); }
+.unit-card.companion { opacity: .55; }
+
+.u-sprite { width: 88px; height: 88px; border-radius: 12px; background-size: cover; background-position: center;
+  background-color: rgba(255,255,255,.12); display: flex; align-items: center; justify-content: center; }
+.u-glyph { font-size: 34px; font-weight: 700; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.6); }
+.u-name { color: var(--paper); font-size: 14px; }
+
+.u-hpbar { position: relative; width: 100%; height: 16px; background: rgba(0,0,0,.45); border-radius: 8px; overflow: hidden; }
+.u-hpfill { position: absolute; inset: 0; width: 100%; background: linear-gradient(180deg,#e87171,#c03939); transition: width .3s; }
+.u-hptxt { position: relative; font-size: 11px; color: #fff; line-height: 16px; }
+.u-shield { font-size: 11px; color: #aed1f5; }
+.u-statuses { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; min-height: 16px; }
+.status-tag { font-size: 10px; padding: 1px 6px; border-radius: 9px; color: #fff; }
+.st-debuff { background: #c86b9c; } .st-control { background: #8a6bd0; }
+.st-buff { background: #4f9d6b; } .st-reaction { background: #c8942e; } .st-special { background: #6a7f96; }
+.u-aura { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 13px; color: #fff; font-weight: 700; }
+.u-aura.placeholder { background: transparent; }
+.el-fire { background: var(--el-fire); } .el-water { background: var(--el-water); }
+.el-grass { background: var(--el-grass); } .el-thunder { background: var(--el-thunder); color:#4a3a00; }
+.el-ice { background: var(--el-ice); color:#12414f; } .el-wind { background: var(--el-wind); color:#12402c; }
+.el-rock { background: var(--el-rock); }
+
+.u-intent { position: absolute; top: -12px; right: -8px; }
+.intent { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; color:#fff; }
+.intent.atk { background: #d05a48; } .intent.sup { background: #4f86c8; } .intent.ctrl { background: #8a6bd0; }
+
+.battle-mid { display: flex; align-items: center; justify-content: space-between; padding: 6px 30px; }
+.battle-vs { font-size: 22px; color: var(--gold-light); letter-spacing: 6px; }
+.round-info { color: #b9acd6; }
+
+.companion-bar { display: flex; gap: 10px; justify-content: flex-start; padding: 4px 24px; }
+.companion-chip { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.2);
+  border-radius: 10px; padding: 4px 12px; color: var(--paper); display:flex; flex-direction:column; align-items:center; }
+.companion-chip small { color:#b9acd6; }
+
+/* HUD */
+.battle-hud { flex: 0 0 auto; background: linear-gradient(180deg,#241f38,#1b1729);
+  border-top: 2px solid var(--gold); padding: 10px 18px; display: flex; flex-direction: column; gap: 8px; }
+.hand { display: flex; align-items: center; gap: 8px; }
+.hand-title { color: #b9acd6; font-size: 13px; }
+.hand-empty { color: #6f6490; font-size: 13px; }
+.hand-card { width: 42px; height: 54px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 700; border: 2px solid rgba(255,255,255,.3); }
+
+.skill-bar { display: flex; gap: 10px; flex-wrap: wrap; }
+.skill-btn { position: relative; min-width: 120px; padding: 8px 12px; border-radius: 10px; border: 2px solid var(--line);
+  background: linear-gradient(180deg,var(--paper),var(--paper-deep)); color: var(--ink);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+.skill-btn .sk-key { position: absolute; top: 3px; right: 6px; font-size: 12px; color: var(--accent); }
+.skill-btn .sk-name { font-weight: 700; font-size: 15px; }
+.skill-btn .sk-owner { font-size: 11px; color: var(--ink-faint); }
+.skill-btn .sk-cd { position:absolute; inset:0; background: rgba(20,16,32,.7); color:#fff;
+  display:flex; align-items:center; justify-content:center; border-radius:8px; }
+.skill-btn.owner-xiayang { border-color: #c87a5f; }
+.skill-btn.owner-luyouyou { border-color: #6fa88c; }
+.skill-btn.disabled { opacity: .45; cursor: not-allowed; }
+.skill-btn.targeting { box-shadow: 0 0 0 3px var(--gold-light); }
+
+.hud-side { display: flex; gap: 10px; justify-content: flex-end; }
+.flee-btn, .end-btn { padding: 8px 18px; border-radius: 9px; border: 2px solid; font-size: 15px; }
+.flee-btn { background: transparent; color: #e0a89e; border-color: #a86a5c; }
+.end-btn { background: linear-gradient(180deg,var(--gold-light),var(--gold)); border-color:#8a6420; font-weight:700; color:#3a2a08; }
+.flee-btn.disabled { opacity: .4; }
+
+.battle-log { flex: 0 0 96px; overflow: auto; background: #141020; padding: 6px 18px; font-size: 12px; line-height: 1.55; }
+.blog-line { color: #b7a9da; }
+.blog-line.good { color: #a6e0b4; } .blog-line.bad { color: #f0a3a3; }
+.blog-line.reaction { color: var(--gold-light); font-weight: 700; } .blog-line.system { color:#8d80a5; }
+
+/* 连携圆 */
+.chain-layer { position: absolute; top: 90px; right: 30px; display: flex; flex-direction: column; gap: 8px; z-index: 20; }
+.chain-orb { width: 64px; height: 64px; border-radius: 50%; border: 3px solid var(--gold);
+  background: radial-gradient(circle at 35% 30%, #b886e6, #5d3a96); color: #fff; font-size: 12px;
+  display: flex; align-items: center; justify-content: center; text-align: center; cursor: pointer;
+  box-shadow: 0 0 16px rgba(184,134,230,.6); animation: orbPulse 1s infinite; }
+.chain-orb:not(.head) { opacity: .55; transform: scale(.82); }
+@keyframes orbPulse { 0%,100%{ box-shadow:0 0 12px rgba(184,134,230,.5);} 50%{ box-shadow:0 0 26px rgba(184,134,230,.9);} }
