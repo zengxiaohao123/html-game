@@ -120,17 +120,19 @@ for (const [p, sha] of treeMap.entries()) {
 }
 // GitHub 单次 tree 条目上限 10000，当前工程远不到；分批保护
 const chunk = 5000;
-let currentBaseTree = baseCommitSha
+// replaceAll：首批绝不带 base_tree（tree 数组即完整快照，旧文件自然全部移除）；
+// 增量模式：首批基于远端 tree，后续批次基于上一批结果。
+let currentBaseTree = (!manifest.replaceAll && baseCommitSha)
   ? (await gh('GET', `/git/commits/${baseCommitSha}`)).tree.sha
   : undefined;
 for (let i = 0; i < newTreeEntries.length; i += chunk) {
   const part = newTreeEntries.slice(i, i + chunk);
   const body = { tree: part };
-  if (i === 0 && deletes.size) {
-    // 首个批次：基于 base tree，删除通过“不传该路径”实现不了（全量引用已排除），
-    // 这里直接基于 baseTree，新 tree 已是全量替换语义。
+  if (i === 0) {
+    if (currentBaseTree) body.base_tree = currentBaseTree;
+  } else {
+    body.base_tree = currentBaseTree; // 后续批次接在前一批之后
   }
-  if (currentBaseTree) body.base_tree = currentBaseTree;
   const t = await gh('POST', '/git/trees', body);
   currentBaseTree = t.sha;
 }
