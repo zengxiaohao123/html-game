@@ -791,6 +791,14 @@ export class CombatEngine {
 
   // ================= 敌人 =================
   _onEnemySpawn(u) {
+    // 一次性入场天赋/修正只能在该单位生成时执行一次。
+    // _deployWaves 每回合都会调用本方法，老单位必须短路，否则新手之友/岩盾等
+    // 会被重复扣血（曾导致史莱姆血上限每回合再减）。
+    if (u.meta.spawnInit) {
+      // 仍需保证每回合新波次里的"增援"才跑后续，老单位直接返回。
+      return;
+    }
+    u.meta.spawnInit = true;
     // 新手之友：前 12 天 -60血 -10攻
     if (u.talents.some((t) => t.impl === 'newbieFriend') && this.gs.day <= 12) {
       u.base.maxHp -= 60; u.stats.maxHp -= 60; u.hp = Math.max(1, u.hp - 60);
