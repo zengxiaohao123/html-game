@@ -18,6 +18,7 @@ import { GE } from '../../core/GameEvents.js';
 import { getItem } from '../../data/items.js';
 import { getFacility } from '../../data/facilities.js';
 import { ELEMENT_NAME } from '../../core/Const.js';
+import { Assets } from '../../core/Assets.js';
 
 const TERRAIN_LABEL = {
   none: '无地形', mountain: '山', water: '水面', grass: '草地',
@@ -147,6 +148,9 @@ export class ExploreScreen {
           if (this.d.explore?.buildMode) cell.classList.add('buildable-void');
         } else {
           cell.classList.add('terrain-' + tile.terrain);
+          // 真实手绘地块底板
+          const bg = Assets.IMG.terrain[tile.terrain] || Assets.IMG.terrain.none;
+          cell.style.backgroundImage = `url("${bg}")`;
           if (tile.content && tile.content !== ContentType.EMPTY) cell.classList.add('content-' + tile.content);
           if (tile.entity) cell.classList.add('has-entity', 'entity-' + (tile.entity.id || tile.entity.kind));
           if (x === this.gs.heroPos.x && y === this.gs.heroPos.y) cell.classList.add('hero-here');
@@ -159,18 +163,31 @@ export class ExploreScreen {
   }
 
   _decorateTile(cell, tile, x, y) {
-    // 地形角标
-    cell.append(h('span.t-terrain', { text: TERRAIN_LABEL[tile.terrain] }));
-    // 内容标记
+    // 地形装饰散件（阻挡地形更明显）
+    const deco = this._terrainDeco(tile.terrain);
+    if (deco) cell.append(h('img.t-deco', { src: Assets.IMG.deco[deco], draggable: false, alt: '' }));
+
+    // 内容标记（右上角徽章）
     if (tile.content && tile.content !== ContentType.EMPTY) {
       const mapText = { event: '？', battle: '战', elite: '险', reward: '赏' };
       cell.append(h('span.t-content.badge-' + tile.content, { text: mapText[tile.content] }));
     }
-    // 主角
+    // 主角 / 设施
     if (x === this.gs.heroPos.x && y === this.gs.heroPos.y) {
       cell.append(h('span.actor.hero', { text: '余' }));
     } else if (tile.entity) {
       cell.append(h('span.actor.facility', { text: this._facilityGlyph(tile.entity.id) }));
+    }
+  }
+
+  /** 地形 → 装饰散件（确定性，按坐标选取，避免每帧闪烁） */
+  _terrainDeco(terrain) {
+    switch (terrain) {
+      case Terrain.FOREST: return 'mushroom';
+      case Terrain.SNOW: return 'snowman';
+      case Terrain.MINE: return 'stone';
+      case Terrain.MOUNTAIN: return 'stone';
+      default: return null;
     }
   }
 

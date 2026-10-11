@@ -18,6 +18,28 @@ const IMG = {
     water: 'assets/images/enemies/slime_water.png',
     wind: 'assets/images/enemies/slime_wind.png',
   },
+  // 探索地块底板（来自 DemonLordJustABlock_Assets，Q 版手绘风）
+  terrain: {
+    none: 'assets/images/terrain/tile_plain.png',
+    grass: 'assets/images/terrain/tile_grass.png',
+    water: 'assets/images/terrain/tile_water.png',
+    ice: 'assets/images/terrain/tile_ice.png',
+    snow: 'assets/images/terrain/tile_snow.png',
+    lava: 'assets/images/terrain/tile_lava.png',
+    mountain: 'assets/images/terrain/tile_mountain.png',
+    forest: 'assets/images/terrain/tile_grass.png',   // 森林以草地为底 + 草丛/蘑菇装饰
+    mine: 'assets/images/terrain/tile_mine.png',
+  },
+  // 地块装饰散件
+  deco: {
+    bush: 'assets/images/terrain/deco/bush.png',
+    snowman: 'assets/images/terrain/deco/snowman.png',
+    mushroom: 'assets/images/terrain/deco/mushroom.png',
+    starfish: 'assets/images/terrain/deco/starfish.png',
+    bone: 'assets/images/terrain/deco/bone.png',
+    stone: 'assets/images/terrain/deco/stone.png',
+    cake: 'assets/images/terrain/deco/cake.png',
+  },
   // 其余素材随开发从本地素材库挑选后补登记
 };
 

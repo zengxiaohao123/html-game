@@ -32,46 +32,66 @@
 .map-grid { display: grid; gap: 4px; }
 
 .tile-cell { position: relative; width: var(--tile-size); height: var(--tile-size);
-  border-radius: var(--radius-sm); border: 2px solid rgba(0,0,0,.25);
+  border-radius: var(--radius-sm);
+  background-size: cover; background-position: center; background-repeat: no-repeat;
+  border: 2px solid rgba(20,14,8,.55);
   display: flex; align-items: center; justify-content: center; cursor: pointer;
-  transition: transform .08s, box-shadow .08s, filter .08s; }
-.tile-cell:hover { transform: scale(1.05); z-index: 5; box-shadow: 0 0 0 2px var(--gold-light); }
-.tile-cell.selected { box-shadow: 0 0 0 3px var(--accent); z-index: 6; }
+  box-shadow: inset 0 -4px 8px rgba(0,0,0,.18), 0 2px 4px rgba(0,0,0,.25);
+  transition: transform .08s, box-shadow .08s, filter .08s;
+  overflow: hidden;
+}
+.tile-cell:hover { transform: scale(1.05); z-index: 5; box-shadow: 0 0 0 2px var(--gold-light), 0 6px 12px rgba(0,0,0,.4); }
+.tile-cell.selected { box-shadow: 0 0 0 3px var(--accent), 0 6px 14px rgba(0,0,0,.4); z-index: 6; }
 
-.tile-cell.void { background: repeating-linear-gradient(45deg, rgba(255,255,255,.02), rgba(255,255,255,.02) 8px, rgba(0,0,0,.12) 8px, rgba(0,0,0,.12) 16px); border: 2px dashed rgba(255,255,255,.08); cursor: default; }
+.tile-cell.void {
+  background: repeating-linear-gradient(45deg, rgba(255,255,255,.02), rgba(255,255,255,.02) 8px, rgba(0,0,0,.14) 8px, rgba(0,0,0,.14) 16px);
+  border: 2px dashed rgba(255,255,255,.10); cursor: default; box-shadow: none;
+}
 .tile-cell.void.buildable-void:hover { border-color: var(--buff); box-shadow: 0 0 0 2px var(--buff); }
 
-/* 地形配色 */
-.tile-cell.terrain-none { background: linear-gradient(160deg,#cdbb97,#b39e78); }
-.tile-cell.terrain-grass { background: linear-gradient(160deg,#8fbf6a,#6fa04e); }
-.tile-cell.terrain-water { background: linear-gradient(160deg,#6fa8d8,#4a82b8); }
-.tile-cell.terrain-ice { background: linear-gradient(160deg,#cdeaf4,#a7d9ec); }
-.tile-cell.terrain-snow { background: linear-gradient(160deg,#eef6fa,#d6e8f0); }
-.tile-cell.terrain-lava { background: linear-gradient(160deg,#e07a4a,#b8431f); }
-.tile-cell.terrain-mountain { background: linear-gradient(160deg,#8d8596,#625b6e); cursor: not-allowed; }
-.tile-cell.terrain-forest { background: linear-gradient(160deg,#4f8a48,#376833); cursor: crosshair; }
-.tile-cell.terrain-mine { background: linear-gradient(160deg,#9c8566,#6f5c40); cursor: crosshair; }
+/* 阻挡地形（山/森林/矿脉）压暗 + 斜纹，明确不可进入 */
+.tile-cell.terrain-mountain,
+.tile-cell.terrain-forest,
+.tile-cell.terrain-mine { cursor: crosshair; }
+.tile-cell.terrain-mountain::after,
+.tile-cell.terrain-forest::after,
+.tile-cell.terrain-mine::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(160deg, rgba(20,12,4,.28), rgba(20,12,4,.45));
+  pointer-events: none;
+}
 
 /* content 边框光效 */
-.tile-cell.content-event { box-shadow: inset 0 0 0 3px rgba(126,170,255,.7); }
-.tile-cell.content-battle { box-shadow: inset 0 0 0 3px rgba(220,110,80,.8); }
-.tile-cell.content-elite { box-shadow: inset 0 0 0 3px rgba(220,50,70,.95), 0 0 12px rgba(220,50,70,.5); }
-.tile-cell.content-reward { box-shadow: inset 0 0 0 3px rgba(242,207,120,.9); }
+.tile-cell.content-event { box-shadow: inset 0 0 0 3px rgba(126,170,255,.85), 0 2px 4px rgba(0,0,0,.25); }
+.tile-cell.content-battle { box-shadow: inset 0 0 0 3px rgba(220,110,80,.9), 0 2px 4px rgba(0,0,0,.25); }
+.tile-cell.content-elite { box-shadow: inset 0 0 0 3px rgba(220,50,70,.95), 0 0 14px rgba(220,50,70,.55); }
+.tile-cell.content-reward { box-shadow: inset 0 0 0 3px rgba(242,207,120,.95), 0 2px 4px rgba(0,0,0,.25); }
 
-.t-terrain { position: absolute; left: 4px; bottom: 3px; font-size: 10px; color: rgba(0,0,0,.55); }
-.t-content { position: absolute; top: 4px; right: 5px; width: 22px; height: 22px;
-  border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  font-size: 13px; font-weight: 700; color: #fff; }
+/* 地形装饰散件 */
+.t-deco { position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain; pointer-events: none; z-index: 2;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,.35)); }
+
+.t-content { position: absolute; top: 4px; right: 5px; z-index: 5;
+  width: 24px; height: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; color: #fff;
+  border: 2px solid rgba(0,0,0,.35);
+  text-shadow: 0 1px 2px rgba(0,0,0,.6); }
 .badge-event { background: #5a86d8; } .badge-battle { background: #c8644a; }
 .badge-elite { background: #c8324a; } .badge-reward { background: #c89a2e; }
 
-.actor { position: absolute; inset: 0; margin: auto; width: 46px; height: 46px;
-  border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  font-size: 22px; font-weight: 700; color: #fff; box-shadow: var(--shadow-soft); z-index: 4; }
-.actor.hero { background: radial-gradient(circle at 35% 30%, #d8a943, #8a5a1a); border: 2px solid #f2cf78; }
-.actor.facility { width: 40px; height: 40px; background: radial-gradient(circle at 35% 30%, #a9825c, #5e4326); border: 2px solid #d9b98a; font-size: 18px; }
-.tile-cell.hero-here::after { content:''; position:absolute; inset:-3px; border-radius: var(--radius-sm);
-  border: 2px solid var(--gold-light); pointer-events: none; }
+.actor { position: absolute; z-index: 4; inset: 0; margin: auto;
+  width: 50px; height: 50px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; font-weight: 700; color: #fff;
+  text-shadow: 0 2px 4px rgba(0,0,0,.6);
+  box-shadow: 0 4px 10px rgba(0,0,0,.45); }
+.actor.hero { background: radial-gradient(circle at 35% 30%, #f0c86a, #9a6418);
+  border: 3px solid #f6e0a0; width: 54px; height: 54px; }
+.actor.facility { width: 42px; height: 42px; font-size: 18px;
+  background: radial-gradient(circle at 35% 30%, #b9915f, #5e4326); border: 3px solid #e3c190; }
+.tile-cell.hero-here { box-shadow: 0 0 0 3px var(--gold-light), 0 0 16px rgba(242,207,120,.5); }
 
 /* ---- 信息区 ---- */
 .info-panel { width: 320px; flex: 0 0 320px; background: linear-gradient(180deg,#f6ecd9,#ead9bd);
