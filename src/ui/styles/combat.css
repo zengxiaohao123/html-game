@@ -21,32 +21,32 @@
 .battle-slot { min-height: 0; display: flex; align-items: center; justify-content: center;
   border-radius: 16px; border: 2px dashed rgba(255,255,255,.07); }
 
-/* 单位卡 */
-.unit-card { position: relative; width: 100%; height: 100%; max-width: 150px; max-height: 100%;
-  border-radius: 16px; padding: 8px 8px 6px;
+/* 单位卡：水平对峙下填满每个槽位 */
+.unit-card { position: relative; width: 100%; height: 100%;
+  border-radius: 16px; padding: 6px 8px;
   background: linear-gradient(180deg, rgba(48,40,72,.82), rgba(28,23,44,.82));
   border: 2px solid rgba(255,255,255,.16);
-  display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: default;
+  display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: default;
   box-shadow: 0 6px 14px rgba(0,0,0,.35); }
 .unit-card.side-enemy { border-color: rgba(220,110,90,.55); }
 .unit-card.side-ally.leader { border-color: var(--gold); box-shadow: 0 0 18px rgba(216,169,67,.4); }
 .unit-card.companion { opacity: .6; }
 
 .u-sprite { flex: 1; width: 100%; min-height: 0; border-radius: 12px;
-  background-size: contain; background-position: center bottom; background-repeat: no-repeat;
+  background-size: contain; background-position: center center; background-repeat: no-repeat;
   display: flex; align-items: center; justify-content: center; }
 .u-sprite.hero-sprite { transform: scaleX(-1); }
-.u-glyph { font-size: 38px; font-weight: 700; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.6); }
-.u-name { color: var(--paper); font-size: 14px; font-weight: 700; line-height: 1.2; text-align: center; }
+.u-glyph { font-size: 34px; font-weight: 700; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.6); }
+.u-name { color: var(--paper); font-size: 13px; font-weight: 700; line-height: 1.2; text-align: center; }
 
-.u-hpbar { position: relative; width: 100%; height: 16px; background: rgba(0,0,0,.5); border-radius: 8px; overflow: hidden;
-  border: 1px solid rgba(255,255,255,.18); }
+.u-hpbar { position: relative; width: 100%; height: 15px; background: rgba(0,0,0,.5); border-radius: 8px; overflow: hidden;
+  border: 1px solid rgba(255,255,255,.18); flex: 0 0 auto; }
 .u-hpfill { position: absolute; inset: 0; width: 100%;
   background: linear-gradient(180deg,#ff8a8a,#d23b3b); transition: width .3s; }
-.u-hptxt { position: relative; font-size: 11px; color: #fff; line-height: 16px; text-shadow: 0 1px 2px #000; }
-.u-shield { font-size: 11px; color: #aed1f5; min-height: 13px; }
-.u-statuses { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; min-height: 16px; max-width: 100%; }
-.status-tag { font-size: 10px; padding: 1px 6px; border-radius: 9px; color: #fff; white-space: nowrap; }
+.u-hptxt { position: relative; font-size: 10px; color: #fff; line-height: 15px; text-shadow: 0 1px 2px #000; }
+.u-shield { font-size: 10px; color: #aed1f5; min-height: 12px; flex: 0 0 auto; }
+.u-statuses { display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; min-height: 14px; max-width: 100%; flex: 0 0 auto; }
+.status-tag { font-size: 9px; padding: 0 5px; border-radius: 8px; color: #fff; white-space: nowrap; }
 .st-debuff { background: #c86b9c; } .st-control { background: #8a6bd0; }
 .st-buff { background: #4f9d6b; } .st-reaction { background: #c8942e; } .st-special { background: #6a7f96; }
 .u-aura { position: absolute; left: 6px; top: 6px; width: 26px; height: 26px; border-radius: 50%;
@@ -59,10 +59,10 @@
 .el-ice { background: var(--el-ice); color:#12414f; } .el-wind { background: var(--el-wind); color:#12402c; }
 .el-rock { background: var(--el-rock); }
 
-.u-intent { position: absolute; top: -12px; right: -8px; z-index: 5; }
-.intent { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 12px;
-  font-size: 13px; color:#fff; font-weight: 700; border: 2px solid rgba(0,0,0,.35);
-  box-shadow: 0 3px 6px rgba(0,0,0,.4); }
+.u-intent { position: absolute; top: 4px; right: 4px; z-index: 5; }
+.intent { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; border-radius: 10px;
+  font-size: 12px; color:#fff; font-weight: 700; border: 2px solid rgba(0,0,0,.35);
+  box-shadow: 0 2px 5px rgba(0,0,0,.4); }
 .intent.atk { background: #e0573f; } .intent.sup { background: #4f86c8; } .intent.ctrl { background: #8a6bd0; }
 
 /* 中央 VS */
