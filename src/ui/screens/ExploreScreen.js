@@ -163,21 +163,39 @@ export class ExploreScreen {
   }
 
   _decorateTile(cell, tile, x, y) {
-    // 地形装饰散件（阻挡地形更明显）
+    // 层级（自下而上）：地形底板 → 地形装饰 → 地块内容 → 实体（最顶，允许遮挡）
     const deco = this._terrainDeco(tile.terrain);
-    if (deco) cell.append(h('img.t-deco', { src: Assets.IMG.deco[deco], draggable: false, alt: '' }));
+    if (deco) cell.append(h('img.layer.t-deco', { src: Assets.IMG.deco[deco], draggable: false, alt: '' }));
 
-    // 内容标记（右上角徽章）
     if (tile.content && tile.content !== ContentType.EMPTY) {
-      const mapText = { event: '？', battle: '战', elite: '险', reward: '赏' };
-      cell.append(h('span.t-content.badge-' + tile.content, { text: mapText[tile.content] }));
+      cell.append(this._contentBadge(tile.content));
     }
-    // 主角 / 设施
+
     if (x === this.gs.heroPos.x && y === this.gs.heroPos.y) {
-      cell.append(h('span.actor.hero', { text: '余' }));
+      cell.append(h('img.layer.actor-hero', { src: Assets.IMG.character.hero, draggable: false, alt: '余默' }));
     } else if (tile.entity) {
-      cell.append(h('span.actor.facility', { text: this._facilityGlyph(tile.entity.id) }));
+      cell.append(this._facilitySprite(tile.entity.id));
     }
+  }
+
+  /** 地块内容：居中、占据地块大部分的大徽章（带圆形图标牌 + 文字） */
+  _contentBadge(content) {
+    const map = {
+      event: { icon: '？', cls: 'c-event', label: '事件' },
+      battle: { icon: '战', cls: 'c-battle', label: '战斗' },
+      elite: { icon: '险', cls: 'c-elite', label: '恶战' },
+      reward: { icon: '赏', cls: 'c-reward', label: '奖励' },
+    };
+    const m = map[content];
+    return h('div.layer.t-content.' + m.cls, {}, [
+      h('span.cb-icon', { text: m.icon }),
+    ]);
+  }
+
+  _facilitySprite(id) {
+    // 设施居中大图（暂用带图字牌，后续替换为帐篷/篝火/抽水泵素材）
+    const glyph = { tent: '帐', campfire: '火', campfireOut: '烬', pump: '泵' }[id] || '设';
+    return h('div.layer.actor-facility.fac-' + id, { text: glyph });
   }
 
   /** 地形 → 装饰散件（确定性，按坐标选取，避免每帧闪烁） */

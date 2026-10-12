@@ -63,8 +63,8 @@ export class BattleScreen {
       dataset: { uid: u.uid, pos: u.pos },
       onClick: () => this._onUnitClick(u),
     }, [
-      h('div.u-sprite', { style: { backgroundImage: this._spriteBg(u) } }, [
-        u.role === 'leader' ? h('span.u-glyph', { text: '余' }) : (u.sprite ? null : h('span.u-glyph', { text: u.name.slice(0, 1) })),
+      h('div.u-sprite' + (u.role === 'leader' ? '.hero-sprite' : ''), { style: { backgroundImage: this._spriteBg(u) } }, [
+        (!u.sprite && u.role !== 'leader') ? h('span.u-glyph', { text: u.name.slice(0, 1) }) : null,
       ]),
       h('div.u-name', { text: u.name }),
       u.stats.maxHp != null ? h('div.u-hpbar', {}, [h('div.u-hpfill#hpfill-' + u.uid), h('span.u-hptxt#hptxt-' + u.uid)]) : null,
@@ -83,6 +83,7 @@ export class BattleScreen {
       'slime.ice': Assets.IMG.slime.ice, 'slime.wind': Assets.IMG.slime.wind,
       'slime.rock': Assets.IMG.slime.rock,
     };
+    if (u.role === 'leader') return `url("${Assets.IMG.character.hero}")`;
     return map[u.sprite] ? `url("${map[u.sprite]}")` : 'none';
   }
 

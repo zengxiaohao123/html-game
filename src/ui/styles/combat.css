@@ -17,8 +17,10 @@
 .unit-card.side-ally.leader { border-color: var(--gold); box-shadow: 0 0 16px rgba(216,169,67,.35); }
 .unit-card.companion { opacity: .55; }
 
-.u-sprite { width: 88px; height: 88px; border-radius: 12px; background-size: cover; background-position: center;
-  background-color: rgba(255,255,255,.12); display: flex; align-items: center; justify-content: center; }
+.u-sprite { width: 104px; height: 92px; border-radius: 12px;
+  background-size: contain; background-position: center bottom; background-repeat: no-repeat;
+  display: flex; align-items: center; justify-content: center; }
+.u-sprite.hero-sprite { transform: scaleX(-1); }
 .u-glyph { font-size: 34px; font-weight: 700; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.6); }
 .u-name { color: var(--paper); font-size: 14px; }
 

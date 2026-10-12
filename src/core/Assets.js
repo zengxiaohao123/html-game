@@ -40,6 +40,10 @@ const IMG = {
     stone: 'assets/images/terrain/deco/stone.png',
     cake: 'assets/images/terrain/deco/cake.png',
   },
+  // 角色
+  character: {
+    hero: 'assets/images/characters/hero.png',
+  },
   // 其余素材随开发从本地素材库挑选后补登记
 };
 
