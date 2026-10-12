@@ -193,8 +193,12 @@ export class ExploreScreen {
   }
 
   _facilitySprite(id) {
-    // 设施居中大图（暂用带图字牌，后续替换为帐篷/篝火/抽水泵素材）
-    const glyph = { tent: '帐', campfire: '火', campfireOut: '烬', pump: '泵' }[id] || '设';
+    // 篝火有现成 Q 版火焰精灵图；帐篷/抽水泵待补同画风素材（暂用圆牌文字）。
+    const img = Assets.IMG.facility[id];
+    if (img) {
+      return h('img.layer.actor-facility-img.fac-' + id, { src: img, draggable: false, alt: id });
+    }
+    const glyph = { tent: '帐', pump: '泵' }[id] || '设';
     return h('div.layer.actor-facility.fac-' + id, { text: glyph });
   }
 

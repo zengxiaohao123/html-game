@@ -2,9 +2,13 @@
 
 button { cursor: pointer; font-family: inherit; }
 
-/* ---- 主菜单 ---- */
+/* ---- 主菜单：紫云海手绘背景 ---- */
 .menu-wrap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-  background: radial-gradient(ellipse at 50% 30%, #3a2f55, #1a1726 70%); overflow: hidden; }
+  background:
+    linear-gradient(180deg, rgba(26,20,48,.55), rgba(18,14,32,.72)),
+    url("../../../assets/images/bg/battle_bg.png") center/cover no-repeat,
+    radial-gradient(ellipse at 50% 30%, #3a2f55, #141120 75%);
+  overflow: hidden; }
 .menu-bg { position: absolute; inset: 0; opacity: .5;
   background:
     radial-gradient(circle at 20% 80%, rgba(216,169,67,.15), transparent 40%),

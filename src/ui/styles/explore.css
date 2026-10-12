@@ -104,6 +104,10 @@
 .fac-campfire { background: radial-gradient(circle at 40% 35%, #ffb15a, #a8341a); }
 .fac-campfireOut { background: radial-gradient(circle at 35% 30%, #8a8276, #3a352e); }
 .fac-pump { background: radial-gradient(circle at 35% 30%, #7fb6d8, #2f5f86); }
+.actor-facility-img { z-index: 8; width: 96%; height: 96%; object-fit: contain;
+  filter: drop-shadow(0 6px 6px rgba(0,0,0,.5)); }
+.fac-campfire { animation: flicker 1.1s infinite ease-in-out; }
+@keyframes flicker { 0%,100%{ filter: drop-shadow(0 0 6px rgba(255,150,60,.55));} 50%{ filter: drop-shadow(0 0 16px rgba(255,120,40,.9));} }
 
 /* ---- 信息区 ---- */
 .info-panel { width: 320px; flex: 0 0 320px; background: linear-gradient(180deg,#f6ecd9,#ead9bd);

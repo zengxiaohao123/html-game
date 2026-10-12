@@ -112,7 +112,7 @@ export const ENEMIES = {
 
   // ---- 奇怪的史莱姆（奖励型） ----
   strangeSlime: {
-    id: 'strangeSlime', name: '奇怪的史莱姆',
+    id: 'strangeSlime', name: '奇怪的史莱姆', sprite: 'slime.grass',
     atk: 0, def: 0, maxHp: 599, speed: 0,
     talents: [],
     skills: [{
@@ -128,7 +128,7 @@ export const ENEMIES = {
 
   // ---- 人类小怪 ----
   chuuniBoy: {
-    id: 'chuuniBoy', name: '中二病男孩', tier: 'normal',
+    id: 'chuuniBoy', name: '中二病男孩', tier: 'normal', sprite: 'foe.chuuni',
     atk: 15, def: 0, maxHp: 20, speed: 10,
     talents: [
       { impl: 'comeBack', perDefeat: { atk: 15, hp: 40, speed: 5, xp: 3 }, max: 5, global: true },
@@ -139,7 +139,7 @@ export const ENEMIES = {
     intent: { type: 'always', skill: 'chuuni_slash' },
   },
   littleSnake: {
-    id: 'littleSnake', name: '小小蛇', tier: 'normal',
+    id: 'littleSnake', name: '小小蛇', tier: 'normal', sprite: 'foe.snake',
     atk: 15, def: 0, maxHp: 150, speed: 4,
     talents: [
       { impl: 'firstActionFear' },
@@ -152,7 +152,7 @@ export const ENEMIES = {
     intent: { type: 'script', seq: ['snake_bite', 'snake_coil'] }, // 奇撕咬偶缠绕
   },
   bambooViper: {
-    id: 'bambooViper', name: '竹叶青', tier: 'elite',
+    id: 'bambooViper', name: '竹叶青', tier: 'elite', sprite: 'foe.snake',
     atk: 20, def: 0, maxHp: 300, speed: 13,
     talents: [{ impl: 'poisonBite', stacks: 19, chance: 1.0 }],
     skills: [
@@ -168,7 +168,7 @@ export const ENEMIES = {
 
   // ---- 古树 ----
   ancientTree: {
-    id: 'ancientTree', name: '古树', tier: 'normal',
+    id: 'ancientTree', name: '古树', tier: 'normal', sprite: 'foe.tree',
     atk: 20, def: 0, maxHp: 799, speed: 0,
     talents: [{ impl: 'thornCounter' }, { impl: 'fleeAtRound', round: 10 }],
     skills: [
@@ -180,7 +180,7 @@ export const ENEMIES = {
 
   // ---- 猎犬 ----
   hound: {
-    id: 'hound', name: '猎犬', tier: 'normal',
+    id: 'hound', name: '猎犬', tier: 'normal', sprite: 'foe.hound',
     atk: 10, def: 0, maxHp: 60, speed: 15,
     talents: [
       { impl: 'dailyGrowth', atkPct: 0.05, hpPct: 0.05, speed: 1, max: 20 },
@@ -190,7 +190,7 @@ export const ENEMIES = {
     intent: { type: 'always', skill: 'hound_bite' },
   },
   houndPro: {
-    id: 'houndPro', name: '猎犬 Pro', tier: 'elite',
+    id: 'houndPro', name: '猎犬 Pro', tier: 'elite', sprite: 'foe.hound',
     atk: 35, def: 0, maxHp: 150, speed: 25,
     talents: [
       { impl: 'dailyGrowth', atkPct: 0.08, hpPct: 0.10, speed: 1, max: 20 },
@@ -202,7 +202,7 @@ export const ENEMIES = {
 
   // ---- 镖客 ----
   blueDart: {
-    id: 'blueDart', name: '蓝羽镖客', tier: 'normal',
+    id: 'blueDart', name: '蓝羽镖客', tier: 'normal', sprite: 'foe.bladedart',
     atk: 12, def: 0, maxHp: 120, speed: 4,
     talents: [{ impl: 'deadlyRhythm', value: 8 }],
     skills: [
@@ -212,7 +212,7 @@ export const ENEMIES = {
     intent: { type: 'special', impl: 'dartPattern', every: 3, blink: 'blue_blink', attack: 'blue_feather' },
   },
   redDart: {
-    id: 'redDart', name: '红羽镖客', tier: 'elite',
+    id: 'redDart', name: '红羽镖客', tier: 'elite', sprite: 'foe.chuuni',
     atk: 16, def: 0, maxHp: 180, speed: 12,
     talents: [{ impl: 'deadlyRhythm', value: 8 }],
     skills: [
@@ -224,7 +224,7 @@ export const ENEMIES = {
 
   // ---- 暴躁的熊 ----
   angryBear: {
-    id: 'angryBear', name: '暴躁的熊', tier: 'elite', rare: true,
+    id: 'angryBear', name: '暴躁的熊', tier: 'elite', rare: true, sprite: 'foe.bear',
     atk: 50, def: 10, maxHp: 800, speed: 0,
     resists: { physical: 0.20 },
     talents: [
@@ -242,7 +242,7 @@ export const ENEMIES = {
 
   // ---- 机关 ----
   abandonedMech: {
-    id: 'abandonedMech', name: '遗弃机关', tier: 'elite',
+    id: 'abandonedMech', name: '遗弃机关', tier: 'elite', sprite: 'foe.mech',
     atk: 40, def: 10, maxHp: 260, speed: 4,
     resists: { fire: 0.20, water: 0.20, grass: 0.20, thunder: 0.20, ice: 0.20, wind: 0.20, rock: 0.20 },
     talents: [],
@@ -258,7 +258,7 @@ export const ENEMIES = {
     intent: { type: 'special', impl: 'mechPattern' },
   },
   ironLump: {
-    id: 'ironLump', name: '铁疙瘩', tier: 'elite',
+    id: 'ironLump', name: '铁疙瘩', tier: 'elite', sprite: 'foe.ironlump',
     atk: 40, def: 20, maxHp: 500, speed: 10,
     resists: { physical: 1.00 },
     talents: [],
@@ -292,6 +292,6 @@ export const SUMMONS = {
 /** 火史莱姆自爆残留物（不算敌人，不影响胜利判定） */
 export const BOMB_RESIDUE = {
   id: 'fireSlimeBomb', name: '即将爆炸的火史莱姆',
-  isResidue: true, notEnemy: true,
+  isResidue: true, notEnemy: true, sprite: 'slime.fire',
   skills: [{ id: 'bomb_explode', name: '爆炸', effects: [{ kind: 'bombAfter', turns: 2, multiplier: 0.60, element: 'fire', range: 'side1' }] }],
 };

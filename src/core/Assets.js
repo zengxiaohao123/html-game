@@ -40,19 +40,38 @@ const IMG = {
     stone: 'assets/images/terrain/deco/stone.png',
     cake: 'assets/images/terrain/deco/cake.png',
   },
+  // 敌人通用 Q 版精灵（来自素材库 enemy/unit/dog 系列，风格统一）
+  foe: {
+    chuuni: 'assets/images/enemies/foe_chuuni.png',
+    bladedart: 'assets/images/enemies/foe_bladedart.png',
+    ironlump: 'assets/images/enemies/foe_ironlump.png',
+    mech: 'assets/images/enemies/foe_mech.png',
+    snake: 'assets/images/enemies/foe_snake.png',
+    tree: 'assets/images/enemies/foe_tree.png',
+    bear: 'assets/images/enemies/foe_bear.png',
+    hound: 'assets/images/enemies/foe_hound.png',
+  },
   // 角色
   character: {
     hero: 'assets/images/characters/hero.png',
+  },
+  // 设施（帐篷/抽水泵待同画风补图）
+  facility: {
+    campfire: 'assets/images/facilities/campfire.png',
+    campfireOut: 'assets/images/facilities/campfire.png',
   },
   // 其余素材随开发从本地素材库挑选后补登记
 };
 
 const SND = {
-  // 从素材库 audio 中挑选的规范命名（复制进 assets/audio 后启用）
-  uiClick: null,
-  attack: null,
-  hit: null,
-  reward: null,
+  // 来自素材库 audio 的短音效（BGM 体积大，压缩后再上）
+  click: 'assets/audio/sfx_click.wav',
+  attack: 'assets/audio/sfx_attack.wav',
+  hurt: 'assets/audio/sfx_hurt.wav',
+  gold: 'assets/audio/sfx_gold.wav',
+  reward: 'assets/audio/sfx_reward.wav',
+  win: 'assets/audio/sfx_win.wav',
+  open: 'assets/audio/sfx_open.wav',
   bgmHome: null,
   bgmBoss: null,
 };

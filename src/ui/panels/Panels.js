@@ -27,7 +27,9 @@ export function renderPanel(name, d, ui) {
   const fn = map[name] || panelPlaceholder;
   const box = h('div.modal.paper.panel-modal', {});
   box.append(h('h2.panel-title', { text: TITLES[name] || name }));
-  fn(box, d, ui);
+  const body = h('div.panel-body');
+  box.append(body);
+  fn(body, d, ui);
   return box;
 }
 

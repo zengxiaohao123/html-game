@@ -27,16 +27,25 @@ export class BattleScreen {
     this.root = root;
     root.append(
       h('div.battle-wrap', {}, [
-        this._enemyRow(),
-        h('div.battle-mid', {}, [
-          h('div.battle-vs', { text: 'VS' }),
-          h('div.round-info#roundInfo'),
+        h('div.battle-stage', {}, [
+          h('div.side-side.side-ally', {}, [
+            h('div.side-title', { text: '我方' }),
+            this._allyRow(),
+            h('div.companion-bar#companionBar'),
+          ]),
+          h('div.battle-mid', {}, [
+            h('div.round-info#roundInfo'),
+            h('div.battle-vs', { text: 'VS' }),
+          ]),
+          h('div.side-side.side-enemy', {}, [
+            h('div.side-title', { text: '敌方' }),
+            this._enemyRow(),
+          ]),
+          this._chainLayer(),
         ]),
-        this._allyRow(),
-        this._chainLayer(),
+        this._hud(),
+        h('div.battle-log#battleLog'),
       ]),
-      this._hud(),
-      h('div.battle-log#battleLog'),
     );
     this._bindKeys();
     this._subscribe();
@@ -76,15 +85,32 @@ export class BattleScreen {
     return card;
   }
 
+  /** 伤害/治疗飘字（挂在舞台层，避免随卡片重建被清掉） */
+  _floatOn(uid, text, cls) {
+    const stage = this.root && this.root.querySelector('.battle-stage');
+    const card = document.getElementById('hpfill-' + uid)?.closest('.unit-card');
+    if (!stage || !card) return;
+    const s = stage.getBoundingClientRect();
+    const c = card.getBoundingClientRect();
+    const el = h('span.floater.' + cls, { text });
+    el.style.left = (c.left - s.left + c.width / 2) + 'px';
+    el.style.top = (c.top - s.top + c.height * 0.28) + 'px';
+    stage.append(el);
+    setTimeout(() => el.remove(), 900);
+  }
+
   _spriteBg(u) {
-    const map = {
-      'slime.grass': Assets.IMG.slime.grass, 'slime.fire': Assets.IMG.slime.fire,
-      'slime.water': Assets.IMG.slime.water, 'slime.thunder': Assets.IMG.slime.thunder,
-      'slime.ice': Assets.IMG.slime.ice, 'slime.wind': Assets.IMG.slime.wind,
-      'slime.rock': Assets.IMG.slime.rock,
-    };
     if (u.role === 'leader') return `url("${Assets.IMG.character.hero}")`;
-    return map[u.sprite] ? `url("${map[u.sprite]}")` : 'none';
+    const sp = u.sprite || '';
+    if (sp.startsWith('slime.')) {
+      const key = sp.split('.')[1];
+      return Assets.IMG.slime[key] ? `url("${Assets.IMG.slime[key]}")` : 'none';
+    }
+    if (sp.startsWith('foe.')) {
+      const key = sp.split('.')[1];
+      return Assets.IMG.foe[key] ? `url("${Assets.IMG.foe[key]}")` : 'none';
+    }
+    return 'none';
   }
 
   refresh() {
@@ -170,12 +196,9 @@ export class BattleScreen {
   }
 
   _refreshCompanions() {
-    // 在我方阵地旁展示队友徽章（不占格）
-    let box = document.getElementById('companionBar');
-    if (!box) {
-      box = h('div.companion-bar#companionBar');
-      this.root.querySelector('.ally-row').after(box);
-    }
+    // 队友不占格，在我方阵地下方以头像徽章展示
+    const box = document.getElementById('companionBar');
+    if (!box) return;
     clear(box);
     for (const c of this.S.companions) {
       box.append(h('div.companion-chip', { title: c.name }, [
@@ -307,8 +330,13 @@ export class BattleScreen {
   _subscribe() {
     const on = (ev, fn) => this.unsubs.push(EventBus.on(ev, fn));
     const rerender = () => this.refresh();
-    on(GE.BATTLE_DAMAGE, rerender);
-    on(GE.BATTLE_HEAL, rerender);
+    on(GE.BATTLE_DAMAGE, (p) => {
+      rerender();
+      if (p && p.target && p.amount > 0 && !p.dodged && !p.blocked) {
+        this._floatOn(p.target.uid, String(p.amount), p.isCrit ? 'crit' : 'dmg');
+      }
+    });
+    on(GE.BATTLE_HEAL, (p) => { rerender(); if (p && p.uid && p.amount) this._floatOn(p.uid, '+' + p.real, 'heal'); });
     on(GE.BATTLE_SHIELD, rerender);
     on(GE.BATTLE_AURA, rerender);
     on(GE.BATTLE_SKILL, () => setTimeout(() => this.refresh(), 0));
