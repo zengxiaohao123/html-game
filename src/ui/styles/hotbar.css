@@ -1,0 +1,90 @@
+/* src/ui/styles/hotbar.css
+ * Phase 2B HotBar 样式补全：选中高亮 + 建造模式视觉反馈
+ */
+
+/* 快捷栏容器 */
+.hotbar-wrapper {
+  user-select: none;
+}
+
+/* 槽位 hover 通用反馈 */
+.hotbar-slot {
+  position: relative;
+  transition: border-color 0.12s, transform 0.1s, box-shadow 0.15s, background-color 0.15s;
+}
+
+.hotbar-slot:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.18);
+}
+
+/* 有内容的槽位（可以被选中） */
+.hotbar-slot.has-content {
+  background-color: rgba(255, 233, 168, 0.7);
+  cursor: pointer;
+}
+
+/* 建造模式下：高亮可选中 */
+body.build-mode .hotbar-slot.has-content {
+  border-color: #b8860b;
+  animation: hotbar-build-pulse 1.2s ease-in-out infinite;
+}
+
+body.build-mode .hotbar-slot.has-content:hover {
+  background-color: #fff3b0;
+}
+
+/* 选中态（黄色高亮） */
+.hotbar-slot.selected {
+  border-color: #e8a900 !important;
+  border-width: 3px !important;
+  background-color: #ffe066 !important;
+  box-shadow: 0 0 0 3px rgba(232, 169, 0, 0.5), 0 3px 8px rgba(0, 0, 0, 0.25) !important;
+  transform: translateY(-2px);
+}
+
+@keyframes hotbar-build-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(232, 169, 0, 0.0); }
+  50%      { box-shadow: 0 0 0 4px rgba(232, 169, 0, 0.35); }
+}
+
+/* 建造模式下的地图可放置提示（由 MapView 直接在 tile 上挂载类） */
+body.build-mode .map-tile.placeable:hover {
+  box-shadow: inset 0 0 0 3px #4caf50, 0 0 12px rgba(76, 175, 80, 0.5);
+  filter: brightness(1.08);
+}
+
+body.build-mode .map-tile.unplaceable {
+  opacity: 0.85;
+}
+
+body.build-mode .map-tile.unplaceable:hover {
+  box-shadow: inset 0 0 0 3px #ff5252;
+}
+
+/* 玩家自己所在的 tile：无论什么模式都不可放置 */
+body.build-mode .map-tile.player-tile {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+/* 快捷栏显示的 emoji 与数量 */
+.hotbar-slot .slot-emoji {
+  font-size: 24px;
+  line-height: 1;
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.25));
+}
+
+.hotbar-slot .slot-qty {
+  position: absolute;
+  right: 2px;
+  bottom: 1px;
+  font-size: 10px;
+  color: #3a2e20;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 5px;
+  padding: 0 3px;
+  line-height: 1.4;
+  font-weight: 700;
+}

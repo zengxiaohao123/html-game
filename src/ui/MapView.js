@@ -1,45 +1,34 @@
 // src/ui/MapView.js
-// 地图渲染：3×3 外圈 8 格回字形 + 中心 1×1 栅栏
-// 玩家 🧑 绝对定位在当前格中心
-// 布局严格参考 docs/ui-main.png（Q 版卡通风格：圆润、糖果色、粗描边）
+// Phase 2B 扩展：
+//   - 建造模式 UI 视觉反馈（placeable / unplaceable / player-tile 类由 CSS 处理）
+//   - 建造模式下 tile 点击：若 HotBar 有选中内容 → BuildSystem.placeContent(gs, tileIdx, contentId)
+//   - 建造模式切换通过订阅 GE.UI_MODE_CHANGE
+//
+// Phase 1 功能全部保留（玩家移动、TILE_UPDATED 增量重绘、TILE_CLICKED 事件等）
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { Distance } from '../core/Distance.js';
 import { Assets } from '../core/Assets.js';
+import { BuildSystem } from '../systems/BuildSystem.js';
 import { createEl, qs } from './dom.js';
 
-/** 每格尺寸（px）—— 可在 CSS 里覆盖 */
 const TILE_SIZE = 80;
-/** 地图格子数量（初始 3×3） */
 const MAP_SIZE = 3;
-/** 整个地图容器宽高 */
 const MAP_PX = TILE_SIZE * MAP_SIZE;
 
-/**
- * MapView 类：负责地图区 DOM 构建和渲染
- */
 export class MapView {
   constructor() {
-    /** 已挂载的地图根 DOM 节点 */
     this.root = null;
-    /** 已挂载的玩家 DOM 节点 */
     this.playerEl = null;
-    /** 缓存的 tile DOM 映射：idx → HTMLElement */
     this.tileEls = new Map();
-    /** 当前 GS 引用（最近一次渲染用的） */
     this.gs = null;
+    this.buildMode = false;
   }
 
-  /**
-   * 构建地图 DOM 并挂载到 #app
-   * @param {object} gs 初始 GS
-   * @param {HTMLElement} parent 父容器（默认 #app）
-   */
   mount(gs, parent = qs('#app')) {
     this.gs = gs;
 
-    // 1. 地图容器
     this.root = createEl('div', {
       class: ['map-container'],
       style: {
@@ -52,29 +41,16 @@ export class MapView {
       parent,
     });
 
-    // 2. 渲染所有外圈 tile
     this.renderAllTiles(gs);
-
-    // 3. 渲染中心栅栏
     this.renderFence(gs);
-
-    // 4. 渲染玩家
     this.renderPlayer(gs);
 
-    // 5. 订阅事件：STATE_RESET 全量重绘；MOVE / TILE_UPDATED 增量更新
     this._subscribeEvents();
-
     return this.root;
   }
 
-  /**
-   * 渲染所有外圈 tile（回字形）
-   * @param {object} gs
-   */
   renderAllTiles(gs) {
     if (!this.root) return;
-
-    // 先清空旧的 tile（栅栏和玩家不移除）
     this.tileEls.forEach(el => el.remove());
     this.tileEls.clear();
 
@@ -84,11 +60,6 @@ export class MapView {
     }
   }
 
-  /**
-   * 渲染单个 tile（外圈格）
-   * @param {object} tile tile 定义：{ idx, terrain, contentId, ... }
-   * @param {object} gs
-   */
   _renderOneTile(tile, gs) {
     const { x, y } = Distance.outerIdxToXY(gs.map.size, tile.idx);
 
@@ -116,38 +87,30 @@ export class MapView {
       parent: this.root,
     });
 
-    // 地形 emoji（小尺寸，内容 emoji 覆盖其上）
     if (tile.terrain && tile.terrain !== 'none') {
       createEl('span', {
         class: ['tile-terrain'],
         style: {
-          position: 'absolute',
-          bottom: '2px',
-          right: '4px',
-          fontSize: '16px',
-          opacity: '0.6',
+          position: 'absolute', bottom: '2px', right: '4px',
+          fontSize: '16px', opacity: '0.6',
         },
         text: Assets.getEmoji('terrains', tile.terrain),
         parent: tileEl,
       });
     }
 
-    // 内容 emoji（设施/资源）
     if (tile.contentId) {
       const contentEmoji = Assets.getEmoji('facilities', tile.contentId);
       createEl('span', {
         class: ['tile-content'],
         style: {
-          position: 'relative',
-          fontSize: '40px',
-          lineHeight: '1',
+          position: 'relative', fontSize: '40px', lineHeight: '1',
           filter: 'drop-shadow(0 2px 1px rgba(0,0,0,0.3))',
         },
         text: contentEmoji,
         parent: tileEl,
       });
     } else {
-      // 空 tile 显示虚空 emoji
       createEl('span', {
         class: ['tile-empty'],
         style: { fontSize: '32px', opacity: '0.3', lineHeight: '1' },
@@ -156,39 +119,81 @@ export class MapView {
       });
     }
 
-    // 点击事件：emit TILE_CLICKED
+    // 玩家当前位置特殊标记
+    if (gs.player.x === tile.idx) {
+      tileEl.classList.add('player-tile');
+    }
+
+    // 建造模式下的视觉类
+    this._updateBuildModeTileClass(tileEl, tile, gs);
+
+    // 点击事件：emit TILE_CLICKED 通用事件 + 建造模式下尝试放置
     tileEl.addEventListener('click', () => {
+      // 无论什么模式都 emit TILE_CLICKED（InfoPanel 依赖）
       EventBus.emit(GE.TILE_CLICKED, { tileIdx: tile.idx });
+
+      // 建造模式下额外处理
+      if (this.buildMode) {
+        this._handleBuildTileClick(tile.idx);
+      }
     });
 
     this.tileEls.set(tile.idx, tileEl);
   }
 
-  /**
-   * tile 背景色：根据 terrain 返回糖果色（Q 版风格）
-   */
-  _tileBgColor(tile) {
-    switch (tile.terrain) {
-      case 'grass': return '#a8e6a1';     // 草地 糖果绿
-      case 'water': return '#87ceeb';     // 水 天空蓝
-      case 'mud':   return '#c9a875';    // 泥 棕色
-      case 'none':
-      default:      return '#f5f0e1';    // 虚空 米白
+  /** 根据建造模式 + tile 状态，给 tileEl 挂 placeable / unplaceable / player-tile 类 */
+  _updateBuildModeTileClass(tileEl, tile, gs) {
+    tileEl.classList.remove('placeable', 'unplaceable');
+    if (!this.buildMode) return;
+
+    if (gs.player.x === tile.idx) {
+      // 玩家所在格：不允许放置
+      tileEl.classList.add('unplaceable', 'player-tile');
+      return;
+    }
+
+    const isUnreplaceable = tile.contentId === 'facility_home';
+    if (isUnreplaceable) {
+      tileEl.classList.add('unplaceable');
+    } else {
+      tileEl.classList.add('placeable');
     }
   }
 
-  /**
-   * 渲染中心栅栏
-   */
+  /** 建造模式下点击 tile → 调用 BuildSystem.placeContent */
+  _handleBuildTileClick(tileIdx) {
+    const gs = this.gs;
+    if (!gs || !gs.buildMode) return;
+
+    // 选中的 contentId：HotBar 会把选中内容写到 gs.uiState.selectedBuildContentId
+    const contentId = gs.uiState?.selectedBuildContentId;
+    if (!contentId) {
+      EventBus.emit(GE.TOAST_SHOW, {
+        text: '🛠️ 先在底部快捷栏选中要放置的设施',
+        duration: 2000,
+      });
+      return;
+    }
+    BuildSystem.placeContent(gs, tileIdx, contentId);
+  }
+
+  _tileBgColor(tile) {
+    switch (tile.terrain) {
+      case 'grass': return '#a8e6a1';
+      case 'water': return '#87ceeb';
+      case 'mud':   return '#c9a875';
+      case 'none':
+      default:      return '#f5f0e1';
+    }
+  }
+
   renderFence(gs) {
     if (!this.root) return;
-
     const fenceRowCols = gs.map.fenceRowCols;
-    const fenceTileSize = TILE_SIZE; // 栅栏内格子尺寸和外圈一致
+    const fenceTileSize = TILE_SIZE;
     const fencePx = fenceTileSize * fenceRowCols;
-    const fenceOffset = (MAP_PX - fencePx) / 2; // 居中偏移
+    const fenceOffset = (MAP_PX - fencePx) / 2;
 
-    // 栅栏容器
     const fenceEl = createEl('div', {
       class: ['map-fence'],
       id: 'fence-container',
@@ -205,7 +210,6 @@ export class MapView {
       parent: this.root,
     });
 
-    // 栅栏内的小格子（Phase 1 暂时空着，Phase 3 放生物）
     for (let r = 0; r < fenceRowCols; r++) {
       for (let c = 0; c < fenceRowCols; c++) {
         createEl('div', {
@@ -224,13 +228,8 @@ export class MapView {
     }
   }
 
-  /**
-   * 渲染玩家 🧑 （绝对定位，跟随 player.x 移动）
-   */
   renderPlayer(gs) {
     if (!this.root) return;
-
-    // 旧的玩家节点移除
     if (this.playerEl) this.playerEl.remove();
 
     const { x, y } = Distance.outerIdxToXY(gs.map.size, gs.player.x);
@@ -256,38 +255,46 @@ export class MapView {
     });
   }
 
-  // ── 事件订阅 ──
-
   _subscribeEvents() {
-    // STATE_RESET：全量重绘（Storage.load 后触发）
+    // STATE_RESET
     EventBus.on(GE.STATE_RESET, ({ gs }) => {
       this.gs = gs;
       this.renderAllTiles(gs);
       this.renderPlayer(gs);
     });
 
-    // MOVE：玩家位置移动
+    // MOVE
     EventBus.on(GE.MOVE, ({ toIdx }) => {
       if (!this.gs) return;
       this.renderPlayer(this.gs);
+      // 移动后玩家格 class 可能变，刷新所有 tile
+      this.renderAllTiles(this.gs);
     });
 
-    // TILE_UPDATED：某个 tile 内容变化
+    // TILE_UPDATED
     EventBus.on(GE.TILE_UPDATED, ({ tileIdx }) => {
       if (!this.gs) return;
       if (tileIdx !== undefined && tileIdx !== null) {
         const tile = this.gs.map.outerTiles[tileIdx];
         if (tile) {
-          // 只重绘这个 tile：先移除再重新渲染
           const oldEl = this.tileEls.get(tileIdx);
           if (oldEl) oldEl.remove();
           this.tileEls.delete(tileIdx);
           this._renderOneTile(tile, this.gs);
         }
       } else {
-        // 没有指定 tileIdx：刷新所有 tile
         this.renderAllTiles(this.gs);
       }
+    });
+
+    // 建造模式切换
+    EventBus.on(GE.UI_MODE_CHANGE, ({ mode }) => {
+      this.buildMode = mode === 'build';
+      // 重新给所有 tile 挂 placeable / unplaceable 类
+      this.tileEls.forEach((tileEl, idx) => {
+        const tile = this.gs?.map?.outerTiles?.[idx];
+        if (tile) this._updateBuildModeTileClass(tileEl, tile, this.gs);
+      });
     });
   }
 }

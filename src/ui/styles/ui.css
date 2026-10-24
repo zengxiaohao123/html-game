@@ -1,0 +1,107 @@
+/* src/ui/styles/ui.css
+ * Phase 2B 其余 UI 通用样式
+ *   - 建造模式整体视觉反馈（body.build-mode）
+ *   - InfoPanel 滑入滑出动画（已在 panels.css 定义 keyframes，这里给默认初始态）
+ *   - Toast 优化（base.css 已写 toast-fade-in/out keyframes，这里不重复）
+ */
+
+/* ── 建造模式整体视觉反馈 ── */
+body.build-mode::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at center,
+    rgba(76, 175, 80, 0.0) 0%,
+    rgba(76, 175, 80, 0.1) 70%,
+    rgba(76, 175, 80, 0.18) 100%);
+  pointer-events: none;
+  z-index: 1;
+  animation: build-mode-vignette 0.35s ease-out;
+}
+
+@keyframes build-mode-vignette {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* 建造模式下 InfoPanel 淡化（让玩家专注放置） */
+body.build-mode .info-panel {
+  opacity: 0.85;
+  transition: opacity 0.2s;
+}
+
+/* 建造模式下 TopBar 与 FuncBar 不拦截点击（让地图优先） */
+body.build-mode .map-container {
+  z-index: 50;
+}
+
+/* ── InfoPanel 默认态：隐藏（由 InfoPanel.js 在选中 tile 时 add 类） ── */
+.info-panel {
+  transition: transform 0.22s ease-out, opacity 0.22s ease-out;
+}
+
+/* 状态列表行（InfoPanel "状态" tab 通用） */
+.state-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid #b8a888;
+  border-radius: 10px;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.state-row .state-emoji {
+  font-size: 20px;
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", sans-serif;
+}
+
+.state-row .state-name {
+  flex: 1;
+  color: #3a2e20;
+  font-weight: 600;
+}
+
+.state-row .state-remain {
+  font-size: 12px;
+  color: #8a6a3a;
+  background: #f7e6b0;
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+
+/* 玩家状态区（InfoPanel "单位" tab） */
+.player-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px dashed #b8a888;
+  font-size: 14px;
+}
+
+.player-info-row:last-child {
+  border-bottom: none;
+}
+
+.player-info-row .stat-label {
+  color: #7b6a56;
+}
+
+.player-info-row .stat-value {
+  color: #3a2e20;
+  font-weight: 700;
+}
+
+/* 地块内容 tab 的词条行 */
+.facility-desc-row {
+  padding: 6px 8px;
+  border-left: 3px solid #e8a900;
+  background: rgba(255, 250, 230, 0.7);
+  margin-bottom: 4px;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #4a3e30;
+}

@@ -1,15 +1,18 @@
 // src/systems/InputManager.js
-// 输入管理器：统一监听 window.keydown，路由到 GameDirector
-// Phase 1 只处理 WASD（移动）、P（睡觉）、ESC（设置）
+// Phase 2B 扩展：加 B（背包）/ Tab（建造模式切换）/ 多 ESC 二级面板关闭
+//
+// 当前键位：
+//   WASD  → 移动
+//   P     → 睡觉
+//   ESC   → 关背包 → 关设置 → 回到探索（多按顺序关）
+//   B     → 背包 InventoryPanel 切换
+//   Tab   → 建造模式 / 探索模式 切换（e.preventDefault() 防浏览器焦点跳转）
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
+import { BuildSystem } from './BuildSystem.js';
 import { devLog } from '../core/Logger.js';
 
-/**
- * 键盘 → 方向映射
- * 小写字母，因为用 event.key.toLowerCase() 统一处理
- */
 const KEY_TO_DIRECTION = {
   'w': 'up',
   'a': 'left',
@@ -17,83 +20,88 @@ const KEY_TO_DIRECTION = {
   'd': 'right',
 };
 
-/**
- * 键盘 → 动作映射
- */
 const KEY_TO_ACTION = {
-  'p': 'sleep',       // 睡觉
-  'escape': 'settings', // 设置面板
+  'p': 'sleep',
+  'b': 'inventory',
+  'tab': 'buildMode',
+  'escape': 'settings',
 };
 
 export class InputManager {
-  /**
-   * @param {GameDirector} director 游戏主导演（暴露 move/sleep 方法）
-   */
   constructor(director) {
     this.director = director;
-    /** keydown 事件处理函数引用，供 off 时使用 */
     this._handler = null;
-    /** 是否已绑定 */
     this._bound = false;
   }
 
-  /**
-   * 绑定键盘监听
-   */
   bind() {
     if (this._bound) return;
 
     this._handler = (e) => {
       const key = (e.key || '').toLowerCase();
 
-      // WASD 移动
+      // Tab 必须 preventDefault（否则浏览器会跳转焦点）
+      if (key === 'tab') {
+        e.preventDefault();
+      }
+
       if (KEY_TO_DIRECTION[key]) {
         e.preventDefault();
-        const direction = KEY_TO_DIRECTION[key];
-        devLog.info('[InputManager] 方向键:', key, '→', direction);
-        this.director.move(direction);
+        this.director.move(KEY_TO_DIRECTION[key]);
         return;
       }
 
-      // 动作键
       if (KEY_TO_ACTION[key]) {
         e.preventDefault();
-        const action = KEY_TO_ACTION[key];
-        devLog.info('[InputManager] 动作键:', key, '→', action);
-        this._dispatchAction(action);
+        this._dispatchAction(KEY_TO_ACTION[key]);
         return;
       }
     };
 
     window.addEventListener('keydown', this._handler);
     this._bound = true;
-    devLog.info('[InputManager] 键盘监听已绑定 (WASD / P / ESC)');
+    devLog.info('[InputManager] 键盘监听已绑定 (WASD / P / B / Tab / ESC)');
   }
 
-  /**
-   * 解绑键盘监听
-   */
   unbind() {
     if (!this._bound || !this._handler) return;
     window.removeEventListener('keydown', this._handler);
     this._bound = false;
     this._handler = null;
-    devLog.info('[InputManager] 键盘监听已解绑');
   }
 
-  /**
-   * 分发动作到 GameDirector 或 EventBus
-   * @param {string} action
-   */
   _dispatchAction(action) {
+    const gs = this.director?.getGS?.();
     switch (action) {
       case 'sleep':
         this.director.sleep();
         break;
-      case 'settings':
-        // 切换设置面板：打开时 emit UI_PANEL_OPEN('settings')，已打开时 emit UI_PANEL_CLOSE
+
+      case 'inventory':
+        // 让 InventoryPanel 自己订阅 GE.UI_PANEL_OPEN('inventory')
+        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'inventory' });
+        devLog.info('[InputManager] inventory toggle');
+        break;
+
+      case 'buildMode':
+        if (!gs) return;
+        if (gs.buildMode) {
+          BuildSystem.exitBuildMode(gs);
+        } else {
+          BuildSystem.enterBuildMode(gs);
+        }
+        break;
+
+      case 'settings': {
+        // 多 ESC 二级关：若背包开着，先关背包；否则关设置
+        // 背包/设置面板各自订阅 UI_PANEL_CLOSE 自动 hide
+        // 这里统一按顺序发 close 事件
+        // 简化做法：先 close inventory，再发 settings toggle
+        EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });
         EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'settings' });
         break;
+      }
+
       default:
         devLog.warn('[InputManager] 未知动作:', action);
     }

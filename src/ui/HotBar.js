@@ -1,23 +1,29 @@
 // src/ui/HotBar.js
-// 快捷物品栏：底部居中 10 格，emoji + 右下数量字
-// Phase 1 先静态空槽，Phase 2 再接入实际物品
+// Phase 2B 补全：
+//   - renderFromGS 真正显示 emoji + 数量
+//   - 建造模式下已内容槽可点击选中（黄色高亮）
+//   - 选中后 tile 点击时 MapView 会拿 selectedContentId 去 BuildSystem.placeContent
+//   - 订阅 GE.UI_MODE_CHANGE 切换建造/探索模式视觉反馈
+//
+// 注意：HotBar 不自己放东西到地图，它只记录 this.selectedSlotIdx / this.selectedContentId；
+// 真正的放置由 MapView 在建造模式下处理（读 HotBar.selectedContentId）。
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
+import { Assets } from '../core/Assets.js';
 import { createEl, qs } from './dom.js';
 import { HOTBAR_SLOTS } from '../utils/constants.js';
 
 export class HotBar {
   constructor() {
     this.root = null;
-    this.slotEls = []; // 10 个 slot DOM 引用
+    this.slotEls = [];          // 10 个 slot DOM
+    this.selectedSlotIdx = null; // 建造模式下选中的槽位 idx（null = 未选中）
+    this.selectedContentId = null; // 该槽位上的 contentId（简化：假设 hotbar 里的都是 contentId）
+    this.buildMode = false;
   }
 
-  /**
-   * 挂载快捷栏
-   */
   mount(parent = qs('#app')) {
-    // 快捷栏容器
     const hotbarWrap = createEl('div', {
       class: ['hotbar-wrapper'],
       style: {
@@ -44,35 +50,26 @@ export class HotBar {
       parent: hotbarWrap,
     });
 
-    // 创建 10 个槽位
     this.slotEls = [];
     for (let i = 0; i < HOTBAR_SLOTS; i++) {
       const slotEl = this._createSlot(i);
       this.slotEls.push(slotEl);
     }
 
-    // 订阅事件
     this._subscribeEvents();
-
     return this.root;
   }
 
-  /**
-   * 创建单个槽位
-   */
   _createSlot(idx) {
     const slot = createEl('div', {
       class: ['hotbar-slot', `slot-${idx}`],
       attrs: { 'data-slot': idx },
       style: {
-        width: '46px',
-        height: '46px',
+        width: '46px', height: '46px',
         border: '2px solid #5a5a5a',
         borderRadius: '8px',
         backgroundColor: 'rgba(220, 220, 220, 0.6)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
         position: 'relative',
         cursor: 'pointer',
         transition: 'border-color 0.1s',
@@ -80,26 +77,62 @@ export class HotBar {
       parent: this.root,
     });
 
-    // 空槽标记（小数字 idx）
     createEl('span', {
       style: {
-        position: 'absolute',
-        bottom: '1px',
-        left: '3px',
-        fontSize: '10px',
-        color: '#888',
-        lineHeight: '1',
+        position: 'absolute', bottom: '1px', left: '3px',
+        fontSize: '10px', color: '#888', lineHeight: '1',
       },
       text: `${idx + 1}`,
       parent: slot,
     });
 
+    // 点击选中（仅建造模式 + 槽有内容）
+    slot.addEventListener('click', () => this._handleSlotClick(idx));
+
     return slot;
   }
 
-  /**
-   * 从 GS 渲染 hotbar（Phase 1 物品为空，所以什么都不填）
-   */
+  _handleSlotClick(idx) {
+    if (!this.buildMode) {
+      // 探索模式下不选中（保持现状）
+      return;
+    }
+    const slot = this._getCurrentGS()?.hotbar?.[idx];
+    if (!slot || !slot.itemId) {
+      this._clearSelection();
+      return;
+    }
+    // 切换选中
+    if (this.selectedSlotIdx === idx) {
+      this._clearSelection();
+    } else {
+      this.selectedSlotIdx = idx;
+      this.selectedContentId = slot.itemId;
+      this.slotEls.forEach((el, i) => {
+        if (i === idx) el.classList.add('selected');
+        else el.classList.remove('selected');
+      });
+      // 同步到 GS，让 MapView 能读到
+      this._syncSelectionToGS();
+    }
+  }
+
+  _clearSelection() {
+    this.selectedSlotIdx = null;
+    this.selectedContentId = null;
+    this.slotEls.forEach(el => el.classList.remove('selected'));
+    this._syncSelectionToGS();
+  }
+
+  /** 把选中的 contentId 同步到 gs.uiState.selectedBuildContentId */
+  _syncSelectionToGS() {
+    const gs = this._getCurrentGS();
+    if (!gs) return;
+    if (!gs.uiState) gs.uiState = {};
+    gs.uiState.selectedBuildContentId = this.selectedContentId;
+  }
+
+  /** 从 GS 渲染 */
   renderFromGS(gs) {
     if (!gs) return;
     for (let i = 0; i < HOTBAR_SLOTS; i++) {
@@ -107,25 +140,63 @@ export class HotBar {
       const slotEl = this.slotEls[i];
       if (!slotEl) continue;
 
-      // 清空旧内容（除了 idx 数字）
-      const children = Array.from(slotEl.children);
-      for (const c of children) {
-        if (c !== slotEl.children[0]) c.remove(); // 保留第一个子节点（idx）
+      // 清空旧内容（保留 idx 数字——第一个子元素）
+      while (slotEl.children.length > 1) {
+        slotEl.removeChild(slotEl.lastChild);
       }
 
       if (slot && slot.itemId) {
-        // 有物品：显示 emoji 和数量
-        // Phase 2 完整实现，Phase 1 先不填
+        slotEl.classList.add('has-content');
+        slotEl.classList.remove('empty');
+
+        const emoji = this._resolveEmoji(slot.itemId);
+        createEl('div', { class: ['slot-emoji'], text: emoji, parent: slotEl });
+        const qty = slot.qty || 1;
+        if (qty > 1) {
+          createEl('div', { class: ['slot-qty'], text: `×${qty}`, parent: slotEl });
+        }
+      } else {
+        slotEl.classList.remove('has-content');
+        slotEl.classList.add('empty');
       }
     }
+
+    // 若选中槽被挪走（数量归 0），清除选中
+    if (this.selectedSlotIdx !== null) {
+      const cur = gs.hotbar[this.selectedSlotIdx];
+      if (!cur || !cur.itemId) this._clearSelection();
+    }
+  }
+
+  _resolveEmoji(itemId) {
+    return Assets.getEmoji('facilities', itemId)
+      || Assets.getEmoji('resources', itemId)
+      || Assets.getEmoji('items', itemId)
+      || '❓';
+  }
+
+  _getCurrentGS() {
+    if (window.__gameDirector) return window.__gameDirector.getGS();
+    return null;
   }
 
   _subscribeEvents() {
     EventBus.on(GE.STATE_RESET, ({ gs }) => this.renderFromGS(gs));
     EventBus.on(GE.INVENTORY_CHANGE, () => {
-      // 从 GameDirector 获取当前 GS（简化方案）
-      if (window.__gameDirector) {
-        this.renderFromGS(window.__gameDirector.getGS());
+      if (window.__gameDirector) this.renderFromGS(window.__gameDirector.getGS());
+    });
+
+    // 建造模式切换
+    EventBus.on(GE.UI_MODE_CHANGE, ({ mode }) => {
+      const build = mode === 'build';
+      this.buildMode = build;
+      if (build) {
+        document.body.classList.add('build-mode');
+        // 建造模式默认清空选中，让玩家自己选
+        this._clearSelection();
+      } else {
+        document.body.classList.remove('build-mode');
+        this._clearSelection();
       }
     });
   }

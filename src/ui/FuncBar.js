@@ -6,8 +6,8 @@
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { Assets } from '../core/Assets.js';
+import { BuildSystem } from '../systems/BuildSystem.js';
 import { createEl, qs } from './dom.js';
-import { InputManager } from '../systems/InputManager.js';
 
 export class FuncBar {
   /**
@@ -30,8 +30,8 @@ export class FuncBar {
       { id: 'role',     emoji: Assets.ui.role,     label: '角色', action: 'comingSoon' },
       { id: 'team',     emoji: Assets.ui.team,     label: '编队', action: 'comingSoon' },
       { id: 'forge',    emoji: Assets.ui.forge,    label: '合成', action: 'comingSoon' },
-      { id: 'build',    emoji: Assets.ui.build,    label: '建造', action: 'comingSoon' },
-      { id: 'inventory',emoji: Assets.ui.inventory,label: '背包', action: 'comingSoon' },
+      { id: 'build',    emoji: Assets.ui.build,    label: '建造', action: 'toggleBuild' },
+      { id: 'inventory',emoji: Assets.ui.inventory,label: '背包', action: 'toggleInventory' },
       { id: 'vehicle',  emoji: Assets.ui.vehicle,  label: '载具', action: 'comingSoon' },
     ];
 
@@ -122,6 +122,16 @@ export class FuncBar {
           this.director.sleep();
         }
         break;
+      case 'toggleInventory':
+        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'inventory' });
+        break;
+      case 'toggleBuild': {
+        const gs = this.director?.getGS?.();
+        if (!gs) return;
+        if (gs.buildMode) BuildSystem.exitBuildMode(gs);
+        else BuildSystem.enterBuildMode(gs);
+        break;
+      }
       case 'comingSoon':
         EventBus.emit(GE.TOAST_SHOW, { text: `${label}功能即将推出～`, duration: 1500 });
         break;

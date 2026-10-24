@@ -1,9 +1,8 @@
 // src/ui/SpiritArea.js
-// 左侧精灵区：只有 momo 精灵圆形头像
-// 按 ui-main.png 位置：top:150px left:15px，金色边框 3px #e8c547，白色圆底
-// 下方的任务条（� + momo + 余默头像）留到 Phase 3 做
-// Phase 1 Brief 里"🧑‍🎤 余默 + 👻 momo 头像"的描述是笔误，以 ui-main.png 为准
+// Phase 2B 扩展：点击 momo 触发 InfoPanel 切到祈福 tab（滑入 + 切 tab 3）
 
+import { EventBus } from '../core/EventBus.js';
+import { GE } from '../core/GameEvents.js';
 import { createEl, qs } from './dom.js';
 
 export class SpiritArea {
@@ -30,11 +29,10 @@ export class SpiritArea {
         cursor: 'pointer',
         transition: 'transform 0.15s',
       },
-      attrs: { title: 'momo（点击祈福·Phase 2）' },
+      attrs: { title: 'momo（点击打开祈福面板）' },
       parent,
     });
 
-    // momo emoji（强制 emoji 字体）
     createEl('span', {
       text: '👻',
       style: {
@@ -53,11 +51,15 @@ export class SpiritArea {
     this.root.addEventListener('mouseleave', () => {
       this.root.style.transform = 'scale(1)';
     });
+
+    // 点击：让 InfoPanel 切到 tab 3（祈福 tab）
     this.root.addEventListener('click', () => {
-      // Phase 2 接入祈福面板，Phase 1 只弹 Toast
-      import('../core/EventBus.js').then(m => {
-        m.EventBus.emit(m.GE.TOAST_SHOW, { text: 'momo 祈福功能 Phase 2 开放～', duration: 1500 });
-      });
+      // 让 InfoPanel 定位到玩家所在 tile + 切到祈福 tab
+      // 用 EventBus 解耦：InfoPanel 订阅以下两个事件
+      const gs = window.__gameDirector?.getGS?.();
+      const tileIdx = gs?.player?.x ?? 0;
+      EventBus.emit(GE.TILE_CLICKED, { tileIdx });
+      EventBus.emit('ui:infoShowBless', {});
     });
 
     return this.root;
