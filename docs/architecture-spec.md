@@ -131,7 +131,8 @@ export const HookDispatcher = {
 export const GE = {
   // —— 生命周期 ——
   BOOT: 'boot',
-  STATE_RESET: 'state:reset',
+  STATE_RESET: 'state:reset',       // Storage.load() 后 emit，所有 UI 模块订阅做全量重渲染
+  STORAGE_SAVE: 'storage:save',
   
   // —— 玩家操作 ——
   MOVE: 'player:move',
