@@ -16,6 +16,7 @@ import { TopBar } from './ui/TopBar.js';
 import { FuncBar } from './ui/FuncBar.js';
 import { HotBar } from './ui/HotBar.js';
 import { SpiritArea } from './ui/SpiritArea.js';
+import { InfoPanel } from './ui/InfoPanel.js';
 import { Toast } from './ui/Toast.js';
 import { SettingsPanel } from './ui/SettingsPanel.js';
 
@@ -68,9 +69,13 @@ funcBar.mount();
 const hotBar = new HotBar();
 hotBar.mount();
 
-// 精灵区（左侧）
+// 精灵区（左侧 momo 圆头）
 const spiritArea = new SpiritArea();
 spiritArea.mount();
+
+// 信息区（右侧 380px 面板，4 tab）
+const infoPanel = new InfoPanel();
+infoPanel.mount();
 
 // 设置面板（全局遮罩）
 const settingsPanel = new SettingsPanel(director);

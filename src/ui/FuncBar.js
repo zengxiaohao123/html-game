@@ -88,7 +88,15 @@ export class FuncBar {
       parent: this.root,
     });
 
-    createEl('span', { text: icon.emoji }, btn);
+    createEl('span', {
+      text: icon.emoji,
+      style: {
+        display: 'inline-block',
+        fontSize: '22px',
+        lineHeight: '1',
+        fontFamily: '"Segoe UI Emoji", "Apple Color Emoji", "Segoe UI Symbol", "Noto Color Emoji", "Android Emoji", sans-serif',
+      },
+    }, btn);
 
     // hover 效果
     btn.addEventListener('mouseenter', () => {

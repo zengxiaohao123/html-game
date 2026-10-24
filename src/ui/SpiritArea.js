@@ -1,6 +1,8 @@
 // src/ui/SpiritArea.js
-// 左侧精灵 + 角色区：🧑‍🎤 余默 + 👻 momo
-// Phase 1 静态展示，交互留到 Phase 3
+// 左侧精灵区：只有 momo 精灵圆形头像
+// 按 ui-main.png 位置：top:150px left:15px，金色边框 3px #e8c547，白色圆底
+// 下方的任务条（� + momo + 余默头像）留到 Phase 3 做
+// Phase 1 Brief 里"🧑‍🎤 余默 + 👻 momo 头像"的描述是笔误，以 ui-main.png 为准
 
 import { createEl, qs } from './dom.js';
 
@@ -14,60 +16,48 @@ export class SpiritArea {
       class: ['spirit-area'],
       style: {
         position: 'absolute',
-        left: '12px',
-        bottom: '80px',
+        left: '15px',
+        top: '150px',
+        width: '60px',
+        height: '60px',
+        borderRadius: '50%',
+        border: '3px solid #e8c547',
+        backgroundColor: '#ffffff',
         display: 'flex',
-        flexDirection: 'column',
-        gap: '10px',
-        padding: '10px',
-        backgroundColor: 'rgba(255, 251, 230, 0.95)',
-        border: '3px solid #3a3a3a',
-        borderRadius: '14px',
-        boxShadow: '0 3px 8px rgba(0,0,0,0.15)',
-        zIndex: 100,
         alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 100,
+        cursor: 'pointer',
+        transition: 'transform 0.15s',
       },
+      attrs: { title: 'momo（点击祈福·Phase 2）' },
       parent,
     });
 
-    // 余默角色头像
-    createEl('div', {
-      class: ['spirit-avatar', 'avatar-yumo'],
+    // momo emoji（强制 emoji 字体）
+    createEl('span', {
+      text: '👻',
       style: {
-        width: '56px',
-        height: '56px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: '36px',
-        border: '2px solid #3a3a3a',
-        borderRadius: '50%',
-        backgroundColor: '#ffeaa7',
+        fontSize: '32px',
         lineHeight: '1',
+        display: 'inline-block',
+        fontFamily: '"Segoe UI Emoji", "Apple Color Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif',
       },
-      text: '🧑‍🎤',
-      attrs: { title: '余默' },
       parent: this.root,
     });
 
-    // momo 精灵头像
-    createEl('div', {
-      class: ['spirit-avatar', 'avatar-momo'],
-      style: {
-        width: '48px',
-        height: '48px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: '30px',
-        border: '2px solid #3a3a3a',
-        borderRadius: '50%',
-        backgroundColor: '#dfe6e9',
-        lineHeight: '1',
-      },
-      text: '👻',
-      attrs: { title: 'momo' },
-      parent: this.root,
+    // hover 效果
+    this.root.addEventListener('mouseenter', () => {
+      this.root.style.transform = 'scale(1.08)';
+    });
+    this.root.addEventListener('mouseleave', () => {
+      this.root.style.transform = 'scale(1)';
+    });
+    this.root.addEventListener('click', () => {
+      // Phase 2 接入祈福面板，Phase 1 只弹 Toast
+      import('../core/EventBus.js').then(m => {
+        m.EventBus.emit(m.GE.TOAST_SHOW, { text: 'momo 祈福功能 Phase 2 开放～', duration: 1500 });
+      });
     });
 
     return this.root;
