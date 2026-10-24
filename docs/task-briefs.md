@@ -27,6 +27,11 @@
 - **必须先读**：
   - [architecture-spec.md](file:///C:/Users/10436/game/docs/architecture-spec.md)（本架构规范）
   - [转盘农场_设计文档_v0.3.md](file:///C:/Users/10436/game/docs/转盘农场_设计文档_v0.3.md) §1-5（概述/地图/地块/数值）
+- **⚠️ 素材策略**：
+  - Phase 0 **只使用 emoji 占位**，严禁尝试下载/上传/映射任何图片资源
+  - 仓库现有 `assets/` 目录是另一款游戏的精灵图（史莱姆、敌人、旧 terrain tile），**不要动、不要引用、不要删除**，留着即可
+  - 本地路径 `C:\Users\10436\Downloads\DemonLordJustABlock_Assets` 是另一款独立游戏素材，**不要上传到仓库**、不要映射到 Assets.js
+  - emoji 占位对照表见仓库 `docs/emoji-placeholder-report.md`（Phase 0 的 Assets.js 只需要最基础的几样，不用全表）
 
 ### 需新增/修改的文件
 
@@ -42,7 +47,7 @@
 | `src/core/Distance.js` | 新建 | 外圈邻居计算（3×3 外圈 8 格，每格 4 邻居，转角共享）+ 栅栏内 row/col 邻居 + 相邻判断 |
 | `src/core/Assets.js` | 新建 | 导出 `Assets = { emoji: { facility_home: '🏠', facility_tent: '⛺', ... }, terrains: { grass: '🟩', water: '🌊', none: '🟫' }, ui: { hp: '❤️', atk: '⚔️', ... } }` —— 完整 emoji 映射见 emoji-placeholder-report.md |
 | `src/state/gameState.js` | 新建 | 导出 `createInitialState()` 工厂函数，schema 见 architecture-spec §3；地图初始 3×3，外圈 8 格全为无地形/虚空，左下 idx=6 自动放【家】 |
-| `src/state/storage.js` | 新建 | 导出 `Storage = { save(slot, gs), load(slot), autoSave(gs), listSlots(), clearSlot(slot) }`；slot 1 为自动存档（key='wheelfarm_autosave'），slot 2-8 手动存 |
+| `src/state/storage.js` | 新建 | 导出 `Storage = { save(slot, gs), load(slot), autoSave(gs), listSlots(), clearSlot(slot) }`；slot 1 为自动存档（key='wheelfarm_autosave'），slot 2-8 手动存；**save 时必须 `JSON.parse(JSON.stringify(gs))` 深克隆**，GS 对象不得包含任何函数或循环引用；load 失败返回 null |
 | `src/utils/constants.js` | 新建 | 导出常量：`MAX_STAMINA = 8`, `MIN_STAMINA = -3`, `FENCE_ROW_COLS_INITIAL = 1`, `CAPACITY_FRIENDLY_INITIAL = 4`, `CAPACITY_DANGER_INITIAL = 4`, `SLOTS_MAX = 8` |
 
 ### 验收标准
@@ -50,6 +55,16 @@
 2. Console 里执行 `import('./src/state/gameState.js').then(m => console.log(m.createInitialState()))` 能打印完整 GS 对象
 3. 注册 demo hook（如 `HookDispatcher.register('onEnter', () => console.log('enter!'))`）然后 `HookDispatcher.fire('onEnter')` 能触发
 4. `Storage.save(1, gs)` + `Storage.load(1)` 能正常 round-trip
+5. Console 里无 404 错误、无 SyntaxError、无 TypeError
+
+### ⚠️ 部署验证（agent 完成后必须请用户亲自做）
+- agent push main 后，**必须等待 Cloudflare Pages 自动部署完成**（一般 30-60 秒）
+- 打开 `https://html-game-ap9.pages.dev/`，按 F12 看 Console：
+  - ✅ 能看到"转盘农场启动 ✓" + demo hook 输出
+  - ✅ Console 里 `import('./src/state/gameState.js').then(m => m.createInitialState())` 能打印完整 GS
+  - ❌ 不能有 404 错误、SyntaxError、TypeError
+- 这一步由**用户（你本人）亲自验证**，不要委托 agent 去看——agent 没法真的点浏览器
+- 通过后才能进入 Phase 1
 
 ### 禁止事项
 - 禁止写任何 UI 渲染代码（纯 DOM 操作也不行）
@@ -79,12 +94,14 @@ Phase 0 验收全部通过。agent 必须基于 main 分支最新代码继续开
 | `src/systems/DaySystem.js` | 新建 | `startNewDay(gs)`：turn=0，day++，fire HookDispatcher('onDailyStart') 让所有设施触发每日效果，重置 dailyCounters 全为 0，stamina 回复一半（向上取整）+ 检查心力交瘁 debuff |
 | `src/systems/MovementSystem.js` | 新建 | `move(gs, direction)`：Direction.neighbor(gs.player.x, direction) → 检查邻居有效性 → 扣 1 stamina → 触发 onPass + onEnter hook → GS.player.x 更新；不可移动返回 null 不扣 stamina |
 | `src/systems/SleepSystem.js` | 新建 | `sleep(gs)`：DaySystem.startNewDay()；stamina 按设施规则回复（家/帐篷 = 回满）；心力交瘁检查；金币 10% 惩罚（行动力到 -3 强制睡时） |
-| `src/utils/Direction.js` | 新建 | Direction 工具：4 方向枚举 + opposite + neighbor 计算（外圈是环形，方向在边界处 wrap） |
+| `src/utils/Direction.js` | 新建 | **方向工具**：4 方向枚举（UP='up' DOWN='down' LEFT='left' RIGHT='right'）+ opposite()；**邻居计算不要放这里**——Phase 0 已创建 `src/core/Distance.js`，里面应该有 Distance.neighbor(gs.player.x, direction, mapSize)，Phase 1 agent 调 Distance.js 的函数就行；**如果 Distance.js 里没有 neighbor 方法，就在 Direction.js 里实现并导出**，但优先扩展已有 Distance.js |
+| `src/data/facilities.js` | 新建 | **Phase 1 极简版**（只注册 home + wheat 两种设施作为 demo）。每个设施一个对象 `{ id, name, emoji, hooks: { onEnter, onPass, onDailyStart, ... } }`。export function registerFacilities() { FacilityHome.register(); FacilityWheat.register(); } —— FacilityHome 注册 onEnter/onPass 触发获得 1 金币；FacilityWheat 注册 onDailyStart 触发添加小麦到背包。**完整 10 种设施 Phase 2 再补全** |
 | `src/ui/MapView.js` | 新建 | 纯 DOM 渲染：外圈 8 格（3×3 初始）用绝对定位回字形摆；中心栅栏 1×1 用深灰描边；每格显示 emoji 占位；玩家用 🧑 绝对定位在当前格中心 |
 | `src/ui/TopBar.js` | 新建 | 顶部状态栏：❤️ hp/maxHp、⚔️ atk、🔷 stamina/maxStamina、🪙 gold、🐣 友善 cap/current、👹 危险 cap/current |
 | `src/ui/FuncBar.js` | 新建 | 功能区：从右往左 8 图标（❌ 设置、🛌 睡觉、👤 角色、👥 编队、⚒️ 合成、🛠️ 建造、🎒 背包、🚗 载具），点击 emit GE.UI_PANEL_OPEN 或直接触发 |
 | `src/ui/HotBar.js` | 新建 | 快捷栏：底部居中 10 格，显示 emoji + 数量（右下小字）；选中格加黄色边框 |
 | `src/ui/SpiritArea.js` | 新建 | 左侧精灵：初始 🧑‍🎤 余默 + 👻 momo 头像；点击 emit GE.UI_INFO_PANEL 打开祈福 tab |
+| `src/ui/SettingsPanel.js` | 新建 | **极简版**：ESC 打开，两个按钮"存档 slot 1"、"读档 slot 1"、"回主菜单"；存档按钮调 Storage.save(1, gs) 再弹 Toast 提示；读档按钮调 Storage.load(1) 再 emit GS 重新渲染 |
 | `src/ui/Toast.js` | 新建 | 中央弹窗：GE.TOAST_SHOW → 2 秒自动消失；用于"你感到心力交瘁"、金币变化等提醒 |
 | `src/ui/dom.js` | 新建 | 工具函数：createEl(tag, {class, id, text, style}), qs, qsa 等 |
 
