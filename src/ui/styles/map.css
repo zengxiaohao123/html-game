@@ -30,12 +30,5 @@
   box-sizing: border-box;
 }
 
-/* 玩家头像动画（闲置时轻微浮动） */
-.player-avatar {
-  animation: player-bob 1.6s ease-in-out infinite;
-}
-
-@keyframes player-bob {
-  0%, 100% { transform: translate(-50%, -50%) translateY(0); }
-  50%      { transform: translate(-50%, -50%) translateY(-3px); }
-}
+/* 说明：所有图标（包括玩家 🧑）不采用呼吸或浮动的 idle 动画效果（用户要求） */
+/* 玩家仅保留 WASD 移动时的位置过渡 transition: left/top 0.2s ease-out */
