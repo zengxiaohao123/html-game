@@ -121,7 +121,9 @@ Phase 0 验收全部通过。agent 必须基于 main 分支最新代码继续开
 
 ---
 
-## Phase 2 Brief —— 设施 + 产出 + 背包 + 祈福 + 建造模式
+## Phase 2 Brief —— 设施 + 产出 + 背包 + 祈福 + 建造模式（**已拆为 2A / 2B**）
+
+> **拆分说明**（2026-10-24 更新）：原 Phase 2 量太大，拆为 2 个子阶段串行执行。2A 只做数据层 + 系统层；2B 做 UI 层。2A 完成 push 后再派发 2B。下文 2.1 = Phase 2A，2.2 = Phase 2B。
 
 ### 前置条件
 Phase 1 验收通过。
@@ -129,21 +131,36 @@ Phase 1 验收通过。
 ### 必须先读
 - 设计文档 §9-11（背包、设施 10 种、资源 5 种）
 - architecture-spec.md HookDispatcher 章节
+- ⚠️ `docs/architecture-plan.md` 是旧 Lua 版，**直接忽略**，只看上面两份
 
-### 需新增/修改的文件
+---
 
-| 文件路径 | 操作 | 核心内容 |
-|----------|------|----------|
-| `src/data/facilities.js` | 新建 | 10 种设施定义表，每设施含：id、name、emoji、dailyStartHook、onEnterHook、onPassHook、onBlessedHook、sleepHook、replaceHook（帐篷专用）。**每种设施在 `export function registerAllFacilities()` 里调用 `HookDispatcher.register`** |
-| `src/data/resources.js` | 新建 | 5 种资源类地块内容定义：event、reward、hunt、shop、bus；注册 hook |
-| `src/data/items.js` | 新建 | 产出物品表：wheat、rice_straw、potato、tulip_value_N、strawberry、pea、egg、golden_egg、raw_meat、slime_gel、wheel；每物品：id、name、emoji、category、value |
-| `src/data/terrains.js` | 新建 | 4 种地形：grass(elementAmount=10)、water(elementAmount=10)、none(elementAmount=0)、mud(elementAmount=10) |
-| `src/systems/BlessSystem.js` | 新建 | `bless(gs)`：stamina -= 2、gold -= 1；Random.pick(gs.map.outerTiles 中随机 1 格)；挂上 'blessed' 状态（含剩余次数） |
-| `src/systems/InventorySystem.js` | 新建 | `addItem(gs, itemId, qty)`、`removeItem(gs, itemId, qty)`、`addToOutbox(gs, itemId, qty)`、`loadFromOutbox(gs)`（每日开始时自动）、`moveItemBetween(gs, from, to, qty, mode)`（左键 1 / 右键 half / Shift+LMB 5 / Alt+LMB 25） |
-| `src/systems/BuildSystem.js` | 新建 | `enterBuildMode(gs)`、`exitBuildMode(gs)`、`placeContent(gs, tileIdx, contentId)`：检查合法 → 替换（帐篷旧内容回背包，其他消失）→ emit TILE_UPDATED |
-| `src/ui/InventoryPanel.js` | 新建 | B 键打开：全屏大面板；顶部 8 tab（总览/设施/资源/技能/地形/产物/道具/杂物）；左侧物品列表（emoji 无文字）；右侧选中详情；右下出货箱 12 格（2×6）；拖拽放置支持 |
-| `src/ui/InfoPanel.js` | 新建 | 点击地块滑入（右侧 1/4 屏宽）；4 tab：地块内容（词条行+滑动条+功能按钮）/ 状态（地形+buff）/ 单位（外圈=余默、栅栏内=生物列表）/ 祈福；点击空白处滑出 |
-| `src/ui/styles/*.css` | 新建 | 基础样式表（base.css/map.css/panels.css/hotbar.css/ui.css），采用 ui-mockup-main.html 里的配色和布局 |
+### 2.1 Phase 2A —— 数据层 + 系统层（Bless/Inventory/Build + 10 设施 + 5 资源 + items/terrains）
+
+**范围（只做这些）**：
+- 扩展 `src/data/facilities.js`：Phase 1 的 2 种 → 完整 10 种设施 + 5 种资源类地块内容（共 15 种），每种注册全部相关 hook
+- 新建 `src/data/resources.js`（5 资源独立定义，可与 facilities.js 共用同一套数据）
+- 新建 `src/data/items.js`（产出物品表）
+- 新建 `src/data/terrains.js`（4 种地形定义）
+- 新建 `src/systems/BlessSystem.js`（祈福：随机选 1 格 + 挂 blessed 状态 + fire onBlessed hook）
+- 新建 `src/systems/InventorySystem.js`（addItem/removeItem/addToOutbox/loadFromOutbox/moveItemBetween）
+- 新建 `src/systems/BuildSystem.js`（建造模式 enterBuildMode/exitBuildMode/placeContent）
+- **扩展** `src/state/gameState.js`：GS schema 加 inventory/outbox/buildMode；map.outerTiles 每格加 states/dailyFlags
+- **扩展** `src/core/GameEvents.js`：加 BLESS_DONE/INVENTORY_CHANGE/ITEM_GAINED/CAPACITY_CHANGE 等新事件
+- **扩展** Phase 1 的 DaySystem.startNewDay()：加 blessed 状态-1天、InventorySystem.loadFromOutbox()
+- ⚠️ **不写任何 UI 代码**（InventoryPanel/InfoPanel/CSS 等 Phase 2B 做）
+
+**⚠️ henhouse/slimehouse hook 占位规则**：
+- 10 种设施里，henhouse【进入时】要生成小鸡、slimehouse【每日开始时】要生成史莱姆——但 **CreatureSystem 是 Phase 3 才创建**的
+- 2A 里这两个 hook **只写 Toast 占位**（`devLog.info + EventBus.emit(GE.TOAST_SHOW, { text: '🐣 小鸡即将孵化…' })`），Phase 3 agent 接手时替换成 CreatureSystem 调用
+- 其他 8 种设施 + 5 种资源的 hook 全部正常实现（它们只改金币、产出物品、挂状态，都是 InventorySystem/Storage 层面，不依赖 Phase 3+）
+
+**⚠️ blessed 状态存储唯一方案**：
+- **唯一真相源**：`gs.map.outerTiles[tileIdx].states.push({ type: 'blessed', remainingDays: 1, source: 'bless' })`
+- Phase 0 architecture-spec.md §3 里提到的全局 `blessingQueue: []` —— **2A 阶段删掉或重定义**（改为存祈福操作历史日志，不参与游戏逻辑）
+- DaySystem.startNewDay() 里遍历 `outerTiles[].states.filter(s => s.type==='blessed')` 统一处理 -1 天/移除
+
+**设施完整清单 + hook 触发时机（设计文档原文）**：
 
 ### 验收标准
 1. **10 种设施词条全部注册**：每种设施的所有【】词条都能触发（麦田日开始产小麦、土豆田储存土豆、家经过获得金币、鸡舍进入生小鸡、史莱姆屋日开始生史莱姆等）
