@@ -1,0 +1,41 @@
+/* src/ui/styles/map.css
+ * 地图与地块样式（Q 版卡通风格：圆润、糖果色、粗描边）
+ */
+
+/* 地图容器 */
+.map-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 外圈 tile */
+.map-tile {
+  /* MapView 已内联样式，这里补 hover 和特殊状态 */
+  cursor: pointer;
+  transition: all 0.15s ease-out;
+}
+
+.map-tile:hover {
+  transform: scale(1.03);
+  filter: brightness(1.05);
+}
+
+.map-tile:active {
+  transform: scale(0.97);
+}
+
+/* 栅栏 */
+.map-fence {
+  box-sizing: border-box;
+}
+
+/* 玩家头像动画（闲置时轻微浮动） */
+.player-avatar {
+  animation: player-bob 1.6s ease-in-out infinite;
+}
+
+@keyframes player-bob {
+  0%, 100% { transform: translate(-50%, -50%) translateY(0); }
+  50%      { transform: translate(-50%, -50%) translateY(-3px); }
+}

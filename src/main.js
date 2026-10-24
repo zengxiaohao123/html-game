@@ -1,43 +1,88 @@
-// src/main.js —— 入口
-// Phase 0 基础设施层：只做模块组装 + 启动日志 + demo hook 测试
-// 不写任何 UI 渲染代码
+// src/main.js —— Phase 1 核心循环入口
+// 组装 GameDirector + 所有 UI 模块，启动游戏
+// Phase 0 的 demo hook 已移除，换成 registerFacilities()
 
 import { EventBus } from './core/EventBus.js';
 import { GE } from './core/GameEvents.js';
-import { HookDispatcher } from './core/HookDispatcher.js';
 import { devLog } from './core/Logger.js';
-import { createInitialState } from './state/gameState.js';
-import { Storage } from './state/storage.js';
 
-// ── Phase 0 Demo Hook 测试 ──
-// 这些 hook 仅在启动时注册一次，用于验证 HookDispatcher 工作正常
-// 正式游戏逻辑将在 Phase 1+ 通过 data/*.js 的设施/技能注册
+// 系统
+import { GameDirector } from './systems/GameDirector.js';
+import { InputManager } from './systems/InputManager.js';
 
-HookDispatcher.register('onEnter', (params) => {
-  devLog.info('[demo hook] onEnter 触发, params:', params);
-});
+// UI
+import { MapView } from './ui/MapView.js';
+import { TopBar } from './ui/TopBar.js';
+import { FuncBar } from './ui/FuncBar.js';
+import { HotBar } from './ui/HotBar.js';
+import { SpiritArea } from './ui/SpiritArea.js';
+import { Toast } from './ui/Toast.js';
+import { SettingsPanel } from './ui/SettingsPanel.js';
 
-HookDispatcher.register('onDailyStart', (params) => {
-  devLog.info('[demo hook] onDailyStart 触发, params:', params);
-});
+/**
+ * 动态加载 CSS（ESM 不支持直接 import CSS，用 link 标签方式）
+ */
+function loadStylesheet(href) {
+  // 避免重复加载
+  if (document.querySelector(`link[href="${href}"]`)) return;
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = href;
+  document.head.appendChild(link);
+}
 
-// EventBus demo 订阅
-EventBus.on(GE.BOOT, () => {
-  devLog.info('[demo subscriber] BOOT 事件已收到');
-});
+// 加载 Phase 1 样式
+loadStylesheet('./src/ui/styles/base.css');
+loadStylesheet('./src/ui/styles/map.css');
 
-// 创建一个初始 GS 用于验证
-const gs = createInitialState();
-devLog.info('初始 GS 创建成功, day=', gs.day, 'turn=', gs.turn);
-devLog.info('外圈格数:', gs.map.outerTiles.length, '栅栏格数:', gs.map.fence.length);
-devLog.info('左下 idx=6 内容:', gs.map.outerTiles[6].contentId);
-devLog.info('玩家初始位置 x:', gs.player.x, 'hp:', gs.player.hp, 'stamina:', gs.player.stamina);
+// ── 启动流程 ──
+devLog.info('=== 转盘农场 Phase 1 启动中 ===');
 
-// Storage round-trip 自检（不真正存档，Phase 5 正式接入）
-// 这里只演示 API 可用
-devLog.info('Storage 模块就绪, slots:', Storage.listSlots().length, '槽位');
+// 1. 主导演
+const director = new GameDirector();
+director.start();
 
-// 触发一次 BOOT 事件演示 EventBus
-EventBus.emit(GE.BOOT);
+// 把 director 挂到 window，方便 UI 层访问 GS（Phase 1 简化方案）
+window.__gameDirector = director;
 
-console.log('转盘农场启动 ✓');
+// 2. UI 模块挂载
+const gs = director.getGS();
+
+// Toast 最先挂载（toast-layer 已在 index.html 预留）
+const toast = new Toast();
+toast.mount();
+
+// 地图（居中，先算好）
+const mapView = new MapView();
+mapView.mount(gs);
+
+// 顶部状态栏（偏左上角）
+const topBar = new TopBar();
+topBar.mount(gs);
+
+// 功能区（偏右上角）
+const funcBar = new FuncBar(director);
+funcBar.mount();
+
+// 快捷栏（底部居中）
+const hotBar = new HotBar();
+hotBar.mount();
+
+// 精灵区（左侧）
+const spiritArea = new SpiritArea();
+spiritArea.mount();
+
+// 设置面板（全局遮罩）
+const settingsPanel = new SettingsPanel(director);
+settingsPanel.mount();
+
+// 3. 输入管理器（WASD / P / ESC）
+const inputManager = new InputManager(director);
+inputManager.bind();
+
+// 4. 广播 BOOT 完成
+EventBus.emit(GE.BOOT, { gs });
+
+console.log('转盘农场 Phase 1 启动 ✓');
+devLog.info('已挂载模块:', { mapView, topBar, funcBar, hotBar, spiritArea, toast, settingsPanel });
+devLog.info('WASD 移动 / P 睡觉 / ESC 设置 —— 试试吧！');
