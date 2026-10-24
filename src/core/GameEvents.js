@@ -1,53 +1,61 @@
-/**
- * core/GameEvents.js —— 全局事件名常量
- * 系统间通信用这些符号，禁止散落魔法字符串。
- */
-export const GE = Object.freeze({
-  // 顶层状态机
-  STATE_CHANGE: 'state:change',          // { from, to }
+// src/core/GameEvents.js
+// 所有 EventBus 事件名常量集中管理，禁止直接使用字符串字面量。
+// 新增事件时请同步更新 architecture-spec.md §2.3。
 
-  // 探索
-  EXPLORE_MOVE: 'explore:move',          // { from, to, cost }
-  EXPLORE_TILE_CLICK: 'explore:tileClick',
-  EXPLORE_NEW_DAY: 'explore:newDay',     // { day }
-  EXPLORE_AP_CHANGE: 'explore:apChange',
-  EXPLORE_CONTENT: 'explore:content',    // 地块 content 触发
-  BUILD_TILE: 'build:tile',
-  BUILD_FACILITY: 'build:facility',
-  EXPLORE_LOG: 'explore:log',            // 行动记录区文本
+export const GE = {
+  // ── 生命周期 ──
+  BOOT: 'boot',
+  STATE_RESET: 'state:reset',
 
-  // 战斗
-  BATTLE_START: 'battle:start',
-  BATTLE_END: 'battle:end',              // { result }
-  BATTLE_ROUND: 'battle:round',
-  BATTLE_UNIT_TURN: 'battle:unitTurn',
-  BATTLE_DAMAGE: 'battle:damage',
-  BATTLE_HEAL: 'battle:heal',
-  BATTLE_SHIELD: 'battle:shield',
-  BATTLE_AURA: 'battle:aura',            // 附着变化
-  BATTLE_REACTION: 'battle:reaction',    // 元素反应
-  BATTLE_SKILL: 'battle:skill',
-  BATTLE_CHAIN_PROMPT: 'battle:chainPrompt',
-  BATTLE_INTENT: 'battle:intent',
-  BATTLE_LOG: 'battle:log',
+  // ── 玩家操作 ──
+  MOVE: 'player:move',
+  MOVE_BLOCKED: 'player:moveBlocked',
+  SLEEP: 'player:sleep',
+  BLESS: 'player:bless',
+  BLESS_DONE: 'player:blessDone',
 
-  // 背包 / 资源
-  INV_CHANGE: 'inv:change',
+  // ── 回合 / 时间 ──
+  TURN_ADVANCE: 'turn:advance',
+  DAY_START: 'day:start',
+  DAY_END: 'day:end',
+
+  // ── 数值变化 ──
+  STAMINA_CHANGE: 'stamina:change',
+  HP_CHANGE: 'hp:change',
   GOLD_CHANGE: 'gold:change',
-  HEALTH_CHANGE: 'health:change',
-  ITEM_TOAST: 'item:toast',
+  ATK_CHANGE: 'atk:change',
+  STAT_CHANGE: 'stat:change',
 
-  // 角色 / 编队
-  PARTY_CHANGE: 'party:change',
-  XP_GAIN: 'hero:xp',
-  HERO_LEVELUP: 'hero:levelup',
-  AFFINITY_CHANGE: 'affinity:change',
+  // ── 地图 ──
+  TILE_UPDATED: 'tile:updated',
+  TILE_CLICKED: 'tile:clicked',
+  TERRAIN_DEPLETED: 'terrain:depleted',
 
-  // 时间/全局
-  MENTAL_CHANGE: 'mental:change',
+  // ── 背包 / 放置 ──
+  INVENTORY_CHANGE: 'inventory:change',
+  ITEM_GAINED: 'item:gained',
+  ITEM_LOST: 'item:lost',
+  PLACEMENT: 'placement',
 
-  // UI
+  // ── 生物 ──
+  CREATURE_SPAWNED: 'creature:spawned',
+  CREATURE_DEFEATED: 'creature:defeated',
+  CAPACITY_CHANGE: 'capacity:change',
+
+  // ── 战斗 / 技能 ──
+  SKILL_TRIGGERED: 'skill:triggered',
+  DAMAGE_DEALT: 'damage:dealt',
+  DAMAGE_TAKEN: 'damage:taken',
+  LINK_SKILL_READY: 'linkskill:ready',
+  LINK_SKILL_EXPIRE: 'linkskill:expire',
+
+  // ── UI ──
   UI_PANEL_OPEN: 'ui:panelOpen',
-  UI_TOAST: 'ui:toast',
-  UI_FX: 'ui:fx',
-});
+  UI_PANEL_CLOSE: 'ui:panelClose',
+  UI_MODE_CHANGE: 'ui:modeChange',
+  TOAST_SHOW: 'toast:show',
+
+  // ── 存档 ──
+  SAVE_DONE: 'save:done',
+  LOAD_DONE: 'load:done',
+};

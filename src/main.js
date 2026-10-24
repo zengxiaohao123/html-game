@@ -1,41 +1,43 @@
-/**
- * main.js —— 入口：组装导演与 UI，启动标题界面。
- */
+// src/main.js —— 入口
+// Phase 0 基础设施层：只做模块组装 + 启动日志 + demo hook 测试
+// 不写任何 UI 渲染代码
 
-import { GameDirector } from './systems/GameDirector.js';
-import { UIController } from './ui/UIController.js';
-import { audio } from './core/Audio.js';
 import { EventBus } from './core/EventBus.js';
 import { GE } from './core/GameEvents.js';
-import { screenFx } from './ui/dom.js';
+import { HookDispatcher } from './core/HookDispatcher.js';
 import { devLog } from './core/Logger.js';
-import { Assets } from './core/Assets.js';
+import { createInitialState } from './state/gameState.js';
+import { Storage } from './state/storage.js';
 
-const director = new GameDirector();
-const ui = new UIController(director);
+// ── Phase 0 Demo Hook 测试 ──
+// 这些 hook 仅在启动时注册一次，用于验证 HookDispatcher 工作正常
+// 正式游戏逻辑将在 Phase 1+ 通过 data/*.js 的设施/技能注册
 
-// 首次交互解锁音频
-window.addEventListener('pointerdown', () => audio.unlock(), { once: true });
-window.addEventListener('keydown', () => audio.unlock(), { once: true });
-
-// 全屏特效（剧情打字引擎预留）
-EventBus.on(GE.UI_FX, (p) => screenFx(p.kind));
-
-// 音效：由事件总线集中驱动（BGM 待压缩后接入）
-EventBus.on(GE.BATTLE_SKILL, () => audio.playSfx(Assets.SND.attack, { volume: 0.7 }));
-EventBus.on(GE.BATTLE_DAMAGE, (p) => { if (p && p.amount > 0) audio.playSfx(Assets.SND.hurt, { volume: 0.5 }); });
-EventBus.on(GE.ITEM_TOAST, (p) => {
-  if (/金币|奖励/.test(p && p.text)) audio.playSfx(Assets.SND.gold, { volume: 0.6 });
-});
-EventBus.on(GE.EXPLORE_LOG, (e) => { if (e.kind === 'good') audio.playSfx(Assets.SND.reward, { volume: 0.5 }); });
-EventBus.on(GE.BATTLE_END, (p) => {
-  if (p && p.result === 'victory') audio.playSfx(Assets.SND.win, { volume: 0.7 });
+HookDispatcher.register('onEnter', (params) => {
+  devLog.info('[demo hook] onEnter 触发, params:', params);
 });
 
-// 全局错误兜底：记录到 devLog，避免白屏无信息
-window.addEventListener('error', (e) => {
-  devLog.error('window', e.message, e.error?.stack || '');
+HookDispatcher.register('onDailyStart', (params) => {
+  devLog.info('[demo hook] onDailyStart 触发, params:', params);
 });
 
-ui.boot();
-devLog.info('boot', '《在成为勇者之前》启动');
+// EventBus demo 订阅
+EventBus.on(GE.BOOT, () => {
+  devLog.info('[demo subscriber] BOOT 事件已收到');
+});
+
+// 创建一个初始 GS 用于验证
+const gs = createInitialState();
+devLog.info('初始 GS 创建成功, day=', gs.day, 'turn=', gs.turn);
+devLog.info('外圈格数:', gs.map.outerTiles.length, '栅栏格数:', gs.map.fence.length);
+devLog.info('左下 idx=6 内容:', gs.map.outerTiles[6].contentId);
+devLog.info('玩家初始位置 x:', gs.player.x, 'hp:', gs.player.hp, 'stamina:', gs.player.stamina);
+
+// Storage round-trip 自检（不真正存档，Phase 5 正式接入）
+// 这里只演示 API 可用
+devLog.info('Storage 模块就绪, slots:', Storage.listSlots().length, '槽位');
+
+// 触发一次 BOOT 事件演示 EventBus
+EventBus.emit(GE.BOOT);
+
+console.log('转盘农场启动 ✓');
