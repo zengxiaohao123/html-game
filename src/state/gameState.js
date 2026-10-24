@@ -112,7 +112,8 @@ export function createInitialState() {
     },
 
     // ── 祝福 ──
-    blessingQueue: [],
+    // Phase 2A 说明：全局 blessingQueue 已废弃，blessed 状态统一挂 tile.states[]（tile 级真相源）
+    blessingQueue: [],  // 保留字段兼容存档，但已不参与游戏逻辑
 
     // ── 建造模式 ──
     buildMode: false,

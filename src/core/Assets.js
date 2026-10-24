@@ -4,14 +4,27 @@
 // 未来加图片资源时，每条目可扩展为 { emoji, image: 'assets/xxx.png' } 格式。
 
 export const Assets = {
-  // ── 设施（Phase 0 先放最基础几样，后续 Phase 2 再补全 10 种）──
+  // ── 设施（完整 10 种）──
   facilities: {
     facility_home: '🏠',
     facility_tent: '⛺',
     facility_wheat: '🌾',
+    facility_rice: '🌱',
     facility_potato: '🥔',
-    facility_chicken_house: '🐔',
-    facility_slime_house: '🟢',
+    facility_tulip: '🌷',
+    facility_strawberry: '🍓',
+    facility_pea: '🫛',
+    facility_henhouse: '🐔',
+    facility_slimehouse: '🟢',
+  },
+
+  // ── 资源类地块内容（完整 5 种）──
+  resources: {
+    resource_event: '🎲',
+    resource_reward: '🎁',
+    resource_hunt: '⚔️',
+    resource_shop: '🏪',
+    resource_bus: '�',
   },
 
   // ── 地形 ──
@@ -43,12 +56,17 @@ export const Assets = {
     spirit: '👻',
   },
 
-  // ── 物品占位（Phase 2 补全）──
+  // ── 物品（完整 9 种产出）──
   items: {
     item_wheat: '🌾',
+    item_rice_straw: '🌾',
+    item_potato: '🥔',
+    item_strawberry: '🍓',
+    item_pea: '🫛',
     item_egg: '🥚',
     item_raw_meat: '🍖',
-    item_wheel: '🚗',
+    item_slime_gel: '🟢',
+    item_wheel: '⚙️',
   },
 
   // ── 生物占位 ──
@@ -66,7 +84,7 @@ export const Assets = {
 
   /**
    * 查表：从 Assets 各分组里按 id 取 emoji
-   * @param {string} group 'facilities'|'terrains'|'ui'|'items'|'creatures'
+   * @param {string} group 'facilities'|'resources'|'terrains'|'ui'|'items'|'creatures'
    * @param {string} id
    * @returns {string} 找不到时返回 '❓'
    */
