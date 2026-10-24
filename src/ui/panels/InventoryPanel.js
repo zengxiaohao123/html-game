@@ -155,6 +155,9 @@ export class InventoryPanel {
     this.mask.style.display = 'flex';
     this.mask.classList.add('visible');
     this.selectedInventoryItemId = null;
+    // 追踪 activePanel
+    const gs = this._getGS();
+    if (gs) { gs.uiState = gs.uiState || {}; gs.uiState.activePanel = 'inventory'; }
     this._reRender();
   }
 
@@ -166,6 +169,10 @@ export class InventoryPanel {
     this.mask.classList.remove('visible');
     this.mask.style.display = 'none';
     this.selectedInventoryItemId = null;
+    const gs = this._getGS();
+    if (gs && gs.uiState && gs.uiState.activePanel === 'inventory') {
+      gs.uiState.activePanel = null;
+    }
     EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });
   }
 
@@ -202,7 +209,6 @@ export class InventoryPanel {
     const tabDef = TABS[this.selectedTabIdx];
 
     if (tabDef.phaseReady === false) {
-      // Phase 3 才会有，静态空占位
       createEl('div', {
         style: {
           padding: '40px 20px', textAlign: 'center',
@@ -211,10 +217,10 @@ export class InventoryPanel {
         text: '✨ 该分类将在后续阶段开放 ✨',
         parent: this.listEl,
       });
+      this._renderActionWrap(null);
       return;
     }
 
-    // 过滤
     const list = (gs.inventory && gs.inventory.items || [])
       .filter(entry => tabDef.match(entry.itemId));
 
@@ -227,6 +233,7 @@ export class InventoryPanel {
         text: '（暂无物品）',
         parent: this.listEl,
       });
+      this._renderActionWrap(null);
       return;
     }
 
@@ -242,31 +249,111 @@ export class InventoryPanel {
       const emoji = this._resolveEmoji(entry.itemId);
       const name = this._resolveName(entry.itemId);
 
-      // tooltip 名
       createEl('div', { class: 'item-name', text: name, parent: slot });
-      // emoji
       createEl('div', { class: 'item-emoji', text: emoji, parent: slot });
-      // 数量
       if (entry.qty > 1) {
         createEl('div', { class: 'item-qty', text: `×${entry.qty}`, parent: slot });
       }
 
-      // 点击选中（准备放入出货箱）
+      // 点击：选中/取消选中（两步式）
       slot.addEventListener('click', () => {
-        this.selectedInventoryItemId = entry.itemId;
-        this._renderList(); // 刷新选中态
-        // 直接调用 InventorySystem 放入出货箱（一次放 1 件，qty 由玩家多次点击控制）
-        const ok = InventorySystem.addToOutbox(gs, entry.itemId, 1);
-        if (ok) {
-          // 成功后自动从背包减少 1
-          InventorySystem.removeItem(gs, entry.itemId, 1);
+        const gsRef = this._getGS();
+        if (!gsRef) return;
+        // toggle 选中
+        if (this.selectedInventoryItemId === entry.itemId) {
+          this.selectedInventoryItemId = null;
         } else {
-          // 出货箱满 / 失败 → 取消选中
+          this.selectedInventoryItemId = entry.itemId;
+        }
+        this._renderList(); // 刷新
+      });
+    }
+
+    // 下方 action 按钮区（两步式：先选再放）
+    this._renderActionWrap(this.selectedInventoryItemId);
+  }
+
+  /** 渲染列表下方的"放入出货箱"两步式按钮区 */
+  _renderActionWrap(selectedItemId) {
+    // 先移除旧的 actionWrap（如果存在）
+    let wrap = this.listEl.querySelector('.inv-action-wrap');
+    if (wrap) wrap.remove();
+
+    wrap = createEl('div', {
+      class: 'inv-action-wrap',
+      parent: this.listEl,
+      style: {
+        display: 'flex',
+        gap: '8px',
+        padding: '10px 0 4px',
+        borderTop: '2px dashed #b8a888',
+        marginTop: '6px',
+      },
+    });
+
+    if (!selectedItemId) {
+      createEl('div', {
+        style: { color: '#b0a090', fontSize: '12px' },
+        text: '← 点选一个物品',
+        parent: wrap,
+      });
+      return;
+    }
+
+    const gs = this._getGS();
+    const entry = gs?.inventory?.items?.find(i => i.itemId === selectedItemId);
+    if (!entry || entry.qty <= 0) {
+      // 选中的 entry 已空（比如外部 addItem/removeItem 后），自动取消选中
+      this.selectedInventoryItemId = null;
+      this._renderActionWrap(null);
+      return;
+    }
+
+    const emoji = this._resolveEmoji(selectedItemId);
+    const name = this._resolveName(selectedItemId);
+
+    createEl('div', {
+      style: {
+        flex: '1', fontSize: '13px', color: '#5a4a3a', fontWeight: '600',
+        display: 'flex', alignItems: 'center', gap: '6px',
+      },
+      html: `<span style="font-size:20px;line-height:1;font-family:Segoe UI Emoji,Apple Color Emoji,sans-serif">${emoji}</span> ${name} ×${entry.qty}`,
+      parent: wrap,
+    });
+
+    createEl('button', {
+      class: 'action-btn',
+      style: { fontSize: '13px', padding: '6px 10px' },
+      text: '✅ 放入出货箱',
+      parent: wrap,
+      onclick: () => {
+        const gsRef = this._getGS();
+        if (!gsRef || !this.selectedInventoryItemId) return;
+        // 两步式：真移动
+        const ok = InventorySystem.moveItemBetween(gsRef, 'items', 'outbox', this.selectedInventoryItemId, 1);
+        if (ok) {
+          // 成功后自动取消选中并刷新
+          this.selectedInventoryItemId = null;
+          this._renderList();
+          this._renderOutbox();
+        } else {
+          // 出货箱满（InventorySystem 内部会 Toast）
           this.selectedInventoryItemId = null;
           this._renderList();
         }
-      });
-    }
+      },
+    });
+
+    createEl('button', {
+      class: 'action-btn',
+      style: { fontSize: '13px', padding: '6px 10px', background: '#e5dfd0', borderColor: '#888' },
+      text: '❌ 取消',
+      parent: wrap,
+      onclick: () => {
+        this.selectedInventoryItemId = null;
+        this._renderList();
+      },
+    });
   }
 
   /** 渲染右：出货箱 2×6 网格 */

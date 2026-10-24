@@ -131,6 +131,9 @@ export class SettingsPanel {
     if (!this.mask) return;
     this.mask.style.display = 'flex';
     this.visible = true;
+    // 追踪 activePanel
+    const gs = this.director?.getGS?.();
+    if (gs) { gs.uiState = gs.uiState || {}; gs.uiState.activePanel = 'settings'; }
   }
 
   /** 隐藏面板 */
@@ -138,6 +141,10 @@ export class SettingsPanel {
     if (!this.mask) return;
     this.mask.style.display = 'none';
     this.visible = false;
+    const gs = this.director?.getGS?.();
+    if (gs && gs.uiState && gs.uiState.activePanel === 'settings') {
+      gs.uiState.activePanel = null;
+    }
     EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'settings' });
   }
 

@@ -93,12 +93,14 @@ export class InputManager {
         break;
 
       case 'settings': {
-        // 多 ESC 二级关：若背包开着，先关背包；否则关设置
-        // 背包/设置面板各自订阅 UI_PANEL_CLOSE 自动 hide
-        // 这里统一按顺序发 close 事件
-        // 简化做法：先 close inventory，再发 settings toggle
-        EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });
-        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'settings' });
+        // 正确的多关顺序：先关已开的二级面板，全部关完再打开设置
+        // 二级面板由各自订阅 UI_PANEL_CLOSE 自动 hide()
+        const curActive = gs?.uiState?.activePanel || null;
+        if (curActive) {
+          EventBus.emit(GE.UI_PANEL_CLOSE, { panel: curActive });
+        } else {
+          EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'settings' });
+        }
         break;
       }
 
