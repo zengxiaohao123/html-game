@@ -280,7 +280,8 @@ export class MapView {
     });
 
     // TILE_UPDATED
-    EventBus.on(GE.TILE_UPDATED, ({ tileIdx }) => {
+    EventBus.on(GE.TILE_UPDATED, (payload = {}) => {
+      const { tileIdx } = payload;
       if (!this.gs) return;
       if (tileIdx !== undefined && tileIdx !== null) {
         const tile = this.gs.map.outerTiles[tileIdx];

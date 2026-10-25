@@ -3,6 +3,11 @@
 // 核心约定：
 //   1. Direction → Distance 邻居映射：dirToIndex(direction) → outerNeighbors 返回数组下标
 //   2. 不可移动时返回 null，不扣 stamina、不触发 hook、不更新 GS
+//
+// Phase 3 扩展：
+//   - onPass / onEnter HookDispatcher.fire 之后，再调 SkillSystem.triggerSkillByHook
+//     （让角色技能自动攻击栅栏内的危险生物）
+//   - 额外：粘液 debuff 检查（若 tile 有粘液 state → hp -5 stamina -1 然后移除）
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
@@ -10,6 +15,8 @@ import { HookDispatcher } from '../core/HookDispatcher.js';
 import { Distance } from '../core/Distance.js';
 import { Direction } from '../utils/Direction.js';
 import { devLog } from '../core/Logger.js';
+import { SkillSystem } from './SkillSystem.js';
+import { CombatSystem } from './CombatSystem.js';
 
 /**
  * 尝试移动玩家
@@ -49,13 +56,35 @@ export function move(gs, direction) {
   HookDispatcher.fire('onPass', { gs, tileIdx: fromIdx });
   HookDispatcher.fire('onPass', { gs, tileIdx: targetIdx });
 
+  // Phase 3：技能 onPass 触发
+  SkillSystem.triggerSkillByHook('onPass', { gs, tileIdx: targetIdx });
+
   // 3. 更新玩家位置
   gs.player.x = targetIdx;
 
-  // 4. 触发 onEnter：最终停留的目标格
+  // 4. 粘液 debuff 检查（tile.states 里 type==='slime'）
+  const targetTile = gs.map.outerTiles[targetIdx];
+  if (targetTile && Array.isArray(targetTile.states)) {
+    const slimeStateIdx = targetTile.states.findIndex(s => s.type === 'slime');
+    if (slimeStateIdx >= 0) {
+      CombatSystem.applyTrueDamageToPlayer(gs.player, 5, { reason: 'slime_hit' });
+      gs.player.stamina -= 1;
+      EventBus.emit(GE.STAMINA_CHANGE, {
+        newValue: gs.player.stamina, delta: -1, maxStamina: gs.player.maxStamina,
+      });
+      targetTile.states.splice(slimeStateIdx, 1);
+      EventBus.emit(GE.TOAST_SHOW, { text: '🟢 粘液：hp -5 stamina -1', duration: 1500 });
+      devLog.info('[MovementSystem] slime state triggered → removed');
+    }
+  }
+
+  // 5. 触发 onEnter：最终停留的目标格
   HookDispatcher.fire('onEnter', { gs, tileIdx: targetIdx });
 
-  // 5. 广播 MOVE 事件
+  // Phase 3：技能 onEnter 触发（这是核心触发入口）
+  SkillSystem.triggerSkillByHook('onEnter', { gs, tileIdx: targetIdx });
+
+  // 6. 广播 MOVE 事件
   EventBus.emit(GE.MOVE, { fromIdx, toIdx: targetIdx, direction });
   EventBus.emit(GE.TILE_UPDATED, { tileIdx: fromIdx });
   EventBus.emit(GE.TILE_UPDATED, { tileIdx: targetIdx });

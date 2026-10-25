@@ -454,7 +454,8 @@ export class InfoPanel {
       if (this.currentTileIdx !== null) this._renderBody();
     });
 
-    EventBus.on(GE.TILE_UPDATED, ({ tileIdx }) => {
+    EventBus.on(GE.TILE_UPDATED, (payload = {}) => {
+      const { tileIdx } = payload;
       if (tileIdx !== undefined && tileIdx !== null && tileIdx === this.currentTileIdx) {
         this._renderBody();
       }

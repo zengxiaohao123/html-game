@@ -15,6 +15,8 @@ import { registerFacilities } from '../data/facilities.js';
 import { MovementSystem } from './MovementSystem.js';
 import { TurnSystem } from './TurnSystem.js';
 import { SleepSystem } from './SleepSystem.js';
+import { CreatureSystem } from './CreatureSystem.js';
+import { SkillSystem } from './SkillSystem.js';
 
 /** 初始小麦田放置的格 idx（Phase 1 演示用） */
 const INITIAL_WHEAT_TILE_IDX = 2; // 右上位置
@@ -46,10 +48,13 @@ export class GameDirector {
     HookDispatcher.clearAll(); // 先清空 Phase 0 的 demo hook
     registerFacilities();
 
-    // 4. 广播 BOOT 事件（UI 模块会收到）
+    // 4. Phase 3：启动生物实时 tick 循环
+    CreatureSystem.startRealtimeLoop(() => this.gs);
+
+    // 5. 广播 BOOT 事件（UI 模块会收到）
     EventBus.emit(GE.BOOT, { gs: this.gs });
 
-    // 5. 标记启动完成
+    // 6. 标记启动完成
     this.started = true;
     devLog.info('GameDirector 启动完成 ✓ day=', this.gs.day, 'stamina=', this.gs.player.stamina);
   }

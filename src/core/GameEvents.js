@@ -47,8 +47,13 @@ export const GE = {
   SKILL_TRIGGERED: 'skill:triggered',
   DAMAGE_DEALT: 'damage:dealt',
   DAMAGE_TAKEN: 'damage:taken',
+  ELEMENT_IMMUNE_HIT: 'element:immuneHit',   // Phase 3：元素免疫命中
   LINK_SKILL_READY: 'linkskill:ready',
   LINK_SKILL_EXPIRE: 'linkskill:expire',
+
+  // ── Debuff / Buff ──
+  BUFF_APPLIED: 'buff:applied',              // Phase 3
+  BUFF_REMOVED: 'buff:removed',              // Phase 3
 
   // ── UI ──
   UI_PANEL_OPEN: 'ui:panelOpen',

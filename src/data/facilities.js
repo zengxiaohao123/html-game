@@ -19,6 +19,9 @@ import { Assets } from '../core/Assets.js';
 import { devLog } from '../core/Logger.js';
 import { InventorySystem } from '../systems/InventorySystem.js';
 import { Distance } from '../core/Distance.js';
+import { CreatureSystem } from '../systems/CreatureSystem.js';
+import { Random } from '../core/Random.js';
+import { SLIME_KINDS } from './creatures.js';
 
 // ── 小工具：判断是否为"我的设施"格 ──
 const isMine = (gs, tileIdx, id) => gs.map.outerTiles[tileIdx]?.contentId === id;
@@ -174,6 +177,11 @@ const FacilityWheat = {
     // 再 fire onDailyStart。小麦的【受祝福时】效果由 wheat.onBlessed hook 立即触发（×3），
     // 不跨日，所以这里只需处理每日基础产出即可。
     HookDispatcher.register('onDailyStart', ({ gs }) => {
+      // Phase 3 容量惩罚：友善超载 → 友善类收益归 0
+      if (gs.capacity?.friendlyOverloaded) {
+        devLog.info('[wheat] friendly overload → skip daily produce');
+        return;
+      }
       const tiles = gs.map.outerTiles.filter(t => t.contentId === this.id);
       let total = 0;
       for (const t of tiles) {
@@ -215,6 +223,11 @@ const FacilityRice = {
   register() {
     // onDailyStart
     HookDispatcher.register('onDailyStart', ({ gs }) => {
+      // Phase 3 容量惩罚：友善超载 → 友善类收益归 0
+      if (gs.capacity?.friendlyOverloaded) {
+        devLog.info('[rice] friendly overload → skip daily produce');
+        return;
+      }
       const tiles = gs.map.outerTiles.filter(t => t.contentId === this.id);
       let totalBase = 0;
       let totalBonusFromBless = 0;
@@ -499,37 +512,56 @@ const FacilityHenhouse = {
   emoji: Assets.facilities.facility_henhouse,
 
   register() {
-    // 进入时：Toast 占位小鸡生成 + 取走鸡蛋
+    // 进入时：每日限 1 次生成小鸡 + 取走鸡蛋
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
       const tile = gs.map.outerTiles[tileIdx];
       const state = tile.contentState || (tile.contentState = {});
 
-      // 取走鸡蛋（Phase 2A 实现：鸡蛋储存到 tile.contentState.eggStored，默认每次进入全取走）
+      // 1) 取走鸡蛋（由 CreatureSystem.dailyTick 给鸡产蛋到 InventorySystem，此处不再产蛋；
+      //    仍保留 Phase 2A 的 eggStored 兼容，但不再每日自动产）
       const stored = state.eggStored || 0;
       if (stored > 0) {
         InventorySystem.addItem(gs, 'item_egg', stored);
         state.eggStored = 0;
         EventBus.emit(GE.TOAST_SHOW, { text: `🥚 收获 +${stored} 鸡蛋`, duration: 1800 });
-      } else {
-        EventBus.emit(GE.TOAST_SHOW, { text: '🐣 小鸡即将孵化…', duration: 1500 });
       }
 
-      // 自动产蛋简化版：若 tile 没有每日产蛋标记，则产 1 蛋（Phase 3 CreatureSystem 会替换）
-      const eggKey = flagKey(this.id, 'dailyEgg');
-      if (!tile.dailyFlags[eggKey]) {
-        tile.dailyFlags[eggKey] = true;
-        state.eggStored = Math.min(EGG_MAX, (state.eggStored || 0) + 1);
+      // 2) 生成小鸡（每日限 1 次；每个鸡舍至多 4 只）
+      const spawnKey = flagKey(this.id, 'spawn');
+      if (!tile.dailyFlags[spawnKey]) {
+        // 统计属于该鸡舍的生物数量
+        const sameFacility = gs.creatures.filter(c => c.facilityId === this.id).length;
+        if (sameFacility < 4) {
+          tile.dailyFlags[spawnKey] = true;
+          CreatureSystem.spawnCreature(gs, 'chick', { facilityId: this.id });
+        } else {
+          EventBus.emit(GE.TOAST_SHOW, { text: '鸡舍已满 4 只，先收获吧～', duration: 1500 });
+        }
       }
 
       EventBus.emit(GE.TILE_UPDATED, { tileIdx });
     }, this);
 
-    // 受祝福时：Toast 占位
+    // 受祝福时：属于该鸡舍的随机 1 只小鸡立刻长大
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
-      EventBus.emit(GE.TOAST_SHOW, { text: '🐥 祝福：小鸡即将长大…', duration: 1800 });
-      devLog.info('[henhouse] onBlessed (Toast placeholder)');
+      const chicks = gs.creatures.filter(c => c.facilityId === this.id && c.kind === 'chick');
+      if (chicks.length > 0) {
+        const pick = Random.pick(chicks);
+        pick.kind = 'chicken';
+        pick.stage = 'adult';
+        pick.hp = 100;
+        pick.maxHp = 100;
+        pick.atk = 0;
+        pick.growth = 0;
+        pick.growthMax = 0;
+        pick.mood = 0;
+        EventBus.emit(GE.TOAST_SHOW, { text: `✨ 祝福：有小鸡立刻长大成 🐔`, duration: 1800 });
+        devLog.info('[henhouse] onBlessed grew chick → chicken:', pick.id);
+      } else {
+        EventBus.emit(GE.TOAST_SHOW, { text: '✨ 祝福：没有小鸡可长大', duration: 1500 });
+      }
     }, this);
   },
 };
@@ -545,7 +577,7 @@ const FacilitySlimehouse = {
   emoji: Assets.facilities.facility_slimehouse,
 
   register() {
-    // onDailyStart：Toast 占位（Phase 3 替换为 CreatureSystem.spawnSlime）
+    // onDailyStart：生成史莱姆（祝福 3 天内 ×2）
     HookDispatcher.register('onDailyStart', ({ gs }) => {
       const tiles = gs.map.outerTiles.filter(t => t.contentId === this.id);
       for (const t of tiles) {
@@ -564,10 +596,12 @@ const FacilitySlimehouse = {
           !(s.type === 'slime_bless' && s.remainingDays !== undefined && s.remainingDays <= 0),
         );
 
-        // Toast 占位
-        EventBus.emit(GE.TOAST_SHOW, { text: `🟢 史莱姆即将生成… ×${times}`, duration: 1800 });
-        // 顺便产点史莱姆胶（Phase 2A 让它也有产出，避免纯空 hook）
-        state.slimeGelStored = Math.min(10, (state.slimeGelStored || 0) + times);
+        for (let i = 0; i < times; i++) {
+          const kind = Random.pick(SLIME_KINDS);
+          if (kind) {
+            CreatureSystem.spawnCreature(gs, kind, { facilityId: this.id });
+          }
+        }
       }
     }, this);
 

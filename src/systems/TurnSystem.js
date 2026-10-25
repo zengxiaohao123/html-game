@@ -5,6 +5,8 @@ import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { MIN_STAMINA } from '../utils/constants.js';
+import { CombatSystem } from './CombatSystem.js';
+import { SkillSystem } from './SkillSystem.js';
 
 /** 心力交瘁 debuff id */
 export const BUFF_EXHAUSTED = 'exhausted';
@@ -47,6 +49,24 @@ export function advanceTurn(gs, cost = 1) {
     gs.activeBuffs = gs.activeBuffs.filter(b => b.id !== BUFF_EXHAUSTED);
     devLog.info('[TurnSystem] 心力交瘁 buff 已移除');
   }
+
+  // Phase 3：回合推进时 tick 所有生物身上的 buff（burn 每回合流失 3% hp 等）
+  for (const c of gs.creatures) {
+    if (c.hp <= 0) continue;
+    CombatSystem.tickBuffsOnTarget(c);
+    if (c.hp <= 0) {
+      // 燃烧致死：直接移除
+      devLog.info('[TurnSystem] creature died from burn:', c.kind, c.id);
+      for (const t of gs.map.fence) {
+        t.creatures = (t.creatures || []).filter(id => id !== c.id);
+      }
+      gs.creatures = gs.creatures.filter(cc => cc.id !== c.id);
+      EventBus.emit(GE.CREATURE_DEFEATED, { creature: c, killedBy: 'burn' });
+    }
+  }
+
+  // Phase 3：技能 cooldown 递减
+  SkillSystem.advanceSkillCooldowns(gs);
 
   // 检查是否强制睡觉（stamina <= MIN_STAMINA = -3）
   if (gs.player.stamina <= MIN_STAMINA) {
