@@ -62,6 +62,13 @@ export function placeContent(gs, tileIdx, contentId) {
   const tile = gs.map.outerTiles[tileIdx];
   const oldContentId = tile.contentId;
 
+  // 1.5 前缀校验：只接受 facility_ / resource_ / skill_ 三类（Phase 4 加 skill_*）
+  if (!/^(facility_|resource_|skill_)/.test(contentId)) {
+    EventBus.emit(GE.TOAST_SHOW, { text: `🛠️ 未知内容类型：${contentId}`, duration: 1500 });
+    devLog.warn('[Build] unknown contentId prefix:', contentId);
+    return { ok: false, reason: 'unknownType' };
+  }
+
   // 2. 库存检查（HotBar 与背包同步：物品本质属于背包）
   const invEntry = gs.inventory?.items?.find(e => e.itemId === contentId);
   if (!invEntry || invEntry.qty < 1) {

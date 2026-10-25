@@ -22,6 +22,7 @@ import { Distance } from '../core/Distance.js';
 import { CreatureSystem } from '../systems/CreatureSystem.js';
 import { Random } from '../core/Random.js';
 import { SLIME_KINDS } from './creatures.js';
+import { SKILLS } from './characters.js';
 
 // ── 小工具：判断是否为"我的设施"格 ──
 const isMine = (gs, tileIdx, id) => gs.map.outerTiles[tileIdx]?.contentId === id;
@@ -711,6 +712,55 @@ const ResourceBus = {
 };
 
 // ════════════════════════════════════════════════════════════════
+// ——— 技能卡地块内容（skill_*） —— Phase 4 新增 ———
+// 每个 skill 可以被 BuildMode 放进地块；走到 contentId === skill.id 的格时
+// 触发一次，消耗掉（tile.contentId = null）
+//
+// 触发时 fire SkillSystem.triggerSkillAtTile('onEnter') 让 SkillSystem 自己走冷却/目标判定
+// 同时 emit GE.SKILL_TRIGGERED（UI 层监听）
+// ════════════════════════════════════════════════════════════════
+
+/** 给每个 characters.js 的 skill 生成一个 Facility-like 对象（有 id/name/emoji/register） */
+export const SKILL_FACILITIES = Object.values(SKILLS).map((skill) => ({
+  id: skill.id,
+  name: skill.name,
+  emoji: skill.emoji,
+
+  register() {
+    HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
+      if (!isMine(gs, tileIdx, this.id)) return;
+
+      // 1) 让 SkillSystem 走一遍完整触发流程（team 遍历 + 冷却 + 目标判定 + CombatSystem + 豌豆架）
+      try {
+        // 这里动态 import，避免循环依赖
+        import('../systems/SkillSystem.js').then(({ SkillSystem }) => {
+          SkillSystem.triggerSkillAtTile(gs, tileIdx);
+        }).catch((e) => devLog.warn('[skill-card] SkillSystem import failed:', e));
+      } catch (_) { /* ignore */ }
+
+      // 2) 消耗（触发后 tile.contentId 置空）—— 消耗版本，Phase 5 如需 cooldown 不消耗再说
+      const tile = gs.map.outerTiles[tileIdx];
+      tile.contentId = null;
+
+      EventBus.emit(GE.SKILL_TRIGGERED, { skillId: skill.id, roleId: skill.roleId, triggerSource: 'tile' });
+      EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+      EventBus.emit(GE.TOAST_SHOW, {
+        text: `⚡ 触发技能：${skill.emoji} ${skill.name}`,
+        duration: 1500,
+      });
+      devLog.info('[skill-card] tile triggered skill', skill.id, '→ consumed');
+    }, this);
+  },
+}));
+
+export function registerSkillHooks() {
+  for (const s of SKILL_FACILITIES) {
+    if (typeof s.register === 'function') s.register();
+  }
+  devLog.info('[facilities] skill_* onEnter hooks registered, count =', SKILL_FACILITIES.length);
+}
+
+// ════════════════════════════════════════════════════════════════
 // 统一注册 + 导出
 // ════════════════════════════════════════════════════════════════
 
@@ -730,6 +780,8 @@ export function registerFacilities() {
   for (const f of ALL_FACILITIES) {
     if (typeof f.register === 'function') f.register();
   }
+  // Phase 4 —— 技能卡 skill_* onEnter hooks
+  registerSkillHooks();
   // 打印各 hook 已注册数量（验收用）
   const hookSummary = [
     'onEnter', 'onPass', 'onBlessed', 'onDailyStart', 'onSleep',
@@ -739,7 +791,7 @@ export function registerFacilities() {
                 HookDispatcher.count('onBlessed') + HookDispatcher.count('onDailyStart') +
                 HookDispatcher.count('onSleep') + HookDispatcher.count('onReplace') +
                 HookDispatcher.count('onUseSkill') + HookDispatcher.count('onEveryNTurn');
-  devLog.info('Phase 2A 完整 hook 注册完成  总数=' + total, '\n  ', hookSummary);
+  devLog.info('Phase 4 完整 hook 注册完成  总数=' + total, '\n  ', hookSummary);
 }
 
 /**

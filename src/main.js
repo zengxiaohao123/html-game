@@ -28,6 +28,7 @@ import { TeamPanel } from './ui/panels/TeamPanel.js';
 import { ForgePanel } from './ui/panels/ForgePanel.js';
 import { ShopPanel } from './ui/panels/ShopPanel.js';
 import { VehiclePanel } from './ui/panels/VehiclePanel.js';
+import { TaskPanel } from './ui/panels/TaskPanel.js';
 
 function loadStylesheet(href) {
   if (document.querySelector(`link[href="${href}"]`)) return;
@@ -58,17 +59,38 @@ const gs = director.getGS();
 //    - HotBar slots 只存 {itemId}（没有 qty 字段）
 //    - 对应数量走 InventorySystem.addItem 写入 inventory.items
 //    - BuildSystem.placeContent 从 inventory 扣 1，HotBar 渲染时实时从 inventory 读 qty
+//    Phase 4：把 1-3 格换成 skill_*（BuildMode 开局就能选到技能卡）
 const PRESET_HOTBAR = [
-  { itemId: 'facility_tent',        qty: 2 },
-  { itemId: 'facility_potato',       qty: 3 },
-  { itemId: 'facility_strawberry',   qty: 1 },
-  { itemId: 'facility_pea',          qty: 1 },
-  { itemId: 'resource_shop',         qty: 1 },
+  { itemId: 'skill_yumo_slash',             qty: 1 },  // Phase 4 技能卡（BuildMode 可放入）
+  { itemId: 'skill_xiayang_flame_strike',   qty: 1 },  // Phase 4 技能卡
+  { itemId: 'skill_luyouyou_careful_shot',  qty: 1 },  // Phase 4 技能卡
+  { itemId: 'facility_tent',               qty: 2 },
+  { itemId: 'facility_potato',              qty: 3 },
+  { itemId: 'facility_strawberry',          qty: 1 },
+  { itemId: 'facility_pea',                 qty: 1 },
+  { itemId: 'resource_shop',                qty: 1 },
 ];
 PRESET_HOTBAR.forEach((p, i) => {
   gs.hotbar[i] = { itemId: p.itemId };  // 只存 itemId，不存 qty
   InventorySystem.addItem(gs, p.itemId, p.qty);
 });
+
+// Phase 4 —— 初始技能卡（按 characters.js 实导出的 SKILLS）
+//   每人给 2 张常用卡，共 7 种，BuildMode 里可放进地块触发消耗
+const PRESET_SKILL_CARDS = [
+  // 余默
+  { itemId: 'skill_yumo_slash',        qty: 1 },
+  { itemId: 'skill_yumo_desperate',     qty: 1 },
+  { itemId: 'skill_yumo_pioneer',       qty: 1 },
+  // 夏阳
+  { itemId: 'skill_xiayang_flame_strike', qty: 1 },
+  { itemId: 'skill_xiayang_ignite',       qty: 1 },
+  // 陆悠悠
+  { itemId: 'skill_luyouyou_careful_shot', qty: 1 },
+  { itemId: 'skill_luyouyou_wind_stop',    qty: 1 },
+];
+PRESET_SKILL_CARDS.forEach((p) => InventorySystem.addItem(gs, p.itemId, p.qty));
+devLog.info('[main] 初始技能卡', PRESET_SKILL_CARDS.map(p => p.itemId).join(', '));
 
 // 3. UI 挂载
 const toast = new Toast();
@@ -123,6 +145,10 @@ vehiclePanel.mount();
 // Phase 4 新增：连携技实时窗口（LinkSkillSystem 入队时自动显示；按 1/2/3 触发）
 const linkSkillUI = new LinkSkillUI(director);
 linkSkillUI.mount();
+
+// Phase 4 新增：任务面板（J 切换；2 tab 日常/核心；Phase 5 补任务列表）
+const taskPanel = new TaskPanel(director);
+taskPanel.mount();
 
 // 4. 输入
 const inputManager = new InputManager(director);

@@ -56,20 +56,22 @@ export const GE = {
   BUFF_REMOVED: 'buff:removed',              // Phase 3
 
   // ── UI ──
-  UI_PANEL_OPEN: 'ui:panelOpen',
-  UI_PANEL_CLOSE: 'ui:panelClose',
-  UI_MODE_CHANGE: 'ui:modeChange',
-  TOAST_SHOW: 'toast:show',
+  UI_PANEL_OPEN:  'ui:panel:open',
+  UI_PANEL_CLOSE: 'ui:panel:close',
+  UI_MODE_CHANGE: 'ui:mode:change',
+  TOAST_SHOW:     'toast:show',
 
-  // ── Phase 4 —— 角色 / 编队 / 合成 / 商店 / 载具 / 连携技 ──
+  // ── Phase 4 —— 角色 / 编队 / 合成 / 商店 / 载具 / 连携技 / 任务 ──
+  DIALOG_SHOW:        'dialog:show',
+  SHOP_OPEN:          'shop:open',
+  SHOP_BUY:           'shop:buy',
+  FORGE_COMPLETE:     'forge:complete',
+  VEHICLE_ATTACH:     'vehicle:attach',
   CHARACTER_SELECTED: 'character:selected',
-  TEAM_CHANGE: 'team:change',
-  SHOP_OPEN: 'shop:open',
-  SHOP_BUY: 'shop:buy',
-  FORGE_COMPLETE: 'forge:complete',
-  VEHICLE_ATTACH: 'vehicle:attach',
-  LINK_SKILL_QUEUE: 'linkskill:queue',      // 队列状态变化（UI 订阅）
-  DIALOG_SHOW: 'dialog:show',                // DialogBox 统一弹窗入口
+  TEAM_CHANGE:        'team:change',
+  LINK_SKILL_QUEUE:   'linkSkill:queue',
+  TASK_COMPLETE:      'task:complete',
+  TASK_OPEN:          'task:open',
 
   // ── 存档 ──
   SAVE_DONE: 'save:done',

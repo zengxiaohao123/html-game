@@ -11,7 +11,9 @@ import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { Assets } from '../core/Assets.js';
 import { BlessSystem, BLESS_STAMINA_COST, BLESS_GOLD_COST } from '../systems/BlessSystem.js';
+import { SkillSystem } from '../systems/SkillSystem.js';
 import { getDef } from '../data/facilities.js';
+import { SKILLS } from '../data/characters.js';
 import { createEl, qs } from './dom.js';
 
 /** Phase 2B 完整词条描述字典（10 设施 + 5 资源） */
@@ -264,32 +266,64 @@ export class InfoPanel {
       });
     }
 
-    // 资源类地块额外"进入"按钮（Toast 占位）
-    if (contentId && contentId.startsWith('resource_')) {
+    // 资源类地块 / 技能卡地块 —— "进入" 按钮（Phase 4）
+    if (contentId && (contentId.startsWith('resource_') || contentId.startsWith('skill_'))) {
       createEl('div', {
         style: { marginTop: '12px', textAlign: 'center' },
         parent: this.bodyWrap,
       });
-      createEl('button', {
-        class: 'action-btn',
-        style: { fontSize: '14px' },
-        text: contentId === 'resource_shop' ? '🏪 进入商店' : '🚪 进入',
-        parent: this.bodyWrap,
-        onclick: () => {
-          if (contentId === 'resource_shop') {
-            // Phase 4：打开 ShopPanel
-            EventBus.emit(GE.SHOP_OPEN);
-          } else if (contentId === 'resource_bus') {
-            // 巴士站由 facilities.js onEnter 触发：行动力 +1、+1 轮子；这里只提示
-            EventBus.emit(GE.TOAST_SHOW, { text: '🚌 巴士站已触发（行动力 +1、+1 轮子）', duration: 2000 });
-          } else {
-            EventBus.emit(GE.TOAST_SHOW, {
-              text: '🎲 遭遇随机事件…',
-              duration: 2000,
-            });
-          }
-        },
-      });
+
+      if (contentId === 'resource_shop') {
+        createEl('button', {
+          class: 'action-btn',
+          style: { fontSize: '14px' },
+          text: '🏪 进入商店',
+          parent: this.bodyWrap,
+          onclick: () => EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'shop' }),
+        });
+      } else if (contentId.startsWith('skill_')) {
+        // Phase 4 —— 技能卡地块：显示技能详情 + 手动触发（一般是自动触发消耗，这里给玩家一个 UI 入口）
+        const skillObj = SkillSystem.getSkillById?.(contentId) || SKILLS[contentId];
+        if (skillObj) {
+          createEl('div', {
+            style: {
+              padding: '8px 10px', background: 'rgba(255,255,255,0.8)',
+              borderLeft: '3px solid #e8a900', borderRadius: '4px',
+              fontSize: '12px', color: '#3a2e20', lineHeight: '1.6', marginBottom: '6px',
+            },
+            text: `${skillObj.emoji} ${skillObj.name}\n${skillObj.description || ''}`,
+            parent: this.bodyWrap,
+          });
+          createEl('button', {
+            class: 'action-btn',
+            style: { fontSize: '14px', background: '#ffe099' },
+            text: '⚡ 使用技能卡',
+            parent: this.bodyWrap,
+            onclick: () => {
+              const tileIdx = this.currentTileIdx;
+              EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+              // 手动触发（SkillSystem.triggerSkillAtTile 会走完整流程并消耗 tile.contentId）
+              SkillSystem.triggerSkillAtTile(gs, tileIdx);
+            },
+          });
+        }
+      } else if (contentId === 'resource_bus') {
+        createEl('button', {
+          class: 'action-btn',
+          style: { fontSize: '14px' },
+          text: '🚌 使用',
+          parent: this.bodyWrap,
+          onclick: () => EventBus.emit(GE.TOAST_SHOW, { text: '🚌 巴士站已触发（行动力 +1、+1 轮子）', duration: 2000 }),
+        });
+      } else {
+        createEl('button', {
+          class: 'action-btn',
+          style: { fontSize: '14px' },
+          text: '🚪 进入',
+          parent: this.bodyWrap,
+          onclick: () => EventBus.emit(GE.TOAST_SHOW, { text: '🎲 遭遇随机事件…', duration: 2000 }),
+        });
+      }
     }
 
     // 位置提示（调试用）

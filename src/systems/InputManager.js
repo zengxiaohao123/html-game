@@ -1,13 +1,22 @@
 // src/systems/InputManager.js
-// Phase 2B 扩展：加 B（背包）/ Tab（建造模式切换）/ 空格（祈福）/ 多 ESC 二级面板关闭
+// Phase 4 —— 按设计文档 §15.x 正确绑定
 //
-// 当前键位：
+// 键位（全部来自设计文档原文）：
 //   WASD  → 移动
 //   P     → 睡觉
-//   空格  → 祈福（BlessSystem.blessStart + BlessAnimation 播抽奖）
-//   ESC   → 关背包 → 关设置 → 回到探索（多按顺序关）
-//   B     → 背包 InventoryPanel 切换
-//   Tab   → 建造模式 / 探索模式 切换（e.preventDefault() 防浏览器焦点跳转）
+//   B     → 背包 InventoryPanel（Phase 2B）
+//   Tab   → 建造模式 / 探索模式 切换（e.preventDefault()）
+//   ESC   → 关二级面板 → 开设置（Phase 2B 多关顺序）
+//   空格  → 祈福（BlessSystem.blessStart → BlessAnimation 播抽奖）
+//
+// Phase 4 新增（§15.x）：
+//   C     → 角色页面 RolePanel
+//   L     → 编队页面 TeamPanel
+//   F     → 合成页面 ForgePanel
+//   T     → 载具页面 VehiclePanel
+//   J     → 任务面板 TaskPanel
+//
+// ⚠️ 设计文档没有写祈福的快捷键，保留空格键（Phase 2B 约定）。
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
@@ -22,17 +31,21 @@ const KEY_TO_DIRECTION = {
   'd': 'right',
 };
 
+// 设计文档 §15.x 原文：
+//   §15.11 角色 C  §15.12 编队 L  §15.13 合成 F  §15.16 载具 T  §15.17 任务 J
 const KEY_TO_ACTION = {
   'p': 'sleep',
   'b': 'inventory',
   'tab': 'buildMode',
   'escape': 'settings',
-  ' ': 'bless',          // 空格 → 祈福（BlessAnimation 会自动播抽奖动画）
+  ' ': 'bless',
   'space': 'bless',
-  'j': 'role',
-  'k': 'team',
-  'l': 'forge',
-  'm': 'vehicle',
+  // Phase 4 —— 设计文档 §15.x
+  'c': 'role',
+  'l': 'team',
+  'f': 'forge',
+  't': 'vehicle',
+  'j': 'task',
 };
 
 export class InputManager {
@@ -48,7 +61,7 @@ export class InputManager {
     this._handler = (e) => {
       const key = (e.key || '').toLowerCase();
 
-      // Tab / 空格 必须 preventDefault（否则浏览器会跳转焦点或滚动）
+      // Tab / 空格 必须 preventDefault（否则浏览器会跳焦点或滚动）
       if (key === 'tab' || key === ' ') {
         e.preventDefault();
       }
@@ -68,7 +81,7 @@ export class InputManager {
 
     window.addEventListener('keydown', this._handler);
     this._bound = true;
-    devLog.info('[InputManager] 键盘监听已绑定 (WASD / P / B / Tab / ESC)');
+    devLog.info('[InputManager] 键盘监听已绑定 (WASD / P / B / Tab / ESC / C / L / F / T / J / 空格)');
   }
 
   unbind() {
@@ -86,27 +99,22 @@ export class InputManager {
         break;
 
       case 'bless':
-        // 空格键 / 未来 UI 层按"祈福"都走两步式：blessStart → BlessAnimation 播完 → blessCommit
-        // BlessAnimation 自己订阅 GE.BLESS_START 播动画，这里只要调 blessStart
+        // 祈福走两步式：blessStart 扣消耗 + 选目标 → BlessAnimation 播完 → blessCommit
         if (!gs) break;
         BlessSystem.blessStart(gs);
         break;
 
       case 'inventory':
-        // 让 InventoryPanel 自己订阅 GE.UI_PANEL_OPEN('inventory')
         EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'inventory' });
-        devLog.info('[InputManager] inventory toggle');
         break;
 
       case 'buildMode':
         if (!gs) return;
-        if (gs.buildMode) {
-          BuildSystem.exitBuildMode(gs);
-        } else {
-          BuildSystem.enterBuildMode(gs);
-        }
+        if (gs.buildMode) BuildSystem.exitBuildMode(gs);
+        else BuildSystem.enterBuildMode(gs);
         break;
 
+      // ══ Phase 4 —— 设计文档 §15.x ══
       case 'role':
         EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'role' });
         break;
@@ -119,10 +127,13 @@ export class InputManager {
       case 'vehicle':
         EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'vehicle' });
         break;
+      case 'task':
+        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'task' });
+        EventBus.emit(GE.TASK_OPEN, {});
+        break;
 
       case 'settings': {
         // 正确的多关顺序：先关已开的二级面板，全部关完再打开设置
-        // 二级面板由各自订阅 UI_PANEL_CLOSE 自动 hide()
         const curActive = gs?.uiState?.activePanel || null;
         if (curActive) {
           EventBus.emit(GE.UI_PANEL_CLOSE, { panel: curActive });
