@@ -113,8 +113,8 @@ export class TopBar {
     // row3 —— 左上 天数（一行） + 金币（一行）—— 竖排，对照 ui-main.png 左侧
     this.row3 = createEl('div', {
       style: {
-        position: 'absolute', top: '58px', left: '15px',
-        display: 'flex', flexDirection: 'column', gap: '6px', pointerEvents: 'auto',
+        position: 'absolute', top: '72px', left: '15px',
+        display: 'flex', flexDirection: 'column', gap: '10px', pointerEvents: 'auto',
       },
       parent: this.root,
     });
@@ -149,7 +149,7 @@ export class TopBar {
     this.taskIconEl = createEl('div', {
       class: ['task-entry'],
       style: {
-        position: 'absolute', top: '135px', left: '15px',
+        position: 'absolute', top: '168px', left: '15px',
         width: '42px', height: '42px',
         background: 'rgba(255,255,255,0.85)',
         border: '3px solid #3a3a3a',
