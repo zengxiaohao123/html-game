@@ -127,10 +127,11 @@ export class InventoryPanel {
     this.detailEl = createEl('div', { class: 'inv-right-top-left', parent: rightTop });
     this.actionEl = createEl('div', { class: 'inv-right-top-right', parent: rightTop });
 
-    // 右下：出货箱
+    // 右下：出货箱 —— 标题木条 + 木框 + 格子
     const outboxWrap = createEl('div', { class: 'inv-outbox-wrap', parent: rightCol });
     createEl('div', { class: 'inv-outbox-title', text: '📦 出货箱', parent: outboxWrap });
-    this.outboxGridEl = createEl('div', { class: 'outbox-grid', parent: outboxWrap });
+    const outboxFrame = createEl('div', { class: 'inv-outbox-frame', parent: outboxWrap });
+    this.outboxGridEl = createEl('div', { class: 'outbox-grid', parent: outboxFrame });
 
     this._subscribeEvents();
     this.mask.style.display = 'none';
