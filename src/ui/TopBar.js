@@ -151,6 +151,7 @@ export class TopBar {
       style: {
         position: 'absolute', top: '168px', left: '15px',
         width: '42px', height: '42px',
+        pointerEvents: 'auto',
         background: 'rgba(255,255,255,0.85)',
         border: '3px solid #3a3a3a',
         borderRadius: '12px',
