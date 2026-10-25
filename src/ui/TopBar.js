@@ -35,14 +35,19 @@ function pillStyle() {
   };
 }
 
-/** 金币 pill —— 金色/黄色突出（按 ui-main.png 要求） */
+/** 金币 pill —— 按 ui-main.png 左侧单独一行特殊样式（金色突出） */
 function goldPillStyle() {
   return {
-    ...pillStyle(),
-    background: 'linear-gradient(135deg, #fff6c0 0%, #f7d674 100%)',
-    border: '2px solid #c07a20',
-    color: '#8a5a10',
-    fontSize: '16px',
+    position: 'relative',
+    background: 'linear-gradient(135deg, #fff8d0 0%, #ffe070 40%, #e8a520 100%)',
+    border: '3px solid #a06010',
+    borderRadius: '14px',
+    padding: '8px 16px 8px 14px',
+    boxShadow: '0 3px 8px rgba(120, 70, 10, 0.35), inset 0 1px 0 rgba(255,255,255,0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontFamily: '"LXGW WenKai TC", sans-serif',
   };
 }
 
@@ -52,6 +57,7 @@ export class TopBar {
     this.row1 = null;
     this.row2 = null;
     this.row3 = null;
+    this.taskIconEl = null;   // 新增：任务区独立图标（不在 FuncBar，按 §15.17）
 
     this.hpText = null;
     this.atkText = null;
@@ -104,34 +110,64 @@ export class TopBar {
     this.dangerText   = createEl('span', { style: { fontSize: '16px' }, text: '', parent: this.row2 });
     this.extremeText  = createEl('span', { style: { fontSize: '16px' }, text: '', parent: this.row2 });
 
-    // row3 —— 左上 天数 + 金币（Phase 4 新增，按 ui-main.png 移到左上，紧接 row1 下方）
+    // row3 —— 左上 天数（一行） + 金币（一行）—— 竖排，对照 ui-main.png 左侧
     this.row3 = createEl('div', {
       style: {
         position: 'absolute', top: '58px', left: '15px',
-        display: 'flex', gap: '10px', pointerEvents: 'auto',
+        display: 'flex', flexDirection: 'column', gap: '6px', pointerEvents: 'auto',
       },
       parent: this.root,
     });
 
-    // 天数 pill
+    // 天数 pill（单独一行）
     const dayPill = createEl('div', { style: pillStyle(), parent: this.row3 });
     createEl('span', {
       text: '📅',
       style: { fontSize: '18px', lineHeight: '1', fontFamily: EMOJI_FONT },
       parent: dayPill,
     });
-    this.dayText = createEl('span', { text: '', parent: dayPill });
+    this.dayText = createEl('span', { style: { fontSize: '15px', fontWeight: '800', color: '#5a4a3a' }, text: '', parent: dayPill });
 
-    // 金币 pill（金色突出）
+    // 金币 pill（单独一行，按 ui-main.png 金色特殊样式）
     const goldPill = createEl('div', { style: goldPillStyle(), parent: this.row3 });
     createEl('span', {
       text: '🪙',
-      style: { fontSize: '20px', lineHeight: '1', fontFamily: EMOJI_FONT },
+      style: { fontSize: '22px', lineHeight: '1', fontFamily: EMOJI_FONT },
+      parent: goldPill,
+    });
+    createEl('span', {
+      text: '$',
+      style: { fontSize: '16px', fontWeight: '700', color: '#8a5a10' },
       parent: goldPill,
     });
     this.goldText = createEl('span', {
-      style: { fontWeight: '900', fontSize: '17px', color: '#8a5a10' },
+      style: { fontWeight: '900', fontSize: '20px', color: '#704010' },
       text: '', parent: goldPill,
+    });
+
+    // 新增：任务区独立图标（按 §15.17，在金币下方、精灵上方，独立于 FuncBar）
+    this.taskIconEl = createEl('div', {
+      class: ['task-entry'],
+      style: {
+        position: 'absolute', top: '135px', left: '15px',
+        width: '42px', height: '42px',
+        background: 'rgba(255,255,255,0.85)',
+        border: '3px solid #3a3a3a',
+        borderRadius: '12px',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: '24px', lineHeight: '1',
+        boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
+        cursor: 'pointer',
+        zIndex: 101,
+        fontFamily: EMOJI_FONT,
+      },
+      parent: this.root,
+    });
+    this.taskIconEl.textContent = '📋';
+    this.taskIconEl.title = '任务（J 切换）';
+    this.taskIconEl.addEventListener('click', () => {
+      EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'task' });
+      EventBus.emit(GE.TASK_OPEN, {});
     });
 
     this._renderAll();

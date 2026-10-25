@@ -27,7 +27,7 @@ export class FuncBar {
       { id: 'build',     emoji: Assets.ui.build,     label: '建造(Tab)',     action: 'toggleBuild' },
       { id: 'inventory', emoji: Assets.ui.inventory, label: '背包(B)',       action: 'toggleInventory' },
       { id: 'vehicle',   emoji: Assets.ui.vehicle,   label: '载具(T)',       action: 'openVehicle' },
-      { id: 'task',      emoji: '📋',                label: '任务(J)',       action: 'openTask' },
+      // 任务入口已移到左侧独立图标（TopBar.taskIconEl，按 §15.17），不再放 FuncBar
     ];
 
     this.root = createEl('div', {
