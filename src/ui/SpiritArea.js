@@ -16,7 +16,7 @@ export class SpiritArea {
       style: {
         position: 'absolute',
         left: '15px',
-        top: '150px',
+        top: '250px',
         width: '60px',
         height: '60px',
         borderRadius: '50%',
