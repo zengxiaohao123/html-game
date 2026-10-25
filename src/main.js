@@ -5,6 +5,7 @@
 import { EventBus } from './core/EventBus.js';
 import { GE } from './core/GameEvents.js';
 import { devLog } from './core/Logger.js';
+import { InventorySystem } from './systems/InventorySystem.js';
 
 // 系统
 import { GameDirector } from './systems/GameDirector.js';
@@ -47,12 +48,21 @@ window.__gameDirector = director;
 
 const gs = director.getGS();
 
-// 2. Phase 2B 预置 HotBar：放几个可建造设施（方便验收，Phase 3 背包拖拽接入后可以移除）
-gs.hotbar[0] = { itemId: 'facility_tent', qty: 1 };
-gs.hotbar[1] = { itemId: 'facility_potato', qty: 2 };
-gs.hotbar[2] = { itemId: 'facility_strawberry', qty: 1 };
-gs.hotbar[3] = { itemId: 'facility_pea', qty: 1 };
-gs.hotbar[4] = { itemId: 'resource_shop', qty: 1 };
+// 2. Phase 2B 预置 HotBar + 背包库存（HotBar 与背包同步：物品本质属于背包）
+//    - HotBar slots 只存 {itemId}（没有 qty 字段）
+//    - 对应数量走 InventorySystem.addItem 写入 inventory.items
+//    - BuildSystem.placeContent 从 inventory 扣 1，HotBar 渲染时实时从 inventory 读 qty
+const PRESET_HOTBAR = [
+  { itemId: 'facility_tent',        qty: 2 },
+  { itemId: 'facility_potato',       qty: 3 },
+  { itemId: 'facility_strawberry',   qty: 1 },
+  { itemId: 'facility_pea',          qty: 1 },
+  { itemId: 'resource_shop',         qty: 1 },
+];
+PRESET_HOTBAR.forEach((p, i) => {
+  gs.hotbar[i] = { itemId: p.itemId };  // 只存 itemId，不存 qty
+  InventorySystem.addItem(gs, p.itemId, p.qty);
+});
 
 // 3. UI 挂载
 const toast = new Toast();

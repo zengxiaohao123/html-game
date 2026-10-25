@@ -151,20 +151,34 @@ export class HotBar {
 
         const emoji = this._resolveEmoji(slot.itemId);
         createEl('div', { class: ['slot-emoji'], text: emoji, parent: slotEl });
-        const qty = slot.qty || 1;
+
+        // ★ 从背包实时读 qty（HotBar 与背包同步：物品本质属于背包）
+        const invEntry = gs.inventory?.items?.find(e => e.itemId === slot.itemId);
+        const qty = invEntry?.qty ?? 0;
         if (qty > 1) {
           createEl('div', { class: ['slot-qty'], text: `×${qty}`, parent: slotEl });
+        }
+
+        // 库存归 0 → 该 slot 仍显示 emoji（玩家知道"我选了什么"），但视觉上淡一点
+        if (qty === 0) {
+          slotEl.style.opacity = '0.55';
+        } else {
+          slotEl.style.opacity = '';
         }
       } else {
         slotEl.classList.remove('has-content');
         slotEl.classList.add('empty');
+        slotEl.style.opacity = '';
       }
     }
 
-    // 若选中槽被挪走（数量归 0），清除选中
+    // 若选中 slot 的物品库存归 0 → 清除选中
     if (this.selectedSlotIdx !== null) {
-      const cur = gs.hotbar[this.selectedSlotIdx];
-      if (!cur || !cur.itemId) this._clearSelection();
+      const curSlot = gs.hotbar[this.selectedSlotIdx];
+      const inv = curSlot?.itemId ? gs.inventory?.items?.find(e => e.itemId === curSlot.itemId) : null;
+      if (!inv || inv.qty < 1) {
+        this._clearSelection();
+      }
     }
   }
 

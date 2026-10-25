@@ -145,16 +145,20 @@ const result1 = BuildSystem.placeContent(gs, 5, 'facility_tent');
 assert(result1.ok === false, '非建造模式时拒绝放置');
 
 BuildSystem.enterBuildMode(gs);
+// Phase 2B：BuildSystem 现在要求库存里有对应物品（HotBar 与背包同步）
+InventorySystem.addItem(gs, 'facility_tent', 1);
 const result2 = BuildSystem.placeContent(gs, 5, 'facility_tent');
 assert(result2.ok === true, '建造模式下空地可放 tent');
 
 // Home 不可替换
+InventorySystem.addItem(gs, 'facility_tent', 1);
 const result3 = BuildSystem.placeContent(gs, 6, 'facility_tent');
 assert(result3.ok === false, 'home 不可替换（永恒）');
 
 // 放置一个 tent，然后用 wheat 覆盖它 → tent.onReplace 触发 → tent 自己回背包
 gs.map.outerTiles[0].contentId = 'facility_tent'; // 先有 tent
-gs.inventory.items = [];
+gs.inventory.items = []; // 清空背包（目的是验证 tent.onReplace 回背包）
+InventorySystem.addItem(gs, 'facility_wheat', 1); // 但需要有 wheat 才能替换
 const result4 = BuildSystem.placeContent(gs, 0, 'facility_wheat'); // wheat 替换 tent
 assert(result4.ok === true, 'wheat 可替换 tent');
 // tent 被替换，它的 onReplace hook 把 facility_tent addItem 回背包

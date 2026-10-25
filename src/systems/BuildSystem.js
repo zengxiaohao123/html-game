@@ -15,6 +15,7 @@
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { HookDispatcher } from '../core/HookDispatcher.js';
+import { InventorySystem } from './InventorySystem.js';
 import { devLog } from '../core/Logger.js';
 
 /** 家（facility_home）拥有【永恒】词条，不可替换 */
@@ -61,7 +62,15 @@ export function placeContent(gs, tileIdx, contentId) {
   const tile = gs.map.outerTiles[tileIdx];
   const oldContentId = tile.contentId;
 
-  // 2. 永恒词条保护
+  // 2. 库存检查（HotBar 与背包同步：物品本质属于背包）
+  const invEntry = gs.inventory?.items?.find(e => e.itemId === contentId);
+  if (!invEntry || invEntry.qty < 1) {
+    EventBus.emit(GE.TOAST_SHOW, { text: `🛠️ 背包里没有 ${contentId}`, duration: 1800 });
+    devLog.info('[Build] no item in inventory:', contentId);
+    return { ok: false, reason: 'noItem' };
+  }
+
+  // 3. 永恒词条保护
   if (oldContentId && UNREPLACEABLE.has(oldContentId)) {
     EventBus.emit(GE.TOAST_SHOW, { text: '🏠 家拥有【永恒】词条，不可替换', duration: 2000 });
     devLog.info('[Build] refuse to replace unreplaceable:', oldContentId);
@@ -83,11 +92,21 @@ export function placeContent(gs, tileIdx, contentId) {
   // 4. 放置新内容
   tile.contentId = contentId;
 
+  // 5. 从背包扣 1 个（HotBar 与背包同步：物品本质属于背包）
+  const removed = InventorySystem.removeItem(gs, contentId, 1);
+  if (removed < 1) {
+    // 防御：removeItem 失败（库存被外部清空了）→ 回滚
+    tile.contentId = oldContentId;
+    EventBus.emit(GE.TOAST_SHOW, { text: '🛠️ 库存不足（请稍后重试）', duration: 1800 });
+    devLog.warn('[Build] removeItem failed, rollback:', contentId);
+    return { ok: false, reason: 'noItem' };
+  }
+
   EventBus.emit(GE.TILE_UPDATED, { tileIdx, newContentId: contentId, oldContentId });
   EventBus.emit(GE.INVENTORY_CHANGE, { type: 'place', tileIdx, contentId, oldContentId });
   EventBus.emit(GE.TOAST_SHOW, { text: `🛠️ 放置 ${contentId}`, duration: 1500 });
 
-  devLog.info('[Build] placeContent tile', tileIdx, ':', oldContentId, '→', contentId);
+  devLog.info('[Build] placeContent tile', tileIdx, ':', oldContentId, '→', contentId, '(inventory -1)');
   return { ok: true };
 }
 
