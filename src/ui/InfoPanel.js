@@ -13,6 +13,7 @@ import { Assets } from '../core/Assets.js';
 import { Distance } from '../core/Distance.js';
 import { BlessSystem, BLESS_STAMINA_COST, BLESS_GOLD_COST } from '../systems/BlessSystem.js';
 import { SkillSystem } from '../systems/SkillSystem.js';
+import { InventorySystem } from '../systems/InventorySystem.js';
 import { getDef } from '../data/facilities.js';
 import { SKILLS } from '../data/characters.js';
 import { createEl, qs } from './dom.js';
@@ -267,7 +268,41 @@ export class InfoPanel {
       });
     }
 
-    // 资源类地块 / 技能卡地块 —— "进入" 按钮（Phase 4）
+    // 设施类地块 —— 各设施有自己的功能按钮
+    if (contentId && contentId.startsWith('facility_')) {
+      createEl('div', { style: { marginTop: '12px', textAlign: 'center' }, parent: this.bodyWrap });
+
+      if (contentId === 'facility_tulip') {
+        // 郁金香花田（§10.6）：功能 = 采摘（获得当前价值×1 郁金香 + 失去地块内容）
+        const tile = gs.map.outerTiles[this.currentTileIdx];
+        const value = Math.max(0, tile.contentState?.tulipValue || 0);
+        createEl('button', {
+          class: 'action-btn',
+          style: { fontSize: '14px', background: '#ffe0f0' },
+          text: `🌷 采摘（当前价值 ${value}）`,
+          parent: this.bodyWrap,
+          onclick: () => {
+            const curTile = gs.map.outerTiles[this.currentTileIdx];
+            const v = Math.max(0, curTile.contentState?.tulipValue || 0);
+            if (v < 1) {
+              EventBus.emit(GE.TOAST_SHOW, { text: '🌷 郁金香还没价值（价值 < 1）', duration: 2000 });
+              return;
+            }
+            InventorySystem.addItem(gs, 'item_tulip', 1);
+            curTile.contentId = null;
+            curTile.contentState = {};
+            EventBus.emit(GE.TILE_UPDATED, { tileIdx: this.currentTileIdx });
+            EventBus.emit(GE.INVENTORY_CHANGE);
+            EventBus.emit(GE.TOAST_SHOW, { text: `🌷 采摘成功！获得价值 ${v} 的郁金香`, duration: 2000 });
+            // 刷新面板
+            this._renderBody();
+          },
+        });
+      }
+      // 其他 facility_ 前缀：暂不渲染额外按钮（Phase 5 逐设施补）
+    }
+
+    // 资源类地块 / 技能卡地块 —— "进入/使用" 按钮（Phase 4）
     if (contentId && (contentId.startsWith('resource_') || contentId.startsWith('skill_'))) {
       createEl('div', {
         style: { marginTop: '12px', textAlign: 'center' },
@@ -283,7 +318,7 @@ export class InfoPanel {
           onclick: () => EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'shop' }),
         });
       } else if (contentId.startsWith('skill_')) {
-        // Phase 4 —— 技能卡地块：显示技能详情 + 手动触发（一般是自动触发消耗，这里给玩家一个 UI 入口）
+        // Phase 4 —— 技能卡地块：显示技能详情 + 手动触发
         const skillObj = SkillSystem.getSkillById?.(contentId) || SKILLS[contentId];
         if (skillObj) {
           createEl('div', {
@@ -303,28 +338,12 @@ export class InfoPanel {
             onclick: () => {
               const tileIdx = this.currentTileIdx;
               EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
-              // 手动触发（SkillSystem.triggerSkillAtTile 会走完整流程并消耗 tile.contentId）
               SkillSystem.triggerSkillAtTile(gs, tileIdx);
             },
           });
         }
-      } else if (contentId === 'resource_bus') {
-        createEl('button', {
-          class: 'action-btn',
-          style: { fontSize: '14px' },
-          text: '🚌 使用',
-          parent: this.bodyWrap,
-          onclick: () => EventBus.emit(GE.TOAST_SHOW, { text: '🚌 巴士站已触发（行动力 +1、+1 轮子）', duration: 2000 }),
-        });
-      } else {
-        createEl('button', {
-          class: 'action-btn',
-          style: { fontSize: '14px' },
-          text: '🚪 进入',
-          parent: this.bodyWrap,
-          onclick: () => EventBus.emit(GE.TOAST_SHOW, { text: '🎲 遭遇随机事件…', duration: 2000 }),
-        });
       }
+      // 其他 resource_ 前缀（resource_bus / resource_bed / ...）— 设计文档均无功能选项，词条自动触发
     }
 
     // ── “前往”按钮（一步可达玩家当前位置的相邻格） ──

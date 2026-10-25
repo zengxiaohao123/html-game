@@ -1,11 +1,12 @@
 // src/ui/TopBar.js
-// 顶部状态栏（v2 —— 按 ui-main.png 完整布局）
+// 顶部状态栏（v3 —— 按 ui-main.png 完整布局，对照设计文档 §15.2）
 //
 // 布局（全部 absolute 定位，容器本身不占位）：
 //
 //   row1 左上 (top:15px left:15px)  ❤️ hp/maxHp  ·  ⚔️ atk  ·  ⚡ stamina/maxStamina
-//   row2 顶部居中 (top:15px left:50% translateX(-50%))  友善 current/cap · 危险 · 极其危险
-//   row3 左下 (bottom:15px left:15px)  📅 第 N 天  ·  🪙 金币（金色/黄色 pill，单独突出）
+//   row2 顶部居中 (top:15px left:50% translateX(-50%))  友善 current/cap · 危险 · 极度危险 【放大版】
+//   row3 左上 (top:58px left:15px)  📅 第 N 天  ·  🪙 金币（金色 pill，单独突出）
+//   任务区：TopBar 下方、屏幕左侧（FuncBar 已经有📋图标，见 §15.17）
 //
 // 重要约定：所有 emoji / 图标 不采用呼吸或浮动的 idle 动画效果（用户要求）
 
@@ -88,25 +89,25 @@ export class TopBar {
     this._buildPill(this.row1, Assets.ui.atk, 'atk');
     this._buildPill(this.row1, '⚡',        'stamina');
 
-    // row2 —— 顶部居中容量长条
+    // row2 —— 顶部居中容量长条（放大版，对照 ui-main.png）
     this.row2 = createEl('div', {
       style: {
         position: 'absolute', top: '15px', left: '50%',
         transform: 'translateX(-50%)',
         pointerEvents: 'auto',
-        ...pillStyle(), borderRadius: '15px', padding: '3px 12px',
-        fontSize: '13px', background: 'rgba(255,255,255,0.7)', gap: '14px',
+        ...pillStyle(), borderRadius: '20px', padding: '6px 18px',
+        fontSize: '18px', background: 'rgba(255,255,255,0.75)', gap: '18px',
       },
       parent: this.root,
     });
-    this.friendlyText = createEl('span', { text: '', parent: this.row2 });
-    this.dangerText   = createEl('span', { text: '', parent: this.row2 });
-    this.extremeText  = createEl('span', { text: '', parent: this.row2 });
+    this.friendlyText = createEl('span', { style: { fontSize: '16px' }, text: '', parent: this.row2 });
+    this.dangerText   = createEl('span', { style: { fontSize: '16px' }, text: '', parent: this.row2 });
+    this.extremeText  = createEl('span', { style: { fontSize: '16px' }, text: '', parent: this.row2 });
 
-    // row3 —— 左下 天数 + 金币（Phase 4 新增，按 ui-main.png）
+    // row3 —— 左上 天数 + 金币（Phase 4 新增，按 ui-main.png 移到左上，紧接 row1 下方）
     this.row3 = createEl('div', {
       style: {
-        position: 'absolute', bottom: '15px', left: '15px',
+        position: 'absolute', top: '58px', left: '15px',
         display: 'flex', gap: '10px', pointerEvents: 'auto',
       },
       parent: this.root,
@@ -167,7 +168,7 @@ export class TopBar {
     if (this.staminaText) this.staminaText.textContent = `${p.stamina}/${p.maxStamina}`;
     if (this.friendlyText) this.friendlyText.textContent = `友善 ${friendlyNow}/${c.friendly}`;
     if (this.dangerText)   this.dangerText.textContent   = `危险 ${dangerNow}/${c.danger}`;
-    if (this.extremeText)  this.extremeText.textContent  = `极其危险 ${extremeNow}/${c.extreme}`;
+    if (this.extremeText)  this.extremeText.textContent  = `极度危险 ${extremeNow}/${c.extreme}`;
 
     applyOverload(this.friendlyText, friendlyNow, c.friendly);
     applyOverload(this.dangerText,   dangerNow,   c.danger);
