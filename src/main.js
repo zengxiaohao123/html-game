@@ -19,6 +19,7 @@ import { SpiritArea } from './ui/SpiritArea.js';
 import { InfoPanel } from './ui/InfoPanel.js';
 import { Toast } from './ui/Toast.js';
 import { SettingsPanel } from './ui/SettingsPanel.js';
+import { BlessAnimation } from './ui/BlessAnimation.js';
 import { InventoryPanel } from './ui/panels/InventoryPanel.js';
 
 function loadStylesheet(href) {
@@ -82,6 +83,10 @@ settingsPanel.mount();
 // Phase 2B 新增：背包面板
 const inventoryPanel = new InventoryPanel(director);
 inventoryPanel.mount();
+
+// Phase 2B 新增：祈福抽奖动画（订阅 GE.BLESS_START → 2.5s 滚动 → blessCommit）
+const blessAnimation = new BlessAnimation();
+blessAnimation.mount();
 
 // 4. 输入
 const inputManager = new InputManager(director);

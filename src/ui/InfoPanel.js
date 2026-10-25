@@ -368,39 +368,51 @@ export class InfoPanel {
   }
 
   // ════════════════════════════════════════════════════════════
-  // Tab 3 —— 祈福（按钮 + 消耗提示 + BlessSystem.bless）
+  // Tab 3 —— 祈福（按钮 + 消耗提示 + BlessSystem.blessStart → BlessAnimation → blessCommit）
   // ════════════════════════════════════════════════════════════
   _renderBlessTab() {
     const gs = this._getGS();
-    const canBless = gs.player.stamina >= BLESS_STAMINA_COST && gs.player.gold >= BLESS_GOLD_COST;
+    const blessing = !!(gs?.uiState?.blessing);
+    const canBless = !blessing
+      && gs.player.stamina >= BLESS_STAMINA_COST
+      && gs.player.gold >= BLESS_GOLD_COST;
 
     createEl('div', {
       style: { fontSize: '15px', color: '#3a2e20', lineHeight: '1.6', marginBottom: '12px' },
-      text: 'momo 会随机为 1 格挂上【祝福】效果。祝福状态只持续 1 天，但受祝福时会立即触发该设施的【受祝福时】词条。',
+      text: blessing
+        ? '✨ momo 正在为你挑选福地… 抽奖动画进行中'
+        : 'momo 会随机为 1 格挂上【祝福】效果。祝福状态只持续 1 天，但受祝福时会立即触发该设施的【受祝福时】词条。',
       parent: this.bodyWrap,
     });
 
     createEl('div', {
       style: { fontSize: '13px', color: '#8a6a3a', marginBottom: '14px' },
-      text: `消耗：${BLESS_STAMINA_COST} 🔷 + ${BLESS_GOLD_COST} 🪙`,
+      text: `消耗：${BLESS_STAMINA_COST} 🔷 + ${BLESS_GOLD_COST} 🪙 · 快捷键：空格`,
       parent: this.bodyWrap,
     });
 
     createEl('button', {
       class: ['bless-btn'],
       style: { width: '100%' },
-      text: '🧘 请 momo 帮忙',
+      text: blessing ? '✨ 抽奖中…' : '🧘 请 momo 帮忙',
       disabled: !canBless,
       parent: this.bodyWrap,
       onclick: () => {
         const gsRef = this._getGS();
-        BlessSystem.bless(gsRef);
-        // 祝福后刷新当前 tab（消耗 stamina/gold）
-        this._renderBody();
+        BlessSystem.blessStart(gsRef);
+        // blessStart 扣消耗并 emit BLESS_START → BlessAnimation 播动画 → blessCommit 挂状态 fire hook
+        // 这里 blessStart 内部不会自动 emit BLESS_DONE（动画播完才 commit 才 emit），
+        // 所以 Tab3 状态刷新靠 InfoPanel 自己监听 BLESS_START / BLESS_DONE 事件
       },
     });
 
-    if (!canBless) {
+    if (blessing) {
+      createEl('div', {
+        style: { marginTop: '10px', fontSize: '12px', color: '#5a4a3a', textAlign: 'center', fontStyle: 'italic' },
+        text: '（扣消耗已锁定，请耐心等待抽奖结束）',
+        parent: this.bodyWrap,
+      });
+    } else if (!canBless) {
       const reasons = [];
       if (gs.player.stamina < BLESS_STAMINA_COST) reasons.push('行动力不足');
       if (gs.player.gold < BLESS_GOLD_COST) reasons.push('金币不足');
@@ -448,6 +460,11 @@ export class InfoPanel {
       }
     });
 
+    // 祈福开始（扣消耗 + 动画中） → Tab3 立即刷新成"抽奖中…"禁用态
+    EventBus.on(GE.BLESS_START, () => {
+      if (this.activeTab === 3) this._renderBody();
+    });
+
     // 祈福完成 → 选中祝福目标并切到"状态"tab
     EventBus.on(GE.BLESS_DONE, ({ tileIdx }) => {
       if (tileIdx !== undefined && tileIdx !== null) {
@@ -456,12 +473,16 @@ export class InfoPanel {
       }
     });
 
-    // 玩家数值变化 → "单位"tab 重刷
+    // 玩家数值变化 → "单位"tab 或"祈福"tab 重刷
     EventBus.on(GE.STAMINA_CHANGE, () => {
-      if (this.activeTab === 2 && this.currentTileIdx !== null) this._renderBody();
+      if ((this.activeTab === 2 || this.activeTab === 3) && this.currentTileIdx !== null) {
+        this._renderBody();
+      }
     });
     EventBus.on(GE.GOLD_CHANGE, () => {
-      if (this.activeTab === 2 && this.currentTileIdx !== null) this._renderBody();
+      if ((this.activeTab === 2 || this.activeTab === 3) && this.currentTileIdx !== null) {
+        this._renderBody();
+      }
     });
 
     // Boot 时拿 GS

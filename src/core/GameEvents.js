@@ -12,7 +12,8 @@ export const GE = {
   MOVE_BLOCKED: 'player:moveBlocked',
   SLEEP: 'player:sleep',
   BLESS: 'player:bless',
-  BLESS_DONE: 'player:blessDone',
+  BLESS_START: 'player:blessStart',   // Phase 2B 新增：抽奖动画开始（已扣消耗、已选候选）
+  BLESS_DONE: 'player:blessDone',     // 动画结束、状态已挂、hook 已 fire
 
   // ── 回合 / 时间 ──
   TURN_ADVANCE: 'turn:advance',

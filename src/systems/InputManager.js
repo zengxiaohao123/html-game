@@ -1,15 +1,17 @@
 // src/systems/InputManager.js
-// Phase 2B 扩展：加 B（背包）/ Tab（建造模式切换）/ 多 ESC 二级面板关闭
+// Phase 2B 扩展：加 B（背包）/ Tab（建造模式切换）/ 空格（祈福）/ 多 ESC 二级面板关闭
 //
 // 当前键位：
 //   WASD  → 移动
 //   P     → 睡觉
+//   空格  → 祈福（BlessSystem.blessStart + BlessAnimation 播抽奖）
 //   ESC   → 关背包 → 关设置 → 回到探索（多按顺序关）
 //   B     → 背包 InventoryPanel 切换
 //   Tab   → 建造模式 / 探索模式 切换（e.preventDefault() 防浏览器焦点跳转）
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
+import { BlessSystem } from './BlessSystem.js';
 import { BuildSystem } from './BuildSystem.js';
 import { devLog } from '../core/Logger.js';
 
@@ -25,6 +27,8 @@ const KEY_TO_ACTION = {
   'b': 'inventory',
   'tab': 'buildMode',
   'escape': 'settings',
+  ' ': 'bless',          // 空格 → 祈福（BlessAnimation 会自动播抽奖动画）
+  'space': 'bless',
 };
 
 export class InputManager {
@@ -40,8 +44,8 @@ export class InputManager {
     this._handler = (e) => {
       const key = (e.key || '').toLowerCase();
 
-      // Tab 必须 preventDefault（否则浏览器会跳转焦点）
-      if (key === 'tab') {
+      // Tab / 空格 必须 preventDefault（否则浏览器会跳转焦点或滚动）
+      if (key === 'tab' || key === ' ') {
         e.preventDefault();
       }
 
@@ -75,6 +79,13 @@ export class InputManager {
     switch (action) {
       case 'sleep':
         this.director.sleep();
+        break;
+
+      case 'bless':
+        // 空格键 / 未来 UI 层按"祈福"都走两步式：blessStart → BlessAnimation 播完 → blessCommit
+        // BlessAnimation 自己订阅 GE.BLESS_START 播动画，这里只要调 blessStart
+        if (!gs) break;
+        BlessSystem.blessStart(gs);
         break;
 
       case 'inventory':
