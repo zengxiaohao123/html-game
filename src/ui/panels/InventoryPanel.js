@@ -103,8 +103,14 @@ export class InventoryPanel {
       onclick: () => this.hide(),
     });
 
-    // Tab bar
-    this.tabBar = createEl('div', { class: 'tab-bar', parent: this.panel });
+    // 主 body：左列（tabBar + 背包网格） / 右列（详情卡 + 行动区 + 出货箱）
+    const body = createEl('div', { class: 'inv-body', parent: this.panel });
+    const leftCol = createEl('div', { class: 'inv-left', parent: body });
+    const rightCol = createEl('div', { class: 'inv-right', parent: body });
+
+    // Tab bar —— 隶属于左侧部分（不是横跨整个面板顶部）
+    const tabBarWrap = createEl('div', { class: 'inv-left-top', parent: leftCol });
+    this.tabBar = createEl('div', { class: 'tab-bar', parent: tabBarWrap });
     TABS.forEach((t, i) => {
       this.tabBtns.push(createEl('button', {
         class: ['tab-btn', i === 0 ? 'active' : ''],
@@ -113,10 +119,7 @@ export class InventoryPanel {
       }));
     });
 
-    // 主 body：左大网格 + 右侧（上：详情 + 中：行动 + 下：出货箱）
-    const body = createEl('div', { class: 'inv-body', parent: this.panel });
-    const leftCol = createEl('div', { class: 'inv-left', parent: body });
-    const rightCol = createEl('div', { class: 'inv-right', parent: body });
+    // 左：tab bar 下方是背包大网格
     this.listEl = createEl('div', { class: 'inv-grid-wrap', parent: leftCol });
 
     // 右上详情卡（固定高度，不管有没有选中物品都占满）
@@ -267,34 +270,36 @@ export class InventoryPanel {
     const value = ITEM?.value;
     const desc = DESCRIPTIONS[this.selectedItemId] || '（暂无描述）';
 
-    // 大 emoji
-    createEl('div', { class: 'inv-detail-emoji', text: emoji, parent: this.detailEl });
+    // ══ 左两格布局：左大 emoji + 右（名称 + 价值两行） ══
+    const topRow = createEl('div', { class: 'inv-detail-toprow', parent: this.detailEl });
 
-    // 名称
-    createEl('div', { class: 'inv-detail-name', text: name, parent: this.detailEl });
+    // 左：大 emoji
+    createEl('div', { class: 'inv-detail-emoji', text: emoji, parent: topRow });
 
-    // 价值两行（图标概念化）
+    // 右：名称 + 价值两行
+    const rightCol = createEl('div', { class: 'inv-detail-value-col', parent: topRow });
+    createEl('div', { class: 'inv-detail-name', text: name, parent: rightCol });
+
     if (typeof value === 'number') {
       createEl('div', {
         class: 'inv-value-line',
-        parent: this.detailEl,
+        parent: rightCol,
         html: `<span class="inv-value-icon">🪙</span><span class="inv-value-label">单价</span><span class="inv-value-num">${value}</span>`,
       });
       createEl('div', {
         class: 'inv-value-line',
-        parent: this.detailEl,
+        parent: rightCol,
         html: `<span class="inv-value-icon">💰</span><span class="inv-value-label">总价值</span><span class="inv-value-num">${value * entry.qty}</span>`,
       });
     } else {
-      // 资源/设施表（无 value），显示占位
       createEl('div', {
         class: 'inv-value-line',
-        parent: this.detailEl,
+        parent: rightCol,
         html: `<span class="inv-value-icon">🪙</span><span class="inv-value-label">未定价</span>`,
       });
     }
 
-    // 简短描述
+    // 简短描述（topRow 下方独立一行）
     createEl('div', { class: 'inv-detail-desc', text: desc, parent: this.detailEl });
   }
 

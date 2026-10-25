@@ -314,14 +314,16 @@
 }
 
 /* ══════════════════════════════════════════════════════════
- * Phase 2B 最终版 InventoryPanel v2（大面板 + 固定布局 + 行动区）
+ * Phase 2B 最终版 InventoryPanel v3
+ *   tabBar 归左列 / 右列加宽 / panel 上下位置偏移 / 详情卡左两格
  * ══════════════════════════════════════════════════════════ */
 
-/* 主容器布局：左大网格 + 右侧三块（上详情 / 中行动 / 下出货箱） */
+/* 主容器布局：左列（tabBar + 背包网格）  /  右列（详情 + 行动 + 出货箱）
+ * 比例 1:1.5（右列更宽，三段各占满宽度） */
 .inv-body {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) 360px;
-  gap: 18px;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 16px;
   flex: 1;
   min-height: 0;
 }
@@ -330,12 +332,18 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  gap: 8px;
+}
+
+/* tabBar 现在是左列顶部组件，不再横跨整个面板 */
+.inv-left-top {
+  flex-shrink: 0;
 }
 
 .inv-grid-wrap {
   flex: 1;
   overflow-y: auto;
-  padding: 14px;
+  padding: 10px;
   background: rgba(255, 255, 255, 0.55);
   border: 2px solid #b8a888;
   border-radius: 14px;
@@ -350,8 +358,8 @@
 /* 大网格：emoji 为主，每行自适应 */
 .inv-big-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
+  gap: 10px;
 }
 
 .inv-big-slot {
@@ -394,7 +402,7 @@
 }
 
 .inv-big-emoji {
-  font-size: 42px;
+  font-size: 38px;
   line-height: 1;
   font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
   filter: drop-shadow(0 2px 2px rgba(0,0,0,0.25));
@@ -405,29 +413,29 @@
   position: absolute;
   right: 3px;
   bottom: 2px;
-  font-size: 14px;
+  font-size: 12px;
   color: #3a2e20;
   background: rgba(255, 255, 255, 0.95);
   border-radius: 7px;
-  padding: 0 5px;
+  padding: 0 4px;
   line-height: 1.5;
   font-weight: 700;
   border: 1.5px solid #3a3a3a;
   pointer-events: none;
 }
 
-/* 右侧统一容器 */
+/* 右列统一容器（三段 flex 垂直堆叠） */
 .inv-right {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   min-height: 0;
 }
 
-/* ══ 右上：详情卡（固定高度 280px） ══ */
+/* ══ 右上：详情卡（左两格布局，固定高度 175px 更矮） ══ */
 .inv-detail-card {
-  flex: 0 0 280px;
-  padding: 14px 14px 10px;
+  flex: 0 0 175px;
+  padding: 10px 12px;
   background: linear-gradient(135deg, #fffaf0 0%, #fff3c4 100%);
   border: 2px solid #b8a888;
   border-radius: 14px;
@@ -446,75 +454,88 @@
   font-style: italic;
 }
 
+/* 左两格布局：topRow = 左 emoji + 右（名称 + 价值两行） */
+.inv-detail-toprow {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
 .inv-detail-emoji {
-  text-align: center;
-  font-size: 56px;
-  line-height: 1.1;
+  font-size: 52px;
+  line-height: 1;
   font-family: "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;
   filter: drop-shadow(0 3px 3px rgba(0,0,0,0.2));
+  width: 56px;
+  text-align: center;
+}
+
+.inv-detail-value-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .inv-detail-name {
-  text-align: center;
-  font-size: 19px;
   font-weight: 700;
   color: #3a2e20;
-  margin-top: 2px;
-  margin-bottom: 4px;
+  font-size: 16px;
+  margin-bottom: 2px;
 }
 
-/* 价值两行（图标概念化） */
+/* 价值两行 */
 .inv-value-line {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 2px 10px;
-  font-size: 13px;
+  gap: 6px;
+  font-size: 12px;
   color: #5a4a3a;
 }
 .inv-value-icon {
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1;
 }
 .inv-value-label {
   flex: 0 0 auto;
   color: #7b6a56;
-  font-size: 12px;
+  font-size: 11px;
 }
 .inv-value-num {
   margin-left: auto;
   font-weight: 700;
   color: #8a5a1a;
-  font-size: 14px;
+  font-size: 13px;
 }
 
-/* 简短描述（固定高度，超出截断或滚动） */
+/* 简短描述（topRow 下方独立一行，固定 max-height） */
 .inv-detail-desc {
-  margin-top: auto;
-  padding: 8px 10px;
+  margin-top: 8px;
+  padding: 5px 8px;
   background: rgba(255,255,255,0.55);
   border-left: 3px solid #e8a900;
   border-radius: 4px;
-  font-size: 13px;
+  font-size: 12px;
   color: #5a4a3a;
-  line-height: 1.55;
+  line-height: 1.45;
   text-align: left;
-  max-height: 58px;
+  max-height: 44px;
   overflow-y: auto;
 }
-.inv-detail-desc::-webkit-scrollbar { width: 5px; }
-.inv-detail-desc::-webkit-scrollbar-thumb { background: #d0b890; border-radius: 3px; }
+.inv-detail-desc::-webkit-scrollbar { width: 4px; }
+.inv-detail-desc::-webkit-scrollbar-thumb { background: #d0b890; border-radius: 2px; }
 
-/* ══ 右中：行动区（固定高度 ~190px，没选中物品时也占位） ══ */
+/* ══ 右中：行动区（固定高度 155px 更矮） ══ */
 .inv-action-zone {
-  flex: 0 0 190px;
-  padding: 12px 14px;
+  flex: 0 0 155px;
+  padding: 8px 12px;
   background: linear-gradient(135deg, #fffbe6 0%, #fff3c4 100%);
   border: 2px solid #e8a900;
   border-radius: 14px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .inv-action-empty {
@@ -533,18 +554,18 @@
   gap: 6px;
 }
 .inv-action-emoji {
-  font-size: 22px;
+  font-size: 18px;
   line-height: 1;
   font-family: "Segoe UI Emoji","Apple Color Emoji",sans-serif;
 }
 .inv-action-name {
   font-weight: 700;
   color: #3a2e20;
-  font-size: 14px;
+  font-size: 13px;
 }
 .inv-action-label {
   margin-left: auto;
-  font-size: 11px;
+  font-size: 10px;
   color: #c07a20;
   background: rgba(232, 169, 0, 0.15);
   padding: 1px 6px;
@@ -552,25 +573,22 @@
   border: 1px solid #e8a900;
 }
 
-/* 数量大数字 */
 .inv-action-qty {
   text-align: center;
-  font-size: 32px;
+  font-size: 26px;
   font-weight: 800;
   color: #e8a900;
   text-shadow: 0 1px 2px rgba(0,0,0,0.15);
   line-height: 1.1;
 }
 
-/* Slider（美化 range） */
 .inv-action-slider {
   width: 100%;
-  height: 8px;
+  height: 6px;
   accent-color: #e8a900;
   cursor: pointer;
 }
 
-/* 四按钮 min/-1/+1/max */
 .inv-action-btns {
   display: flex;
   gap: 6px;
@@ -578,13 +596,13 @@
 }
 .inv-step-btn {
   flex: 1;
-  padding: 4px 0;
+  padding: 3px 0;
   border: 2px solid #3a3a3a;
   border-radius: 8px;
   background: rgba(255,255,255,0.85);
   color: #3a2e20;
   font-weight: 700;
-  font-size: 12px;
+  font-size: 11px;
   font-family: inherit;
   cursor: pointer;
   transition: background-color 0.1s, transform 0.08s;
@@ -597,7 +615,6 @@
   background: #ffd04b;
 }
 
-/* 确认/取消 */
 .inv-action-confirm {
   display: flex;
   gap: 6px;
@@ -605,8 +622,8 @@
   flex-shrink: 0;
 }
 .inv-action-confirm .action-btn {
-  font-size: 12px;
-  padding: 5px 12px;
+  font-size: 11px;
+  padding: 4px 10px;
 }
 .inv-action-confirm .action-btn.cancel {
   background: #e5dfd0;
@@ -614,11 +631,11 @@
   color: #555;
 }
 
-/* ══ 右下：出货箱（固定高度 ~240px） ══ */
+/* ══ 右下：出货箱（flex 1 撑满剩余，高度随面板自动调整） ══ */
 .inv-outbox-wrap {
   flex: 1;
   min-height: 0;
-  padding: 10px;
+  padding: 8px 10px;
   background: rgba(255, 255, 255, 0.55);
   border: 2px solid #b8a888;
   border-radius: 14px;
@@ -627,18 +644,19 @@
 }
 
 .inv-outbox-title {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   color: #7b6a56;
   text-align: center;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
+  flex-shrink: 0;
 }
 
 .outbox-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
   grid-template-rows: repeat(2, 1fr);
-  gap: 6px;
+  gap: 4px;
   flex: 1;
   align-content: stretch;
 }
@@ -672,40 +690,42 @@
 }
 
 .inv-outbox-slot .inv-big-emoji {
-  font-size: 28px;
+  font-size: 24px;
 }
 .inv-outbox-slot .inv-big-qty {
-  font-size: 11px;
-  padding: 0 4px;
+  font-size: 10px;
+  padding: 0 3px;
   border-width: 1px;
 }
 
 .inv-outbox-value {
   position: absolute;
-  top: 2px;
-  left: 2px;
-  font-size: 10px;
+  top: 1px;
+  left: 1px;
+  font-size: 9px;
   color: #fffbe6;
   background: #8a6a3a;
-  border-radius: 5px;
-  padding: 0 4px;
+  border-radius: 4px;
+  padding: 0 3px;
   line-height: 1.5;
   font-weight: 700;
   pointer-events: none;
 }
 
-/* ══ InventoryPanel 主面板尺寸（v2：大面板，居中，四周留 3-4vw 背景） ══ */
+/* ══ InventoryPanel 主面板尺寸 + 位置下移 30/50px ══ */
 .inventory-panel {
-  /* 固定尺寸：大部分屏幕 92vw × 86vh；极端小屏最低 900×600 */
-  width: clamp(900px, 92vw, 1400px);
-  height: clamp(600px, 86vh, 900px);
+  /* 尺寸：大部分屏幕 94vw × 82vh；极端小屏最低 900×580 */
+  width: clamp(900px, 94vw, 1500px);
+  height: clamp(580px, 82vh, 880px);
   max-width: 100%;
   max-height: 100%;
-  padding: 14px 18px;
+  /* 位置：顶部留 TopBar 约 30px，底部留 HotBar 约 50px */
+  margin-top: 30px;
+  margin-bottom: 50px;
+  padding: 10px 14px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  /* 面板尺寸固定，内容不会撑大（overflow 留给内部子容器滚动） */
+  gap: 6px;
   overflow: hidden;
 }
 
@@ -714,17 +734,18 @@
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
+  padding: 0 2px;
 }
 
 .inventory-title {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
   color: #3a2e20;
 }
 
 .inventory-close {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border-radius: 8px;
   border: 2px solid #3a3a3a;
   background: #ff8f8f;
@@ -737,7 +758,7 @@
 
 /* ══ 行动按钮（通用） ══ */
 .action-btn {
-  padding: 8px 12px;
+  padding: 6px 10px;
   border-radius: 10px;
   border: 2px solid #3a3a3a;
   background: #f7d674;
