@@ -321,15 +321,7 @@ export class InventoryPanel {
       return this._renderActionZone();
     }
 
-    const emoji = this._resolveEmoji(this.selectedItemId);
-    const name = this._resolveName(this.selectedItemId);
     const label = this.selectedFrom === 'items' ? '放入出货箱' : '取回背包';
-
-    // 标题行（emoji + 名称 + 来源标签）
-    const headerRow = createEl('div', { class: 'inv-action-header', parent: this.actionEl });
-    createEl('span', { class: 'inv-action-emoji', text: emoji, parent: headerRow });
-    createEl('span', { class: 'inv-action-name', text: name, parent: headerRow });
-    createEl('span', { class: 'inv-action-label', text: label, parent: headerRow });
 
     // 当前数量显示（大数字，slider 实时联动）
     this.actionQtyLabel = createEl('div', {
@@ -338,16 +330,19 @@ export class InventoryPanel {
       text: String(this.currentQty),
     });
 
-    // Slider（range）：1 到 maxQty，实时绑定到 actionQtyLabel
+    // Slider（range）：1 到 maxQty，实时绑定到 actionQtyLabel + 金色填充
     const slider = createEl('input', {
       attrs: { type: 'range', min: 1, max: this.maxQty, value: this.currentQty },
       class: 'inv-action-slider',
       parent: this.actionEl,
     });
+    const pct = (v) => ((Number(v) - 1) / (this.maxQty - 1)) * 100;
+    slider.style.setProperty('--slider-percent', pct(this.currentQty) + '%');
     slider.addEventListener('input', () => {
       const v = Number(slider.value);
       this.currentQty = v;
       if (this.actionQtyLabel) this.actionQtyLabel.textContent = String(v);
+      slider.style.setProperty('--slider-percent', pct(v) + '%');
     });
 
     // 4 个数量调整按钮：min / -1 / +1 / max（调完同步 slider）
@@ -357,8 +352,9 @@ export class InventoryPanel {
       onclick: () => {
         const v = vFn();
         this._setQty(v);
-        // 同步 slider
+        // 同步 slider + 金色填充
         slider.value = this.currentQty;
+        slider.style.setProperty('--slider-percent', pct(this.currentQty) + '%');
       },
     });
     mkBtn('min', () => 1);
