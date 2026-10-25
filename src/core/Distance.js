@@ -64,31 +64,27 @@ export function outerXYToIdx(size, x, y) {
 }
 
 /**
- * 外圈 4 邻居索引（环形 wrap）
+ * 外圈 4 邻居索引（**不 wrap**：越界返回 null）
+ * Phase 2B 修复：玩家不应该能 wrap 穿越四个角
+ *   比如玩家在左下角（idx=6）向左/向下应该被阻挡，wrap 逻辑已去除
  * @param {number} size
  * @param {number} idx
- * @returns {number[]} 长度 4，按 [上,右,下,左] 顺序
+ * @returns {(number|null)[]} 长度 4，按 [上,右,下,左] 顺序；不可通行方向返回 null
  */
 export function outerNeighbors(size, idx) {
   const xy = outerIdxToXY(size, idx);
   const ring = size - 1;
-  const wrap = (v) => ((v % ring) + ring) % ring;
-  const candidates = [
+  const raw = [
     { x: xy.x, y: xy.y - 1 }, // 上
     { x: xy.x + 1, y: xy.y }, // 右
     { x: xy.x, y: xy.y + 1 }, // 下
     { x: xy.x - 1, y: xy.y }, // 左
   ];
-  return candidates.map(({ x, y }) => {
-    // 环形 wrap
-    if (x < 0) x = size - 1;
-    if (x >= size) x = 0;
-    if (y < 0) y = size - 1;
-    if (y >= size) y = 0;
-    const n = outerXYToIdx(size, x, y);
-    // 若 wrap 后落到栅栏内部（扩图 size=4 时会发生），需要特殊处理；
-    // Phase 0 只用 size=3 无此问题，先不处理
-    return n;
+  return raw.map(({ x, y }) => {
+    // 不 wrap：任何方向越界（x<0 / x>=size / y<0 / y>=size）都返回 null
+    if (x < 0 || x >= size || y < 0 || y >= size) return null;
+    // 只有落到外圈的坐标才有 idx；落到栅栏内部（比如 size=4 的 x=1,y=1）也返回 null
+    return outerXYToIdx(size, x, y);
   });
 }
 

@@ -124,6 +124,14 @@ export class MapView {
       tileEl.classList.add('player-tile');
     }
 
+    // 受祝福地块：金色边框特效（边框不是背景色）
+    const hasBlessed = (tile.states || []).some(
+      s => s.type === 'blessed' && (s.remainingDays === undefined || s.remainingDays > 0),
+    );
+    if (hasBlessed) {
+      tileEl.classList.add('blessed-tile');
+    }
+
     // 建造模式下的视觉类
     this._updateBuildModeTileClass(tileEl, tile, gs);
 

@@ -37,7 +37,7 @@ export class BlessAnimation {
     });
   }
 
-  /** 主入口 */
+  /** 主入口 —— 顺时针依次旋转版 */
   _play(targetIdx, candidates) {
     if (!candidates || candidates.length === 0) return;
 
@@ -47,7 +47,6 @@ export class BlessAnimation {
     this._buildOverlay();
     this._buildCandidateDots(candidates);
 
-    // 把候选 tile 的"页面绝对像素"算出来（依赖 MapView 容器位置）
     const mapRect = this._getMapRect();
     if (!mapRect) {
       devLog.warn('[BlessAnim] map-container not found, abort animation');
@@ -56,35 +55,40 @@ export class BlessAnimation {
       return;
     }
 
-    // 把 candidate 的相对像素 → 绝对像素
+    // candidates 是 BlessSystem.blessStart 按 idx 升序排好的外圈 8 格
+    // 顺时针 = candidates 数组 index 递增：0→1→2→...→7→0→1...
     const absPositions = candidates.map(c => ({
       ...c,
       absX: mapRect.left + c.x,
       absY: mapRect.top + c.y,
     }));
-    const targetPos = absPositions.find(p => p.idx === targetIdx) || absPositions[0];
 
-    // 动画序列：预先生成 JUMP_COUNT 次跳转（最后一次强制命中 target）
+    const TOTAL_STEPS = absPositions.length * 2 + 1; // 两圈 + 最后停 target
+    const targetPosInArray = absPositions.findIndex(p => p.idx === targetIdx);
+    const start = Math.floor(Math.random() * absPositions.length); // 每次起点随机一点
+
+    // 1. 生成顺时针位置序列（最后一步强制命中 target）
     const sequence = [];
-    for (let i = 0; i < JUMP_COUNT; i++) {
-      const t = i / (JUMP_COUNT - 1);                 // 0..1
-      const dur = easeOut(t);                        // 越往后每段时间越长
-      const pickIdx = (i === JUMP_COUNT - 1)
-        ? absPositions.indexOf(targetPos)
-        : Math.floor(Math.random() * absPositions.length);
-      sequence.push({ pos: absPositions[pickIdx], segmentDur: dur });
+    for (let step = 0; step < TOTAL_STEPS; step++) {
+      const posInArray = (step === TOTAL_STEPS - 1)
+        ? targetPosInArray
+        : (start + step) % absPositions.length;
+      // ease-out：step 越大（越靠后）segDur 越长
+      const t = step / (TOTAL_STEPS - 1);
+      const segDur = easeOut(t);
+      sequence.push({ posInArray, pos: absPositions[posInArray], segDur });
     }
 
-    // 第一段时长基准（后面 easeOut 让每段越来越长）
-    const totalDur = sequence.reduce((s, it) => s + it.segmentDur, 0);
-    // 用 sequenceDur / totalDur * (TOTAL_MS - FINAL_HOLD_MS) 计算每段真实毫秒
-    const realMsPerSeg = sequence.map(s => (s.segmentDur / totalDur) * (TOTAL_MS - FINAL_HOLD_MS));
+    // 2. 归一化 segDur → 真实毫秒
+    const totalDur = sequence.reduce((s, it) => s + it.segDur, 0);
+    const realMsPerSeg = sequence.map(s => (s.segDur / totalDur) * (TOTAL_MS - FINAL_HOLD_MS));
 
+    // 3. 动画循环：step=0 先用 transition 跳到第一格，然后 setTimeout 串起来
     let step = 0;
     const runStep = () => {
       if (step >= sequence.length) {
-        // 动画走完 → 停在 target 上脉冲
-        this._pulseTarget(targetPos);
+        // 走完 → 停在 target 脉冲 + commit
+        this._pulseTarget(sequence[sequence.length - 1].pos);
         setTimeout(() => {
           const gs2 = this._getGS();
           if (gs2) BlessSystem.blessCommit(gs2, targetIdx);
@@ -94,8 +98,22 @@ export class BlessAnimation {
       }
       const seg = sequence[step];
       this._moveSpotlightTo(seg.pos.absX, seg.pos.absY, realMsPerSeg[step]);
+
+      // 让当前格的 dot 瞬时变亮（视觉反馈"指针停在这"）
+      if (this.candidateDots[seg.posInArray]) {
+        this.candidateDots[seg.posInArray].style.boxShadow = '0 0 20px rgba(255,240,90,1), 0 0 40px rgba(255,200,60,0.8)';
+        this.candidateDots[seg.posInArray].style.transform = 'translate(-50%,-50%) scale(1.4)';
+        setTimeout(() => {
+          const el = this.candidateDots[seg.posInArray];
+          if (el) {
+            el.style.boxShadow = '0 0 12px rgba(255,210,90,0.5)';
+            el.style.transform = 'translate(-50%,-50%) scale(1)';
+          }
+        }, 120);
+      }
+
       step++;
-      this._rAF = setTimeout(runStep, realMsPerSeg[step - 1] + 40 /* transition 预留 */);
+      this._rAF = setTimeout(runStep, realMsPerSeg[step - 1] + 40);
     };
 
     runStep();

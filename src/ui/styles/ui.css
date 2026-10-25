@@ -130,3 +130,30 @@ body.build-mode .map-container {
   0%   { opacity: 1; transform: scale(1); }
   100% { opacity: 0; transform: scale(2.4); }
 }
+
+/* ── Phase 2B：受祝福地块金色边框特效 ──
+ * 只改边框（border-color），不改背景色
+ * 特效持续时间 = blessed state 的 remainingDays（实际效果时间）
+ * DaySystem.startNewDay() 每日 remainingDays -= 1，归零时自动消失
+ * MapView._renderOneTile 在 blessed.remainingDays>0 时加 .blessed-tile class
+ */
+.map-tile.blessed-tile {
+  border-color: #f0b020 !important;
+  box-shadow:
+    0 0 0 2px rgba(240, 176, 32, 0.35),
+    0 0 14px rgba(240, 176, 32, 0.55);
+  animation: blessed-border-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes blessed-border-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 2px rgba(240, 176, 32, 0.35),
+      0 0 14px rgba(240, 176, 32, 0.55);
+  }
+  50% {
+    box-shadow:
+      0 0 0 3px rgba(255, 220, 80, 0.55),
+      0 0 22px rgba(255, 210, 60, 0.8);
+  }
+}

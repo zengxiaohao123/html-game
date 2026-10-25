@@ -248,6 +248,7 @@ const FacilityRice = {
     }, this);
 
     // onBlessed：push 独立 rice_bless state，remainingDays = 5（与 1 天 blessed 分离）
+    // Phase 2B：再被祝福时取 Math.max（不叠加）
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
       const tile = gs.map.outerTiles[tileIdx];
@@ -256,7 +257,7 @@ const FacilityRice = {
         rb = { type: 'rice_bless', remainingDays: 5 };
         tile.states.push(rb);
       } else {
-        rb.remainingDays += 5; // 可叠加
+        rb.remainingDays = Math.max(rb.remainingDays, 5); // 取最长，不叠加
       }
       EventBus.emit(GE.TOAST_SHOW, { text: `✨ 稻田受祝福 → 未来 ${rb.remainingDays} 日每日 +1 稻草`, duration: 2400 });
       devLog.info('[rice] onBlessed rice_bless remainingDays =', rb.remainingDays);

@@ -1,23 +1,27 @@
 // src/systems/BlessSystem.js
-// Phase 2B 改成两步式，支持抽奖动画：
-//   第一步 blessStart(gs)
+// Phase 2B 最终版：
+//   blessStart(gs)
 //     → 扣 stamina(-2) + gold(-1)
-//     → 锁定玩家（gs.uiState.blessing = true，防止重复祈福）
-//     → 从候选格（排除玩家格 & 必须 contentId!==null）里随机挑 targetIdx
-//     → emit GE.BLESS_START（带 candidates + targetIdx + 各自的 tile 坐标信息供 UI 用）
-//     → 返回 { ok: boolean, targetIdx, candidates, reason? }
+//     → 锁定玩家 gs.uiState.blessing=true
+//     → 候选格 = 外圈**全部 8 格**（包括玩家所在格 / 空格 / 家 / 任意 contentId）
+//     → Random.pick 选 targetIdx
+//     → emit GE.BLESS_START（带外圈 8 格的绝对页面坐标，供 BlessAnimation 顺时针轮播）
 //
-//   第二步 blessCommit(gs, targetIdx)
-//     → 在 target tile.states[] push {type:'blessed', remainingDays:1}
-//     → HookDispatcher.fire('onBlessed') 让各设施自己处理效果
-//     → emit GE.BLESS_DONE + GE.TOAST_SHOW("✨ 祝福降临 ${contentId}")
-//     → 解锁 gs.uiState.blessing = false
+//   blessCommit(gs, targetIdx)
+//     → tile.states 里先查是否已有 blessed
+//       · 已有：remainingDays = Math.max(old, 1)（取更长的那个，不叠加）
+//       · 没有：push {type:'blessed', remainingDays:1, source:'bless'}
+//     → fire HookDispatcher.fire('onBlessed') 让各设施自己处理（wheat 立即 ×3，rice push rice_bless(remainingDays:5)，等等）
+//     → hook 返回后，扫 states 里除 blessed 外、名字以 _bless 结尾且带 remainingDays 的 state
+//       → 把 blessed.remainingDays 更新成 Math.max(blessed.remainingDays, maxHookDays)
+//       目的：边框金色特效要跟持续型效果实际生效时长对齐
+//     → emit GE.BLESS_DONE + GE.TOAST_SHOW + GE.TILE_UPDATED
+//     → 解锁 blessing=false
 //
-//   对外保留 bless(gs) 兼容旧调用（infoPanel 按钮 → blessStart → 直接 commit，无动画路径）
-//   但 UI 层（BlessAnimation.js）应显式走 blessStart + blessCommit 两步。
+//   对外 bless(gs)：立即两步（无动画，InfoPanel Tab3 按钮用这个简化路径——其实 Tab3 也已改成 blessStart + BlessAnimation 播完再 commit）
 //
 // blessed 状态存储唯一真相源：tile.states[]
-// DaySystem.startNewDay() 里遍历 outerTiles[].states.filter(s=>s.type==='blessed') 统一 -1 天
+// DaySystem.startNewDay() 遍历 outerTiles[].states.filter(s=>s.type==='blessed') 统一 remainingDays -= 1，清理 <= 0
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
@@ -34,8 +38,7 @@ const TILE_SIZE = 80;
 
 /**
  * 第一步：祈福开始（扣消耗 + 选目标 + emit BLESS_START）
- * UI 层播抽奖动画 → 动画完成后调 blessCommit()
- * @returns {{ ok: boolean, targetIdx: number|null, candidates: Array<{idx:number,x:number,y:number,contentId:string}>, reason?:string }}
+ * @returns {{ ok: boolean, targetIdx: number|null, candidates: Array<{idx:number,x:number,y:number,contentId:string|null}>, reason?:string }}
  */
 export function blessStart(gs) {
   // 重入保护（动画期间禁止再次祈福）
@@ -55,13 +58,10 @@ export function blessStart(gs) {
     return { ok: false, targetIdx: null, candidates: [], reason: 'gold' };
   }
 
-  // 候选格（排除玩家当前格 + 必须是已有内容格）
-  const candidates = gs.map.outerTiles.filter(t =>
-    t.idx !== gs.player.x && t.contentId !== null,
-  );
+  // 候选格：外圈全部 8 格（不再过滤玩家格 / 空格 / 家 / contentId）
+  const candidates = gs.map.outerTiles.slice();
   if (candidates.length === 0) {
-    EventBus.emit(GE.TOAST_SHOW, { text: '🧘 没有可祝福的地块', duration: 2000 });
-    devLog.info('[Bless] no candidate tiles');
+    EventBus.emit(GE.TOAST_SHOW, { text: '🧘 地图上没有可祝福的地块', duration: 2000 });
     return { ok: false, targetIdx: null, candidates: [], reason: 'noTiles' };
   }
 
@@ -83,20 +83,24 @@ export function blessStart(gs) {
   const targetTile = Random.pick(candidates);
   const targetIdx = targetTile.idx;
 
-  // 把候选格坐标也打包好给 UI（BlessAnimation.js 用来画动画）
-  const packedCandidates = candidates.map(t => {
-    const { x, y } = Distance.outerIdxToXY(gs.map.size, t.idx);
-    return {
-      idx: t.idx,
-      x: x * TILE_SIZE + TILE_SIZE / 2,   // 相对 map-container 的中心像素
-      y: y * TILE_SIZE + TILE_SIZE / 2,
-      contentId: t.contentId,
-    };
-  });
+  // 打包候选格（按 idx 升序，保证 BlessAnimation 顺时针轮播顺序一致）
+  const packedCandidates = candidates
+    .slice()
+    .sort((a, b) => a.idx - b.idx)
+    .map(t => {
+      const { x, y } = Distance.outerIdxToXY(gs.map.size, t.idx);
+      return {
+        idx: t.idx,
+        x: x * TILE_SIZE + TILE_SIZE / 2,
+        y: y * TILE_SIZE + TILE_SIZE / 2,
+        contentId: t.contentId,
+      };
+    });
 
-  devLog.info('[Bless] start — picked tile', targetIdx, 'content:', targetTile.contentId);
+  devLog.info('[Bless] start — targetIdx=', targetIdx, 'content:', targetTile.contentId,
+    '(玩家格=', targetIdx === gs.player.x, ', 空格=', targetTile.contentId === null, ')');
 
-  // 广播 BLESS_START（UI 订阅后播抽奖动画）
+  // 广播 BLESS_START（BlessAnimation 订阅后顺时针轮播）
   EventBus.emit(GE.BLESS_START, {
     targetIdx,
     targetContentId: targetTile.contentId,
@@ -109,55 +113,87 @@ export function blessStart(gs) {
 }
 
 /**
- * 第二步：祈福提交（挂状态 + fire hook + emit BLESS_DONE）
- * UI 抽奖动画播完后必须调这个，否则状态永远锁在 blessing=true
+ * 第二步：祈福提交
+ * @param {object} gs
+ * @param {number} targetIdx
  */
 export function blessCommit(gs, targetIdx) {
   const tile = gs.map.outerTiles[targetIdx];
   if (!tile) {
     devLog.warn('[Bless] commit — invalid targetIdx', targetIdx);
+    if (gs.uiState) gs.uiState.blessing = false;
     return;
   }
 
-  // 挂 blessed 状态（tile 级）
+  // ── 1. push / 更新 blessed state（不叠加，取 max remainingDays） ──
   if (!tile.states) tile.states = [];
-  tile.states.push({
-    type: 'blessed',
-    remainingDays: 1,
-    source: 'bless',
-  });
+  const existingBlessed = tile.states.find(s => s.type === 'blessed');
+  if (existingBlessed) {
+    // 已存在：取 max，不叠加
+    existingBlessed.remainingDays = Math.max(existingBlessed.remainingDays ?? 1, 1);
+    devLog.info('[Bless] commit — merge into existing blessed, remainingDays=', existingBlessed.remainingDays);
+  } else {
+    tile.states.push({
+      type: 'blessed',
+      remainingDays: 1,
+      source: 'bless',
+    });
+    devLog.info('[Bless] commit — push new blessed state');
+  }
 
-  // fire onBlessed hook（让 wheat / rice / tulip / strawberry / pea / tent / henhouse / slimehouse
-  // 等各自执行【受祝福时】词条效果）
+  // ── 2. fire onBlessed hook（各设施处理自己的立即型 / 持续型效果） ──
   HookDispatcher.fire('onBlessed', { gs, tileIdx: targetIdx });
 
-  const contentId = tile.contentId;
+  // ── 3. hook 扫完后，用持续型 state 的 remainingDays 对齐 blessed.remainingDays ──
+  //    比如 rice 会 push rice_bless(remainingDays:5)，border 金色特效也要持续 5 天
+  const curBlessed = tile.states.find(s => s.type === 'blessed');
+  if (curBlessed) {
+    let maxHookDays = curBlessed.remainingDays; // 默认就是 1（立即型）
+    for (const s of tile.states) {
+      // 扫所有 hook 自己 push 的持续型 state：名字以 _bless 结尾，且有 remainingDays 数字
+      if (s === curBlessed) continue;
+      if (typeof s.type === 'string' && s.type.endsWith('_bless') && typeof s.remainingDays === 'number' && s.remainingDays > maxHookDays) {
+        maxHookDays = s.remainingDays;
+      }
+    }
+    if (maxHookDays > curBlessed.remainingDays) {
+      devLog.info('[Bless] commit — align blessed.remainingDays', curBlessed.remainingDays, '→', maxHookDays);
+      curBlessed.remainingDays = maxHookDays;
+    }
+  }
 
   // 解锁
   if (gs.uiState) gs.uiState.blessing = false;
 
   // 广播事件
+  const contentId = tile.contentId;
   EventBus.emit(GE.BLESS_DONE, {
     tileIdx: targetIdx,
     contentId,
     staminaCost: BLESS_STAMINA_COST,
     goldCost: BLESS_GOLD_COST,
   });
-  EventBus.emit(GE.TOAST_SHOW, { text: `✨ 祝福降临 ${contentId}`, duration: 2200 });
+
+  // 对空格也显示 Toast（说明"空地被祝福"，虽然没有实际效果）
+  if (!contentId) {
+    EventBus.emit(GE.TOAST_SHOW, { text: `✨ 空地 ${targetIdx} 被祝福（无实际效果）`, duration: 2200 });
+  } else if (targetIdx === gs.player.x) {
+    EventBus.emit(GE.TOAST_SHOW, { text: `✨ 你脚下的 ${contentId} 被祝福`, duration: 2200 });
+  } else {
+    EventBus.emit(GE.TOAST_SHOW, { text: `✨ 祝福降临 ${contentId}`, duration: 2200 });
+  }
+
   EventBus.emit(GE.TILE_UPDATED, { tileIdx: targetIdx });
 
-  devLog.info('[Bless] commit — done, targetIdx=', targetIdx);
+  devLog.info('[Bless] commit — done, targetIdx=', targetIdx, 'blessed.remainingDays=', curBlessed?.remainingDays);
 }
 
 /**
- * 兼容旧调用：bless(gs) —— 立即执行两步，不播动画
- * InfoPanel Tab3 按钮可以继续用这个简化路径，
- * 但空格键 / 点击 momo 等 UI 层应该自己调 blessStart + 动画 + blessCommit
+ * 兼容旧调用：bless(gs) —— 立即执行两步（无动画）
  */
 export function bless(gs) {
   const step1 = blessStart(gs);
   if (!step1.ok) return step1;
-  // 立即 commit（等于没有抽奖动画）
   blessCommit(gs, step1.targetIdx);
   return step1;
 }
