@@ -109,6 +109,15 @@ export class FuncBar {
   }
 
   _onAction(action) {
+    // 建造模式下拦截：不能睡觉、不能祈福（祈福按钮在 FuncBar 没有，只拦睡觉）
+    const gs = this.director?.getGS?.();
+    if (gs?.buildMode === true) {
+      if (action === 'sleep') {
+        EventBus.emit(GE.TOAST_SHOW, { text: '🛠️ 建造模式下不能睡觉', duration: 1500 });
+        return;
+      }
+    }
+
     switch (action) {
       case 'openSettings':
         EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'settings' });

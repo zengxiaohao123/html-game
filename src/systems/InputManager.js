@@ -119,16 +119,6 @@ export class InputManager {
 
   _dispatchAction(action) {
     const gs = this.director?.getGS?.();
-
-    // ── 打开任何界面前先退出建造模式 ──
-    if (gs?.buildMode === true && (
-      action === 'inventory' || action === 'role' || action === 'team'
-      || action === 'forge' || action === 'vehicle' || action === 'task'
-      || action === 'settings'
-    )) {
-      BuildSystem.exitBuildMode(gs);
-    }
-
     switch (action) {
       case 'sleep':
         this.director.sleep();

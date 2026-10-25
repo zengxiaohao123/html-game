@@ -207,7 +207,7 @@ export class InfoPanel {
     if (!tile) return;
 
     switch (this.activeTab) {
-      case 0: this._renderContentTab(tile); break;
+      case 0: this._renderContentTab(tile, gs); break;
       case 1: this._renderStateTab(tile); break;
       case 2: this._renderUnitTab(tile); break;
       case 3: this._renderBlessTab(); break;
@@ -215,9 +215,9 @@ export class InfoPanel {
   }
 
   // ════════════════════════════════════════════════════════════
-  // Tab 0 —— 地块内容（emoji + 名称 + 词条 + 地形 + 进入按钮）
+  // Tab 0 —— 地块内容（emoji + 名称 + 词条 + 地形 + 进入按钮 + 前往按钮）
   // ════════════════════════════════════════════════════════════
-  _renderContentTab(tile) {
+  _renderContentTab(tile, gs) {
     const titleRow = createEl('div', {
       style: {
         display: 'flex', alignItems: 'center', gap: '10px',
