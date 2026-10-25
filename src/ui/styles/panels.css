@@ -314,16 +314,15 @@
 }
 
 /* ══════════════════════════════════════════════════════════
- * Phase 2B 最终版 InventoryPanel v3
- *   tabBar 归左列 / 右列加宽 / panel 上下位置偏移 / 详情卡左两格
+ * Phase 2B InventoryPanel v4 排版
+ *   左右各半宽 / 右上融为一体（内部左右分栏）/ slider 椭圆高轨道 / 出货箱 slot 缩小留白
  * ══════════════════════════════════════════════════════════ */
 
-/* 主容器布局：左列（tabBar + 背包网格）  /  右列（详情 + 行动 + 出货箱）
- * 比例 1:1.5（右列更宽，三段各占满宽度） */
+/* 主 body：左右各占一半 */
 .inv-body {
   display: grid;
-  grid-template-columns: 1fr 1.6fr;
-  gap: 16px;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
   flex: 1;
   min-height: 0;
 }
@@ -335,10 +334,8 @@
   gap: 8px;
 }
 
-/* tabBar 现在是左列顶部组件，不再横跨整个面板 */
-.inv-left-top {
-  flex-shrink: 0;
-}
+/* tabBar 归属左侧列 */
+.inv-left-top { flex-shrink: 0; }
 
 .inv-grid-wrap {
   flex: 1;
@@ -355,7 +352,7 @@
   background: #b8a888; border-radius: 4px;
 }
 
-/* 大网格：emoji 为主，每行自适应 */
+/* 大网格 */
 .inv-big-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
@@ -375,56 +372,41 @@
   transition: transform 0.12s, border-color 0.12s, background-color 0.12s, box-shadow 0.12s;
   user-select: none;
 }
-
 .inv-big-slot:hover {
   transform: translateY(-3px);
   border-color: #3a3a3a;
   background-color: #fff4c8;
   box-shadow: 0 4px 10px rgba(0,0,0,0.15);
 }
-
 .inv-big-slot.selected {
   border-color: #e8a900;
   box-shadow: 0 0 0 3px rgba(232, 169, 0, 0.35);
   background-color: #ffe099;
 }
-
 .inv-big-slot.empty {
   background: rgba(220, 220, 220, 0.3);
   border-style: dashed;
   cursor: default;
 }
 .inv-big-slot.empty:hover {
-  transform: none;
-  border-color: #b8a888;
-  background: rgba(220, 220, 220, 0.3);
-  box-shadow: none;
+  transform: none; border-color: #b8a888; background: rgba(220, 220, 220, 0.3); box-shadow: none;
 }
 
 .inv-big-emoji {
-  font-size: 38px;
-  line-height: 1;
+  font-size: 38px; line-height: 1;
   font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
   filter: drop-shadow(0 2px 2px rgba(0,0,0,0.25));
   pointer-events: none;
 }
-
 .inv-big-qty {
-  position: absolute;
-  right: 3px;
-  bottom: 2px;
-  font-size: 12px;
-  color: #3a2e20;
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 7px;
-  padding: 0 4px;
-  line-height: 1.5;
-  font-weight: 700;
-  border: 1.5px solid #3a3a3a;
-  pointer-events: none;
+  position: absolute; right: 3px; bottom: 2px;
+  font-size: 12px; color: #3a2e20;
+  background: rgba(255, 255, 255, 0.95); border-radius: 7px;
+  padding: 0 4px; line-height: 1.5; font-weight: 700;
+  border: 1.5px solid #3a3a3a; pointer-events: none;
 }
 
-/* 右列统一容器（三段 flex 垂直堆叠） */
+/* ══ 右列：上半（融为一体） + 下半（出货箱） ══ */
 .inv-right {
   display: flex;
   flex-direction: column;
@@ -432,16 +414,24 @@
   min-height: 0;
 }
 
-/* ══ 右上：详情卡（左两格布局，固定高度 175px 更矮） ══ */
-.inv-detail-card {
-  flex: 0 0 175px;
+/* 右上融为一体的外层容器（单个边框/背景，内部左右分栏） */
+.inv-right-top {
+  flex: 0 0 200px;
   padding: 10px 12px;
   background: linear-gradient(135deg, #fffaf0 0%, #fff3c4 100%);
   border: 2px solid #b8a888;
   border-radius: 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  min-height: 0;
+}
+
+/* ── 左半：详情（emoji + 名称 + 价值两行 + 描述） ── */
+.inv-right-top-left {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  min-width: 0;
 }
 
 .inv-detail-empty {
@@ -450,92 +440,74 @@
   align-items: center;
   justify-content: center;
   color: #b0a090;
-  font-size: 13px;
+  font-size: 12px;
   font-style: italic;
 }
 
-/* 左两格布局：topRow = 左 emoji + 右（名称 + 价值两行） */
+/* topRow：emoji 左 + 价值列居右 */
 .inv-detail-toprow {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 10px;
+  gap: 8px;
   align-items: start;
 }
 
 .inv-detail-emoji {
-  font-size: 52px;
-  line-height: 1;
+  font-size: 46px; line-height: 1; width: 52px; text-align: center;
   font-family: "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;
   filter: drop-shadow(0 3px 3px rgba(0,0,0,0.2));
-  width: 56px;
-  text-align: center;
 }
 
+/* 价值列：整体居右对齐，所有子元素 text-align:right */
 .inv-detail-value-col {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: flex-end;
+  gap: 1px;
   min-width: 0;
+  text-align: right;
 }
 
 .inv-detail-name {
-  font-weight: 700;
-  color: #3a2e20;
-  font-size: 16px;
+  font-weight: 700; color: #3a2e20; font-size: 15px;
   margin-bottom: 2px;
 }
 
-/* 价值两行 */
+/* 价值行：只有 icon + 数字，整体居右 */
 .inv-value-line {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: 4px;
+  font-size: 13px;
   color: #5a4a3a;
 }
 .inv-value-icon {
-  font-size: 14px;
-  line-height: 1;
-}
-.inv-value-label {
-  flex: 0 0 auto;
-  color: #7b6a56;
-  font-size: 11px;
+  font-size: 14px; line-height: 1;
 }
 .inv-value-num {
-  margin-left: auto;
-  font-weight: 700;
-  color: #8a5a1a;
-  font-size: 13px;
+  font-weight: 700; color: #8a5a1a; font-size: 14px;
 }
 
-/* 简短描述（topRow 下方独立一行，固定 max-height） */
+/* 描述（topRow 下方，高度受限避免挤压） */
 .inv-detail-desc {
-  margin-top: 8px;
-  padding: 5px 8px;
+  margin-top: auto;
+  padding: 4px 8px;
   background: rgba(255,255,255,0.55);
   border-left: 3px solid #e8a900;
   border-radius: 4px;
-  font-size: 12px;
-  color: #5a4a3a;
-  line-height: 1.45;
-  text-align: left;
-  max-height: 44px;
-  overflow-y: auto;
+  font-size: 11px; color: #5a4a3a;
+  line-height: 1.4; text-align: left;
+  max-height: 40px; overflow-y: auto;
 }
 .inv-detail-desc::-webkit-scrollbar { width: 4px; }
 .inv-detail-desc::-webkit-scrollbar-thumb { background: #d0b890; border-radius: 2px; }
 
-/* ══ 右中：行动区（固定高度 155px 更矮） ══ */
-.inv-action-zone {
-  flex: 0 0 155px;
-  padding: 8px 12px;
-  background: linear-gradient(135deg, #fffbe6 0%, #fff3c4 100%);
-  border: 2px solid #e8a900;
-  border-radius: 14px;
+/* ── 右半：行动（slider + 数量 + 按钮） ── */
+.inv-right-top-right {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
+  min-width: 0;
 }
 
 .inv-action-empty {
@@ -548,50 +520,92 @@
   font-style: italic;
 }
 
+/* 标题行（emoji + 名称 + 来源标签） */
 .inv-action-header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 .inv-action-emoji {
-  font-size: 18px;
-  line-height: 1;
+  font-size: 16px; line-height: 1;
   font-family: "Segoe UI Emoji","Apple Color Emoji",sans-serif;
 }
 .inv-action-name {
-  font-weight: 700;
-  color: #3a2e20;
-  font-size: 13px;
+  font-weight: 700; color: #3a2e20; font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  min-width: 0;
 }
 .inv-action-label {
   margin-left: auto;
-  font-size: 10px;
-  color: #c07a20;
+  font-size: 9px; color: #c07a20;
   background: rgba(232, 169, 0, 0.15);
-  padding: 1px 6px;
-  border-radius: 10px;
-  border: 1px solid #e8a900;
+  padding: 0 4px; border-radius: 8px; border: 1px solid #e8a900;
+  flex-shrink: 0;
 }
 
+/* 数量大数字 */
 .inv-action-qty {
   text-align: center;
-  font-size: 26px;
-  font-weight: 800;
+  font-size: 22px; font-weight: 800;
   color: #e8a900;
   text-shadow: 0 1px 2px rgba(0,0,0,0.15);
-  line-height: 1.1;
+  line-height: 1;
 }
 
+/* Slider：高轨道 + 短总宽 + 椭圆圆角 */
 .inv-action-slider {
   width: 100%;
-  height: 6px;
-  accent-color: #e8a900;
+  height: 18px;
+  cursor: pointer;
+  /* 椭圆轨道：用伪元素实现高轨道 */
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  outline: none;
+}
+/* WebKit 轨道 */
+.inv-action-slider::-webkit-slider-runnable-track {
+  height: 14px;
+  border-radius: 7px;
+  background: linear-gradient(to bottom, #f0e6c8 0%, #d8c898 100%);
+  border: 1.5px solid #b8a888;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.15);
+}
+/* WebKit thumb（短一些，椭圆） */
+.inv-action-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 14px;
+  width: 16px;
+  margin-top: -2px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ffd04b 0%, #e8a900 100%);
+  border: 2px solid #3a3a3a;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.25);
+  cursor: pointer;
+}
+/* Firefox 轨道 */
+.inv-action-slider::-moz-range-track {
+  height: 14px;
+  border-radius: 7px;
+  background: linear-gradient(to bottom, #f0e6c8 0%, #d8c898 100%);
+  border: 1.5px solid #b8a888;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.15);
+}
+.inv-action-slider::-moz-range-thumb {
+  height: 14px;
+  width: 16px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ffd04b 0%, #e8a900 100%);
+  border: 2px solid #3a3a3a;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.25);
   cursor: pointer;
 }
 
+/* 4 按钮 */
 .inv-action-btns {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   flex-shrink: 0;
 }
 .inv-step-btn {
@@ -607,14 +621,10 @@
   cursor: pointer;
   transition: background-color 0.1s, transform 0.08s;
 }
-.inv-step-btn:hover {
-  background: #ffe9a8;
-}
-.inv-step-btn:active {
-  transform: scale(0.95);
-  background: #ffd04b;
-}
+.inv-step-btn:hover { background: #ffe9a8; }
+.inv-step-btn:active { transform: scale(0.95); background: #ffd04b; }
 
+/* 确认/取消 */
 .inv-action-confirm {
   display: flex;
   gap: 6px;
@@ -626,12 +636,10 @@
   padding: 4px 10px;
 }
 .inv-action-confirm .action-btn.cancel {
-  background: #e5dfd0;
-  border-color: #888;
-  color: #555;
+  background: #e5dfd0; border-color: #888; color: #555;
 }
 
-/* ══ 右下：出货箱（flex 1 撑满剩余，高度随面板自动调整） ══ */
+/* ══ 右下：出货箱（slot 缩小 + 留白 + max-content 撑不撑爆） ══ */
 .inv-outbox-wrap {
   flex: 1;
   min-height: 0;
@@ -642,7 +650,6 @@
   display: flex;
   flex-direction: column;
 }
-
 .inv-outbox-title {
   font-size: 11px;
   font-weight: 700;
@@ -652,13 +659,15 @@
   flex-shrink: 0;
 }
 
+/* 出货箱网格：固定列数 6×2，slot 缩小不填满（用 max-width 约束） */
 .outbox-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  grid-template-rows: repeat(2, 1fr);
+  grid-template-columns: repeat(6, minmax(36px, 52px));
+  grid-template-rows: repeat(2, minmax(36px, 52px));
   gap: 4px;
   flex: 1;
-  align-content: stretch;
+  justify-content: center;
+  align-content: center;
 }
 
 .inv-outbox-slot {
@@ -666,42 +675,31 @@
   aspect-ratio: 1 / 1;
   background: rgba(255, 255, 255, 0.7);
   border: 2px solid #b8a888;
-  border-radius: 10px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: transform 0.1s, border-color 0.1s, background-color 0.1s;
 }
-
 .inv-outbox-slot:hover {
   transform: translateY(-2px);
   border-color: #3a3a3a;
   background-color: #fff4c8;
 }
-
 .inv-outbox-slot.empty {
   background: rgba(220, 220, 220, 0.25);
   border-style: dashed;
   cursor: default;
 }
-.inv-outbox-slot.empty:hover {
-  transform: none;
-}
+.inv-outbox-slot.empty:hover { transform: none; }
 
-.inv-outbox-slot .inv-big-emoji {
-  font-size: 24px;
-}
-.inv-outbox-slot .inv-big-qty {
-  font-size: 10px;
-  padding: 0 3px;
-  border-width: 1px;
-}
+.inv-outbox-slot .inv-big-emoji { font-size: 22px; }
+.inv-outbox-slot .inv-big-qty { font-size: 9px; padding: 0 3px; border-width: 1px; }
 
 .inv-outbox-value {
   position: absolute;
-  top: 1px;
-  left: 1px;
+  top: 1px; left: 1px;
   font-size: 9px;
   color: #fffbe6;
   background: #8a6a3a;
@@ -712,14 +710,12 @@
   pointer-events: none;
 }
 
-/* ══ InventoryPanel 主面板尺寸 + 位置下移 30/50px ══ */
+/* ══ InventoryPanel 主面板 + 位置偏移 30/50px ══ */
 .inventory-panel {
-  /* 尺寸：大部分屏幕 94vw × 82vh；极端小屏最低 900×580 */
   width: clamp(900px, 94vw, 1500px);
   height: clamp(580px, 82vh, 880px);
   max-width: 100%;
   max-height: 100%;
-  /* 位置：顶部留 TopBar 约 30px，底部留 HotBar 约 50px */
   margin-top: 30px;
   margin-bottom: 50px;
   padding: 10px 14px;
@@ -744,8 +740,7 @@
 }
 
 .inventory-close {
-  width: 28px;
-  height: 28px;
+  width: 28px; height: 28px;
   border-radius: 8px;
   border: 2px solid #3a3a3a;
   background: #ff8f8f;
@@ -756,7 +751,7 @@
   flex-shrink: 0;
 }
 
-/* ══ 行动按钮（通用） ══ */
+/* 通用行动按钮 */
 .action-btn {
   padding: 6px 10px;
   border-radius: 10px;
@@ -769,17 +764,8 @@
   transition: background-color 0.12s, transform 0.1s;
   flex-shrink: 0;
 }
-
-.action-btn:hover:not(:disabled) {
-  background: #ffd04b;
-}
-
-.action-btn:active:not(:disabled) {
-  transform: scale(0.96);
-}
-
+.action-btn:hover:not(:disabled) { background: #ffd04b; }
+.action-btn:active:not(:disabled) { transform: scale(0.96); }
 .action-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-  background: #e5dfd0;
+  opacity: 0.45; cursor: not-allowed; background: #e5dfd0;
 }

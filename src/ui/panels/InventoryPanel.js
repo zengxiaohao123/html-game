@@ -122,13 +122,12 @@ export class InventoryPanel {
     // 左：tab bar 下方是背包大网格
     this.listEl = createEl('div', { class: 'inv-grid-wrap', parent: leftCol });
 
-    // 右上详情卡（固定高度，不管有没有选中物品都占满）
-    this.detailEl = createEl('div', { class: 'inv-detail-card', parent: rightCol });
+    // 右：上半（融为一体，内部左右分栏）+ 下半（出货箱）
+    const rightTop = createEl('div', { class: 'inv-right-top', parent: rightCol });
+    this.detailEl = createEl('div', { class: 'inv-right-top-left', parent: rightTop });
+    this.actionEl = createEl('div', { class: 'inv-right-top-right', parent: rightTop });
 
-    // 右中：行动区（固定存在，点物品才激活）
-    this.actionEl = createEl('div', { class: 'inv-action-zone', parent: rightCol });
-
-    // 右下：出货箱（固定高度）
+    // 右下：出货箱
     const outboxWrap = createEl('div', { class: 'inv-outbox-wrap', parent: rightCol });
     createEl('div', { class: 'inv-outbox-title', text: '📦 出货箱', parent: outboxWrap });
     this.outboxGridEl = createEl('div', { class: 'outbox-grid', parent: outboxWrap });
@@ -270,13 +269,13 @@ export class InventoryPanel {
     const value = ITEM?.value;
     const desc = DESCRIPTIONS[this.selectedItemId] || '（暂无描述）';
 
-    // ══ 左两格布局：左大 emoji + 右（名称 + 价值两行） ══
+    // ══ 详情左半：上半行（emoji 左 + 价值行整体居右） + 描述 ══
     const topRow = createEl('div', { class: 'inv-detail-toprow', parent: this.detailEl });
 
     // 左：大 emoji
     createEl('div', { class: 'inv-detail-emoji', text: emoji, parent: topRow });
 
-    // 右：名称 + 价值两行
+    // 右：名称 + 价值两行（整组居右）
     const rightCol = createEl('div', { class: 'inv-detail-value-col', parent: topRow });
     createEl('div', { class: 'inv-detail-name', text: name, parent: rightCol });
 
@@ -284,22 +283,22 @@ export class InventoryPanel {
       createEl('div', {
         class: 'inv-value-line',
         parent: rightCol,
-        html: `<span class="inv-value-icon">🪙</span><span class="inv-value-label">单价</span><span class="inv-value-num">${value}</span>`,
+        html: `<span class="inv-value-icon">🪙</span><span class="inv-value-num">${value}</span>`,
       });
       createEl('div', {
         class: 'inv-value-line',
         parent: rightCol,
-        html: `<span class="inv-value-icon">💰</span><span class="inv-value-label">总价值</span><span class="inv-value-num">${value * entry.qty}</span>`,
+        html: `<span class="inv-value-icon">💰</span><span class="inv-value-num">${value * entry.qty}</span>`,
       });
     } else {
       createEl('div', {
         class: 'inv-value-line',
         parent: rightCol,
-        html: `<span class="inv-value-icon">🪙</span><span class="inv-value-label">未定价</span>`,
+        html: `<span class="inv-value-icon">🪙</span><span class="inv-value-num">—</span>`,
       });
     }
 
-    // 简短描述（topRow 下方独立一行）
+    // 描述（topRow 下方独立一行）
     createEl('div', { class: 'inv-detail-desc', text: desc, parent: this.detailEl });
   }
 
