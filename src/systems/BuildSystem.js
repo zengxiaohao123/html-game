@@ -26,10 +26,6 @@ const UNREPLACEABLE = new Set(['facility_home']);
  */
 export function enterBuildMode(gs) {
   gs.buildMode = true;
-  // 建造模式下cursor变成十字准星（优先级1）
-  if (typeof document !== 'undefined') {
-    document.body.style.cursor = 'crosshair';
-  }
   EventBus.emit(GE.UI_MODE_CHANGE, { mode: 'build' });
   EventBus.emit(GE.TOAST_SHOW, { text: '🛠️ 进入建造模式', duration: 1500 });
   devLog.info('[Build] enterBuildMode');
@@ -40,10 +36,6 @@ export function enterBuildMode(gs) {
  */
 export function exitBuildMode(gs) {
   gs.buildMode = false;
-  // 恢复cursor（优先级1）
-  if (typeof document !== 'undefined') {
-    document.body.style.cursor = '';
-  }
   EventBus.emit(GE.UI_MODE_CHANGE, { mode: 'explore' });
   EventBus.emit(GE.TOAST_SHOW, { text: '🚶 进入探索模式', duration: 1500 });
   devLog.info('[Build] exitBuildMode');
@@ -70,13 +62,6 @@ export function placeContent(gs, tileIdx, contentId) {
   const tile = gs.map.outerTiles[tileIdx];
   const oldContentId = tile.contentId;
 
-  // 优先级6：天赋不可放置（天赋前缀 talent_，§9 行 219 / §12 行 479）
-  if (contentId.startsWith('talent_')) {
-    EventBus.emit(GE.TOAST_SHOW, { text: '🚫 天赋不可放置到地图上', duration: 2000 });
-    devLog.info('[Build] refuse talent placement:', contentId);
-    return { ok: false, reason: 'talentForbidden' };
-  }
-
   // 1.5 前缀校验：只接受 facility_ / resource_ / skill_ 三类（Phase 4 加 skill_*）
   if (!/^(facility_|resource_|skill_)/.test(contentId)) {
     EventBus.emit(GE.TOAST_SHOW, { text: `🛠️ 未知内容类型：${contentId}`, duration: 1500 });
@@ -99,19 +84,14 @@ export function placeContent(gs, tileIdx, contentId) {
     return { ok: false, reason: 'unreplaceable' };
   }
 
-  // 优先级6：旧内容处理 —— 帐篷 fire hook，技能卡回背包，其他消失
+  // 3. 旧内容处理
   if (oldContentId) {
     if (oldContentId === 'facility_tent') {
       // 帐篷【替换时】词条：fire onReplace hook，让 facilities.js 里的帐篷 hook 把旧内容 addItem 回背包
       HookDispatcher.fire('onReplace', { gs, tileIdx, oldContentId });
       devLog.info('[Build] tent replaced, onReplace fired');
-    } else if (oldContentId.startsWith('skill_')) {
-      // §9 行 217：技能被替换后回背包（不消失）
-      InventorySystem.addItem(gs, oldContentId, 1);
-      EventBus.emit(GE.TOAST_SHOW, { text: `⚡ 技能 ${oldContentId} 回背包`, duration: 1500 });
-      devLog.info('[Build] skill card replaced, returned to inventory:', oldContentId);
     } else {
-      // 其他：直接消失
+      // 其他：直接消失（不需要回背包）
       devLog.info('[Build] old content', oldContentId, 'discarded');
     }
   }

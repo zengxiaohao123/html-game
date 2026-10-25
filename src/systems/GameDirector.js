@@ -54,25 +54,9 @@ export class GameDirector {
     // 5. 广播 BOOT 事件（UI 模块会收到）
     EventBus.emit(GE.BOOT, { gs: this.gs });
 
-    // 6. 优先级8：开局检查外圈是否全部布置完（§9 行 211/213）
-    //    地图上存在虚空（contentId=null）= 地图不合法，必须先布置完才能正式开始
-    const allPlaced = this.gs.map.outerTiles.every(t => t.contentId !== null);
-    if (!allPlaced) {
-      devLog.info('[GameDirector] 外圈仍有空地块，强制进入建造模式');
-      EventBus.emit(GE.DIALOG_SHOW, {
-        title: '请先布置完所有地块',
-        content: '开局给了你随机的地块内容，必须全部布置完才能正式开始游戏。\n按 Tab 切建造模式，把所有地块填满吧！',
-        options: [{ label: '好的', onSelect: () => {} }],
-      });
-      // 强制切建造模式
-      this.gs.buildMode = true;
-      EventBus.emit(GE.UI_MODE_CHANGE, { mode: 'build' });
-    }
-
-    // 7. 标记启动完成
+    // 6. 标记启动完成
     this.started = true;
-    devLog.info('GameDirector 启动完成 ✓ day=', this.gs.day, 'stamina=', this.gs.player.stamina,
-      allPlaced ? '(外圈全布置 ✓)' : '(等待玩家布置外圈…)');
+    devLog.info('GameDirector 启动完成 ✓ day=', this.gs.day, 'stamina=', this.gs.player.stamina);
   }
 
   /**

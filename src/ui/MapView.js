@@ -45,85 +45,8 @@ export class MapView {
     this.renderFence(gs);
     this.renderPlayer(gs);
 
-    // ── 拖拽放置支持（优先级3） ──
-    this._bindDropEvents();
-
     this._subscribeEvents();
     return this.root;
-  }
-
-  /** 绑定拖拽事件到 map root（优先级3） */
-  _bindDropEvents() {
-    // dragover 必须阻止默认行为，否则 drop 不会触发
-    this.root.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      if (e.dataTransfer) {
-        e.dataTransfer.dropEffect = 'move';
-      }
-    });
-
-    this.root.addEventListener('dragenter', (e) => {
-      e.preventDefault();
-    });
-
-    this.root.addEventListener('dragleave', (e) => {
-      e.preventDefault();
-    });
-
-    // 核心：drop 处理
-    this.root.addEventListener('drop', (e) => {
-      e.preventDefault();
-      if (!e.dataTransfer) return;
-
-      const contentId = e.dataTransfer.getData('text/plain');
-      if (!contentId) return;
-
-      // 天赋不可放置（优先级6 提前过滤，天赋前缀 talent_）
-      if (contentId.startsWith('talent_')) {
-        EventBus.emit(GE.TOAST_SHOW, { text: '🚫 天赋不可放置到地图上', duration: 2000 });
-        return;
-      }
-
-      // 计算 drop 位置对应的 tileIdx
-      const rect = this.root.getBoundingClientRect();
-      const x = Math.floor((e.clientX - rect.left) / TILE_SIZE);
-      const y = Math.floor((e.clientY - rect.top) / TILE_SIZE);
-
-      const gs = this.gs;
-      if (!gs) return;
-
-      const tileIdx = Distance.outerXYToIdx(gs.map.size, x, y);
-      if (tileIdx === null || tileIdx === undefined) {
-        // 不在外圈（可能在栅栏里）
-        EventBus.emit(GE.TOAST_SHOW, { text: '🛠️ 只能放在外圈地块上', duration: 2000 });
-        return;
-      }
-
-      // 检查背包数量
-      const invEntry = gs.inventory?.items?.find(i => i.itemId === contentId);
-      if (!invEntry || invEntry.qty < 1) {
-        EventBus.emit(GE.TOAST_SHOW, { text: '🛠️ 背包里没有这个物品', duration: 2000 });
-        return;
-      }
-
-      // 临时进入建造模式来放置（因为BuildSystem.placeContent要求buildMode=true）
-      const wasBuildMode = gs.buildMode;
-      if (!wasBuildMode) {
-        gs.buildMode = true;
-      }
-
-      const result = BuildSystem.placeContent(gs, tileIdx, contentId);
-
-      // 恢复之前的模式
-      if (!wasBuildMode) {
-        gs.buildMode = false;
-      }
-
-      if (result?.ok) {
-        // 放置成功后刷新HotBar显示
-        EventBus.emit(GE.INVENTORY_CHANGE);
-      }
-    });
   }
 
   renderAllTiles(gs) {
@@ -212,15 +135,15 @@ export class MapView {
     // 建造模式下的视觉类
     this._updateBuildModeTileClass(tileEl, tile, gs);
 
-    // 点击事件（优先级1：建造模式下InfoPanel不滑出）
+    // 点击事件：emit TILE_CLICKED 通用事件 + 建造模式下尝试放置
     tileEl.addEventListener('click', () => {
-      if (this.buildMode) {
-        // 建造模式：只处理放置，不 emit TILE_CLICKED（InfoPanel 订阅的事件）
-        this._handleBuildTileClick(tile.idx);
-        return;
-      }
-      // 探索模式：正常 emit TILE_CLICKED，让 InfoPanel 滑出
+      // 无论什么模式都 emit TILE_CLICKED（InfoPanel 依赖）
       EventBus.emit(GE.TILE_CLICKED, { tileIdx: tile.idx });
+
+      // 建造模式下额外处理
+      if (this.buildMode) {
+        this._handleBuildTileClick(tile.idx);
+      }
     });
 
     this.tileEls.set(tile.idx, tileEl);
@@ -250,19 +173,11 @@ export class MapView {
     const gs = this.gs;
     if (!gs || !gs.buildMode) return;
 
-    // 优先级5：先检查背包放置按钮的 pendingPlaceContentId（比HotBar选中优先）
-    let contentId = gs.uiState?.pendingPlaceContentId;
-    if (contentId) {
-      // 用完清空
-      gs.uiState.pendingPlaceContentId = null;
-    } else {
-      // 否则用 HotBar 选中的（HotBar 会把选中内容写到 gs.uiState.selectedBuildContentId）
-      contentId = gs.uiState?.selectedBuildContentId;
-    }
-
+    // 选中的 contentId：HotBar 会把选中内容写到 gs.uiState.selectedBuildContentId
+    const contentId = gs.uiState?.selectedBuildContentId;
     if (!contentId) {
       EventBus.emit(GE.TOAST_SHOW, {
-        text: '🛠️ 先在底部快捷栏选中要放置的设施，或打开背包点“放置”',
+        text: '🛠️ 先在底部快捷栏选中要放置的设施',
         duration: 2000,
       });
       return;
