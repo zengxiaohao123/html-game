@@ -23,16 +23,16 @@ export class FuncBar {
    */
   mount(parent = qs('#app')) {
     // 8 个图标定义（从右到左的顺序）
-    // 注意：CSS 里 direction: rtl 或者用 flex-direction: row-reverse 实现"从右往左"
+    // Phase 4：角色/编队/合成/载具 4 个 UI 已接入；建造 / 背包 Phase 2B 已有
     const icons = [
       { id: 'settings', emoji: Assets.ui.settings, label: '设置', action: 'openSettings' },
       { id: 'sleep',    emoji: Assets.ui.sleep,    label: '睡觉', action: 'sleep' },
-      { id: 'role',     emoji: Assets.ui.role,     label: '角色', action: 'comingSoon' },
-      { id: 'team',     emoji: Assets.ui.team,     label: '编队', action: 'comingSoon' },
-      { id: 'forge',    emoji: Assets.ui.forge,    label: '合成', action: 'comingSoon' },
+      { id: 'role',     emoji: Assets.ui.role,     label: '角色（J）',   action: 'openRole' },
+      { id: 'team',     emoji: Assets.ui.team,     label: '编队（K）',   action: 'openTeam' },
+      { id: 'forge',    emoji: Assets.ui.forge,    label: '合成（L）',   action: 'openForge' },
       { id: 'build',    emoji: Assets.ui.build,    label: '建造', action: 'toggleBuild' },
       { id: 'inventory',emoji: Assets.ui.inventory,label: '背包', action: 'toggleInventory' },
-      { id: 'vehicle',  emoji: Assets.ui.vehicle,  label: '载具', action: 'comingSoon' },
+      { id: 'vehicle',  emoji: Assets.ui.vehicle,  label: '载具（M）',   action: 'openVehicle' },
     ];
 
     this.root = createEl('div', {
@@ -122,6 +122,18 @@ export class FuncBar {
           this.director.sleep();
         }
         break;
+      case 'openRole':
+        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'role' });
+        break;
+      case 'openTeam':
+        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'team' });
+        break;
+      case 'openForge':
+        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'forge' });
+        break;
+      case 'openVehicle':
+        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'vehicle' });
+        break;
       case 'toggleInventory':
         EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'inventory' });
         break;
@@ -132,9 +144,6 @@ export class FuncBar {
         else BuildSystem.enterBuildMode(gs);
         break;
       }
-      case 'comingSoon':
-        EventBus.emit(GE.TOAST_SHOW, { text: `${label}功能即将推出～`, duration: 1500 });
-        break;
       default:
         break;
     }

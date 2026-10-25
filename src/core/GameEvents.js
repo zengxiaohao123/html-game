@@ -61,6 +61,16 @@ export const GE = {
   UI_MODE_CHANGE: 'ui:modeChange',
   TOAST_SHOW: 'toast:show',
 
+  // ── Phase 4 —— 角色 / 编队 / 合成 / 商店 / 载具 / 连携技 ──
+  CHARACTER_SELECTED: 'character:selected',
+  TEAM_CHANGE: 'team:change',
+  SHOP_OPEN: 'shop:open',
+  SHOP_BUY: 'shop:buy',
+  FORGE_COMPLETE: 'forge:complete',
+  VEHICLE_ATTACH: 'vehicle:attach',
+  LINK_SKILL_QUEUE: 'linkskill:queue',      // 队列状态变化（UI 订阅）
+  DIALOG_SHOW: 'dialog:show',                // DialogBox 统一弹窗入口
+
   // ── 存档 ──
   SAVE_DONE: 'save:done',
   LOAD_DONE: 'load:done',

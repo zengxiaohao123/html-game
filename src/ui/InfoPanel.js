@@ -273,13 +273,21 @@ export class InfoPanel {
       createEl('button', {
         class: 'action-btn',
         style: { fontSize: '14px' },
-        text: '🚪 进入',
+        text: contentId === 'resource_shop' ? '🏪 进入商店' : '🚪 进入',
         parent: this.bodyWrap,
         onclick: () => {
-          EventBus.emit(GE.TOAST_SHOW, {
-            text: '🎲 遭遇随机事件…',
-            duration: 2000,
-          });
+          if (contentId === 'resource_shop') {
+            // Phase 4：打开 ShopPanel
+            EventBus.emit(GE.SHOP_OPEN);
+          } else if (contentId === 'resource_bus') {
+            // 巴士站由 facilities.js onEnter 触发：行动力 +1、+1 轮子；这里只提示
+            EventBus.emit(GE.TOAST_SHOW, { text: '🚌 巴士站已触发（行动力 +1、+1 轮子）', duration: 2000 });
+          } else {
+            EventBus.emit(GE.TOAST_SHOW, {
+              text: '🎲 遭遇随机事件…',
+              duration: 2000,
+            });
+          }
         },
       });
     }

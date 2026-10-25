@@ -29,6 +29,10 @@ const KEY_TO_ACTION = {
   'escape': 'settings',
   ' ': 'bless',          // 空格 → 祈福（BlessAnimation 会自动播抽奖动画）
   'space': 'bless',
+  'j': 'role',
+  'k': 'team',
+  'l': 'forge',
+  'm': 'vehicle',
 };
 
 export class InputManager {
@@ -101,6 +105,19 @@ export class InputManager {
         } else {
           BuildSystem.enterBuildMode(gs);
         }
+        break;
+
+      case 'role':
+        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'role' });
+        break;
+      case 'team':
+        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'team' });
+        break;
+      case 'forge':
+        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'forge' });
+        break;
+      case 'vehicle':
+        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'vehicle' });
         break;
 
       case 'settings': {

@@ -1,6 +1,5 @@
-// src/main.js —— Phase 2B 组装入口
-// 组装 GameDirector + 所有 UI 模块 + InventoryPanel
-// 加三个新 CSS + 预置 HotBar 内容让建造模式立即可用
+// src/main.js —— Phase 4 组装入口
+// 在 Phase 2B 基础上 boot：RolePanel / TeamPanel / ForgePanel / ShopPanel / VehiclePanel / LinkSkillUI / DialogBox
 
 import { EventBus } from './core/EventBus.js';
 import { GE } from './core/GameEvents.js';
@@ -21,7 +20,14 @@ import { InfoPanel } from './ui/InfoPanel.js';
 import { Toast } from './ui/Toast.js';
 import { SettingsPanel } from './ui/SettingsPanel.js';
 import { BlessAnimation } from './ui/BlessAnimation.js';
+import { DialogBox } from './ui/DialogBox.js';
+import { LinkSkillUI } from './ui/LinkSkillUI.js';
 import { InventoryPanel } from './ui/panels/InventoryPanel.js';
+import { RolePanel } from './ui/panels/RolePanel.js';
+import { TeamPanel } from './ui/panels/TeamPanel.js';
+import { ForgePanel } from './ui/panels/ForgePanel.js';
+import { ShopPanel } from './ui/panels/ShopPanel.js';
+import { VehiclePanel } from './ui/panels/VehiclePanel.js';
 
 function loadStylesheet(href) {
   if (document.querySelector(`link[href="${href}"]`)) return;
@@ -97,6 +103,26 @@ inventoryPanel.mount();
 // Phase 2B 新增：祈福抽奖动画（订阅 GE.BLESS_START → 2.5s 滚动 → blessCommit）
 const blessAnimation = new BlessAnimation();
 blessAnimation.mount();
+
+// Phase 4 新增：核心 DialogBox（统一弹窗入口，GE.DIALOG_SHOW）
+const dialogBox = new DialogBox();
+dialogBox.mount();
+
+// Phase 4 新增：6 个面板
+const rolePanel = new RolePanel(director);
+rolePanel.mount();
+const teamPanel = new TeamPanel(director);
+teamPanel.mount();
+const forgePanel = new ForgePanel(director);
+forgePanel.mount();
+const shopPanel = new ShopPanel(director);
+shopPanel.mount();
+const vehiclePanel = new VehiclePanel(director);
+vehiclePanel.mount();
+
+// Phase 4 新增：连携技实时窗口（LinkSkillSystem 入队时自动显示；按 1/2/3 触发）
+const linkSkillUI = new LinkSkillUI(director);
+linkSkillUI.mount();
 
 // 4. 输入
 const inputManager = new InputManager(director);
