@@ -45,6 +45,7 @@ export class MapView {
     this.renderFence(gs);
     this.renderPlayer(gs);
 
+    this._bindDropEvents();
     this._subscribeEvents();
     return this.root;
   }
@@ -135,15 +136,13 @@ export class MapView {
     // 建造模式下的视觉类
     this._updateBuildModeTileClass(tileEl, tile, gs);
 
-    // 点击事件：emit TILE_CLICKED 通用事件 + 建造模式下尝试放置
+    // 点击事件（建造模式不 emit TILE_CLICKED，InfoPanel 不滑出）
     tileEl.addEventListener('click', () => {
-      // 无论什么模式都 emit TILE_CLICKED（InfoPanel 依赖）
-      EventBus.emit(GE.TILE_CLICKED, { tileIdx: tile.idx });
-
-      // 建造模式下额外处理
       if (this.buildMode) {
         this._handleBuildTileClick(tile.idx);
+        return;
       }
+      EventBus.emit(GE.TILE_CLICKED, { tileIdx: tile.idx });
     });
 
     this.tileEls.set(tile.idx, tileEl);
@@ -171,18 +170,50 @@ export class MapView {
   /** 建造模式下点击 tile → 调用 BuildSystem.placeContent */
   _handleBuildTileClick(tileIdx) {
     const gs = this.gs;
-    if (!gs || !gs.buildMode) return;
+    if (!gs) return;
 
-    // 选中的 contentId：HotBar 会把选中内容写到 gs.uiState.selectedBuildContentId
-    const contentId = gs.uiState?.selectedBuildContentId;
+    // 先查 InventoryPanel 放置按钮的 pendingPlaceContentId
+    let contentId = gs.uiState?.pendingPlaceContentId;
+    if (contentId) {
+      gs.uiState.pendingPlaceContentId = null;
+    } else {
+      // 再查 HotBar 选中的
+      contentId = gs.uiState?.selectedBuildContentId;
+    }
     if (!contentId) {
       EventBus.emit(GE.TOAST_SHOW, {
-        text: '🛠️ 先在底部快捷栏选中要放置的设施',
+        text: '🛠️ 先在 HotBar 选中或背包点“放置”',
         duration: 2000,
       });
       return;
     }
     BuildSystem.placeContent(gs, tileIdx, contentId);
+  }
+
+  /** 拖拽放置（探索/建造模式都有效） */
+  _bindDropEvents() {
+    this.root.addEventListener('dragover', (e) => { e.preventDefault(); });
+    this.root.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (!e.dataTransfer) return;
+      const contentId = e.dataTransfer.getData('text/plain');
+      if (!contentId) return;
+      if (contentId.startsWith('talent_')) {
+        EventBus.emit(GE.TOAST_SHOW, { text: '🚫 天赋不可放置到地图上', duration: 2000 });
+        return;
+      }
+      const gs = this.gs;
+      if (!gs) return;
+      const rect = this.root.getBoundingClientRect();
+      const x = Math.floor((e.clientX - rect.left) / TILE_SIZE);
+      const y = Math.floor((e.clientY - rect.top) / TILE_SIZE);
+      const tileIdx = Distance.outerXYToIdx(gs.map.size, x, y);
+      if (tileIdx === null || tileIdx === undefined) {
+        EventBus.emit(GE.TOAST_SHOW, { text: '🛠️ 只能放在外圈地块上', duration: 2000 });
+        return;
+      }
+      BuildSystem.placeContent(gs, tileIdx, contentId);
+    });
   }
 
   _tileBgColor(tile) {

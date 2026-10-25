@@ -17,6 +17,7 @@ import { TurnSystem } from './TurnSystem.js';
 import { SleepSystem } from './SleepSystem.js';
 import { CreatureSystem } from './CreatureSystem.js';
 import { SkillSystem } from './SkillSystem.js';
+import { InventorySystem } from './InventorySystem.js';
 
 /** 初始小麦田放置的格 idx（Phase 1 演示用） */
 const INITIAL_WHEAT_TILE_IDX = 2; // 右上位置
@@ -51,7 +52,23 @@ export class GameDirector {
     // 4. Phase 3：启动生物实时 tick 循环
     CreatureSystem.startRealtimeLoop(() => this.gs);
 
-    // 5. 广播 BOOT 事件（UI 模块会收到）
+    // 5. 初始背包物品（让玩家有东西可选来建造）
+    const INITIAL_ITEMS = [
+      { id: 'facility_tent',       qty: 2 },
+      { id: 'facility_rice',       qty: 2 },
+      { id: 'facility_potato',     qty: 2 },
+      { id: 'facility_tulip',      qty: 1 },
+      { id: 'resource_shop',       qty: 1 },
+      { id: 'resource_bus',        qty: 1 },
+      { id: 'skill_yumo_slash',    qty: 1 },
+      { id: 'skill_heart_force',   qty: 1 },
+    ];
+    for (const it of INITIAL_ITEMS) {
+      InventorySystem.addItem(this.gs, it.id, it.qty);
+    }
+    devLog.info('[GameDirector] 初始化背包物品 ✓');
+
+    // 6. 广播 BOOT 事件（UI 模块会收到）
     EventBus.emit(GE.BOOT, { gs: this.gs });
 
     // 6. 标记启动完成

@@ -60,10 +60,36 @@ export class InputManager {
 
     this._handler = (e) => {
       const key = (e.key || '').toLowerCase();
+      const gs = this.director?.getGS?.();
 
-      // Tab / 空格 必须 preventDefault（否则浏览器会跳焦点或滚动）
+      // ── 建造模式 gating ──
+      if (gs?.buildMode === true) {
+        if (key === 'w' || key === 'a' || key === 's' || key === 'd'
+          || key === ' ' || key === 'space'
+          || key === 'p') {
+          e.preventDefault();
+          return;
+        }
+      }
+
+      // Tab / 空格 必须 preventDefault
       if (key === 'tab' || key === ' ') {
         e.preventDefault();
+      }
+
+      // ── 1-0 数字键 → HotBar 选中 ──
+      if (gs) {
+        const num = parseInt(key, 10);
+        if (!isNaN(num) && num >= 1 && num <= 9) {
+          e.preventDefault();
+          EventBus.emit(GE.HOTBAR_SELECT_SLOT, { slotIdx: num - 1 });
+          return;
+        }
+        if (key === '0') {
+          e.preventDefault();
+          EventBus.emit(GE.HOTBAR_SELECT_SLOT, { slotIdx: 9 });
+          return;
+        }
       }
 
       if (KEY_TO_DIRECTION[key]) {
@@ -93,6 +119,16 @@ export class InputManager {
 
   _dispatchAction(action) {
     const gs = this.director?.getGS?.();
+
+    // ── 打开任何界面前先退出建造模式 ──
+    if (gs?.buildMode === true && (
+      action === 'inventory' || action === 'role' || action === 'team'
+      || action === 'forge' || action === 'vehicle' || action === 'task'
+      || action === 'settings'
+    )) {
+      BuildSystem.exitBuildMode(gs);
+    }
+
     switch (action) {
       case 'sleep':
         this.director.sleep();

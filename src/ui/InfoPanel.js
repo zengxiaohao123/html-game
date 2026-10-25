@@ -10,6 +10,7 @@
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { Assets } from '../core/Assets.js';
+import { Distance } from '../core/Distance.js';
 import { BlessSystem, BLESS_STAMINA_COST, BLESS_GOLD_COST } from '../systems/BlessSystem.js';
 import { SkillSystem } from '../systems/SkillSystem.js';
 import { getDef } from '../data/facilities.js';
@@ -326,6 +327,42 @@ export class InfoPanel {
       }
     }
 
+    // ── “前往”按钮（一步可达玩家当前位置的相邻格） ──
+    if (gs && tile.idx !== gs.player.x) {
+      const isAdj = Distance.isOuterAdjacent(gs.map.size, gs.player.x, tile.idx);
+      createEl('div', {
+        style: { marginTop: '10px', textAlign: 'center' },
+        parent: this.bodyWrap,
+      });
+      if (isAdj) {
+        createEl('button', {
+          class: 'action-btn',
+          style: { fontSize: '14px', background: '#fff0c0' },
+          text: '🚪 前往（一步抵达）',
+          parent: this.bodyWrap,
+          onclick: () => {
+            // 计算方向：比较 player.x 与 tile.idx 的坐标差
+            const director = window.__gameDirector;
+            if (!director?.move) return;
+            const { x: px, y: py } = Distance.outerIdxToXY(gs.map.size, gs.player.x);
+            const { x: tx, y: ty } = Distance.outerIdxToXY(gs.map.size, tile.idx);
+            let dir = null;
+            if (tx > px) dir = 'right';
+            else if (tx < px) dir = 'left';
+            else if (ty > py) dir = 'down';
+            else if (ty < py) dir = 'up';
+            if (dir) director.move(dir);
+          },
+        });
+      } else {
+        createEl('div', {
+          style: { marginTop: '6px', fontSize: '12px', color: '#b0a090', textAlign: 'center' },
+          text: '❌ 不可前往（不是相邻格）',
+          parent: this.bodyWrap,
+        });
+      }
+    }
+
     // 位置提示（调试用）
     createEl('div', {
       style: { marginTop: '10px', fontSize: '12px', color: '#aaa' },
@@ -489,6 +526,12 @@ export class InfoPanel {
       this.root.classList.remove('slide-out');
       this.root.classList.add('slide-in');
       this._renderBody();
+    });
+
+    // 建造模式下 InfoPanel 完全隐藏（玩家看不到）
+    EventBus.on(GE.UI_MODE_CHANGE, ({ mode }) => {
+      if (!this.root) return;
+      this.root.style.display = mode === 'build' ? 'none' : '';
     });
 
     EventBus.on(GE.STATE_RESET, ({ gs }) => {

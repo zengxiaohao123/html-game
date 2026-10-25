@@ -26,6 +26,7 @@ const UNREPLACEABLE = new Set(['facility_home']);
  */
 export function enterBuildMode(gs) {
   gs.buildMode = true;
+  if (typeof document !== 'undefined') document.body.style.cursor = 'crosshair';
   EventBus.emit(GE.UI_MODE_CHANGE, { mode: 'build' });
   EventBus.emit(GE.TOAST_SHOW, { text: '🛠️ 进入建造模式', duration: 1500 });
   devLog.info('[Build] enterBuildMode');
@@ -36,6 +37,7 @@ export function enterBuildMode(gs) {
  */
 export function exitBuildMode(gs) {
   gs.buildMode = false;
+  if (typeof document !== 'undefined') document.body.style.cursor = '';
   EventBus.emit(GE.UI_MODE_CHANGE, { mode: 'explore' });
   EventBus.emit(GE.TOAST_SHOW, { text: '🚶 进入探索模式', duration: 1500 });
   devLog.info('[Build] exitBuildMode');
@@ -46,11 +48,7 @@ export function exitBuildMode(gs) {
  * @returns {{ ok: boolean, reason?: string }}
  */
 export function placeContent(gs, tileIdx, contentId) {
-  // 1. 建造模式检查
-  if (!gs.buildMode) {
-    devLog.warn('[Build] placeContent called when not in buildMode');
-    return { ok: false, reason: 'notInBuildMode' };
-  }
+  // 基础校验
   if (!Number.isInteger(tileIdx) || tileIdx < 0 || tileIdx >= gs.map.outerTiles.length) {
     devLog.warn('[Build] invalid tileIdx:', tileIdx);
     return { ok: false, reason: 'invalidTileIdx' };
@@ -62,14 +60,21 @@ export function placeContent(gs, tileIdx, contentId) {
   const tile = gs.map.outerTiles[tileIdx];
   const oldContentId = tile.contentId;
 
-  // 1.5 前缀校验：只接受 facility_ / resource_ / skill_ 三类（Phase 4 加 skill_*）
+  // 天赋不可放置（天赋前缀 talent_）
+  if (contentId.startsWith('talent_')) {
+    EventBus.emit(GE.TOAST_SHOW, { text: '🚫 天赋不可放置到地图上', duration: 2000 });
+    devLog.info('[Build] refuse talent placement:', contentId);
+    return { ok: false, reason: 'talentForbidden' };
+  }
+
+  // 前缀校验：只接受 facility_ / resource_ / skill_ 三类
   if (!/^(facility_|resource_|skill_)/.test(contentId)) {
     EventBus.emit(GE.TOAST_SHOW, { text: `🛠️ 未知内容类型：${contentId}`, duration: 1500 });
     devLog.warn('[Build] unknown contentId prefix:', contentId);
     return { ok: false, reason: 'unknownType' };
   }
 
-  // 2. 库存检查（HotBar 与背包同步：物品本质属于背包）
+  // 库存检查
   const invEntry = gs.inventory?.items?.find(e => e.itemId === contentId);
   if (!invEntry || invEntry.qty < 1) {
     EventBus.emit(GE.TOAST_SHOW, { text: `🛠️ 背包里没有 ${contentId}`, duration: 1800 });
@@ -77,21 +82,25 @@ export function placeContent(gs, tileIdx, contentId) {
     return { ok: false, reason: 'noItem' };
   }
 
-  // 3. 永恒词条保护
+  // 永恒词条保护
   if (oldContentId && UNREPLACEABLE.has(oldContentId)) {
     EventBus.emit(GE.TOAST_SHOW, { text: '🏠 家拥有【永恒】词条，不可替换', duration: 2000 });
     devLog.info('[Build] refuse to replace unreplaceable:', oldContentId);
     return { ok: false, reason: 'unreplaceable' };
   }
 
-  // 3. 旧内容处理
+  // 旧内容处理
   if (oldContentId) {
     if (oldContentId === 'facility_tent') {
-      // 帐篷【替换时】词条：fire onReplace hook，让 facilities.js 里的帐篷 hook 把旧内容 addItem 回背包
+      // 帐篷【替换时】词条：fire onReplace hook，让帐篷自己把旧内容回背包
       HookDispatcher.fire('onReplace', { gs, tileIdx, oldContentId });
       devLog.info('[Build] tent replaced, onReplace fired');
+    } else if (oldContentId.startsWith('skill_')) {
+      // §9 行 217：技能被替换后回背包（不消失）
+      InventorySystem.addItem(gs, oldContentId, 1);
+      devLog.info('[Build] skill card returned to inventory:', oldContentId);
     } else {
-      // 其他：直接消失（不需要回背包）
+      // 其他：直接消失
       devLog.info('[Build] old content', oldContentId, 'discarded');
     }
   }

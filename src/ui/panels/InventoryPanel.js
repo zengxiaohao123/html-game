@@ -238,6 +238,17 @@ export class InventoryPanel {
       createEl('div', { class: 'inv-big-qty', text: `×${entry.qty}`, parent: slot });
       slot.title = `${name} ×${entry.qty}`;
 
+      // 拖拽放置（探索/建造模式都有效，长按拖到地图即放置）
+      slot.setAttribute('draggable', 'true');
+      slot.addEventListener('dragstart', (e) => {
+        if (e.dataTransfer) {
+          e.dataTransfer.setData('text/plain', entry.itemId);
+          e.dataTransfer.effectAllowed = 'move';
+        }
+        // 背包自动关闭露出地图
+        this.hide();
+      });
+
       slot.addEventListener('click', (e) => {
         e.stopPropagation();
         this._activateAction('items', entry.itemId, entry.qty);
@@ -324,6 +335,34 @@ export class InventoryPanel {
 
     const label = this.selectedFrom === 'items' ? '放入出货箱' : '取回背包';
 
+    // ── 建造模式 + 从背包选中 → 渲染"放置到地图"按钮，替代 slider 链路 ──
+    const gs = this._getGS();
+    if (gs?.buildMode === true && this.selectedFrom === 'items') {
+      // 天赋不可放置
+      if (this.selectedItemId.startsWith('talent_')) {
+        createEl('div', {
+          style: { textAlign: 'center', color: '#c0392b', fontSize: '14px', marginTop: '16px' },
+          text: '🚫 天赋不可放置到地图上',
+          parent: this.actionEl,
+        });
+        return;
+      }
+      createEl('button', {
+        class: 'action-btn',
+        style: { display: 'block', width: '100%', marginTop: '12px', background: '#ffe099', color: '#5a4a3a', fontSize: '15px' },
+        text: '🛠️ 放置到地图（点地块）',
+        parent: this.actionEl,
+        onclick: () => {
+          if (!gs.uiState) gs.uiState = {};
+          gs.uiState.pendingPlaceContentId = this.selectedItemId;
+          EventBus.emit(GE.TOAST_SHOW, { text: '🖱️ 请点外圈地块放置…', duration: 2500 });
+          this.hide();
+        },
+      });
+      return; // 跳过原版 slider 链路
+    }
+
+    // ── 原版 slider 行动区（探索模式 / 从出货箱选中） ──
     // 当前数量显示（大数字，slider 实时联动）
     this.actionQtyLabel = createEl('div', {
       class: 'inv-action-qty',

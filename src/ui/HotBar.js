@@ -89,14 +89,32 @@ export class HotBar {
     // 点击选中（仅建造模式 + 槽有内容）
     slot.addEventListener('click', () => this._handleSlotClick(idx));
 
+    // 背包拖物品进 slot（不消耗背包，§15.19）
+    slot.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    });
+    slot.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const itemId = e.dataTransfer?.getData('text/plain');
+      if (!itemId) return;
+      // 天赋不放 HotBar
+      if (itemId.startsWith('talent_')) {
+        EventBus.emit(GE.TOAST_SHOW, { text: '🚫 天赋不可放入HotBar', duration: 2000 });
+        return;
+      }
+      const gs = this._getCurrentGS();
+      if (!gs) return;
+      if (!gs.hotbar) gs.hotbar = [];
+      gs.hotbar[idx] = { itemId };
+      this.renderFromGS(gs);
+      EventBus.emit(GE.TOAST_SHOW, { text: `📌 放入 slot ${idx + 1}`, duration: 1200 });
+    });
+
     return slot;
   }
 
   _handleSlotClick(idx) {
-    if (!this.buildMode) {
-      // 探索模式下不选中（保持现状）
-      return;
-    }
     const slot = this._getCurrentGS()?.hotbar?.[idx];
     if (!slot || !slot.itemId) {
       this._clearSelection();
@@ -112,8 +130,10 @@ export class HotBar {
         if (i === idx) el.classList.add('selected');
         else el.classList.remove('selected');
       });
-      // 同步到 GS，让 MapView 能读到
-      this._syncSelectionToGS();
+      // 只在建造模式下同步到 GS（让 MapView 读到用来放置）
+      if (this.buildMode) {
+        this._syncSelectionToGS();
+      }
     }
   }
 
@@ -121,7 +141,9 @@ export class HotBar {
     this.selectedSlotIdx = null;
     this.selectedContentId = null;
     this.slotEls.forEach(el => el.classList.remove('selected'));
-    this._syncSelectionToGS();
+    if (this.buildMode) {
+      this._syncSelectionToGS();
+    }
   }
 
   /** 把选中的 contentId 同步到 gs.uiState.selectedBuildContentId */
@@ -198,6 +220,13 @@ export class HotBar {
     EventBus.on(GE.STATE_RESET, ({ gs }) => this.renderFromGS(gs));
     EventBus.on(GE.INVENTORY_CHANGE, () => {
       if (window.__gameDirector) this.renderFromGS(window.__gameDirector.getGS());
+    });
+
+    // 1-0 数字键选中
+    EventBus.on(GE.HOTBAR_SELECT_SLOT, ({ slotIdx }) => {
+      if (typeof slotIdx === 'number' && slotIdx >= 0 && slotIdx < HOTBAR_SLOTS) {
+        this._handleSlotClick(slotIdx);
+      }
     });
 
     // 建造模式切换
