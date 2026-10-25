@@ -485,6 +485,8 @@ export class InfoPanel {
 
   _subscribeEvents() {
     EventBus.on(GE.TILE_CLICKED, ({ tileIdx }) => {
+      // 建造模式下InfoPanel已隐藏，不响应点击
+      if (this.root && this.root.style.display === 'none') return;
       this.currentTileIdx = tileIdx;
       this.root.classList.remove('slide-out');
       this.root.classList.add('slide-in');
@@ -494,6 +496,16 @@ export class InfoPanel {
     EventBus.on(GE.STATE_RESET, ({ gs }) => {
       this.currentGs = gs;
       if (this.currentTileIdx !== null) this._renderBody();
+    });
+
+    // ── 建造模式下隐藏InfoPanel（优先级1） ──
+    EventBus.on(GE.UI_MODE_CHANGE, ({ mode }) => {
+      if (!this.root) return;
+      if (mode === 'build') {
+        this.root.style.display = 'none';
+      } else {
+        this.root.style.display = ''; // 恢复默认显示
+      }
     });
 
     EventBus.on(GE.TILE_UPDATED, (payload = {}) => {

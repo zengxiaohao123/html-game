@@ -89,14 +89,54 @@ export class HotBar {
     // 点击选中（仅建造模式 + 槽有内容）
     slot.addEventListener('click', () => this._handleSlotClick(idx));
 
+    // ── 拖拽进 HotBar slot（优先级7，§15.19 行 1221：不消耗背包） ──
+    slot.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      slot.style.borderColor = '#e8a900'; // 高亮放置目标
+    });
+
+    slot.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+    });
+
+    slot.addEventListener('dragleave', () => {
+      slot.style.borderColor = '#5a5a5a'; // 恢复
+    });
+
+    slot.addEventListener('drop', (e) => {
+      e.preventDefault();
+      slot.style.borderColor = '#5a5a5a';
+      if (!e.dataTransfer) return;
+
+      const itemId = e.dataTransfer.getData('text/plain');
+      if (!itemId) return;
+
+      const gs = this._getCurrentGS();
+      if (!gs) return;
+
+      // 天赋不放HotBar（§12 行 479）
+      if (itemId.startsWith('talent_')) {
+        EventBus.emit(GE.TOAST_SHOW, { text: '🚫 天赋不可放进HotBar', duration: 2000 });
+        return;
+      }
+
+      // 写入HotBar slot（不消耗背包，§15.19 行 1221）
+      if (!gs.hotbar) gs.hotbar = [];
+      gs.hotbar[idx] = { itemId };
+
+      // 刷新显示
+      this.renderFromGS(gs);
+      EventBus.emit(GE.TOAST_SHOW, {
+        text: `📌 ${itemId} 放入 HotBar slot ${idx + 1}`,
+        duration: 1500,
+      });
+    });
+
     return slot;
   }
 
   _handleSlotClick(idx) {
-    if (!this.buildMode) {
-      // 探索模式下不选中（保持现状）
-      return;
-    }
     const slot = this._getCurrentGS()?.hotbar?.[idx];
     if (!slot || !slot.itemId) {
       this._clearSelection();
@@ -112,8 +152,11 @@ export class HotBar {
         if (i === idx) el.classList.add('selected');
         else el.classList.remove('selected');
       });
-      // 同步到 GS，让 MapView 能读到
-      this._syncSelectionToGS();
+      // 建造模式下才同步到 GS（让 MapView 能读到用来放置）
+      // 探索模式下只做视觉高亮，不写 gs（§15.14 行 1152）
+      if (this.buildMode) {
+        this._syncSelectionToGS();
+      }
     }
   }
 
@@ -121,7 +164,10 @@ export class HotBar {
     this.selectedSlotIdx = null;
     this.selectedContentId = null;
     this.slotEls.forEach(el => el.classList.remove('selected'));
-    this._syncSelectionToGS();
+    // 只有建造模式才同步到 GS（探索模式下选中只是视觉的）
+    if (this.buildMode) {
+      this._syncSelectionToGS();
+    }
   }
 
   /** 把选中的 contentId 同步到 gs.uiState.selectedBuildContentId */
@@ -198,6 +244,13 @@ export class HotBar {
     EventBus.on(GE.STATE_RESET, ({ gs }) => this.renderFromGS(gs));
     EventBus.on(GE.INVENTORY_CHANGE, () => {
       if (window.__gameDirector) this.renderFromGS(window.__gameDirector.getGS());
+    });
+
+    // ── 1-0 数字键选中 HotBar slot（优先级2） ──
+    EventBus.on(GE.HOTBAR_SELECT_SLOT, ({ slotIdx }) => {
+      if (typeof slotIdx === 'number' && slotIdx >= 0 && slotIdx < HOTBAR_SLOTS) {
+        this._handleSlotClick(slotIdx);
+      }
     });
 
     // 建造模式切换

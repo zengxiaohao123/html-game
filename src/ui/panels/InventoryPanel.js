@@ -79,6 +79,29 @@ export class InventoryPanel {
     this.currentQty = 1;         // 行动区当前数量
     this.maxQty = 1;             // 行动区数量上限
     this.visible = false;
+    // 拖拽状态（优先级3 + 优先级7）
+    this.draggedItemId = null;   // 当前正在拖拽的 itemId（InventoryPanel 写入，MapView/HotBar 读取）
+    // 按住连点状态（优先级4）
+    this._holdInterval = null;
+    // 阻止click激活行动区的标志（优先级4修复double-fire bug）
+    this._suppressClick = false;
+  }
+
+  /** 快速转移工具：按修饰键计算转移数量 */
+  _calcTransferQty(qty, e) {
+    if (e.shiftKey) return Math.min(5, qty);
+    if (e.altKey) return Math.min(25, qty);
+    return 1;
+  }
+
+  /** 实际执行一次转移 */
+  _doQuickTransfer(from, itemId, qty) {
+    const gs = this._getGS();
+    if (!gs || qty <= 0) return;
+    const to = from === 'items' ? 'outbox' : 'items';
+    const actualQty = InventorySystem.moveItemBetween(gs, from, to, itemId, qty);
+    // 如果转移失败（比如outbox满了），停止连点
+    return actualQty > 0;
   }
 
   // ─────────────────────── 构建 DOM（固定布局，内容不会撑大） ───────────────────────
@@ -232,14 +255,91 @@ export class InventoryPanel {
         parent: grid,
       });
 
+      // ── 拖拽支持（优先级3 + 优先级7） ──
+      slot.setAttribute('draggable', 'true');
+
+      slot.addEventListener('dragstart', (e) => {
+        e.stopPropagation();
+        this.draggedItemId = entry.itemId;
+        // HTML5 拖拽必须设置 dataTransfer，否则不会触发 drop
+        if (e.dataTransfer) {
+          e.dataTransfer.setData('text/plain', entry.itemId);
+          e.dataTransfer.effectAllowed = 'move';
+        }
+        // 长按进入拖拽，背包自动关闭露出地图（§15.15 行 1185）
+        this.hide();
+      });
+
+      slot.addEventListener('dragend', (e) => {
+        this.draggedItemId = null;
+      });
+
       const emoji = this._resolveEmoji(entry.itemId);
       const name = this._resolveName(entry.itemId);
       createEl('div', { class: 'inv-big-emoji', text: emoji, parent: slot });
       createEl('div', { class: 'inv-big-qty', text: `×${entry.qty}`, parent: slot });
-      slot.title = `${name} ×${entry.qty}`;
+      slot.title = `${name} ×${entry.qty}（左键=转移1 / 右键=一半 / Shift+左键=5 / Alt+左键=25）`;
 
+      // ── 快速转移修饰键（优先级4） ──
+      // 右键 = 一半
+      slot.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const halfQty = Math.max(1, Math.floor(entry.qty / 2));
+        this._doQuickTransfer('items', entry.itemId, halfQty);
+      });
+
+      // mousedown：处理修饰键 + 按住连点
+      slot.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        if (e.button !== 0) return; // 只处理左键
+
+        if (e.shiftKey || e.altKey) {
+          // Shift+左键=5 / Alt+左键=25，一次性转移
+          const qty = this._calcTransferQty(entry.qty, e);
+          this._doQuickTransfer('items', entry.itemId, qty);
+          e.preventDefault(); // 阻止后续click激活行动区
+          return;
+        }
+
+        // 普通左键：立即转移1次 + 按住连点（§15.15 行 1181）
+        this._doQuickTransfer('items', entry.itemId, 1);
+        // 立即转移后阻止click激活行动区（§15.15 行 1173：左键=转移1个）
+        this._suppressClick = true;
+
+        if (this._holdInterval) clearInterval(this._holdInterval);
+        this._holdInterval = setInterval(() => {
+          const curQty = this._findEntry('items', entry.itemId)?.qty || 0;
+          if (curQty <= 0) {
+            clearInterval(this._holdInterval);
+            this._holdInterval = null;
+            return;
+          }
+          const ok = this._doQuickTransfer('items', entry.itemId, 1);
+          if (!ok) {
+            clearInterval(this._holdInterval);
+            this._holdInterval = null;
+          }
+        }, 50);
+      });
+
+      // mouseup：停止按住连点
+      const stopHold = () => {
+        if (this._holdInterval) {
+          clearInterval(this._holdInterval);
+          this._holdInterval = null;
+        }
+      };
+      slot.addEventListener('mouseup', stopHold);
+      slot.addEventListener('mouseleave', stopHold);
+
+      // click：只有没被修饰键/按住连点拦截时才激活行动区（§15.15：快速修饰键直接转移，普通左键也直接转移1个）
       slot.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (this._suppressClick) {
+          this._suppressClick = false;
+          return; // 被修饰键/按住连点拦截，不激活行动区
+        }
         this._activateAction('items', entry.itemId, entry.qty);
       });
     }
@@ -399,6 +499,30 @@ export class InventoryPanel {
         this._reRender();
       },
     });
+
+    // ── 建造模式下背包物品额外显示"放置到地图"按钮（优先级5，§15.14 行 1148） ──
+    const gs = this._getGS();
+    if (gs?.buildMode === true && this.selectedFrom === 'items') {
+      createEl('button', {
+        class: ['action-btn', 'place'],
+        style: { marginTop: '8px', background: '#ffe099', color: '#5a4a3a' },
+        text: '🛠️ 放置到地图',
+        parent: this.actionEl,
+        onclick: () => {
+          const gsRef = this._getGS();
+          if (!gsRef) return;
+          // 天赋不可放置
+          if (this.selectedItemId.startsWith('talent_')) {
+            EventBus.emit(GE.TOAST_SHOW, { text: '🚫 天赋不可放置', duration: 2000 });
+            return;
+          }
+          // 设 pendingPlaceContentId，然后关闭背包（玩家点地块时 MapView 会读这个值）
+          gsRef.uiState.pendingPlaceContentId = this.selectedItemId;
+          EventBus.emit(GE.TOAST_SHOW, { text: '🖱️ 点地块放置…', duration: 2200 });
+          this.hide();
+        },
+      });
+    }
   }
 
   /** 行动区按钮点击：更新数量显示 */
@@ -446,8 +570,64 @@ export class InventoryPanel {
           });
         }
 
+        slot.title = `${this._resolveName(entry.itemId)} ×${entry.qty}（右键=取回一半 / Shift+左键=5 / Alt+左键=25）`;
+
+        // ── 出货箱→背包快速转移（优先级4） ──
+        const from = 'outbox';
+
+        // 右键 = 取回一半
+        slot.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const halfQty = Math.max(1, Math.floor(entry.qty / 2));
+          this._doQuickTransfer(from, entry.itemId, halfQty);
+        });
+
+        slot.addEventListener('mousedown', (e) => {
+          e.stopPropagation();
+          if (e.button !== 0) return;
+
+          if (e.shiftKey || e.altKey) {
+            const qty = this._calcTransferQty(entry.qty, e);
+            this._doQuickTransfer(from, entry.itemId, qty);
+            e.preventDefault();
+            return;
+          }
+
+          // 普通左键：立即转移1次 + 按住连点，设suppressClick阻止后续click
+          this._doQuickTransfer(from, entry.itemId, 1);
+          this._suppressClick = true;
+          if (this._holdInterval) clearInterval(this._holdInterval);
+          this._holdInterval = setInterval(() => {
+            const curQty = this._findEntry(from, entry.itemId)?.qty || 0;
+            if (curQty <= 0) {
+              clearInterval(this._holdInterval);
+              this._holdInterval = null;
+              return;
+            }
+            const ok = this._doQuickTransfer(from, entry.itemId, 1);
+            if (!ok) {
+              clearInterval(this._holdInterval);
+              this._holdInterval = null;
+            }
+          }, 50);
+        });
+
+        const stopHold = () => {
+          if (this._holdInterval) {
+            clearInterval(this._holdInterval);
+            this._holdInterval = null;
+          }
+        };
+        slot.addEventListener('mouseup', stopHold);
+        slot.addEventListener('mouseleave', stopHold);
+
         slot.addEventListener('click', (e) => {
           e.stopPropagation();
+          if (this._suppressClick) {
+            this._suppressClick = false;
+            return;
+          }
           this._activateAction('outbox', entry.itemId, entry.qty);
         });
       } else {

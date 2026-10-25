@@ -60,10 +60,36 @@ export class InputManager {
 
     this._handler = (e) => {
       const key = (e.key || '').toLowerCase();
+      const gs = this.director?.getGS?.();
+
+      // ── 建造模式 gating（优先级1） ──
+      if (gs?.buildMode === true) {
+        // 建造模式禁用 WASD（移动）和空格（祈福）
+        if (key === 'w' || key === 'a' || key === 's' || key === 'd' || key === ' ' || key === 'space') {
+          e.preventDefault();
+          return; // 吞掉不响应
+        }
+      }
 
       // Tab / 空格 必须 preventDefault（否则浏览器会跳焦点或滚动）
       if (key === 'tab' || key === ' ') {
         e.preventDefault();
+      }
+
+      // ── 1-0 数字键 → HotBar 选中（优先级2） ──
+      if (gs) {
+        const num = parseInt(key, 10);
+        if (!isNaN(num) && num >= 1 && num <= 9) {
+          e.preventDefault();
+          // 数字 1-9 对应 HotBar slot 0-8
+          EventBus.emit(GE.HOTBAR_SELECT_SLOT, { slotIdx: num - 1 });
+          return;
+        }
+        if (key === '0') {
+          e.preventDefault();
+          EventBus.emit(GE.HOTBAR_SELECT_SLOT, { slotIdx: 9 });
+          return;
+        }
       }
 
       if (KEY_TO_DIRECTION[key]) {
