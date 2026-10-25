@@ -1,11 +1,12 @@
 // src/ui/panels/InventoryPanel.js
-// Phase 2B 最终版（按 ui-inventory.png 排版重写）
-//   顶部：8 tab 横排（总览/设施/资源/技能/地形/产物/道具/杂物）
-//   左：  大网格（emoji 大图标 + 右下 qty 小字 + hover tooltip 名称）
-//   右上：详情卡（大 emoji + 名称 + 🪙 价值/个 + 简短描述）
-//   右下：出货箱 2×6 共 12 格
-//   交互：左键点物品（背包 or 出货箱）→ Slider popup（默认=1，min=1，max=当前 qty）→
-//         点击"放入 N 个"/"取回 N 个"按钮 → InventorySystem.moveItemBetween
+// Phase 2B 最终版 v2（按 ui-inventory.png 排版 v2）
+//   ▸ 面板：居中 92vw × 86vh，四周留一点背景可见；内容不会撑大
+//   ▸ 顶部：8 tab 横排
+//   ▸ 左：  大网格（emoji + 右下 qty + 固定空槽渲染）
+//   ▸ 右上：详情卡（大 emoji + 名称 + 单价/总价值两行图标化 + 简短描述）
+//   ▸ 右中：行动区（固定存在，点物品才激活；min/-1/+1/max 四按钮 + 确认/取消）
+//   ▸ 右下：出货箱 2×6 共 12 格（固定渲染，空格也画）
+//   ▸ 交互：左键点物品（背包 or 出货箱）→ 右上行动区激活选数量（min/-1/+1/max）→ 确认
 //
 // 订阅：GE.INVENTORY_CHANGE / GE.STATE_RESET / GE.UI_PANEL_OPEN/ CLOSE('inventory')
 
@@ -50,14 +51,14 @@ const DESCRIPTIONS = {
   resource_shop:      '🛒 商店（Phase 4）。',
   resource_bus:       '🚌 行动力 +1、获得轮子。',
   item_wheat:         '最基础的农作物，可以喂鸡，也可以卖金币。',
-  item_rice_straw:    '稻田产出的稻草，价值 1 金币/个。',
-  item_potato:        '土豆：价值 2 金币/个。',
-  item_strawberry:    '草莓：价值 2 金币/个。',
-  item_pea:           '豌豆：价值 2 金币/个。',
-  item_egg:           '鸡蛋：价值 3 金币/个。',
-  item_raw_meat:      '生肉：价值 5 金币/个。',
-  item_slime_gel:     '史莱姆胶：价值 4 金币/个。',
-  item_wheel:         '轮子：价值 5 金币/个。',
+  item_rice_straw:    '稻田产出的稻草。',
+  item_potato:        '土豆。',
+  item_strawberry:    '草莓。',
+  item_pea:           '豌豆。',
+  item_egg:           '鸡蛋。',
+  item_raw_meat:      '生肉。',
+  item_slime_gel:     '史莱姆胶。',
+  item_wheel:         '轮子。',
 };
 
 export class InventoryPanel {
@@ -67,18 +68,22 @@ export class InventoryPanel {
     this.panel = null;
     this.tabBar = null;
     this.tabBtns = [];
-    this.listEl = null;          // 左：背包大网格
-    this.detailEl = null;        // 右上：详情卡
-    this.outboxGridEl = null;    // 右下：出货箱 12 格
+    this.listEl = null;          // 左：背包大网格（固定宽高）
+    this.detailEl = null;        // 右上：详情卡（固定宽高）
+    this.actionEl = null;        // 右中：行动区（固定存在，点物品才激活）
+    this.outboxGridEl = null;    // 右下：出货箱 12 格（固定宽高）
+    this.actionQtyLabel = null;  // 行动区当前数量显示 DOM（缓存，render 时复用）
     this.selectedTabIdx = 0;
-    this.selectedItemId = null;  // 右上详情卡正在显示的 itemId
+    this.selectedItemId = null;  // 当前选中 itemId
     this.selectedFrom = null;    // 'items' | 'outbox'
-    this.sliderPopup = null;     // 当前打开的 Slider popup DOM（同一时间只开一个）
+    this.currentQty = 1;         // 行动区当前数量
+    this.maxQty = 1;             // 行动区数量上限
     this.visible = false;
   }
 
-  // ─────────────────────── 构建 DOM ───────────────────────
+  // ─────────────────────── 构建 DOM（固定布局，内容不会撑大） ───────────────────────
   mount(parent = qs('body')) {
+    // 全屏遮罩（黑色半透明，盖除了 TopBar 外的所有东西）
     this.mask = createEl('div', {
       class: ['panel-mask', 'inventory-mask'],
       parent,
@@ -108,18 +113,21 @@ export class InventoryPanel {
       }));
     });
 
-    // 主 body：3 块 —— 左大网格 + 右侧（上：详情 / 下：出货箱）
+    // 主 body：左大网格 + 右侧（上：详情 + 中：行动 + 下：出货箱）
     const body = createEl('div', { class: 'inv-body', parent: this.panel });
     const leftCol = createEl('div', { class: 'inv-left', parent: body });
     const rightCol = createEl('div', { class: 'inv-right', parent: body });
     this.listEl = createEl('div', { class: 'inv-grid-wrap', parent: leftCol });
 
-    // 右上详情卡
+    // 右上详情卡（固定高度，不管有没有选中物品都占满）
     this.detailEl = createEl('div', { class: 'inv-detail-card', parent: rightCol });
 
-    // 右下出货箱
+    // 右中：行动区（固定存在，点物品才激活）
+    this.actionEl = createEl('div', { class: 'inv-action-zone', parent: rightCol });
+
+    // 右下：出货箱（固定高度）
     const outboxWrap = createEl('div', { class: 'inv-outbox-wrap', parent: rightCol });
-    createEl('div', { class: 'inv-outbox-title', text: '📦 出货箱（12 格，次日自动卖金币）', parent: outboxWrap });
+    createEl('div', { class: 'inv-outbox-title', text: '📦 出货箱', parent: outboxWrap });
     this.outboxGridEl = createEl('div', { class: 'outbox-grid', parent: outboxWrap });
 
     this._subscribeEvents();
@@ -147,9 +155,10 @@ export class InventoryPanel {
     this.mask.classList.add('visible');
     const gs = this._getGS();
     if (gs) { gs.uiState = gs.uiState || {}; gs.uiState.activePanel = 'inventory'; }
-    this._closeSlider();
     this.selectedItemId = null;
     this.selectedFrom = null;
+    this.currentQty = 1;
+    this.maxQty = 1;
     this._reRender();
   }
 
@@ -158,7 +167,6 @@ export class InventoryPanel {
     this.visible = false;
     this.mask.classList.remove('visible');
     this.mask.style.display = 'none';
-    this._closeSlider();
     const gs = this._getGS();
     if (gs && gs.uiState && gs.uiState.activePanel === 'inventory') gs.uiState.activePanel = null;
     EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });
@@ -171,40 +179,53 @@ export class InventoryPanel {
     this.selectedTabIdx = idx;
     this.tabBtns.forEach((b, i) => i === idx ? b.classList.add('active') : b.classList.remove('active'));
     this.selectedItemId = null;
-    this._closeSlider();
+    this.selectedFrom = null;
+    this.currentQty = 1;
+    this.maxQty = 1;
     this._reRender();
   }
 
   _reRender() {
     this._renderList();
     this._renderDetail();
+    this._renderActionZone();
     this._renderOutbox();
   }
 
-  // ─────────────────────── 左：背包大网格 ───────────────────────
+  // ─────────────────────── 左：背包大网格（固定高度，空槽也渲染） ───────────────────────
   _renderList() {
     this.listEl.innerHTML = '';
-    this._closeSlider();
     const gs = this._getGS();
     if (!gs) return;
 
     const tabDef = TABS[this.selectedTabIdx];
     if (tabDef.phaseReady === false) {
-      this.listEl.innerHTML = '<div style="padding:60px 20px;text-align:center;color:#b0a090;font-size:14px">✨ 该分类将在后续阶段开放 ✨</div>';
+      createEl('div', {
+        style: { padding: '60px 20px', textAlign: 'center', color: '#b0a090', fontSize: '14px' },
+        text: '✨ 该分类将在后续阶段开放 ✨',
+        parent: this.listEl,
+      });
       return;
     }
 
     const list = (gs.inventory?.items || []).filter(e => tabDef.match(e.itemId));
 
+    const grid = createEl('div', { class: 'inv-big-grid', parent: this.listEl });
     if (list.length === 0) {
-      this.listEl.innerHTML = '<div style="padding:60px 20px;text-align:center;color:#b0a090;font-size:14px">（该分类下没有物品）</div>';
+      // 即使没物品，也渲染几行空槽保持固定布局（用户要求"固定空间和空白"）
+      for (let i = 0; i < 15; i++) {
+        const emptySlot = createEl('div', { class: ['inv-big-slot', 'empty'], parent: grid });
+        emptySlot.style.visibility = 'hidden'; // 占位但不可见（实际不可点击）
+      }
       return;
     }
 
-    const grid = createEl('div', { class: 'inv-big-grid', parent: this.listEl });
     for (const entry of list) {
       const slot = createEl('div', {
-        class: ['inv-big-slot', this.selectedItemId === entry.itemId && this.selectedFrom === 'items' ? 'selected' : ''],
+        class: [
+          'inv-big-slot',
+          this.selectedItemId === entry.itemId && this.selectedFrom === 'items' ? 'selected' : '',
+        ],
         parent: grid,
       });
 
@@ -216,74 +237,188 @@ export class InventoryPanel {
 
       slot.addEventListener('click', (e) => {
         e.stopPropagation();
-        this._showDetail(entry.itemId, 'items');
-        this._openSlider(slot, 'items', entry.itemId, entry.qty, entry.qty);
+        this._activateAction('items', entry.itemId, entry.qty);
       });
     }
   }
 
-  // ─────────────────────── 右上：详情卡 ───────────────────────
+  // ─────────────────────── 右上：详情卡（固定高度，没选中物品也占位） ───────────────────────
   _renderDetail() {
     this.detailEl.innerHTML = '';
+
     if (!this.selectedItemId) {
       createEl('div', {
-        style: { padding: '20px', textAlign: 'center', color: '#b0a090', fontSize: '13px' },
-        text: '点击左侧物品查看详情',
+        class: 'inv-detail-empty',
         parent: this.detailEl,
+        text: '← 点击左侧 / 右下物品查看详情',
       });
       return;
     }
+
     const entry = this._findEntry(this.selectedFrom, this.selectedItemId);
     if (!entry) {
       this.selectedItemId = null;
       return this._renderDetail();
     }
-    const gs = this._getGS();
+
     const ITEM = ITEMS[this.selectedItemId];
     const emoji = this._resolveEmoji(this.selectedItemId);
     const name = this._resolveName(this.selectedItemId);
     const value = ITEM?.value;
     const desc = DESCRIPTIONS[this.selectedItemId] || '（暂无描述）';
 
-    createEl('div', {
-      style: {
-        textAlign: 'center', fontSize: '52px', lineHeight: '1.1',
-        fontFamily: '"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif',
-      },
-      text: emoji,
-      parent: this.detailEl,
-    });
-    createEl('div', {
-      style: { textAlign: 'center', fontSize: '18px', fontWeight: '700', color: '#3a2e20', marginTop: '4px' },
-      text: name, parent: this.detailEl,
-    });
+    // 大 emoji
+    createEl('div', { class: 'inv-detail-emoji', text: emoji, parent: this.detailEl });
+
+    // 名称
+    createEl('div', { class: 'inv-detail-name', text: name, parent: this.detailEl });
+
+    // 价值两行（图标概念化）
     if (typeof value === 'number') {
       createEl('div', {
-        style: { textAlign: 'center', fontSize: '13px', color: '#8a6a3a', marginTop: '2px' },
-        text: `🪙 价值 ${value}/个  ·  ×${entry.qty} = ${value * entry.qty}`,
+        class: 'inv-value-line',
         parent: this.detailEl,
+        html: `<span class="inv-value-icon">🪙</span><span class="inv-value-label">单价</span><span class="inv-value-num">${value}</span>`,
+      });
+      createEl('div', {
+        class: 'inv-value-line',
+        parent: this.detailEl,
+        html: `<span class="inv-value-icon">💰</span><span class="inv-value-label">总价值</span><span class="inv-value-num">${value * entry.qty}</span>`,
+      });
+    } else {
+      // 资源/设施表（无 value），显示占位
+      createEl('div', {
+        class: 'inv-value-line',
+        parent: this.detailEl,
+        html: `<span class="inv-value-icon">🪙</span><span class="inv-value-label">未定价</span>`,
       });
     }
-    createEl('div', {
-      style: {
-        marginTop: '10px', fontSize: '13px', color: '#5a4a3a',
-        lineHeight: '1.55', textAlign: 'left',
-        padding: '8px 10px', background: 'rgba(255,255,255,0.55)',
-        borderLeft: '3px solid #e8a900', borderRadius: '4px',
-      },
-      text: desc, parent: this.detailEl,
+
+    // 简短描述
+    createEl('div', { class: 'inv-detail-desc', text: desc, parent: this.detailEl });
+  }
+
+  // ─────────────────────── 右中：行动区（固定存在，点物品才激活） ───────────────────────
+  _renderActionZone() {
+    this.actionEl.innerHTML = '';
+
+    if (!this.selectedItemId) {
+      createEl('div', {
+        class: 'inv-action-empty',
+        parent: this.actionEl,
+        text: '（未选中物品）',
+      });
+      return;
+    }
+
+    const entry = this._findEntry(this.selectedFrom, this.selectedItemId);
+    if (!entry) {
+      this.selectedItemId = null;
+      return this._renderActionZone();
+    }
+
+    const emoji = this._resolveEmoji(this.selectedItemId);
+    const name = this._resolveName(this.selectedItemId);
+    const label = this.selectedFrom === 'items' ? '放入出货箱' : '取回背包';
+
+    // 标题行（emoji + 名称 + 来源标签）
+    const headerRow = createEl('div', { class: 'inv-action-header', parent: this.actionEl });
+    createEl('span', { class: 'inv-action-emoji', text: emoji, parent: headerRow });
+    createEl('span', { class: 'inv-action-name', text: name, parent: headerRow });
+    createEl('span', { class: 'inv-action-label', text: label, parent: headerRow });
+
+    // 当前数量显示（大数字，slider 实时联动）
+    this.actionQtyLabel = createEl('div', {
+      class: 'inv-action-qty',
+      parent: this.actionEl,
+      text: String(this.currentQty),
     });
 
-    // 底部按钮区（方向提示）
-    const dirHint = this.selectedFrom === 'items' ? '📦 点击左网格物品 → 选数量 → 放入出货箱'
-      : '📦 点击右出货箱格子 → 选数量 → 取回背包';
-    createEl('div', {
-      style: { marginTop: '10px', fontSize: '11px', color: '#b0a090', textAlign: 'center', fontStyle: 'italic' },
-      text: dirHint, parent: this.detailEl,
+    // Slider（range）：1 到 maxQty，实时绑定到 actionQtyLabel
+    const slider = createEl('input', {
+      attrs: { type: 'range', min: 1, max: this.maxQty, value: this.currentQty },
+      class: 'inv-action-slider',
+      parent: this.actionEl,
+    });
+    slider.addEventListener('input', () => {
+      const v = Number(slider.value);
+      this.currentQty = v;
+      if (this.actionQtyLabel) this.actionQtyLabel.textContent = String(v);
+    });
+
+    // 4 个数量调整按钮：min / -1 / +1 / max（调完同步 slider）
+    const btnRow = createEl('div', { class: 'inv-action-btns', parent: this.actionEl });
+    const mkBtn = (text, vFn) => createEl('button', {
+      class: 'inv-step-btn', text, parent: btnRow,
+      onclick: () => {
+        const v = vFn();
+        this._setQty(v);
+        // 同步 slider
+        slider.value = this.currentQty;
+      },
+    });
+    mkBtn('min', () => 1);
+    mkBtn('-1', () => Math.max(1, this.currentQty - 1));
+    mkBtn('+1', () => Math.min(this.maxQty, this.currentQty + 1));
+    mkBtn('max', () => this.maxQty);
+
+    // 操作按钮行
+    const actionRow = createEl('div', { class: 'inv-action-confirm', parent: this.actionEl });
+    createEl('button', {
+      class: ['action-btn', 'cancel'],
+      text: '❌ 取消',
+      parent: actionRow,
+      onclick: () => {
+        this.selectedItemId = null;
+        this.selectedFrom = null;
+        this.currentQty = 1;
+        this.maxQty = 1;
+        this._reRender();
+      },
+    });
+    createEl('button', {
+      class: 'action-btn',
+      text: `✅ ${label}`,
+      parent: actionRow,
+      onclick: () => {
+        const gs = this._getGS();
+        if (!gs) return;
+        InventorySystem.moveItemBetween(
+          gs,
+          this.selectedFrom,
+          this.selectedFrom === 'items' ? 'outbox' : 'items',
+          this.selectedItemId,
+          this.currentQty,
+        );
+        // 清空选中状态，让 UI 回到"未选中"
+        this.selectedItemId = null;
+        this.selectedFrom = null;
+        this.currentQty = 1;
+        this.maxQty = 1;
+        this._reRender();
+      },
     });
   }
 
-  // ─────────────────────── 右下：出货箱 12 格 ───────────────────────
+  /** 行动区按钮点击：更新数量显示 */
+  _setQty(v) {
+    if (!Number.isFinite(v) || v < 1) v = 1;
+    if (v > this.maxQty) v = this.maxQty;
+    this.currentQty = v;
+    // 只更新 label 文字，不重渲染整个面板（避免行动区交互闪烁）
+    if (this.actionQtyLabel) this.actionQtyLabel.textContent = String(v);
+  }
+
+  /** 点物品激活行动区（只更新 selected 状态 + 重渲染详情/行动） */
+  _activateAction(from, itemId, maxQty) {
+    this.selectedItemId = itemId;
+    this.selectedFrom = from;
+    this.maxQty = maxQty;
+    this.currentQty = 1; // 默认从 1 开始（每次选物品默认只搬 1 个，玩家再调整）
+    this._reRender();
+  }
+
+  // ─────────────────────── 右下：出货箱 12 格（固定，空格也画） ───────────────────────
   _renderOutbox() {
     this.outboxGridEl.innerHTML = '';
     const gs = this._getGS();
@@ -312,135 +447,16 @@ export class InventoryPanel {
 
         slot.addEventListener('click', (e) => {
           e.stopPropagation();
-          this._showDetail(entry.itemId, 'outbox');
-          this._openSlider(slot, 'outbox', entry.itemId, entry.qty, entry.qty);
+          this._activateAction('outbox', entry.itemId, entry.qty);
+        });
+      } else {
+        createEl('div', {
+          style: { fontSize: '16px', color: '#b0a090' },
+          text: '—',
+          parent: slot,
         });
       }
     }
-  }
-
-  /** 显示右上详情卡（不弹 slider） */
-  _showDetail(itemId, from) {
-    this.selectedItemId = itemId;
-    this.selectedFrom = from;
-    this._renderDetail();
-    // 刷新左网格 selected 态
-    this._renderList();
-  }
-
-  // ─────────────────────── Slider popup ───────────────────────
-  /**
-   * 在 slot 旁边弹出 Slider popup。
-   * @param {HTMLElement} anchorSlot 锚点 slot DOM（用来定位 popup）
-   * @param {'items'|'outbox'} from 从哪一边拿
-   * @param {string} itemId 物品 id
-   * @param {number} max 当前 qty
-   * @param {number} defaultValue  slider 默认值（通常=1）
-   */
-  _openSlider(anchorSlot, from, itemId, max, defaultValue = 1) {
-    this._closeSlider();
-    if (max <= 0) return;
-
-    const rect = anchorSlot.getBoundingClientRect();
-    const popup = createEl('div', {
-      class: ['inv-slider-popup'],
-      style: {
-        position: 'fixed',
-        left: `${rect.right + 6}px`,
-        top: `${rect.top}px`,
-        zIndex: 9500,
-      },
-      parent: document.body,
-    });
-
-    const label = from === 'items' ? `放入出货箱` : `取回背包`;
-    const emoji = this._resolveEmoji(itemId);
-    const name = this._resolveName(itemId);
-
-    // 标题
-    createEl('div', {
-      style: { fontWeight: '700', fontSize: '13px', marginBottom: '6px', color: '#3a2e20' },
-      text: `${emoji} ${name} — ${label}`,
-      parent: popup,
-    });
-
-    // Slider
-    const slider = createEl('input', {
-      attrs: { type: 'range', min: 1, max, value: Math.min(defaultValue, max) },
-      style: { width: '180px' },
-      parent: popup,
-    });
-    const valLabel = createEl('div', {
-      style: { fontSize: '20px', fontWeight: '700', color: '#e8a900', textAlign: 'center', margin: '4px 0' },
-      text: `${Math.min(defaultValue, max)}`,
-      parent: popup,
-    });
-    slider.addEventListener('input', () => { valLabel.textContent = slider.value; });
-
-    // 快捷按钮行：×1 / ×5 / ×半 / ×全
-    const quickRow = createEl('div', {
-      style: { display: 'flex', gap: '4px', marginBottom: '8px' },
-      parent: popup,
-    });
-    [
-      { t: '1', v: 1 },
-      { t: '5', v: Math.min(5, max) },
-      { t: '一半', v: Math.max(1, Math.floor(max / 2)) },
-      { t: '全部', v: max },
-    ].forEach(({ t, v }) => {
-      if (v < 1) return;
-      const b = createEl('button', {
-        class: 'inv-quick-btn', text: t, parent: quickRow,
-      });
-      b.addEventListener('click', () => { slider.value = v; valLabel.textContent = v; });
-    });
-
-    // 操作按钮行
-    const actionRow = createEl('div', {
-      style: { display: 'flex', gap: '6px', justifyContent: 'flex-end' },
-      parent: popup,
-    });
-
-    createEl('button', {
-      class: 'action-btn',
-      style: { fontSize: '12px', background: '#e5dfd0', borderColor: '#888' },
-      text: '❌ 取消',
-      parent: actionRow,
-      onclick: () => this._closeSlider(),
-    });
-
-    createEl('button', {
-      class: 'action-btn',
-      style: { fontSize: '12px', padding: '4px 10px' },
-      text: `✅ ${label}`,
-      parent: actionRow,
-      onclick: () => {
-        const qty = Number(slider.value);
-        const gs = this._getGS();
-        if (!gs) return;
-        InventorySystem.moveItemBetween(gs, from, from === 'items' ? 'outbox' : 'items', itemId, qty);
-        this._closeSlider();
-        // 如果这次把该 entry 搬空 → 取消详情卡选中
-        const newEntry = this._findEntry(from, itemId);
-        if (!newEntry) { this.selectedItemId = null; this.selectedFrom = null; }
-        this._reRender();
-      },
-    });
-
-    this.sliderPopup = popup;
-
-    // popup 超出视口右侧 → 翻到左边
-    const pRect = popup.getBoundingClientRect();
-    if (pRect.right > window.innerWidth - 8) {
-      popup.style.left = `${rect.left - pRect.width - 6}px`;
-    }
-    if (pRect.bottom > window.innerHeight - 8) {
-      popup.style.top = `${Math.max(4, window.innerHeight - pRect.height - 8)}px`;
-    }
-  }
-
-  _closeSlider() {
-    if (this.sliderPopup) { this.sliderPopup.remove(); this.sliderPopup = null; }
   }
 
   // ─────────────────────── 工具 ───────────────────────
