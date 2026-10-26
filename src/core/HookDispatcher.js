@@ -28,6 +28,7 @@ export const HOOK_TYPES = [
   'onEveryNTurn',
   'onCreatureDefeated',
   'onEventResolve',
+  'onCreatureAdded',   // §10.11 玉米田地：生物增加时触发
 ];
 
 // hookType → [{ cb, ctx }]

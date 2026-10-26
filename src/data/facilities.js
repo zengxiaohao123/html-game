@@ -624,6 +624,98 @@ const FacilitySlimehouse = {
 };
 
 // ════════════════════════════════════════════════════════════════
+// 11. FacilityCorn  🌽  —— 玉米田地
+// §10.11
+// 【生物增加时】获得玉米 ×1
+// 【受祝福时】获得随机 1 个生物（60% 友善 / 40% 危险 / 0% 极度危险）
+// 注意：onCreatureAdded hook 由 CreatureSystem 在 spawnCreature 时 fire（Agent 3 实现）
+// ════════════════════════════════════════════════════════════════
+const FacilityCorn = {
+  id: 'facility_corn',
+  name: '玉米田地',
+  emoji: '🌽',
+
+  register() {
+    // onCreatureAdded：任何生物（友善/危险/极度危险）增加时，每块玉米田 +1 玉米
+    HookDispatcher.register('onCreatureAdded', ({ gs }) => {
+      const tiles = gs.map.outerTiles.filter(t => t.contentId === this.id);
+      if (tiles.length === 0) return;
+      let total = 0;
+      for (const t of tiles) {
+        total += 1;
+      }
+      if (total > 0) {
+        InventorySystem.addItem(gs, 'item_corn', total);
+        EventBus.emit(GE.TOAST_SHOW, { text: `🌽 生物增加 → +${total} 玉米`, duration: 1800 });
+        devLog.info('[corn] onCreatureAdded +', total);
+      }
+    }, this);
+
+    // onBlessed：获得随机 1 个生物
+    //   池子：60% 友善 / 40% 危险 / 0% 极度危险；抽中类型后从该类中等概率随机
+    // Phase 3 实现 CreatureSystem.spawnCreatureFromPool；此处先 Toast 占位
+    HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
+      if (!isMine(gs, tileIdx, this.id)) return;
+      EventBus.emit(GE.TOAST_SHOW, { text: '✨ 玉米田受祝福 → 获得随机 1 个生物（Phase 3 实现）', duration: 2200 });
+      devLog.info('[corn] onBlessed TODO: spawn random creature (60% friendly / 40% danger)');
+    }, this);
+  },
+};
+
+// ════════════════════════════════════════════════════════════════
+// 12. FacilityCabbage  🥬  —— 卷心菜田地
+// §10.12
+// 【每一日开始时】获得卷心菜 ×2，然后消耗背包里的一个卷心菜投向最近敌人，造成 20 点草元素伤害
+// 【受祝福时】对所有敌人分别投掷一个卷心菜（不消耗背包中的卷心菜）
+// 伤害判定由 CombatSystem 实现，Phase 3 接入；Phase 2A 先 +菜 + Toast 占位
+// ════════════════════════════════════════════════════════════════
+const FacilityCabbage = {
+  id: 'facility_cabbage',
+  name: '卷心菜田地',
+  emoji: '🥬',
+
+  register() {
+    // onDailyStart：先获得 ×2 卷心菜进背包，再消耗 1 个自动投最近敌人
+    HookDispatcher.register('onDailyStart', ({ gs }) => {
+      const tiles = gs.map.outerTiles.filter(t => t.contentId === this.id);
+      for (const t of tiles) {
+        const key = flagKey(this.id, 'onDailyStart');
+        if (t.dailyFlags[key]) continue;
+        t.dailyFlags[key] = true;
+
+        // 1) 先 +2 卷心菜
+        InventorySystem.addItem(gs, 'item_cabbage', 2);
+        EventBus.emit(GE.TOAST_SHOW, { text: `🥬 每日 +2 卷心菜`, duration: 1500 });
+
+        // 2) 然后消耗 1 个卷心菜投向最近敌人，造成 20 点草元素伤害
+        //    背包里没卷心菜则跳过（注意上面刚 +2 了所以一定有，但祝福效果不消耗所以不影响）
+        const hasBless = t.states?.some(s => s.type === 'blessed');
+        if (!hasBless) {
+          // 非祝福：消耗 1 个，投最近敌人
+          // TODO: 真正的 CombatSystem.performDamage(gs, nearestEnemy, 20, 'grass') — Phase 3 接入
+          // Phase 2A 简化：检查背包里是否真的有，然后减 1
+          const inv = gs.player?.inventory || {};
+          if (inv.item_cabbage && inv.item_cabbage > 0) {
+            InventorySystem.addItem(gs, 'item_cabbage', -1);
+            EventBus.emit(GE.TOAST_SHOW, { text: `🥬 卷心菜投掷！20 点草元素伤害（Phase 3 生效）`, duration: 1800 });
+          }
+        } else {
+          // 祝福：对所有敌人分别投掷一个卷心菜，不消耗背包
+          EventBus.emit(GE.TOAST_SHOW, { text: `✨ 祝福卷心菜 → 对所有敌人各投 1 个（Phase 3 生效）`, duration: 2200 });
+        }
+      }
+    }, this);
+
+    // onBlessed：立即获得 2 个卷心菜（祝福额外产出，与 onDailyStart 不重复）
+    HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
+      if (!isMine(gs, tileIdx, this.id)) return;
+      // 祝福效果由 onDailyStart 内的 hasBless 分支处理（判断当前 tile 是否 blessed）
+      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 卷心菜田受祝福 → 下次每日开始时对全体敌人投掷`, duration: 2200 });
+    }, this);
+  },
+};
+
+// ════════════════════════════════════════════════════════════════
 // ——— 资源类地块内容（5 种，共用同一套 HookDispatcher 注册方式）——
 // ════════════════════════════════════════════════════════════════
 
@@ -721,7 +813,9 @@ const ResourceBus = {
 // ════════════════════════════════════════════════════════════════
 
 /** 给每个 characters.js 的 skill 生成一个 Facility-like 对象（有 id/name/emoji/register） */
-export const SKILL_FACILITIES = Object.values(SKILLS).map((skill) => ({
+// 关键：连携技（isLinkSkill:true）不走 onEnter 自动触发，它们是实时窗口按键触发的。
+// 所以 SKILL_FACILITIES 必须过滤掉 isLinkSkill 技能，避免给连携技注册错误的 onEnter hook。
+export const SKILL_FACILITIES = Object.values(SKILLS).filter((s) => !s.isLinkSkill).map((skill) => ({
   id: skill.id,
   name: skill.name,
   emoji: skill.emoji,
@@ -765,9 +859,10 @@ export function registerSkillHooks() {
 // ════════════════════════════════════════════════════════════════
 
 export const ALL_FACILITIES = [
-  // 10 种设施
+  // 12 种设施
   FacilityHome, FacilityTent, FacilityWheat, FacilityRice, FacilityPotato,
   FacilityTulip, FacilityStrawberry, FacilityPea, FacilityHenhouse, FacilitySlimehouse,
+  FacilityCorn, FacilityCabbage,
   // 5 种资源类地块内容
   ResourceEvent, ResourceReward, ResourceHunt, ResourceShop, ResourceBus,
 ];
@@ -785,12 +880,13 @@ export function registerFacilities() {
   // 打印各 hook 已注册数量（验收用）
   const hookSummary = [
     'onEnter', 'onPass', 'onBlessed', 'onDailyStart', 'onSleep',
-    'onReplace', 'onUseSkill', 'onEveryNTurn',
+    'onReplace', 'onUseSkill', 'onEveryNTurn', 'onCreatureAdded',
   ].map(t => `${t}=${HookDispatcher.count(t)}`).join(' | ');
   const total = HookDispatcher.count('onEnter') + HookDispatcher.count('onPass') +
                 HookDispatcher.count('onBlessed') + HookDispatcher.count('onDailyStart') +
                 HookDispatcher.count('onSleep') + HookDispatcher.count('onReplace') +
-                HookDispatcher.count('onUseSkill') + HookDispatcher.count('onEveryNTurn');
+                HookDispatcher.count('onUseSkill') + HookDispatcher.count('onEveryNTurn') +
+                HookDispatcher.count('onCreatureAdded');
   devLog.info('Phase 4 完整 hook 注册完成  总数=' + total, '\n  ', hookSummary);
 }
 
