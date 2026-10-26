@@ -39,7 +39,7 @@ export function advanceTurn(gs, cost = 1) {
     gs.activeBuffs.push({
       id: BUFF_EXHAUSTED,
       target: 'player',
-      remainingTurns: 999, // 持续到睡觉
+      remainingTurns: 1, // 持续 1 天（DaySystem 衰减，SleepSystem 也会移除）
       params: {},
     });
     EventBus.emit(GE.TOAST_SHOW, { text: '你感到心力交瘁…', duration: 2000 });

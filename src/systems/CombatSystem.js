@@ -60,19 +60,88 @@ export function calculateDamage({ atk, skill, defender, element, realDamage = fa
   // 2. 基础伤害
   let rawDamage = effAtk * dmgMul;
 
-  // 3. 攻击者侧 debuff（虚弱 → 造成伤害 -strength）
-  if (!realDamage && skill && defender) {
-    // 虚弱是攻击者的 debuff：这里简化 —— 暂时没玩家/生物会挂 weakened 给 attacker，跳过
+  // 3. 虚弱（攻击者侧：从 attacker 的 activeBuffs 读取 weakened，减少 rawDamage）
+  //    虚弱 buff 由风止技能等施加给敌人。这里 player 作为 attacker 时，读 player.activeBuffs；
+  //    如果未来敌人作为 attacker（攻击我方角色），也需要从那个 creature 的 activeBuffs 读。
+  const attackerBuffs = (player && Array.isArray(player.activeBuffs)) ? player.activeBuffs : [];
+  for (const b of attackerBuffs) {
+    if (b.id === 'weakened') {
+      const def = getBuff('weakened');
+      const strength = b.params?.strength ?? def?.strength ?? 0.30;
+      rawDamage *= (1 - strength);
+      devLog.info('[CombatSystem] attacker weakened: rawDamage reduced by', (strength * 100).toFixed(0) + '%');
+    }
   }
 
-  // 4. 蓄力（攻击者侧）：蓄力状态在 defender 身上其实是生物的状态。
-  //    我们的调用约定里 skill 是"玩家对生物使用的"，所以 attacker 侧蓄力先跳过（敌人攻击时再实现）。
+  // 4. 蓄力（从 defender.activeBuffs 读 charge buff，有则 rawDamage ×2 并移除）
+  //    设计文档 §15 蓄力定义为"敌人专属，下一次攻击伤害 ×2"——语义上应该是 attacker 身上的 buff，
+  //    但 BUG-4 任务指示从 defender 身上读取（可能是为弱点击破连携技服务：敌人蓄力时我方攻击翻倍）。
+  //    这里按任务指示实现，加 TODO 留待 Agent 3 校准。
+  if (defender && Array.isArray(defender.activeBuffs)) {
+    const chargeIdx = defender.activeBuffs.findIndex(b => b.id === 'charge');
+    if (chargeIdx >= 0) {
+      rawDamage *= 2;
+      devLog.info('[CombatSystem] charge consumed! rawDamage doubled →', rawDamage);
+      defender.activeBuffs.splice(chargeIdx, 1);
+      EventBus.emit(GE.BUFF_REMOVED, { buffId: 'charge', target: defender });
+    }
+  }
 
-  // 5. 真实伤害不受后续任何修正
+  // 5. 真实伤害不受后续任何修正（绕过闪避/虚弱/蓄力）
   if (realDamage) {
     rawDamage = Math.max(0, Math.floor(rawDamage));
     applyDamage(defender, rawDamage, { isReal: true, element: dmgElement });
     return { rawDamage, finalDamage: rawDamage, dodged: false, immune: false };
+  }
+
+  // ── 5.5 闪避（设计文档 §12.6：多个来源乘算，真实伤害不触发） ──
+  let totalDodgeRate = 1; // 乘算，初始 1 表示 100% 不闪避
+  let hasDodgeSource = false;
+
+  // 来源 A：defender 直接字段（天赋蹁跹 +32% 会设置此值）
+  if (defender && typeof defender.dodgeRate === 'number' && defender.dodgeRate > 0) {
+    totalDodgeRate *= (1 - defender.dodgeRate);
+    hasDodgeSource = true;
+  }
+
+  // 来源 B：defender.activeBuffs 里的 dodge 类 buff
+  if (defender && Array.isArray(defender.activeBuffs)) {
+    for (const b of defender.activeBuffs) {
+      if (b.id && b.id.startsWith('dodge_')) {
+        const strength = b.params?.strength ?? 0;
+        if (strength > 0) {
+          totalDodgeRate *= (1 - strength);
+          hasDodgeSource = true;
+        }
+      }
+    }
+  }
+
+  // 来源 C：player.talentDodgeRates[] —— 来自我方角色天赋（蹁跹 +32% 等）
+  //   这些是在我方角色身上，但防御方是敌方生物 —— 不对，闪避是防御方属性。
+  //   不过蹁跹天赋写的是"角色闪避率 +32%"，也就是我方角色作为 defender 时有 +32%。
+  //   如果 player 作为 defender（真实伤害路径已提前 return，这里不会到），或者我方角色作为 defender 时。
+  //   这里预留从 params.talentDodgeRates[] 乘算的口子，Agent 3 TalentSystem 会传进来。
+  const talentDodgeRates = arguments[0]?.talentDodgeRates; // 从 opts 里读
+  if (Array.isArray(talentDodgeRates)) {
+    for (const r of talentDodgeRates) {
+      if (typeof r === 'number' && r > 0) {
+        totalDodgeRate *= (1 - r);
+        hasDodgeSource = true;
+      }
+    }
+  }
+
+  if (hasDodgeSource) {
+    const finalDodgeRate = 1 - totalDodgeRate; // 还原成百分比
+    if (Math.random() < finalDodgeRate) {
+      // 闪避成功
+      devLog.info('[CombatSystem] DODGED! target=', defender.kind || defender.name,
+        'totalDodgeRate=', (finalDodgeRate * 100).toFixed(1) + '%');
+      EventBus.emit(GE.DAMAGE_DODGED, { target: defender, attacker: player, skill });
+      EventBus.emit(GE.TOAST_SHOW, { text: `💨 ${defender.name || defender.kind || '单位'} 闪避了攻击！`, duration: 1200 });
+      return { rawDamage, finalDamage: 0, dodged: true, immune: false };
+    }
   }
 
   // 6. 防御方易伤（vulnerable → 受到伤害 +strength）

@@ -38,7 +38,7 @@ const TILE_SIZE = 80;
 
 /**
  * 第一步：祈福开始（扣消耗 + 选目标 + emit BLESS_START）
- * @returns {{ ok: boolean, targetIdx: number|null, candidates: Array<{idx:number,x:number,y:number,contentId:string|null}>, reason?:string }}
+ * @returns {{ ok: boolean, targetIdx: number|null, candidates: Array<{idx:number,x:number,y:number,contentId:string|null}>, reason?:string, staminaCost?:number, goldCost?:number }}
  */
 export function blessStart(gs) {
   // 重入保护（动画期间禁止再次祈福）
@@ -47,13 +47,30 @@ export function blessStart(gs) {
     return { ok: false, targetIdx: null, candidates: [], reason: 'inProgress' };
   }
 
-  if (gs.player.stamina < BLESS_STAMINA_COST) {
-    EventBus.emit(GE.TOAST_SHOW, { text: '🧘 行动力不足（需 2）', duration: 2000 });
+  // ── 读取当前精灵 ──
+  const activeGroup = gs.team?.groups?.[gs.team?.activeGroup ?? 0];
+  const spirit = activeGroup?.spirit; // 'momo' | 'qingfeng' | 'yuyuan' | null
+  devLog.info('[Bless] 当前精灵 =', spirit || '(无)');
+
+  // ── 动态计算消耗（momo 首次祈福减半 —— 设计文档 §12.2） ──
+  let staminaCost = BLESS_STAMINA_COST; // 默认 2
+  let goldCost = BLESS_GOLD_COST;       // 默认 1
+  if (spirit === 'momo') {
+    const dailyBlessCount = gs.team?.dailyBlessCount ?? 0;
+    if (dailyBlessCount === 0) {
+      staminaCost = Math.max(1, Math.floor(BLESS_STAMINA_COST * 0.5)); // 2*0.5=1, min 1
+      goldCost    = Math.max(0, Math.floor(BLESS_GOLD_COST * 0.5));     // 1*0.5=0, min 0
+      devLog.info('[Bless] momo 首次祈福减半：stamina', staminaCost, 'gold', goldCost);
+    }
+  }
+
+  if (gs.player.stamina < staminaCost) {
+    EventBus.emit(GE.TOAST_SHOW, { text: `🧘 行动力不足（需 ${staminaCost}）`, duration: 2000 });
     devLog.info('[Bless] stamina not enough');
     return { ok: false, targetIdx: null, candidates: [], reason: 'stamina' };
   }
-  if (gs.player.gold < BLESS_GOLD_COST) {
-    EventBus.emit(GE.TOAST_SHOW, { text: '🧘 金币不足（需 1）', duration: 2000 });
+  if (gs.player.gold < goldCost) {
+    EventBus.emit(GE.TOAST_SHOW, { text: `🧘 金币不足（需 ${goldCost}）`, duration: 2000 });
     devLog.info('[Bless] gold not enough');
     return { ok: false, targetIdx: null, candidates: [], reason: 'gold' };
   }
@@ -66,14 +83,14 @@ export function blessStart(gs) {
   }
 
   // 扣消耗（锁定）
-  gs.player.stamina -= BLESS_STAMINA_COST;
+  gs.player.stamina -= staminaCost;
   EventBus.emit(GE.STAMINA_CHANGE, {
     newValue: gs.player.stamina,
-    delta: -BLESS_STAMINA_COST,
+    delta: -staminaCost,
     maxStamina: gs.player.maxStamina,
   });
-  gs.player.gold -= BLESS_GOLD_COST;
-  EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: -BLESS_GOLD_COST });
+  gs.player.gold -= goldCost;
+  EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: -goldCost });
 
   // 锁 blessing 状态
   if (!gs.uiState) gs.uiState = {};
@@ -105,11 +122,12 @@ export function blessStart(gs) {
     targetIdx,
     targetContentId: targetTile.contentId,
     candidates: packedCandidates,
-    staminaCost: BLESS_STAMINA_COST,
-    goldCost: BLESS_GOLD_COST,
+    staminaCost,
+    goldCost,
+    spirit,
   });
 
-  return { ok: true, targetIdx, candidates: packedCandidates };
+  return { ok: true, targetIdx, candidates: packedCandidates, staminaCost, goldCost };
 }
 
 /**
@@ -162,6 +180,39 @@ export function blessCommit(gs, targetIdx) {
     }
   }
 
+  // ── 4. 精灵效果（设计文档 §12.2） ──
+  // momo 减半已在 blessStart 处理；这里处理晴风和芋圆的祈福后效果
+  const activeGroup = gs.team?.groups?.[gs.team?.activeGroup ?? 0];
+  const spirit = activeGroup?.spirit;
+
+  // 更新每日祈福计数器（momo 的首次判断依赖这个，晴风/芋圆累加也需要）
+  if (!gs.team.dailyBlessCount) gs.team.dailyBlessCount = 0;
+  gs.team.dailyBlessCount += 1;
+
+  if (spirit === 'qingfeng') {
+    // 晴风：HP +6（不超 maxHp），atk += floor(atk * 0.08)（可叠加，切换精灵仍保留）
+    const hpDelta = 6;
+    const prevHp = gs.player.hp;
+    gs.player.hp = Math.min(gs.player.maxHp, gs.player.hp + hpDelta);
+    const actualHpDelta = gs.player.hp - prevHp;
+    if (actualHpDelta > 0) {
+      EventBus.emit(GE.HP_CHANGE, { newValue: gs.player.hp, delta: actualHpDelta, reason: 'bless_qingfeng' });
+    }
+    const prevAtk = gs.player.atk;
+    gs.player.atk += Math.floor(prevAtk * 0.08);
+    EventBus.emit(GE.ATK_CHANGE, { newValue: gs.player.atk, reason: 'bless_qingfeng' });
+    if (!gs.team.dailyQingfengAtkBonus) gs.team.dailyQingfengAtkBonus = 0;
+    gs.team.dailyQingfengAtkBonus += 1;
+    EventBus.emit(GE.TOAST_SHOW, { text: `🌬️ 晴风：HP +${actualHpDelta}，攻击力 +${gs.player.atk - prevAtk}（共 ${gs.team.dailyQingfengAtkBonus} 层）`, duration: 2000 });
+    devLog.info('[Bless] qingfeng effect: hp+', actualHpDelta, 'atk+', gs.player.atk - prevAtk, 'total stacks=', gs.team.dailyQingfengAtkBonus);
+  } else if (spirit === 'yuyuan') {
+    // 芋圆：下次移动不消耗行动力（不可叠加，仅限本日内）
+    gs.player.nextMoveNoStamina = true;
+    EventBus.emit(GE.TOAST_SHOW, { text: '🟣 芋圆：下次移动免行动力', duration: 2000 });
+    devLog.info('[Bless] yuyuan effect: nextMoveNoStamina = true');
+  }
+  // momo 的减半已在 blessStart 中处理，commit 无额外效果
+
   // 解锁
   if (gs.uiState) gs.uiState.blessing = false;
 
@@ -172,6 +223,7 @@ export function blessCommit(gs, targetIdx) {
     contentId,
     staminaCost: BLESS_STAMINA_COST,
     goldCost: BLESS_GOLD_COST,
+    spirit,
   });
 
   // 对空格也显示 Toast（说明"空地被祝福"，虽然没有实际效果）

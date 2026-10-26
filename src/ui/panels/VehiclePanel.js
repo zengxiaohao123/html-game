@@ -1,20 +1,25 @@
-// VehiclePanel.js —— Phase 4 重写  ·  快捷键 T
+// VehiclePanel.js —— Phase 4 重写（BUG-6 移除合成幻觉）  ·  快捷键 T
 // 载具槽位（最多 1 辆装备中）
-// 内嵌合成：2× item_wheel → wheelbarrow；4× item_wheel → cart
-// Phase 4 先 UI 框架，载具进围栏解锁新地块 Phase 5 再说
+// 载具库存列表（从 gs.vehicle.inventory 读取）
+// 实际载具数据待 Agent 2 建 src/data/vehicles.js
+// 实际载具移动/使用次数逻辑待 Agent 3 建 VehicleSystem.js
 // 外观严格套 InventoryPanel 模板（_panelHelper）
 
 import { EventBus } from '../../core/EventBus.js';
 import { GE } from '../../core/GameEvents.js';
-import { InventorySystem } from '../../systems/InventorySystem.js';
 import { createStandardPanel } from './_panelHelper.js';
-import { createEl, qs } from '../dom.js';
+import { createEl } from '../dom.js';
 import { devLog } from '../../core/Logger.js';
 
-const VEHICLES = [
-  { id: 'wheelbarrow', name: '独轮车', emoji: '🛒', mat: { itemId: 'item_wheel', qty: 2 }, desc: '简易运输工具' },
-  { id: 'cart',        name: '两轮推车', emoji: '🛠️', mat: { itemId: 'item_wheel', qty: 4 }, desc: '更稳固的运输工具' },
-];
+/**
+ * 占位载具元数据表 —— 显示用，等 Agent 2 建 vehicles.js 后再引用真实数据。
+ * key 为载具 id，value 含 name/emoji/desc/mobileRange/usageCount。
+ */
+const VEHICLE_META = {
+  vehicle_wheel:  { name: '轮子',       emoji: '⚙️', desc: '最多移动 2 格，可穿越非法位置', usageCount: 1 },
+  vehicle_broom:  { name: '魔法扫帚',   emoji: '🧹', desc: '同行/同列任意格', usageCount: 2 },
+  vehicle_chance: { name: '巧遇',       emoji: '✨', desc: '夏阳心想事成天赋专用', usageCount: 1 },
+};
 
 function ensureV(gs) { if (!gs.vehicle) gs.vehicle = { current: null, inventory: [] }; return gs.vehicle; }
 
@@ -24,7 +29,6 @@ export class VehiclePanel {
     this.helper = null;
     this.slotEl = null;
     this.invEl = null;
-    this.craftEl = null;
   }
 
   mount() {
@@ -52,11 +56,6 @@ export class VehiclePanel {
       parent: main,
     });
 
-    this.craftEl = createEl('div', {
-      style: { padding: '10px', background: 'rgba(255,255,255,0.55)', border: '2px solid #b8a888', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '6px' },
-      parent: body,
-    });
-
     const foot = createEl('div', {
       style: { display: 'flex', gap: '8px', justifyContent: 'flex-end', borderTop: '2px dashed #b8a888', paddingTop: '8px' },
       parent: body,
@@ -69,7 +68,7 @@ export class VehiclePanel {
   _subscribe() {
     EventBus.on(GE.UI_PANEL_OPEN, ({ panel }) => { if (panel === 'vehicle') this.toggle(); });
     EventBus.on(GE.UI_PANEL_CLOSE, ({ panel }) => { if (panel === 'vehicle' && this.helper?.visible) this.helper.hide(); });
-    EventBus.on(GE.INVENTORY_CHANGE, () => { if (this.helper?.visible) this._refresh(); });
+    EventBus.on(GE.VEHICLE_ATTACH, () => { if (this.helper?.visible) this._refresh(); });
   }
 
   _getGS() { return this.director?.getGS?.(); }
@@ -90,9 +89,15 @@ export class VehiclePanel {
       parent: this.slotEl,
     });
     if (v.current) {
-      const def = VEHICLES.find(x => x.id === v.current);
+      const def = VEHICLE_META[v.current];
       createEl('div', { style: { fontSize: '44px', fontFamily: '"Segoe UI Emoji",sans-serif' }, text: def?.emoji || '🚗', parent: box });
       createEl('div', { style: { fontSize: '12px', fontWeight: '800' }, text: def?.name || v.current, parent: box });
+      if (def?.usageCount != null) {
+        createEl('div', { style: { fontSize: '11px', color: '#7a6a56' }, text: `剩余使用：${def.usageCount} 次`, parent: this.slotEl });
+      }
+      if (def?.desc) {
+        createEl('div', { style: { fontSize: '10px', color: '#9a8a76', textAlign: 'center', padding: '0 6px' }, text: def.desc, parent: this.slotEl });
+      }
       createEl('button', {
         class: 'action-btn', text: '卸下', parent: this.slotEl,
         onclick: () => this._detach(),
@@ -106,12 +111,11 @@ export class VehiclePanel {
     this.invEl.innerHTML = '';
     createEl('div', { style: { fontSize: '13px', fontWeight: '800', color: '#5a4a3a' }, text: '📦 载具库存', parent: this.invEl });
     if (!v.inventory || v.inventory.length === 0) {
-      createEl('div', { style: { color: '#b0a090', fontSize: '12px', fontStyle: 'italic', padding: '10px' }, text: '（暂无载具，去合成吧）', parent: this.invEl });
+      createEl('div', { style: { color: '#b0a090', fontSize: '12px', fontStyle: 'italic', padding: '10px' }, text: '（暂无载具 —— 可从商店/事件/奖励/巴士站/祈福获得）', parent: this.invEl });
     } else {
       const grid = createEl('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(70px,1fr))', gap: '6px' }, parent: this.invEl });
       v.inventory.forEach((vid, idx) => {
-        const def = VEHICLES.find(x => x.id === vid);
-        if (!def) return;
+        const def = VEHICLE_META[vid];
         const s = createEl('div', {
           style: {
             aspectRatio: '1/1', background: 'rgba(255,255,255,0.85)',
@@ -121,51 +125,11 @@ export class VehiclePanel {
           },
           parent: grid,
         });
-        createEl('div', { style: { fontSize: '26px', fontFamily: '"Segoe UI Emoji",sans-serif' }, text: def.emoji, parent: s });
-        createEl('div', { style: { fontSize: '10px', fontWeight: '700', textAlign: 'center' }, text: def.name, parent: s });
+        createEl('div', { style: { fontSize: '26px', fontFamily: '"Segoe UI Emoji",sans-serif' }, text: def?.emoji || '🚗', parent: s });
+        createEl('div', { style: { fontSize: '10px', fontWeight: '700', textAlign: 'center' }, text: def?.name || vid, parent: s });
         s.addEventListener('click', () => this._attach(idx));
       });
     }
-
-    // 合成
-    this.craftEl.innerHTML = '';
-    createEl('div', { style: { fontSize: '13px', fontWeight: '800', color: '#5a4a3a' }, text: '⚒️ 合成载具', parent: this.craftEl });
-    VEHICLES.forEach((vh) => {
-      const have = gs ? InventorySystem.countItem(gs, vh.mat.itemId) : 0;
-      const ok = have >= vh.mat.qty;
-      const row = createEl('div', {
-        style: {
-          display: 'flex', alignItems: 'center', gap: '10px', padding: '8px',
-          background: ok ? 'rgba(255,255,255,0.8)' : 'rgba(240,240,240,0.7)', border: '2px solid #b8a888', borderRadius: '10px', opacity: ok ? 1 : 0.7,
-        },
-        parent: this.craftEl,
-      });
-      createEl('div', { style: { fontSize: '28px', width: '36px', textAlign: 'center', fontFamily: '"Segoe UI Emoji",sans-serif' }, text: vh.emoji, parent: row });
-      const info = createEl('div', { style: { flex: '1' }, parent: row });
-      createEl('div', { style: { fontWeight: '800', fontSize: '13px' }, text: vh.name, parent: info });
-      createEl('div', { style: { fontSize: '11px', color: '#7a6a56' }, text: `材料：⚙️×${vh.mat.qty}（持有 ${have}）`, parent: info });
-      const btn = createEl('button', { class: 'action-btn', text: '合成', parent: row, onclick: () => this._craft(vh) });
-      if (!ok) btn.disabled = true;
-    });
-  }
-
-  _craft(vh) {
-    const gs = this._getGS(); if (!gs) return;
-    if (InventorySystem.countItem(gs, vh.mat.itemId) < vh.mat.qty) return;
-    EventBus.emit(GE.DIALOG_SHOW, {
-      title: '确认合成载具？',
-      content: `消耗 ⚙️×${vh.mat.qty} → ${vh.emoji} ${vh.name}`,
-      options: [
-        { label: '取消', onSelect: () => {} },
-        { label: '确定', onSelect: () => {
-          InventorySystem.removeItem(gs, vh.mat.itemId, vh.mat.qty);
-          ensureV(gs).inventory.push(vh.id);
-          EventBus.emit(GE.TOAST_SHOW, { text: `⚒️ 合成成功：${vh.emoji} ${vh.name}`, duration: 1200 });
-          devLog.info('[VehiclePanel] craft', vh.id);
-          this._refresh();
-        }},
-      ],
-    });
   }
 
   _attach(idx) {
@@ -176,6 +140,7 @@ export class VehiclePanel {
     v.current = vid;
     EventBus.emit(GE.VEHICLE_ATTACH, { action: 'attach', vehicleId: vid });
     EventBus.emit(GE.TOAST_SHOW, { text: `✅ 已装备载具`, duration: 1200 });
+    devLog.info('[VehiclePanel] attach', vid);
     this._refresh();
   }
 
@@ -183,7 +148,7 @@ export class VehiclePanel {
     const gs = this._getGS(); if (!gs) return;
     const v = ensureV(gs);
     if (!v.current) return;
-    const def = VEHICLES.find(x => x.id === v.current);
+    const def = VEHICLE_META[v.current];
     EventBus.emit(GE.DIALOG_SHOW, {
       title: '卸下载具', content: `确定卸下 ${def?.emoji || ''} ${def?.name || v.current}？`,
       options: [
@@ -191,6 +156,7 @@ export class VehiclePanel {
         { label: '确定', onSelect: () => {
           v.inventory.push(v.current); v.current = null;
           EventBus.emit(GE.TOAST_SHOW, { text: '📦 载具已卸库存', duration: 1200 });
+          devLog.info('[VehiclePanel] detach');
           this._refresh();
         }},
       ],
