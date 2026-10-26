@@ -68,6 +68,11 @@ export class GameDirector {
       }
     });
 
+    // 编队修改 → 重新 fire passive（烹饪/蹁跹等常驻天赋按 roleId guard）
+    EventBus.on(GE.TEAM_CHANGE, () => {
+      TalentSystem.firePassive(this.gs);
+    });
+
     // 每秒定时：pruneExpired（连携技超时）+ periodicConditionScan（炽燃/弱点击破条件检测）
     this._linkSkillTimer = setInterval(() => {
       LinkSkillSystem.pruneExpired(this.gs);
@@ -108,6 +113,21 @@ export class GameDirector {
       return false;
     }
     this.gs = loadedGs;
+
+    // 清理旧的定时器（防止 loadGame 多次调用时 timer 累积）
+    if (this._linkSkillTimer) {
+      clearInterval(this._linkSkillTimer);
+      this._linkSkillTimer = null;
+    }
+    // 重新启动 linkSkill 定时（loadGame 后 GameDirector 没调 start()，所以这里补）
+    this._linkSkillTimer = setInterval(() => {
+      LinkSkillSystem.pruneExpired(this.gs);
+      LinkSkillSystem.periodicConditionScan(this.gs);
+    }, 1000);
+
+    // 读档后重新 fire passive（确保烹饪/蹁跹 maxHp/dodgeRate 正确）
+    TalentSystem.firePassive(this.gs);
+
     EventBus.emit(GE.STATE_RESET, { gs: this.gs });
     EventBus.emit(GE.TILE_UPDATED);
     EventBus.emit(GE.STAT_CHANGE);
