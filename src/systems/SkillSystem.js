@@ -21,6 +21,8 @@ import { HookDispatcher } from '../core/HookDispatcher.js';
 import { devLog } from '../core/Logger.js';
 import { getSkill, getSkillsByRole, CHARACTERS } from '../data/characters.js';
 import { CombatSystem } from './CombatSystem.js';
+import { TalentSystem } from './TalentSystem.js';
+import { LinkSkillSystem } from './LinkSkillSystem.js';
 
 // 每技能的运行时 cooldown（回合数）：skillId → remainingTurns
 // GS 本身不持久化 cooldown（每次从 max 重启也 OK；Phase 3 简化为内存）
@@ -124,6 +126,9 @@ function fireOneSkill(gs, roleDef, skill, target) {
       element: skill.element,
       realDamage: !!skill.realDamage,
       player: gs.player,
+      gs,
+      roleId: roleDef.id,
+      attackerRoleId: roleDef.id,
     });
     if (result.immune) {
       // 免疫就停，不再继续后续 hit
@@ -142,6 +147,12 @@ function fireOneSkill(gs, roleDef, skill, target) {
   // 击败判定
   if (target.hp <= 0) {
     defeatCreature(gs, target);
+  }
+
+  // ── Agent 3：连携技检测 ──
+  // 每次普通技能触发后，让 LinkSkillSystem 有机会入队（焚灭计数、追猎计数、元素累计已由 TalentSystem.recordElementDamage 记录）
+  if (!skill.isLinkSkill) {
+    LinkSkillSystem.onSkillFired(gs, { roleId: roleDef.id, skillId: skill.id, skill, target });
   }
 }
 
@@ -187,8 +198,10 @@ function defeatCreature(gs, target) {
   }
   gs.creatures = gs.creatures.filter(c => c.id !== target.id);
 
-  // HookDispatcher.fire('onCreatureDefeated', { gs, creature: target }) —— Phase 4 用
   HookDispatcher.fire('onCreatureDefeated', { gs, creature: target });
+
+  // ── Agent 3：天赋 好奇心 ──
+  TalentSystem.onCreatureDefeated(gs, target);
 }
 
 /**

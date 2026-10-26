@@ -18,6 +18,8 @@ import { SleepSystem } from './SleepSystem.js';
 import { CreatureSystem } from './CreatureSystem.js';
 import { SkillSystem } from './SkillSystem.js';
 import { InventorySystem } from './InventorySystem.js';
+import { TalentSystem } from './TalentSystem.js';
+import { LinkSkillSystem } from './LinkSkillSystem.js';
 
 /** 初始小麦田放置的格 idx（Phase 1 演示用） */
 const INITIAL_WHEAT_TILE_IDX = 2; // 右上位置
@@ -52,7 +54,27 @@ export class GameDirector {
     // 4. Phase 3：启动生物实时 tick 循环
     CreatureSystem.startRealtimeLoop(() => this.gs);
 
-    // 5. 初始背包物品（让玩家有东西可选来建造）
+    // 5. Phase 4：Agent 3 —— 天赋 passive + EventBus 订阅连携技解耦事件
+    TalentSystem.firePassive(this.gs);
+
+    // 解耦订阅：CombatSystem.emit ELEMENT_DAMAGE_APPLIED → LinkSkillSystem.onElementDamage
+    EventBus.on(GE.ELEMENT_DAMAGE_APPLIED, (payload) => {
+      if (payload && payload.gs) {
+        LinkSkillSystem.onElementDamage(payload.gs, {
+          element: payload.element,
+          byRoleId: payload.byRoleId,
+          target: payload.target,
+        });
+      }
+    });
+
+    // 每秒定时：pruneExpired（连携技超时）+ periodicConditionScan（炽燃/弱点击破条件检测）
+    this._linkSkillTimer = setInterval(() => {
+      LinkSkillSystem.pruneExpired(this.gs);
+      LinkSkillSystem.periodicConditionScan(this.gs);
+    }, 1000);
+
+    // 6. 初始背包物品（让玩家有东西可选来建造）
     const INITIAL_ITEMS = [
       { id: 'facility_tent',       qty: 2 },
       { id: 'facility_rice',       qty: 2 },

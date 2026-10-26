@@ -12,6 +12,7 @@ import { devLog } from '../core/Logger.js';
 import { DaySystem } from './DaySystem.js';
 import { SLEEP_STAMINA_PENALTY_GOLD_RATIO } from '../utils/constants.js';
 import { TurnSystem } from './TurnSystem.js';
+import { TalentSystem } from './TalentSystem.js';
 
 /** 金币惩罚上下限 */
 const GOLD_PENALTY_MIN = 0;
@@ -25,6 +26,9 @@ const GOLD_PENALTY_MAX = 1000;
  */
 export function sleep(gs, isAuto = false) {
   devLog.info('[SleepSystem] 开始睡觉, isAuto =', isAuto);
+
+  // 0. Agent 3：天赋 活力满满 onSleep（换日前 fire）
+  TalentSystem.onSleepStart(gs);
 
   // 1. 触发 onSleep hook
   HookDispatcher.fire('onSleep', { gs });

@@ -191,26 +191,54 @@ export function feedCreature(gs, creatureId, amount = 1) {
  *   1) 检查所有生物饥饿/成长/心情
  *   2) 小鸡→鸡 成长
  *   3) 鸡产蛋
- *   4) 容量超载警告期 & 惩罚
- *   5) 史莱姆粘液喷吐 5%
+ *   4) 容量超载警告期 & 惩罚（极度危险 → 拆地块）
+ *   5) 史莱姆粘液喷吐 5%（超载 15%）→ 完整实装
+ *   6) 完整投喂：he nhouse 每日消耗 item_rice_straw/item_wheat + creature.growth +10 或 -5
  */
 export function dailyTick(gs) {
   devLog.info('[CreatureSystem.dailyTick] day=', gs.day);
 
-  // ── 1) 生物日常 ──
+  // ── 1) 完整投喂：遍历 henhouse 设施 tile ──
+  const outerTiles = gs.map.outerTiles || [];
+  const henhouseTiles = outerTiles.filter(t => t.contentId === 'facility_henhouse');
+  const fedCreatures = new Set(); // 本次被投喂过的 creature id
+
+  for (const henhouseTile of henhouseTiles) {
+    // 找所有来自这个 henhouse 的生物
+    const henhouseCreatures = gs.creatures.filter(c => c.facilityId === 'facility_henhouse' && c.hp > 0);
+    for (const c of henhouseCreatures) {
+      if (fedCreatures.has(c.id)) continue;
+      // 有 item_rice_straw 或 item_wheat → -1 + growth +10
+      const hasStraw = InventorySystem.countItem(gs, 'item_rice_straw') > 0;
+      const hasWheat = InventorySystem.countItem(gs, 'item_wheat') > 0;
+      if (hasStraw || hasWheat) {
+        if (hasStraw) InventorySystem.removeItem(gs, 'item_rice_straw', 1);
+        else InventorySystem.removeItem(gs, 'item_wheat', 1);
+        c.growth += 10 + (c.mood || 0);
+        fedCreatures.add(c.id);
+        c.lastFed = true;
+      } else {
+        // 无饲料 → growth -5（饥饿）+ mood -1
+        c.growth = Math.max(0, c.growth - 5);
+        c.mood = Math.max(-5, (c.mood || 0) - 1);
+        EventBus.emit(GE.TOAST_SHOW, { text: `🐣 ${c.kind || '小鸡'} 没吃的，心情-1`, duration: 1200 });
+        fedCreatures.add(c.id);
+        c.lastFed = false;
+      }
+    }
+  }
+
+  // ── 2) 生物日常 ──
   for (const c of gs.creatures) {
     if (!c || c.hp <= 0) continue;
 
-    // 心情：若 facility 来源（鸡舍），且玩家今天进入过 → mood +1
-    // 简化：直接 mood +1（设计文档 "玩家每次进入鸡舍心情 +1 每日限 1 次" —— Phase 3 简化）
+    // 心情：facility_henhouse 来源 +1（玩家进 henhouse 简化：直接 +1）
     if (c.facilityId === 'facility_henhouse') {
       c.mood = Math.min(5, (c.mood || 0) + 1);
     }
 
     // 成长值（小鸡）
     if (c.stage === 'chick' && c.growthMax > 0) {
-      // 简化：已投喂（假设默认投喂）成长 +10，饥饿 -5 —— 先都 +10
-      c.growth += 10 + (c.mood || 0);
       if (c.growth >= c.growthMax) {
         growUpChick(gs, c);
       }
@@ -219,22 +247,35 @@ export function dailyTick(gs) {
     // 鸡产蛋
     if (c.kind === 'chicken') {
       InventorySystem.addItem(gs, 'item_egg', 1);
-      devLog.info('[CreatureSystem] chicken lays egg');
+      const qualityChance = Math.max(0, (c.mood || 0) * 0.1);
+      if (Math.random() < qualityChance) {
+        InventorySystem.addItem(gs, 'item_golden_egg', 1);
+      }
     }
-
-    // 史莱姆粘液喷吐（5%）
-    if (c.category === 'danger' && Random.chance(0.05)) {
-      devLog.info('[CreatureSystem] slime spit mucus 5%');
-      // Phase 3 简化：只给提示（粘液 debuff 需要 onEnter 时机，玩家不进 fence 所以先只打 log）
-    }
-
-    // 清空上一回合 buff（tick 时已扣回合数）—— 在 CombatSystem.tickBuffsOnTarget 做了
   }
 
-  // ── 2) 容量超载警告 & 惩罚 ──
+  // ── 3) 史莱姆粘液喷吐（完整实装：5% / 超载 15%） ──
+  const dangerOverloaded = !!(gs.capacity?.dangerOverloaded);
+  const slimeCount = gs.creatures.filter(c => c.category === 'danger' && c.hp > 0).length;
+  for (let i = 0; i < slimeCount; i++) {
+    const chance = dangerOverloaded ? 0.15 : 0.05;
+    if (Random.chance(chance)) {
+      // 选随机 outerTile（合法外圈格）
+      const candidates = outerTiles.filter(t => t.idx !== gs.player.x); // 不往玩家当前格喷
+      if (candidates.length === 0) break;
+      const target = Random.pick(candidates);
+      if (!target.states) target.states = [];
+      target.states.push({ type: 'slime' });
+      EventBus.emit(GE.TILE_UPDATED, { tileIdx: target.idx });
+      EventBus.emit(GE.TOAST_SHOW, { text: `🟢 史莱姆喷吐粘液到地块 ${target.idx}`, duration: 1500 });
+      devLog.info('[CreatureSystem] slime spit mucus → tile', target.idx);
+    }
+  }
+
+  // ── 4) 容量超载警告 & 惩罚 ──
   updateCapacityAndPunish(gs);
 
-  // ── 3) 广播容量变化事件 ──
+  // ── 5) 广播容量变化事件 ──
   EventBus.emit(GE.CAPACITY_CHANGE, {
     friendly: countByCategory(gs, 'friendly'),
     danger: countByCategory(gs, 'danger'),
@@ -308,6 +349,21 @@ function updateCapacityAndPunish(gs) {
       cap.extremeOverloaded = true;
       const loss = Math.max(1, Math.floor((gs.player.maxHp || gs.player.hp) * 0.10));
       CombatSystem.applyTrueDamageToPlayer(gs.player, loss, { reason: 'extreme_overload' });
+
+      // ── Agent 3：极度危险超载 → 拆 2 个地块内容（除了永恒设施 facility_home） ──
+      const nonHomeTiles = (gs.map.outerTiles || []).filter(
+        t => t.contentId && t.contentId !== 'facility_home'
+      );
+      const demolishCount = Math.min(2, nonHomeTiles.length);
+      for (let i = 0; i < demolishCount; i++) {
+        const pick = Random.pick(nonHomeTiles);
+        nonHomeTiles.splice(nonHomeTiles.indexOf(pick), 1);
+        const lost = pick.contentId;
+        pick.contentId = null;
+        EventBus.emit(GE.TILE_UPDATED, { tileIdx: pick.idx });
+        EventBus.emit(GE.TOAST_SHOW, { text: `💥 极度危险超载！拆毁 ${lost}`, duration: 2500 });
+        devLog.info('[CreatureSystem] extreme overload → demolish tile', pick.idx, 'content', lost);
+      }
     }
   } else {
     cap.extremeOverdue = 0;

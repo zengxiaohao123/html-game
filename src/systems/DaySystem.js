@@ -13,6 +13,10 @@ import { devLog } from '../core/Logger.js';
 import { InventorySystem } from './InventorySystem.js';
 import { CreatureSystem } from './CreatureSystem.js';
 import { CombatSystem } from './CombatSystem.js';
+import { TalentSystem } from './TalentSystem.js';
+import { LinkSkillSystem } from './LinkSkillSystem.js';
+import { Storage } from '../state/storage.js';
+import { VehicleSystem } from './VehicleSystem.js';
 
 /**
  * 开始新的一天
@@ -72,10 +76,25 @@ export function startNewDay(gs) {
   if (gs.team) {
     gs.team.dailyBlessCount = 0;
     gs.team.dailyQingfengAtkBonus = 0;
+    // Agent 3：焚灭计数每日清空（连携技 焚灭：【每一日开始时】清空计数）
+    gs.team.xiayangSkillCount = 0;
   }
   if (gs.player && gs.player.nextMoveNoStamina) {
     gs.player.nextMoveNoStamina = false; // 芋圆效果仅限本日内
   }
+
+  // 8.5 Agent 3：连携技重置
+  LinkSkillSystem.resetAll(gs);
+
+  // 8.6 Agent 3：天赋 onDayStart（巧手随机物品 + 比翼 buff 天数 + 涅槃冷却）
+  TalentSystem.onDayStart(gs);
+  TalentSystem.onDayStartCooldownTick(gs);
+
+  // 8.7 Agent 3：载具 巧遇 每天限次重置
+  VehicleSystem.onDayStart(gs);
+
+  // 8.8 Agent 3：自动存档 slot 1
+  Storage.autoSave(gs);
 
   // 9. 广播 DAY_START 事件
   EventBus.emit(GE.DAY_START, { day: gs.day });

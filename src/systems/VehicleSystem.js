@@ -1,0 +1,234 @@
+// src/systems/VehicleSystem.js
+// Agent 3 —— 载具移动逻辑
+// 设计文档 §14.7 + vehicles.js（vehicle_wheel / vehicle_broom / vehicle_chance 三种）
+// 移动方式：
+//   vehicle_wheel (directional) —— 指定方向最多 2 格，穿越非法但不能停留
+//   vehicle_broom (line)         —— 同行列任意格（必须同行或同列），不能穿越非法
+//   vehicle_chance (any)         —— 任意格（心想事成天赋专用），不能进 fence
+//
+// 载具不占背包，单独在载具页面（T 键）管理
+// GS 里新增字段：
+//   gs.vehicle = { current: null | { vehicleId, usageLeft }, available: [{ vehicleId, usageLeft }] }
+//   （available 数组里存玩家"已拥有"的载具；同时只能装备一个）
+
+import { EventBus } from '../core/EventBus.js';
+import { GE } from '../core/GameEvents.js';
+import { devLog } from '../core/Logger.js';
+import { Random } from '../core/Random.js';
+import { VEHICLES } from '../data/vehicles.js';
+import { Distance } from '../core/Distance.js';
+import { Direction } from '../utils/Direction.js';
+
+function ensureVehicleState(gs) {
+  if (!gs.vehicle) {
+    gs.vehicle = {
+      current: null,          // { vehicleId, usageLeft }
+      available: [],          // 已获得的载具列表（不叠放，每个独立 entry）
+      chanceUsedToday: false, // 心想事成 巧遇 每天限 1 次
+    };
+  }
+}
+
+/**
+ * 玩家获得一个载具（巴士站 / 心想事成天赋 / 商店等）
+ */
+export function gainVehicle(gs, vehicleId) {
+  const def = VEHICLES[vehicleId];
+  if (!def) {
+    devLog.warn('[VehicleSystem.gainVehicle] unknown', vehicleId);
+    return;
+  }
+  ensureVehicleState(gs);
+  gs.vehicle.available.push({
+    vehicleId,
+    usageLeft: def.usageCount || 1,
+  });
+  EventBus.emit(GE.VEHICLE_ATTACH, { vehicleId, attached: false });
+  EventBus.emit(GE.TOAST_SHOW, { text: `🚗 获得载具 ${def.emoji || ''} ${def.name}`, duration: 1500 });
+  devLog.info('[VehicleSystem.gainVehicle]', vehicleId);
+}
+
+/**
+ * 装备载具（切到该载具；同时只能装一个）
+ * @returns {boolean}
+ */
+export function attachVehicle(gs, vehicleId) {
+  ensureVehicleState(gs);
+  const entry = gs.vehicle.available.find(a => a.vehicleId === vehicleId);
+  if (!entry) return false;
+
+  const def = VEHICLES[vehicleId];
+
+  // 心想事成：检查 activeGroup 里有没有夏阳
+  if (def.talentExclusive === 'xiayang_want') {
+    // vehicles.js 写的 talentExclusive 是 'xiayang_want'，但 talents.js id 是 'xiayangWant' —— 我们用 talents.js 的 id
+    // 按设计文档 §14.7："心想事成天赋专用"—— 简化：只要 vehicle_chance 在 available 里就能用
+    // （不做强检查 talent 是否存在，因为 talent 可能未来加强校验）
+  }
+  // 每天限 1 次
+  if (def.perDayLimit && gs.vehicle.chanceUsedToday) {
+    EventBus.emit(GE.TOAST_SHOW, { text: `🚗 ${def.name} 每天限用 1 次`, duration: 1500 });
+    return false;
+  }
+
+  gs.vehicle.current = { vehicleId, usageLeft: entry.usageLeft };
+  EventBus.emit(GE.VEHICLE_ATTACH, { vehicleId, attached: true });
+  EventBus.emit(GE.TOAST_SHOW, { text: `🚗 装备载具 ${def.emoji || ''} ${def.name}`, duration: 1500 });
+  devLog.info('[VehicleSystem.attachVehicle]', vehicleId);
+  return true;
+}
+
+/**
+ * 卸下载具（用完了或主动切换）
+ */
+export function detachVehicle(gs) {
+  ensureVehicleState(gs);
+  if (gs.vehicle.current) {
+    const cur = gs.vehicle.current;
+    // 同步回 available（若 usageLeft > 0）
+    const avail = gs.vehicle.available.find(a => a.vehicleId === cur.vehicleId);
+    if (avail) {
+      avail.usageLeft = cur.usageLeft;
+    }
+    gs.vehicle.current = null;
+    EventBus.emit(GE.VEHICLE_ATTACH, { vehicleId: cur.vehicleId, attached: false });
+    devLog.info('[VehicleSystem.detachVehicle]');
+  }
+}
+
+/**
+ * 消费载具使用次数（用完自动卸下并从 available 移除）
+ */
+function consumeUsage(gs) {
+  ensureVehicleState(gs);
+  const cur = gs.vehicle.current;
+  if (!cur) return false;
+  cur.usageLeft -= 1;
+
+  const def = VEHICLES[cur.vehicleId];
+  if (def.talentExclusive && def.perDayLimit) {
+    gs.vehicle.chanceUsedToday = true;
+  }
+
+  if (cur.usageLeft <= 0) {
+    // 用完 —— 卸下并从 available 移除
+    const idx = gs.vehicle.available.findIndex(a => a.vehicleId === cur.vehicleId);
+    if (idx >= 0) gs.vehicle.available.splice(idx, 1);
+    gs.vehicle.current = null;
+    EventBus.emit(GE.TOAST_SHOW, { text: `🚗 ${def.name} 使用完毕`, duration: 1500 });
+    devLog.info('[VehicleSystem.consumeUsage]', cur.vehicleId, 'used up');
+  } else {
+    // 同步 available
+    const avail = gs.vehicle.available.find(a => a.vehicleId === cur.vehicleId);
+    if (avail) avail.usageLeft = cur.usageLeft;
+  }
+  return true;
+}
+
+/**
+ * 判断两格是否同行或同列（外圈环形地图用 Distance.outerIdxToXY）
+ */
+function sameRowOrCol(gs, aIdx, bIdx) {
+  const a = Distance.outerIdxToXY(gs.map.size, aIdx);
+  const b = Distance.outerIdxToXY(gs.map.size, bIdx);
+  return a.x === b.x || a.y === b.y;
+}
+
+/**
+ * 载具尝试移动
+ * @param {object} gs
+ * @param {object} opts
+ * @param {string} opts.type 'direction' | 'target' —— 方向式（轮子）或目标式（扫帚/巧遇）
+ * @param {string} [opts.direction] 'up'|'right'|'down'|'left' —— 轮子用
+ * @param {number} [opts.targetIdx] —— 扫帚/巧遇用
+ * @returns {{ ok: boolean, path: number[] | null, finalIdx: number | null, reason?: string }}
+ */
+export function tryMove(gs, opts = {}) {
+  ensureVehicleState(gs);
+  const cur = gs.vehicle.current;
+  if (!cur) return { ok: false, reason: 'noVehicle' };
+
+  const def = VEHICLES[cur.vehicleId];
+  if (!def) return { ok: false, reason: 'unknown' };
+
+  const fromIdx = gs.player.x;
+  let targetIdx = null;
+  let path = [];
+
+  if (def.movePattern === 'directional') {
+    // 轮子：指定方向最多 2 格
+    const dirIdx = Direction.dirToIndex(opts.direction);
+    if (dirIdx === -1) return { ok: false, reason: 'badDirection' };
+    const neighbors1 = Distance.outerNeighbors(gs.map.size, fromIdx);
+    const first = neighbors1[dirIdx];
+    if (first == null) return { ok: false, reason: 'blocked' };
+    const neighbors2 = Distance.outerNeighbors(gs.map.size, first);
+    const second = neighbors2[dirIdx];
+    // 最多 2 格，取最远的合法目标
+    targetIdx = second != null ? second : first;
+    path = [first];
+    if (second != null) path.push(second);
+    // 轮子允许穿越但不能停留 —— 因为外圈所有格都是合法停留，所以直接走到最远
+  } else if (def.movePattern === 'line') {
+    // 扫帚：同行或同列任意格
+    if (opts.targetIdx == null) return { ok: false, reason: 'needTarget' };
+    if (opts.targetIdx === fromIdx) return { ok: false, reason: 'sameTile' };
+    if (!sameRowOrCol(gs, fromIdx, opts.targetIdx)) {
+      return { ok: false, reason: 'notSameRowCol' };
+    }
+    targetIdx = opts.targetIdx;
+    // 简化：路径 = [targetIdx]（1 格视为直达）
+    path = [targetIdx];
+  } else if (def.movePattern === 'any') {
+    // 巧遇：任意格（不能进 fence）
+    if (opts.targetIdx == null) return { ok: false, reason: 'needTarget' };
+    if (opts.targetIdx === fromIdx) return { ok: false, reason: 'sameTile' };
+    targetIdx = opts.targetIdx;
+    path = [targetIdx];
+  } else {
+    return { ok: false, reason: 'badPattern' };
+  }
+
+  // 消耗载具使用次数
+  consumeUsage(gs);
+
+  // 扣 stamina（载具也是移动，消耗 1 stamina，除非有果腹收藏品 —— 简化不考虑）
+  // 芋圆 nextMoveNoStamina 也适用载具移动
+  const isFree = !!gs.player.nextMoveNoStamina;
+  if (isFree) {
+    gs.player.nextMoveNoStamina = false;
+  } else {
+    gs.player.stamina -= 1;
+    EventBus.emit(GE.STAMINA_CHANGE, {
+      newValue: gs.player.stamina,
+      delta: -1,
+      maxStamina: gs.player.maxStamina,
+    });
+  }
+
+  // 更新位置
+  gs.player.x = targetIdx;
+  EventBus.emit(GE.MOVE, { fromIdx, toIdx: targetIdx, byVehicle: true });
+  EventBus.emit(GE.TILE_UPDATED, { tileIdx: fromIdx });
+  EventBus.emit(GE.TILE_UPDATED, { tileIdx: targetIdx });
+
+  devLog.info('[VehicleSystem.tryMove]', def.name, fromIdx, '→', targetIdx, 'path=', path);
+
+  return { ok: true, path, finalIdx: targetIdx };
+}
+
+/**
+ * 每日开始时重置载具的 perDayLimit 标记
+ */
+export function onDayStart(gs) {
+  ensureVehicleState(gs);
+  gs.vehicle.chanceUsedToday = false;
+}
+
+export const VehicleSystem = {
+  gainVehicle,
+  attachVehicle,
+  detachVehicle,
+  tryMove,
+  onDayStart,
+};

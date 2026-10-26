@@ -190,7 +190,8 @@ export function blessCommit(gs, targetIdx) {
   gs.team.dailyBlessCount += 1;
 
   if (spirit === 'qingfeng') {
-    // 晴风：HP +6（不超 maxHp），atk += floor(atk * 0.08)（可叠加，切换精灵仍保留）
+    // 晴风：HP +6（不超 maxHp），攻击力 +8%（每层按叠后算：atk = floor(atk * 1.08)）
+    // 文档 §12.2："使本日内角色攻击力 +8%" 严格按叠后算（不是加之前的 atk 算）
     const hpDelta = 6;
     const prevHp = gs.player.hp;
     gs.player.hp = Math.min(gs.player.maxHp, gs.player.hp + hpDelta);
@@ -199,7 +200,8 @@ export function blessCommit(gs, targetIdx) {
       EventBus.emit(GE.HP_CHANGE, { newValue: gs.player.hp, delta: actualHpDelta, reason: 'bless_qingfeng' });
     }
     const prevAtk = gs.player.atk;
-    gs.player.atk += Math.floor(prevAtk * 0.08);
+    gs.player.atk = Math.floor(gs.player.atk * 1.08);
+    const atkDelta = gs.player.atk - prevAtk;
     EventBus.emit(GE.ATK_CHANGE, { newValue: gs.player.atk, reason: 'bless_qingfeng' });
     if (!gs.team.dailyQingfengAtkBonus) gs.team.dailyQingfengAtkBonus = 0;
     gs.team.dailyQingfengAtkBonus += 1;

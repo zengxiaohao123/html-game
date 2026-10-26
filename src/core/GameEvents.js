@@ -49,6 +49,7 @@ export const GE = {
   DAMAGE_TAKEN: 'damage:taken',
   DAMAGE_DODGED: 'damage:dodged',            // Phase 4：闪避成功
   ELEMENT_IMMUNE_HIT: 'element:immuneHit',   // Phase 3：元素免疫命中
+  ELEMENT_DAMAGE_APPLIED: 'element:damageApplied', // Agent 3：元素伤害应用后（LinkSkill 解耦）
   LINK_SKILL_READY: 'linkskill:ready',
   LINK_SKILL_EXPIRE: 'linkskill:expire',
 

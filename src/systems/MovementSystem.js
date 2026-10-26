@@ -17,6 +17,7 @@ import { Direction } from '../utils/Direction.js';
 import { devLog } from '../core/Logger.js';
 import { SkillSystem } from './SkillSystem.js';
 import { CombatSystem } from './CombatSystem.js';
+import { TalentSystem } from './TalentSystem.js';
 
 /**
  * 尝试移动玩家
@@ -93,6 +94,9 @@ export function move(gs, direction) {
   EventBus.emit(GE.MOVE, { fromIdx, toIdx: targetIdx, direction });
   EventBus.emit(GE.TILE_UPDATED, { tileIdx: fromIdx });
   EventBus.emit(GE.TILE_UPDATED, { tileIdx: targetIdx });
+
+  // 7. Agent 3：天赋 蹁跹 onMoveEnd（+6HP）
+  TalentSystem.onMoveEnd(gs);
 
   devLog.info('[MovementSystem] 移动成功:', fromIdx, '→', targetIdx, direction);
   return targetIdx;
