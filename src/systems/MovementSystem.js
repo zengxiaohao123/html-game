@@ -52,8 +52,7 @@ export function move(gs, direction) {
     maxStamina: gs.player.maxStamina,
   });
 
-  // 2. 触发 onPass：当前格 + 目标格（路径上的所有格）
-  HookDispatcher.fire('onPass', { gs, tileIdx: fromIdx });
+  // 2. 触发 onPass：仅目标格（起点不算经过 —— 设计文档 §7）
   HookDispatcher.fire('onPass', { gs, tileIdx: targetIdx });
 
   // Phase 3：技能 onPass 触发
