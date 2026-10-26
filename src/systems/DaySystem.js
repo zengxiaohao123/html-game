@@ -68,7 +68,16 @@ export function startNewDay(gs) {
     }
   }
 
-  // 8. 广播 DAY_START 事件
+  // 8. 精灵每日字段重置（§12.2：momo 首次祈福计数、晴风攻击加成层数、芋圆免移动标志）
+  if (gs.team) {
+    gs.team.dailyBlessCount = 0;
+    gs.team.dailyQingfengAtkBonus = 0;
+  }
+  if (gs.player && gs.player.nextMoveNoStamina) {
+    gs.player.nextMoveNoStamina = false; // 芋圆效果仅限本日内
+  }
+
+  // 9. 广播 DAY_START 事件
   EventBus.emit(GE.DAY_START, { day: gs.day });
   EventBus.emit(GE.TILE_UPDATED); // 地图整体刷新
   EventBus.emit(GE.STAT_CHANGE);  // 所有 UI 数值刷新

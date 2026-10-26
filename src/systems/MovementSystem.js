@@ -44,13 +44,19 @@ export function move(gs, direction) {
   // === 可行走：执行移动 ===
   const fromIdx = gs.player.x;
 
-  // 1. 扣 stamina（先 emit 再改 GS，符合 architecture-spec 约定）
-  gs.player.stamina -= 1;
-  EventBus.emit(GE.STAMINA_CHANGE, {
-    newValue: gs.player.stamina,
-    delta: -1,
-    maxStamina: gs.player.maxStamina,
-  });
+  // 1. 扣 stamina（芋圆 nextMoveNoStamina = true 时免行动力消耗 —— 设计文档 §12.2）
+  const isFreeMove = !!gs.player.nextMoveNoStamina;
+  if (isFreeMove) {
+    gs.player.nextMoveNoStamina = false; // 用掉即清，不可叠加
+    devLog.info('[MovementSystem] 芋圆免行动力触发，本次移动不扣 stamina');
+  } else {
+    gs.player.stamina -= 1;
+    EventBus.emit(GE.STAMINA_CHANGE, {
+      newValue: gs.player.stamina,
+      delta: -1,
+      maxStamina: gs.player.maxStamina,
+    });
+  }
 
   // 2. 触发 onPass：仅目标格（起点不算经过 —— 设计文档 §7）
   HookDispatcher.fire('onPass', { gs, tileIdx: targetIdx });
