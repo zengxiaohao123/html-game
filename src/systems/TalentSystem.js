@@ -58,37 +58,42 @@ function filterByTrigger(gs, triggerKey) {
  * 遍历所有天赋 fire passive 常驻效果
  * —— 调用时机：
  *   1) 游戏启动后（GS 初始化完成）：给烹饪加 maxHp，给蹁跹加 dodgeRate
- *   2) 每次 calculateDamage 开头：读 damage_flat_bonus / wind_crit_bonus 等
+ *   2) 编队修改后（TeamPanel 调用 / EventBus GE.TEAM_CHANGE）
+ *  guard flag 改为按 roleId 记录（_talentAppliedRoles），确保换编队时能重新 fire
  */
 export function firePassive(gs) {
+  // 初始化 guard flag 容器（按 roleId 记录，避免全局只 fire 一次）
+  if (!gs.player._talentAppliedRoles) gs.player._talentAppliedRoles = {};
+
   const talents = getActiveGroupTalents(gs);
   for (const t of talents) {
+    const roleId = t.roleId;
+    const applied = gs.player._talentAppliedRoles[roleId] || {};
+
     switch (t.effectType) {
       case 'max_hp_food_bonus': {
-        // 烹饪：maxHp +20（passive 常驻）
         const bonus = t.effectParams?.maxHpBonus ?? 20;
-        ensurePlayerField(gs, 'maxHpBonusFromTalent', 0);
-        // 只在游戏启动时加一次；因为 loadGame 会 restore 原值，这里用一个标记避免重复
-        if (!gs.player._talentCookingApplied) {
+        if (!applied.maxHpApplied) {
           gs.player.maxHp += bonus;
-          gs.player.hp = Math.min(gs.player.maxHp, gs.player.hp + bonus); // 当前 hp 同步增长（文档 §5.4：增加上限时，当前生命值也同步增加）
-          gs.player._talentCookingApplied = true;
-          devLog.info('[TalentSystem.passive] 烹饪 最大生命 +', bonus, '→', gs.player.maxHp);
+          gs.player.hp = Math.min(gs.player.maxHp, gs.player.hp + bonus);
+          applied.maxHpApplied = true;
+          EventBus.emit(GE.HP_CHANGE, { newValue: gs.player.hp, reason: 'talent_cooking' });
+          devLog.info('[TalentSystem.passive] 烹饪(' + roleId + ') maxHp +', bonus, '→', gs.player.maxHp);
         }
         break;
       }
       case 'hp_regen_dodge_bonus': {
-        // 蹁跹·等级 1：闪避率 +32%（passive 常驻）
         const dodge = t.effectParams?.dodgeRate ?? 0.32;
         ensurePlayerField(gs, 'dodgeRate', 0);
-        if (!gs.player._talentDancingApplied) {
+        if (!applied.dodgeApplied) {
           gs.player.dodgeRate = (gs.player.dodgeRate || 0) + dodge;
-          gs.player._talentDancingApplied = true;
-          devLog.info('[TalentSystem.passive] 蹁跹 闪避率 +', (dodge * 100).toFixed(0) + '% →', (gs.player.dodgeRate * 100).toFixed(0) + '%');
+          applied.dodgeApplied = true;
+          devLog.info('[TalentSystem.passive] 蹁跹(' + roleId + ') dodgeRate +', (dodge * 100).toFixed(0) + '% →', (gs.player.dodgeRate * 100).toFixed(0) + '%');
         }
         break;
       }
     }
+    gs.player._talentAppliedRoles[roleId] = applied;
   }
 }
 
