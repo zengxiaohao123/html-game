@@ -29,6 +29,7 @@ import { ForgePanel } from './ui/panels/ForgePanel.js';
 import { ShopPanel } from './ui/panels/ShopPanel.js';
 import { VehiclePanel } from './ui/panels/VehiclePanel.js';
 import { TaskPanel } from './ui/panels/TaskPanel.js';
+import { CodexPanel } from './ui/panels/CodexPanel.js';
 
 function loadStylesheet(href) {
   if (document.querySelector(`link[href="${href}"]`)) return;
@@ -149,6 +150,10 @@ linkSkillUI.mount();
 // Phase 4 新增：任务面板（J 切换；2 tab 日常/核心；Phase 5 补任务列表）
 const taskPanel = new TaskPanel(director);
 taskPanel.mount();
+
+// Phase 4 新增：图鉴面板（K 切换；4 tab 物品/天赋/技能/收藏品）
+const codexPanel = new CodexPanel(director);
+codexPanel.mount();
 
 // 4. 输入
 const inputManager = new InputManager(director);

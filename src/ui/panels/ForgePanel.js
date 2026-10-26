@@ -1,31 +1,20 @@
-// ForgePanel.js —— Phase 4 重写  ·  快捷键 F
-// 内嵌 3 合成配方表（不新建 data 文件）
-// 选中配方 → DialogBox 确认 → InventorySystem.removeItem/addItem + emit GE.FORGE_COMPLETE
+// ForgePanel.js —— Phase 4 重写（对接 ForgeSystem）  ·  快捷键 F
+// 配方来自 ForgeSystem.getAllRecipes()，字段 ingredients / outputs（复数）
+// 合成调 ForgeSystem.craft(gs, recipeId)，含巧手返原材料
+// 材料检查调 ForgeSystem.canCraft(gs, recipeId)
 // 外观严格套 InventoryPanel 模板（_panelHelper）
 
 import { EventBus } from '../../core/EventBus.js';
 import { GE } from '../../core/GameEvents.js';
 import { ITEMS } from '../../data/items.js';
+import { ForgeSystem } from '../../systems/ForgeSystem.js';
 import { InventorySystem } from '../../systems/InventorySystem.js';
 import { createStandardPanel } from './_panelHelper.js';
-import { createEl, qs } from '../dom.js';
+import { createEl } from '../dom.js';
 import { devLog } from '../../core/Logger.js';
-
-const RECIPES = [
-  { id: 'recipe_pea',  name: '堆肥 → 豌豆',        emoji: '🫛', inputs: [{ itemId: 'item_wheat', qty: 2 }, { itemId: 'item_rice_straw', qty: 2 }], output: { itemId: 'item_pea', qty: 1 }, desc: '2 小麦 + 2 稻草 → 1 豌豆' },
-  { id: 'recipe_meat', name: '土豆 + 草莓 → 烤串', emoji: '🍖', inputs: [{ itemId: 'item_potato', qty: 2 }, { itemId: 'item_strawberry', qty: 1 }], output: { itemId: 'item_raw_meat', qty: 1 }, desc: '2 土豆 + 1 草莓 → 1 生肉' },
-  { id: 'recipe_gel',  name: '鸡蛋 + 小麦 → 史莱姆胶', emoji: '🟢', inputs: [{ itemId: 'item_egg', qty: 1 }, { itemId: 'item_wheat', qty: 1 }], output: { itemId: 'item_slime_gel', qty: 1 }, desc: '1 鸡蛋 + 1 小麦 → 1 史莱姆胶' },
-];
 
 function itName(id) { return ITEMS[id]?.name || id; }
 function itEmoji(id) { return ITEMS[id]?.emoji || '❓'; }
-
-function canCraft(gs, r) {
-  for (const inp of r.inputs) {
-    if (InventorySystem.countItem(gs, inp.itemId) < inp.qty) return false;
-  }
-  return true;
-}
 
 export class ForgePanel {
   constructor(director) {
@@ -81,10 +70,11 @@ export class ForgePanel {
 
   _refresh() {
     const gs = this._getGS();
+    const recipes = ForgeSystem.getAllRecipes();
 
     this.listEl.innerHTML = '';
-    RECIPES.forEach((r, i) => {
-      const ok = gs ? canCraft(gs, r) : false;
+    recipes.forEach((r, i) => {
+      const ok = gs ? ForgeSystem.canCraft(gs, r.id) : false;
       const sel = this.selectedIdx === i;
       const row = createEl('div', {
         style: {
@@ -97,47 +87,62 @@ export class ForgePanel {
       createEl('div', { style: { fontSize: '26px', width: '36px', textAlign: 'center' }, text: r.emoji, parent: row });
       const info = createEl('div', { style: { flex: '1' }, parent: row });
       createEl('div', { style: { fontWeight: '800', fontSize: '13px' }, text: r.name, parent: info });
-      const mat = r.inputs.map(i => `${itEmoji(i.itemId)}×${i.qty}`).join(' + ');
-      createEl('div', { style: { fontSize: '11px', color: '#7a6a56' }, text: `${mat} → ${itEmoji(r.output.itemId)}×${r.output.qty}`, parent: info });
+      // r.ingredients（复数，数组）
+      const mat = r.ingredients.map(inp => `${itEmoji(inp.itemId)}×${inp.qty}`).join(' + ');
+      // r.outputs（复数，数组，遍历显示）
+      const outStr = r.outputs.map(o => `${itEmoji(o.itemId)}×${o.qty}`).join(' + ');
+      createEl('div', { style: { fontSize: '11px', color: '#7a6a56' }, text: `${mat} → ${outStr}`, parent: info });
       row.addEventListener('click', () => { this.selectedIdx = i; this._refresh(); });
     });
 
     this.detailEl.innerHTML = '';
-    if (this.selectedIdx === null) {
+    if (this.selectedIdx === null || this.selectedIdx >= recipes.length) {
       createEl('div', { style: { color: '#b0a090', fontSize: '13px', textAlign: 'center', padding: '40px 10px', fontStyle: 'italic' }, text: '← 点击左侧配方查看详情', parent: this.detailEl });
       return;
     }
-    const r = RECIPES[this.selectedIdx];
+    const r = recipes[this.selectedIdx];
     createEl('div', { style: { fontSize: '22px', fontWeight: '900', borderBottom: '2px solid #3a3a3a', paddingBottom: '4px' }, text: `${r.emoji}  ${r.name}`, parent: this.detailEl });
-    createEl('div', { style: { fontSize: '12px', color: '#8a7a66' }, text: r.desc, parent: this.detailEl });
+    createEl('div', { style: { fontSize: '12px', color: '#8a7a66' }, text: r.description || '', parent: this.detailEl });
+
     createEl('div', { style: { fontSize: '12px', fontWeight: '700', color: '#5a4a3a', marginTop: '4px' }, text: '🧾 所需材料', parent: this.detailEl });
-    r.inputs.forEach((inp) => {
+    r.ingredients.forEach((inp) => {
       const have = gs ? InventorySystem.countItem(gs, inp.itemId) : 0;
       const enough = have >= inp.qty;
       const row = createEl('div', { style: { display: 'flex', justifyContent: 'space-between', fontSize: '13px' }, parent: this.detailEl });
       createEl('span', { text: `${itEmoji(inp.itemId)} ${itName(inp.itemId)} ×${inp.qty}`, parent: row });
       createEl('span', { style: { color: enough ? '#2a8a3a' : '#c0392b', fontWeight: '800' }, text: `${have} / ${inp.qty}`, parent: row });
     });
+
     createEl('div', { style: { fontSize: '12px', fontWeight: '700', color: '#5a4a3a', marginTop: '6px' }, text: '🎁 产出', parent: this.detailEl });
-    createEl('div', { style: { fontSize: '14px', fontWeight: '900' }, text: `${itEmoji(r.output.itemId)} ${itName(r.output.itemId)} ×${r.output.qty}`, parent: this.detailEl });
+    r.outputs.forEach((o) => {
+      createEl('div', { style: { fontSize: '14px', fontWeight: '900' }, text: `${itEmoji(o.itemId)} ${itName(o.itemId)} ×${o.qty}`, parent: this.detailEl });
+    });
   }
 
   _craft() {
     if (this.selectedIdx === null) return;
-    const r = RECIPES[this.selectedIdx];
     const gs = this._getGS();
-    if (!gs || !canCraft(gs, r)) { EventBus.emit(GE.TOAST_SHOW, { text: '⚠️ 材料不足', duration: 1200 }); return; }
+    if (!gs) return;
+    const recipes = ForgeSystem.getAllRecipes();
+    const r = recipes[this.selectedIdx];
+    if (!r) return;
+
+    if (!ForgeSystem.canCraft(gs, r.id)) {
+      // ForgeSystem.canCraft 不会发 Toast，craft 内部会发"材料不足"
+      ForgeSystem.craft(gs, r.id);
+      return;
+    }
+
     EventBus.emit(GE.DIALOG_SHOW, {
       title: '确认合成？',
-      content: `${r.inputs.map(i => `${itEmoji(i.itemId)} ${itName(i.itemId)}×${i.qty}`).join(' + ')}\n  →\n${itEmoji(r.output.itemId)} ${itName(r.output.itemId)} ×${r.output.qty}`,
+      content: `${r.ingredients.map(inp => `${itEmoji(inp.itemId)} ${itName(inp.itemId)}×${inp.qty}`).join(' + ')}\n  →\n${r.outputs.map(o => `${itEmoji(o.itemId)} ${itName(o.itemId)} ×${o.qty}`).join(' + ')}`,
       options: [
         { label: '取消', onSelect: () => {} },
         { label: '确定合成', onSelect: () => {
-          for (const inp of r.inputs) InventorySystem.removeItem(gs, inp.itemId, inp.qty);
-          InventorySystem.addItem(gs, r.output.itemId, r.output.qty);
-          EventBus.emit(GE.FORGE_COMPLETE, { recipeId: r.id, output: r.output });
-          EventBus.emit(GE.TOAST_SHOW, { text: `⚒️ 合成成功：${itEmoji(r.output.itemId)} ${itName(r.output.itemId)}×${r.output.qty}`, duration: 1400 });
-          devLog.info('[ForgePanel] FORGE_COMPLETE', r.id);
+          const result = ForgeSystem.craft(gs, r.id);
+          if (result.ok) {
+            devLog.info('[ForgePanel] FORGE_COMPLETE', r.id);
+          }
           this._refresh();
         }},
       ],

@@ -8,6 +8,7 @@
 import { EventBus } from '../../core/EventBus.js';
 import { GE } from '../../core/GameEvents.js';
 import { CHARACTERS, SPIRITS, SKILLS, getSkillsByRole } from '../../data/characters.js';
+import { TALENTS } from '../../data/talents.js';
 import { createStandardPanel } from './_panelHelper.js';
 import { createEl, qs } from '../dom.js';
 import { devLog } from '../../core/Logger.js';
@@ -25,7 +26,7 @@ export class RolePanel {
     this.tabsRow = null;
     this.tabBody = null;
     this.attrCol = null;
-    this.activeTab = 'skills';   // 'skills' | 'bond'
+    this.activeTab = 'skills';   // 'skills' | 'talents' | 'bond'
     this.selectedRoleId = 'yumo';
   }
 
@@ -69,8 +70,8 @@ export class RolePanel {
       style: { display: 'flex', gap: '6px', marginBottom: '6px' },
       parent: body,
     });
-    ['skills', 'bond'].forEach((k) => {
-      const label = k === 'skills' ? '📚 技能' : '💞 羁绊';
+    ['skills', 'talents', 'bond'].forEach((k) => {
+      const label = k === 'skills' ? '📚 技能' : k === 'talents' ? '🌟 天赋' : '💞 羁绊';
       createEl('button', {
         class: ['action-btn'],
         style: {
@@ -144,6 +145,27 @@ export class RolePanel {
         }
         createEl('div', { style: { fontSize: '12px', color: '#4a3a2a', lineHeight: '1.6' }, text: sk.description || '', parent: row });
       });
+    } else if (this.activeTab === 'talents') {
+      createEl('div', { style: { fontSize: '13px', fontWeight: '700', color: '#5a4a3a', marginBottom: '6px' }, text: `${c.name} 的天赋`, parent: this.tabBody });
+      const myTalents = Object.values(TALENTS).filter(t => t.roleId === c.id);
+      if (myTalents.length === 0) {
+        createEl('div', { style: { color: '#b0a090', fontSize: '12px', fontStyle: 'italic', padding: '10px' }, text: '（暂无私属天赋）', parent: this.tabBody });
+      } else {
+        myTalents.forEach((t) => {
+          const isPassive = t.triggerCondition === 'passive';
+          const triggerLabel = isPassive ? '🔵 被动' : '🟡 触发型';
+          const row = createEl('div', {
+            style: { padding: '8px 10px', marginBottom: '6px', background: 'rgba(255,255,255,0.8)', border: '2px solid #b8a888', borderRadius: '10px' },
+            parent: this.tabBody,
+          });
+          const top = createEl('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }, parent: row });
+          createEl('span', { style: { fontSize: '18px', fontFamily: EMOJI_FONT }, text: t.emoji, parent: top });
+          createEl('span', { style: { fontWeight: '800', fontSize: '14px' }, text: t.name, parent: top });
+          createEl('span', { style: { fontSize: '10px', color: isPassive ? '#2a8a3a' : '#c07a20', background: isPassive ? '#e8f5e9' : '#ffe099', padding: '0 6px', borderRadius: '8px', marginLeft: 'auto', border: `1px solid ${isPassive ? '#2a8a3a' : '#c07a20'}` }, text: triggerLabel, parent: top });
+          createEl('div', { style: { fontSize: '11px', color: '#7a6a56', marginBottom: '2px' }, text: `触发：${t.triggerCondition}`, parent: row });
+          createEl('div', { style: { fontSize: '12px', color: '#4a3a2a', lineHeight: '1.6' }, text: t.description || '', parent: row });
+        });
+      }
     } else {
       createEl('div', {
         style: { color: '#8a7a66', fontSize: '13px', padding: '20px', textAlign: 'center', fontStyle: 'italic' },

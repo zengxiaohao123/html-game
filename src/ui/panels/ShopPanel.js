@@ -18,7 +18,7 @@ const TABS = [
 
 const SHOP = [
   { id: 's1', tab: 'goods', name: '小麦',   emoji: '🌾', price: 3,  itemId: 'item_wheat',        desc: '基础作物' },
-  { id: 's2', tab: 'goods', name: '稻草',   emoji: '�', price: 2,  itemId: 'item_rice_straw',  desc: '稻田副产品' },
+  { id: 's2', tab: 'goods', name: '稻草',   emoji: '🌾', price: 2,  itemId: 'item_rice_straw',  desc: '稻田副产品' },
   { id: 's3', tab: 'goods', name: '鸡蛋',   emoji: '🥚', price: 6,  itemId: 'item_egg',         desc: '新鲜鸡蛋' },
   { id: 's4', tab: 'goods', name: '轮子',   emoji: '⚙️', price: 12, itemId: 'item_wheel',       desc: '合成载具必备' },
 

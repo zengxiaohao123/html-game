@@ -6,6 +6,7 @@ import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { LinkSkillSystem } from '../systems/LinkSkillSystem.js';
 import { SkillSystem } from '../systems/SkillSystem.js';
+import { SKILLS } from '../data/characters.js';
 import { createEl, qs } from './dom.js';
 import { devLog } from '../core/Logger.js';
 
@@ -81,7 +82,9 @@ export class LinkSkillUI {
     LinkSkillSystem.popLinkSkill(gs, entry.skillId);
     // SkillSystem.triggerLinkSkill 由 Phase 3 预留，这里走 Toast 占位
     try { SkillSystem.triggerLinkSkill?.(gs, entry.skillId); } catch (_) {}
-    EventBus.emit(GE.TOAST_SHOW, { text: `⚡ 连携技触发！${entry.skillId}`, duration: 1400 });
+    const sk = SKILLS[entry.skillId];
+    const skLabel = sk ? `${sk.emoji || '⚡'} ${sk.name}` : entry.skillId;
+    EventBus.emit(GE.TOAST_SHOW, { text: `⚡ 连携技触发！${skLabel}`, duration: 1400 });
     devLog.info('[LinkSkillUI] triggered idx', idx, entry.skillId);
     this._reRender();
   }
@@ -121,10 +124,20 @@ export class LinkSkillUI {
         },
         text: String(i + 1), parent: box,
       });
+      // 真实连携技 emoji + name
+      const sk = SKILLS[entry.skillId];
+      const realEmoji = sk?.emoji || '⚡';
+      const realName = sk?.name || '';
       createEl('div', {
         style: { fontSize: '28px', fontFamily: '"Segoe UI Emoji",sans-serif', lineHeight: '1' },
-        text: '⚡', parent: box,
+        text: realEmoji, parent: box,
       });
+      if (realName) {
+        createEl('div', {
+          style: { fontSize: '9px', fontWeight: '700', color: '#3a2e20', marginTop: '2px', textAlign: 'center', maxWidth: '66px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' },
+          text: realName, parent: box,
+        });
+      }
       createEl('div', {
         style: {
           position: 'absolute', bottom: '-6px', left: '50%', transform: 'translateX(-50%)',

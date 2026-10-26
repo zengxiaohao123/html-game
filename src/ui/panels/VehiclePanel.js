@@ -1,8 +1,7 @@
-// VehiclePanel.js —— Phase 4 重写（BUG-6 移除合成幻觉）  ·  快捷键 T
+// VehiclePanel.js —— Phase 4 重写（对接 VehicleSystem）  ·  快捷键 T
 // 载具槽位（最多 1 辆装备中）
-// 载具库存列表（从 gs.vehicle.inventory 读取）
-// 实际载具数据待 Agent 2 建 src/data/vehicles.js
-// 实际载具移动/使用次数逻辑待 Agent 3 建 VehicleSystem.js
+// 载具库存列表（从 gs.vehicle.available 读取，对象数组 [{vehicleId, usageLeft}]）
+// 装备/卸下通过 VehicleSystem.attachVehicle/detachVehicle
 // 外观严格套 InventoryPanel 模板（_panelHelper）
 
 import { EventBus } from '../../core/EventBus.js';
@@ -10,18 +9,8 @@ import { GE } from '../../core/GameEvents.js';
 import { createStandardPanel } from './_panelHelper.js';
 import { createEl } from '../dom.js';
 import { devLog } from '../../core/Logger.js';
-
-/**
- * 占位载具元数据表 —— 显示用，等 Agent 2 建 vehicles.js 后再引用真实数据。
- * key 为载具 id，value 含 name/emoji/desc/mobileRange/usageCount。
- */
-const VEHICLE_META = {
-  vehicle_wheel:  { name: '轮子',       emoji: '⚙️', desc: '最多移动 2 格，可穿越非法位置', usageCount: 1 },
-  vehicle_broom:  { name: '魔法扫帚',   emoji: '🧹', desc: '同行/同列任意格', usageCount: 2 },
-  vehicle_chance: { name: '巧遇',       emoji: '✨', desc: '夏阳心想事成天赋专用', usageCount: 1 },
-};
-
-function ensureV(gs) { if (!gs.vehicle) gs.vehicle = { current: null, inventory: [] }; return gs.vehicle; }
+import { VEHICLES } from '../../data/vehicles.js';
+import { VehicleSystem } from '../../systems/VehicleSystem.js';
 
 export class VehiclePanel {
   constructor(director) {
@@ -74,7 +63,8 @@ export class VehiclePanel {
   _getGS() { return this.director?.getGS?.(); }
 
   _refresh() {
-    const gs = this._getGS(); const v = gs ? ensureV(gs) : { current: null, inventory: [] };
+    const gs = this._getGS();
+    const v = gs?.vehicle || { current: null, available: [] };
 
     // 装备槽位
     this.slotEl.innerHTML = '';
@@ -89,14 +79,14 @@ export class VehiclePanel {
       parent: this.slotEl,
     });
     if (v.current) {
-      const def = VEHICLE_META[v.current];
+      // v.current 是 { vehicleId, usageLeft } 对象
+      const def = VEHICLES[v.current.vehicleId];
       createEl('div', { style: { fontSize: '44px', fontFamily: '"Segoe UI Emoji",sans-serif' }, text: def?.emoji || '🚗', parent: box });
-      createEl('div', { style: { fontSize: '12px', fontWeight: '800' }, text: def?.name || v.current, parent: box });
-      if (def?.usageCount != null) {
-        createEl('div', { style: { fontSize: '11px', color: '#7a6a56' }, text: `剩余使用：${def.usageCount} 次`, parent: this.slotEl });
-      }
-      if (def?.desc) {
-        createEl('div', { style: { fontSize: '10px', color: '#9a8a76', textAlign: 'center', padding: '0 6px' }, text: def.desc, parent: this.slotEl });
+      createEl('div', { style: { fontSize: '12px', fontWeight: '800' }, text: def?.name || v.current.vehicleId, parent: box });
+      // usageLeft 从 entry.usageLeft 读（不是 VEHICLES[id].usageCount）
+      createEl('div', { style: { fontSize: '11px', color: '#7a6a56' }, text: `剩余使用：${v.current.usageLeft} 次`, parent: this.slotEl });
+      if (def?.description) {
+        createEl('div', { style: { fontSize: '10px', color: '#9a8a76', textAlign: 'center', padding: '0 6px' }, text: def.description, parent: this.slotEl });
       }
       createEl('button', {
         class: 'action-btn', text: '卸下', parent: this.slotEl,
@@ -107,15 +97,15 @@ export class VehiclePanel {
       createEl('div', { style: { fontSize: '11px', color: '#888', textAlign: 'center' }, text: '右侧点选装备', parent: this.slotEl });
     }
 
-    // 载具库存
+    // 载具库存 —— 遍历 gs.vehicle.available（对象数组）
     this.invEl.innerHTML = '';
     createEl('div', { style: { fontSize: '13px', fontWeight: '800', color: '#5a4a3a' }, text: '📦 载具库存', parent: this.invEl });
-    if (!v.inventory || v.inventory.length === 0) {
+    if (!v.available || v.available.length === 0) {
       createEl('div', { style: { color: '#b0a090', fontSize: '12px', fontStyle: 'italic', padding: '10px' }, text: '（暂无载具 —— 可从商店/事件/奖励/巴士站/祈福获得）', parent: this.invEl });
     } else {
       const grid = createEl('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(70px,1fr))', gap: '6px' }, parent: this.invEl });
-      v.inventory.forEach((vid, idx) => {
-        const def = VEHICLE_META[vid];
+      v.available.forEach((entry, idx) => {
+        const def = VEHICLES[entry.vehicleId];
         const s = createEl('div', {
           style: {
             aspectRatio: '1/1', background: 'rgba(255,255,255,0.85)',
@@ -126,7 +116,8 @@ export class VehiclePanel {
           parent: grid,
         });
         createEl('div', { style: { fontSize: '26px', fontFamily: '"Segoe UI Emoji",sans-serif' }, text: def?.emoji || '🚗', parent: s });
-        createEl('div', { style: { fontSize: '10px', fontWeight: '700', textAlign: 'center' }, text: def?.name || vid, parent: s });
+        createEl('div', { style: { fontSize: '10px', fontWeight: '700', textAlign: 'center' }, text: def?.name || entry.vehicleId, parent: s });
+        createEl('div', { style: { fontSize: '9px', color: '#7a6a56', textAlign: 'center' }, text: `×${entry.usageLeft}`, parent: s });
         s.addEventListener('click', () => this._attach(idx));
       });
     }
@@ -134,27 +125,27 @@ export class VehiclePanel {
 
   _attach(idx) {
     const gs = this._getGS(); if (!gs) return;
-    const v = ensureV(gs);
-    if (v.current) { EventBus.emit(GE.TOAST_SHOW, { text: '⚠️ 先卸下当前载具', duration: 1200 }); return; }
-    const vid = v.inventory.splice(idx, 1)[0];
-    v.current = vid;
-    EventBus.emit(GE.VEHICLE_ATTACH, { action: 'attach', vehicleId: vid });
-    EventBus.emit(GE.TOAST_SHOW, { text: `✅ 已装备载具`, duration: 1200 });
-    devLog.info('[VehiclePanel] attach', vid);
-    this._refresh();
+    const entry = gs.vehicle?.available?.[idx];
+    if (!entry) return;
+    if (gs.vehicle.current) { EventBus.emit(GE.TOAST_SHOW, { text: '⚠️ 先卸下当前载具', duration: 1200 }); return; }
+    const ok = VehicleSystem.attachVehicle(gs, entry.vehicleId);
+    if (ok) {
+      devLog.info('[VehiclePanel] attach', entry.vehicleId);
+      this._refresh();
+    }
   }
 
   _detach() {
     const gs = this._getGS(); if (!gs) return;
-    const v = ensureV(gs);
-    if (!v.current) return;
-    const def = VEHICLE_META[v.current];
+    const cur = gs.vehicle?.current;
+    if (!cur) return;
+    const def = VEHICLES[cur.vehicleId];
     EventBus.emit(GE.DIALOG_SHOW, {
-      title: '卸下载具', content: `确定卸下 ${def?.emoji || ''} ${def?.name || v.current}？`,
+      title: '卸下载具', content: `确定卸下 ${def?.emoji || ''} ${def?.name || cur.vehicleId}？`,
       options: [
         { label: '取消', onSelect: () => {} },
         { label: '确定', onSelect: () => {
-          v.inventory.push(v.current); v.current = null;
+          VehicleSystem.detachVehicle(gs);
           EventBus.emit(GE.TOAST_SHOW, { text: '📦 载具已卸库存', duration: 1200 });
           devLog.info('[VehiclePanel] detach');
           this._refresh();
