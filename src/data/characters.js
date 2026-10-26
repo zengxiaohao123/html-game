@@ -34,8 +34,8 @@ export const CHARACTERS = {
   luyouyou: {
     id: 'luyouyou',
     name: '陆悠悠',
-    emoji: '💧',
-    element: 'water',
+    emoji: '🍃',
+    element: 'wind',
     spiritId: 'yuyuan',
     isMainChar: false,
   },
