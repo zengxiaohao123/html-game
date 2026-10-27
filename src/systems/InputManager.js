@@ -46,6 +46,7 @@ const KEY_TO_ACTION = {
   'f': 'forge',
   't': 'vehicle',
   'j': 'task',
+  'k': 'codex',
 };
 
 export class InputManager {
@@ -156,6 +157,10 @@ export class InputManager {
       case 'task':
         EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'task' });
         EventBus.emit(GE.TASK_OPEN, {});
+        break;
+
+      case 'codex':
+        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'codex' });
         break;
 
       case 'settings': {

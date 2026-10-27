@@ -24,13 +24,14 @@ const TABS = [
   { id: 'all',      label: '总览',  match: () => true },
   { id: 'facility', label: '设施',  match: id => id.startsWith('facility_') },
   { id: 'resource', label: '资源',  match: id => id.startsWith('resource_') },
-  { id: 'skill',    label: '技能',  match: id => false, phaseReady: false },
-  { id: 'terrain',  label: '地形',  match: id => false, phaseReady: false },
+  { id: 'skill',    label: '技能',  match: id => id.startsWith('skill_') },
+  { id: 'terrain',  label: '地形',  match: id => id.startsWith('terrain_') },
   { id: 'item',     label: '产物',  match: id => id.startsWith('item_') },
-  { id: 'consum',   label: '道具',  match: id => false, phaseReady: false },
+  { id: 'consum',   label: '道具',  match: id => ['collectible_','grimoire_','potion_'].some(p => id.startsWith(p)) },
   { id: 'misc',     label: '杂物',  match: id => !(
     id.startsWith('facility_') || id.startsWith('resource_') ||
-    id.startsWith('item_') || id.startsWith('skill_')
+    id.startsWith('item_') || id.startsWith('skill_') ||
+    id.startsWith('terrain_') || ['collectible_','grimoire_','potion_'].some(p => id.startsWith(p))
   )},
 ];
 
@@ -279,7 +280,12 @@ export class InventoryPanel {
     const ITEM = ITEMS[this.selectedItemId];
     const emoji = this._resolveEmoji(this.selectedItemId);
     const name = this._resolveName(this.selectedItemId);
-    const value = ITEM?.value;
+    // value 查找：先 ITEMS，再 facilities/getDef（设施/资源在背包里时也能显示价值）
+    let value = ITEM?.value;
+    if (typeof value !== 'number') {
+      const fd = getFacilityDef(this.selectedItemId);
+      if (fd && typeof fd.value === 'number') value = fd.value;
+    }
     const desc = DESCRIPTIONS[this.selectedItemId] || '（暂无描述）';
 
     // ══ 详情左半：上半行（emoji 左 + 价值行整体居右） + 描述 ══

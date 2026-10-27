@@ -96,7 +96,7 @@ export class SettingsPanel {
     this._createBtn('✖️ 关闭（ESC）', () => this.hide(), this.panel, '#ff6b6b');
 
     // 返回主菜单按钮（修复 5c）：自动存档到 slot 1 → 关闭面板 → 显示主菜单
-    this._createBtn('🏠 返回主菜单', () => {
+    this._createBtn('返回主菜单', () => {
       // 自动存档到 slot 1（AUTOSAVE_SLOT）
       const gs = this.director?.getGS?.();
       if (gs) {

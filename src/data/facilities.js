@@ -48,6 +48,7 @@ const FacilityHome = {
   id: 'facility_home',
   name: '家',
   emoji: Assets.facilities.facility_home,
+  value: 0,
 
   register() {
     // 经过时：获得 1 金币（每天限 1 次）
@@ -109,6 +110,7 @@ const FacilityTent = {
   id: 'facility_tent',
   name: '帐篷',
   emoji: Assets.facilities.facility_tent,
+  value: 5,
 
   register() {
     // onSleep：帐篷睡觉时回满（SleepSystem 主逻辑已在执行前判断，此处处理"受祝福时额外 +3"——
@@ -171,6 +173,7 @@ const FacilityWheat = {
   id: 'facility_wheat',
   name: '小麦田块',
   emoji: Assets.facilities.facility_wheat,
+  value: 3,
 
   register() {
     // onDailyStart：找所有麦田格，每格 ×2（草地 +1），总计加背包
@@ -220,6 +223,7 @@ const FacilityRice = {
   id: 'facility_rice',
   name: '水稻田块',
   emoji: Assets.facilities.facility_rice,
+  value: 3,
 
   register() {
     // onDailyStart
@@ -290,6 +294,7 @@ const FacilityPotato = {
   id: 'facility_potato',
   name: '土豆田块',
   emoji: Assets.facilities.facility_potato,
+  value: 4,
 
   register() {
     // onDailyStart：所有土豆田 +3（受祝福则 +5），上限 30
@@ -339,6 +344,7 @@ const FacilityTulip = {
   id: 'facility_tulip',
   name: '郁金香花田',
   emoji: Assets.facilities.facility_tulip,
+  value: 8,
 
   register() {
     HookDispatcher.register('onDailyStart', ({ gs }) => {
@@ -380,6 +386,7 @@ const FacilityStrawberry = {
   id: 'facility_strawberry',
   name: '草莓田块',
   emoji: Assets.facilities.facility_strawberry,
+  value: 5,
 
   register() {
     HookDispatcher.register('onPass', ({ gs, tileIdx }) => {
@@ -425,6 +432,7 @@ const FacilityPea = {
   id: 'facility_pea',
   name: '豌豆田块',
   emoji: Assets.facilities.facility_pea,
+  value: 4,
 
   register() {
     // onUseSkill：每 2 回合限 1 次（用 gs.turn - last >= 2 判断）
@@ -482,6 +490,7 @@ const FacilityHenhouse = {
   id: 'facility_henhouse',
   name: '鸡舍',
   emoji: Assets.facilities.facility_henhouse,
+  value: 6,
 
   register() {
     // 进入时：每日限 1 次生成小鸡（取走鸡蛋已改为 InfoPanel 手动滑动条 §16.4）
@@ -537,6 +546,7 @@ const FacilitySlimehouse = {
   id: 'facility_slimehouse',
   name: '史莱姆屋',
   emoji: Assets.facilities.facility_slimehouse,
+  value: 6,
 
   register() {
     // onDailyStart：生成史莱姆（祝福 3 天内 ×2）
@@ -595,6 +605,7 @@ const FacilityCorn = {
   id: 'facility_corn',
   name: '玉米田块',
   emoji: '🌽',
+  value: 4,
 
   register() {
     // onCreatureAdded：任何生物（友善/危险/极度危险）增加时，每块玉米田 +1 玉米
@@ -634,6 +645,7 @@ const FacilityCabbage = {
   id: 'facility_cabbage',
   name: '卷心菜田块',
   emoji: '🥬',
+  value: 4,
 
   register() {
     // onDailyStart：先获得 ×2 卷心菜进背包，再消耗 1 个自动投最近敌人
@@ -684,6 +696,7 @@ const ResourceEvent = {
   id: 'resource_event',
   name: '事件点',
   emoji: Assets.resources.resource_event,
+  value: 5,
   register() {
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
@@ -699,6 +712,7 @@ const ResourceReward = {
   id: 'resource_reward',
   name: '奖励点',
   emoji: Assets.resources.resource_reward,
+  value: 8,
   register() {
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
@@ -714,6 +728,7 @@ const ResourceHunt = {
   id: 'resource_hunt',
   name: '狩猎点',
   emoji: Assets.resources.resource_hunt,
+  value: 5,
   register() {
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
@@ -729,6 +744,7 @@ const ResourceShop = {
   id: 'resource_shop',
   name: '商店',
   emoji: Assets.resources.resource_shop,
+  value: 0,
   register() {
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
@@ -742,6 +758,7 @@ const ResourceBus = {
   id: 'resource_bus',
   name: '巴士站',
   emoji: Assets.resources.resource_bus,
+  value: 5,
   register() {
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;

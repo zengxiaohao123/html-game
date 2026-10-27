@@ -24,7 +24,7 @@ export const Assets = {
     resource_reward: '🎁',
     resource_hunt: '⚔️',
     resource_shop: '🏪',
-    resource_bus: '�',
+    resource_bus: '🚌',
   },
 
   // ── 地形 ──

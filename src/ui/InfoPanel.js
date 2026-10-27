@@ -16,6 +16,7 @@ import { SkillSystem } from '../systems/SkillSystem.js';
 import { InventorySystem } from '../systems/InventorySystem.js';
 import { getDef } from '../data/facilities.js';
 import { SKILLS } from '../data/characters.js';
+import { SPIRITS } from '../data/characters.js';
 import { createEl, qs } from './dom.js';
 
 /** Phase 2B 完整词条描述字典（10 设施 + 5 资源） */
@@ -230,10 +231,18 @@ export class InfoPanel {
     let icon, name, descriptions;
     const contentId = tile.contentId;
     if (contentId) {
-      icon = Assets.getEmoji(contentId.startsWith('resource_') ? 'resources' : 'facilities', contentId);
-      const def = getDef(contentId);
-      name = (def && def.name) || contentId;
-      descriptions = FACILITY_DESCRIPTIONS[contentId] || ['（词条未配置）'];
+      if (contentId.startsWith('skill_')) {
+        // 技能卡地块：从 SKILLS 查中文名
+        const sk = SKILLS[contentId];
+        icon = sk?.emoji || '⚡';
+        name = sk?.name || contentId;
+        descriptions = sk?.description ? [sk.description] : ['（词条未配置）'];
+      } else {
+        icon = Assets.getEmoji(contentId.startsWith('resource_') ? 'resources' : 'facilities', contentId);
+        const def = getDef(contentId);
+        name = (def && def.name) || contentId;
+        descriptions = FACILITY_DESCRIPTIONS[contentId] || ['（词条未配置）'];
+      }
     } else {
       icon = Assets.getEmoji('terrains', tile.terrain || 'none');
       name = (TERRAIN_DESCRIPTIONS[tile.terrain || 'none'] || '空地').split('：')[0];
@@ -741,13 +750,32 @@ export class InfoPanel {
       && gs.player.stamina >= BLESS_STAMINA_COST
       && gs.player.gold >= BLESS_GOLD_COST;
 
+    // 动态读取当前队伍的精灵
+    const spiritId = gs?.team?.groups?.[gs?.team?.activeGroup ?? 0]?.spirit;
+    const spirit = spiritId ? SPIRITS[spiritId] : SPIRITS.momo;
+    const spiritEmoji = spirit?.emoji || '👻';
+    const spiritName = spirit?.name || 'momo';
+
     createEl('div', {
-      style: { fontSize: '15px', color: '#3a2e20', lineHeight: '1.6', marginBottom: '12px' },
+      style: { fontSize: '15px', color: '#3a2e20', lineHeight: '1.6', marginBottom: '8px' },
       text: blessing
-        ? '✨ momo 正在为你挑选福地… 抽奖动画进行中'
-        : 'momo 会随机为 1 格挂上【祝福】效果。祝福状态只持续 1 天，但受祝福时会立即触发该设施的【受祝福时】词条。',
+        ? `✨ ${spiritName} 正在为你挑选福地… 抽奖动画进行中`
+        : `${spiritName} 会随机为 1 格挂上【祝福】效果。祝福状态只持续 1 天，但受祝福时会立即触发该设施的【受祝福时】词条。`,
       parent: this.bodyWrap,
     });
+
+    // 当前精灵效果描述
+    if (spirit?.description) {
+      createEl('div', {
+        style: {
+          padding: '6px 8px', marginTop: '4px', marginBottom: '8px',
+          background: 'rgba(255, 240, 180, 0.6)', borderLeft: '3px solid #e8a900',
+          borderRadius: '4px', fontSize: '12px', color: '#5a4a3a', lineHeight: '1.5',
+        },
+        text: `${spiritEmoji} ${spiritName} 的效果：${spirit.description}`,
+        parent: this.bodyWrap,
+      });
+    }
 
     createEl('div', {
       style: { fontSize: '13px', color: '#8a6a3a', marginBottom: '14px' },
@@ -758,15 +786,12 @@ export class InfoPanel {
     createEl('button', {
       class: ['bless-btn'],
       style: { width: '100%' },
-      text: blessing ? '✨ 抽奖中…' : '🧘 请 momo 帮忙',
+      text: blessing ? '✨ 抽奖中…' : `${spiritEmoji} 请${spiritName}帮忙`,
       disabled: !canBless,
       parent: this.bodyWrap,
       onclick: () => {
         const gsRef = this._getGS();
         BlessSystem.blessStart(gsRef);
-        // blessStart 扣消耗并 emit BLESS_START → BlessAnimation 播动画 → blessCommit 挂状态 fire hook
-        // 这里 blessStart 内部不会自动 emit BLESS_DONE（动画播完才 commit 才 emit），
-        // 所以 Tab3 状态刷新靠 InfoPanel 自己监听 BLESS_START / BLESS_DONE 事件
       },
     });
 

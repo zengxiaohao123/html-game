@@ -50,7 +50,7 @@ export class MainMenu {
         marginBottom: '10px',
         textAlign: 'center',
       },
-      text: '🌾 转盘农场',
+      text: '转盘农场',
       parent: this.mask,
     });
 
@@ -84,7 +84,7 @@ export class MainMenu {
     createEl('button', {
       class: 'action-btn',
       style: btnStyle,
-      text: '🎮 新的游戏',
+      text: '新的游戏',
       parent: this.mask,
       onclick: () => {
         this.hide();
@@ -99,7 +99,7 @@ export class MainMenu {
     createEl('button', {
       class: 'action-btn',
       style: btnStyle,
-      text: '📂 读取存档',
+      text: '读取存档',
       parent: this.mask,
       onclick: () => {
         this.hide();
@@ -111,7 +111,7 @@ export class MainMenu {
     createEl('button', {
       class: 'action-btn',
       style: btnStyle,
-      text: '📖 图鉴',
+      text: '图鉴',
       parent: this.mask,
       onclick: () => {
         this.hide();

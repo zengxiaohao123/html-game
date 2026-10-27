@@ -37,7 +37,7 @@ export class FuncBar {
         top: '15px',
         right: '5px',
         display: 'flex',
-        gap: '3px',
+        gap: '6px',
         width: 'fit-content',
         maxWidth: '100vw',
         flexWrap: 'wrap',
@@ -50,8 +50,8 @@ export class FuncBar {
       const btn = createEl('button', {
         class: ['func-bar-btn'],
         style: {
-          width: '32px',
-          height: '32px',
+          width: '44px',
+          height: '44px',
           border: '2px solid #3a3a3a',
           borderRadius: '8px',
           background: '#fffbe6',
@@ -59,62 +59,19 @@ export class FuncBar {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          flexDirection: 'column',
           transition: 'transform 0.1s',
           fontFamily: '"Segoe UI Emoji", sans-serif',
-          fontSize: '18px',
           flexShrink: 0,
         },
         parent: this.root,
-        title: item.label,
         onclick: () => this._onAction(item.action),
       });
-      // 按钮内部：emoji 在上 + 文字在下
+      // 按钮内部：只有 emoji
       createEl('span', {
         text: item.emoji,
-        style: { fontSize: '18px', lineHeight: '1' },
+        style: { fontSize: '28px', lineHeight: '1' },
         parent: btn,
       });
-      createEl('span', {
-        text: item.label,
-        style: { fontSize: '7px', color: '#888', lineHeight: '1', marginTop: '1px' },
-        parent: btn,
-      });
-      // 悬浮提示
-      createEl('div', {
-        style: {
-          position: 'absolute',
-          bottom: '40px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          background: 'rgba(0,0,0,0.85)',
-          color: '#fff',
-          padding: '3px 8px',
-          borderRadius: '5px',
-          fontSize: '9px',
-          whiteSpace: 'nowrap',
-          opacity: '0',
-          pointerEvents: 'none',
-          transition: 'opacity 0.15s',
-        },
-        text: item.label,
-        parent: btn,
-        class: ['func-bar-tooltip'],
-      });
-    });
-
-    // tooltip 显示/隐藏
-    this.root.addEventListener('mouseover', (e) => {
-      const target = e.target.closest('.func-bar-btn');
-      if (!target) return;
-      const tip = target.querySelector('.func-bar-tooltip');
-      if (tip) tip.style.opacity = '1';
-    });
-    this.root.addEventListener('mouseout', (e) => {
-      const target = e.target.closest('.func-bar-btn');
-      if (!target) return;
-      const tip = target.querySelector('.func-bar-tooltip');
-      if (tip) tip.style.opacity = '0';
     });
   }
 
