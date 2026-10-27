@@ -22,9 +22,10 @@ import { devLog } from '../core/Logger.js';
 const UNREPLACEABLE = new Set(['facility_home']);
 
 /**
- * 进入建造模式
+ * 进入建造模式（幂等：已在建造模式则静默返回）
  */
 export function enterBuildMode(gs) {
+  if (gs.buildMode) return;
   gs.buildMode = true;
   if (typeof document !== 'undefined') document.body.style.cursor = 'crosshair';
   EventBus.emit(GE.UI_MODE_CHANGE, { mode: 'build' });
@@ -33,9 +34,10 @@ export function enterBuildMode(gs) {
 }
 
 /**
- * 退出建造模式
+ * 退出建造模式（幂等：已在探索模式则静默返回）
  */
 export function exitBuildMode(gs) {
+  if (!gs.buildMode) return;
   gs.buildMode = false;
   if (typeof document !== 'undefined') document.body.style.cursor = '';
   EventBus.emit(GE.UI_MODE_CHANGE, { mode: 'explore' });

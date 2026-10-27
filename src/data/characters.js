@@ -6,9 +6,9 @@
 // 精灵定义（每角色 1 个，只影响祈福）
 // ════════════════════════════════════════════════════════════════
 export const SPIRITS = {
-  momo:    { id: 'momo',    name: 'momo',    emoji: '👻', ownerRoleId: 'yumo',    description: '祈福：每日首次减半消耗（1 🔷 + 0 🪙）' },
-  qingfeng: { id: 'qingfeng', name: '晴风', emoji: '🌬️', ownerRoleId: 'xiayang', description: '祈福：HP +6，攻击力 ×1.08（叠后算，可叠加）' },
-  yuyuan:  { id: 'yuyuan',  name: '芋圆',    emoji: '🍡', ownerRoleId: 'luyouyou', description: '祈福：下次移动免行动力' },
+  momo:    { id: 'momo',    name: 'momo',    emoji: '🐱', ownerRoleId: 'yumo',    description: '每一日的首次祈福所需的行动力和金币各 -50%（至少 -1，最低减至 0）' },
+  qingfeng: { id: 'qingfeng', name: '晴风', emoji: '🍃', ownerRoleId: 'xiayang', description: '每次祈福后为角色回复 6 点生命值，并使本日内角色攻击力 +8%' },
+  yuyuan:  { id: 'yuyuan',  name: '芋圆',    emoji: '🧋', ownerRoleId: 'luyouyou', description: '每次祈福后，本日内的下一次移动不消耗行动力' },
 };
 
 // ════════════════════════════════════════════════════════════════
