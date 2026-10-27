@@ -988,7 +988,7 @@ export class InfoPanel {
       const t = e.target;
       if (!t || !this.root) return;
       if (this.root.contains(t)) return;                          // 点击 InfoPanel 内部 → 不关
-      if (t.closest('[data-tile-idx]')) return;                  // 点击地块 → MapView 会 emit TILE_CLICKED
+      if (t.closest('.map-tile')) return;                         // 点击地块 → MapView 会 emit TILE_CLICKED
       if (t.closest('.spirit-area')) return;                     // 点击 momo 精灵区域
       if (t.closest('.fence') || t.closest('.sprite-container')) return; // 栅栏 / 其他角色精灵
       // 其他区域（页面空白、FuncBar、面板遮罩等）→ 关闭
