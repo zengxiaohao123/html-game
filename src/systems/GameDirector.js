@@ -32,42 +32,13 @@ export class GameDirector {
     this.started = false;
     /** Panel 栈 —— 后开的在上，ESC 先关栈顶 */
     this.openPanels = [];
+    /** 已注册的 EventBus listener 标记（防止 start() 重复注册） */
+    this._listenersRegistered = false;
   }
 
-  /**
-   * 新游戏（主菜单入口）：先清理 Panel 栈再 start()
-   */
-  startNewGame() {
-    this.openPanels = [];
-    // 关闭所有已开的 Panel（逐个发 CLOSE 事件让 UI 清理）
-    EventBus.emit(GE.STATE_RESET);
-    this.start();
-  }
-
-  /**
-   * 启动游戏：创建 GS + 注册设施 + 广播 BOOT
-   */
-  start() {
-    devLog.info('=== GameDirector.start() ===');
-
-    // 1. 创建初始 GS
-    this.gs = createInitialState();
-
-    // 2. 手动放置小麦田（Phase 1 演示用：gameState 初始只有 home）
-    if (this.gs.map.outerTiles[INITIAL_WHEAT_TILE_IDX]) {
-      this.gs.map.outerTiles[INITIAL_WHEAT_TILE_IDX].contentId = 'facility_wheat';
-      devLog.info('[GameDirector] 放置初始麦田, idx =', INITIAL_WHEAT_TILE_IDX);
-    }
-
-    // 3. 注册所有设施 hook 到 HookDispatcher
-    HookDispatcher.clearAll(); // 先清空 Phase 0 的 demo hook
-    registerFacilities();
-
-    // 4. Phase 3：启动生物实时 tick 循环
-    CreatureSystem.startRealtimeLoop(() => this.gs);
-
-    // 5. Phase 4：Agent 3 —— 天赋 passive + EventBus 订阅连携技解耦事件
-    TalentSystem.firePassive(this.gs);
+  _registerOnce() {
+    if (this._listenersRegistered) return;
+    this._listenersRegistered = true;
 
     // 解耦订阅：CombatSystem.emit ELEMENT_DAMAGE_APPLIED → LinkSkillSystem.onElementDamage
     EventBus.on(GE.ELEMENT_DAMAGE_APPLIED, (payload) => {
@@ -85,10 +56,9 @@ export class GameDirector {
       TalentSystem.firePassive(this.gs);
     });
 
-    // v0.4-1: Panel 栈维护
+    // Panel 栈维护
     EventBus.on(GE.UI_PANEL_OPEN, ({ panel }) => {
       if (!panel) return;
-      // 避免重复入栈（同一个 panel 打开时 toggle 可能触发）
       if (!this.openPanels.includes(panel)) {
         this.openPanels.push(panel);
       }
@@ -100,6 +70,52 @@ export class GameDirector {
       if (idx >= 0) this.openPanels.splice(idx, 1);
       devLog.info('[GameDirector] openPanels -', panel, '→', this.openPanels);
     });
+  }
+
+  /**
+   * 新游戏（主菜单入口）：先清理 Panel 栈再 start()
+   */
+  startNewGame() {
+    this.openPanels = [];
+    // 先关闭所有已开的 Panel（逐个发 CLOSE 事件让 UI 清理）
+    // 不发 STATE_RESET —— 某些订阅者（MapView 等）会解构 {gs}，但 start() 之前 gs 是 null
+    // start() 末尾会发 BOOT 事件，所有 UI 模块都会收到并初始化
+    this.start();
+  }
+
+  /**
+   * 启动游戏：创建 GS + 注册设施 + 广播 BOOT
+   */
+  start() {
+    devLog.info('=== GameDirector.start() ===');
+
+    // 防重复注册 EventBus listener
+    this._registerOnce();
+
+    // 清理旧的 timer（防止 startNewGame 多次调用时 timer 累积）
+    if (this._linkSkillTimer) {
+      clearInterval(this._linkSkillTimer);
+      this._linkSkillTimer = null;
+    }
+
+    // 1. 创建初始 GS
+    this.gs = createInitialState();
+
+    // 2. 手动放置小麦田（Phase 1 演示用：gameState 初始只有 home）
+    if (this.gs.map.outerTiles[INITIAL_WHEAT_TILE_IDX]) {
+      this.gs.map.outerTiles[INITIAL_WHEAT_TILE_IDX].contentId = 'facility_wheat';
+      devLog.info('[GameDirector] 放置初始麦田, idx =', INITIAL_WHEAT_TILE_IDX);
+    }
+
+    // 3. 注册所有设施 hook 到 HookDispatcher
+    HookDispatcher.clearAll(); // 先清空 Phase 0 的 demo hook
+    registerFacilities();
+
+    // 4. Phase 3：启动生物实时 tick 循环
+    CreatureSystem.startRealtimeLoop(() => this.gs);
+
+    // 5. Phase 4：Agent 3 —— 天赋 passive
+    TalentSystem.firePassive(this.gs);
 
     // 每秒定时：pruneExpired（连携技超时）+ periodicConditionScan（炽燃/弱点击破条件检测）
     this._linkSkillTimer = setInterval(() => {

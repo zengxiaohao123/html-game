@@ -295,8 +295,17 @@ export class MapView {
   }
 
   _subscribeEvents() {
-    // STATE_RESET
+    // BOOT（新游戏启动 / startNewGame）
+    EventBus.on(GE.BOOT, ({ gs }) => {
+      if (!gs) return;
+      this.gs = gs;
+      this.renderAllTiles(gs);
+      this.renderPlayer(gs);
+    });
+
+    // STATE_RESET（兼容其他来源）
     EventBus.on(GE.STATE_RESET, ({ gs }) => {
+      if (!gs) return;
       this.gs = gs;
       this.renderAllTiles(gs);
       this.renderPlayer(gs);
