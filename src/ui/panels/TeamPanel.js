@@ -454,11 +454,13 @@ export class TeamPanel {
     // ── 启用 ──
     gs.team.activeGroup = this.selectedGroup;
 
-    // 只有实质变化才 emit TEAM_CHANGE
+    // 无论有没有实质内容变化 —— 只要 activeGroup 变了就 emit TEAM_CHANGE
+    // SpiritArea / InfoPanel 等依赖此事件刷新队伍相关 UI（精灵名称/图标）
+    EventBus.emit(GE.TEAM_CHANGE, { groupIdx: this.selectedGroup, activated: true });
+
     if (!noEffectiveChange) {
-      EventBus.emit(GE.TEAM_CHANGE, { groupIdx: this.selectedGroup, activated: true });
+      devLog.info('[TeamPanel] team changed to group', this.selectedGroup + 1);
     } else {
-      // 只是启用已有的合法组
       EventBus.emit(GE.TOAST_SHOW, { text: `✅ 已启用组 ${this.selectedGroup + 1}`, duration: 1200 });
     }
 

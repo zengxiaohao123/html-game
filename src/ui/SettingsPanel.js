@@ -271,32 +271,37 @@ export class SettingsPanel {
   _createBtn(text, onClick, parent, color = '#3a3a3a', filled = false) {
     const btnStyle = {
       padding: '14px 20px',
-      fontSize: '17px',
-      fontFamily: 'inherit',
-      fontWeight: '800',
+      fontSize: '18px',
+      fontFamily: '"LXGW WenKai TC", system-ui, sans-serif',
+      fontWeight: '900',
       borderRadius: '12px',
       cursor: 'pointer',
-      transition: 'all 0.15s',
+      transition: 'all 0.15s ease-out',
       textAlign: 'center',
-      letterSpacing: '2px',
+      letterSpacing: '3px',
       boxSizing: 'border-box',
+      display: 'inline-block',
+      textDecoration: 'none',
+      // 关键：覆盖任何可能的 CSS 全局 color 规则
+      WebkitTextStroke: '0px',
     };
     if (filled) {
       btnStyle.backgroundColor = color;
-      btnStyle.color = '#fff';
+      btnStyle.color = '#ffffff !important';
       btnStyle.border = `3px solid ${color}`;
       btnStyle.flex = '1';
-      btnStyle.boxShadow = '0 4px 12px rgba(0,0,0,0.25)';
+      btnStyle.boxShadow = '0 4px 14px rgba(0,0,0,0.3)';
     } else {
-      btnStyle.backgroundColor = '#fff';
+      btnStyle.backgroundColor = '#ffffff';
       btnStyle.color = color;
       btnStyle.border = `3px solid ${color}`;
       btnStyle.width = '100%';
     }
     return createEl('button', {
-      class: ['settings-btn'],
+      // 不传 class —— 避免任何全局 CSS 规则覆盖 inline style
       style: btnStyle,
-      onclick: onClick,
+      text,
+      onclick,
       parent,
     });
   }

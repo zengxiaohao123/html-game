@@ -85,24 +85,32 @@ export function removeItem(gs, itemId, qty) {
 /**
  * 放入出货箱（Outbox）。设计文档 §9：物品放进去，次日开始自动换成金币。
  * 上限：12 格。满时提示，拒绝放入。
- * （Phase 2A：按"每格一个 itemId、可叠放"处理；严格格数上限 = 不同 itemId 种类数 ≤ 12）
+ * Phase 2B：支持 entry.value 透传（郁金香动态价值）
  */
-export function addToOutbox(gs, itemId, qty) {
+export function addToOutbox(gs, itemId, qty, extra = {}) {
   if (!itemId || qty <= 0) return false;
   const outbox = gs.inventory.outbox;
-  const existing = outbox.find(i => i.itemId === itemId);
-  if (!existing && outbox.length >= OUTBOX_MAX) {
-    EventBus.emit(GE.TOAST_SHOW, { text: '📦 出货箱已满！', duration: 2000 });
-    devLog.info('[Inventory] outbox full, reject', itemId);
-    return false;
-  }
-  if (existing) {
-    existing.qty += qty;
+  const useValue = extra?.value !== undefined;
+  let targetIdx = -1;
+  if (useValue) {
+    targetIdx = outbox.findIndex(i => i.itemId === itemId && i.value === extra.value);
   } else {
-    outbox.push({ itemId, qty });
+    targetIdx = outbox.findIndex(i => i.itemId === itemId && i.value === undefined);
+  }
+  if (targetIdx >= 0) {
+    outbox[targetIdx].qty += qty;
+  } else {
+    if (outbox.length >= OUTBOX_MAX) {
+      EventBus.emit(GE.TOAST_SHOW, { text: '📦 出货箱已满！', duration: 2000 });
+      devLog.info('[Inventory] outbox full, reject', itemId);
+      return false;
+    }
+    const entry = { itemId, qty };
+    if (useValue) entry.value = extra.value;
+    outbox.push(entry);
   }
   EventBus.emit(GE.INVENTORY_CHANGE, { type: 'add', bag: 'outbox', itemId, qty });
-  devLog.info('[Inventory] addToOutbox', itemId, 'x', qty);
+  devLog.info('[Inventory] addToOutbox', itemId, 'x', qty, 'extra=', extra);
   return true;
 }
 
@@ -162,36 +170,48 @@ export function loadFromOutbox(gs) {
 }
 
 /**
- * 在背包 <-> 出货箱之间搬移物品（Phase 2B UI 会调此函数）
- * @param {object} gs
- * @param {'items'|'outbox'} from
- * @param {'items'|'outbox'} to
- * @param {string} itemId
- * @param {number} qty
+ * 从背包/出货箱里精确搬一批 entry（携带 value 等所有属性）
+ * @returns {object|null} { itemId, qty, ...extra } 实际搬走的 entry 快照（qty 已调整）
+ */
+function _takeEntryFromBag(gs, bagName, itemId, qty) {
+  const list = gs.inventory[bagName];
+  if (!list || list.length === 0) return null;
+  // 找第一个匹配 entry（有 value 的优先合并到同 value 堆，无 value 的匹配无 value 堆）
+  // 简化：找第一个足够数量的 entry（郁金香不同 value 分堆了，每次搬单独 entry）
+  const entryIdx = list.findIndex(e => e.itemId === itemId && e.qty > 0);
+  if (entryIdx < 0) return null;
+  const entry = list[entryIdx];
+  const actualRemove = Math.min(qty, entry.qty);
+  entry.qty -= actualRemove;
+  if (entry.qty <= 0) list.splice(entryIdx, 1);
+  const snapshot = { itemId: entry.itemId, qty: actualRemove };
+  if (entry.value !== undefined) snapshot.value = entry.value;
+  return snapshot;
+}
+
+/**
+ * 在背包 <-> 出货箱之间搬移物品（完整保留 value 等 entry 属性）
  */
 export function moveItemBetween(gs, from, to, itemId, qty) {
   if (from === to) return false;
   if (qty <= 0) return false;
 
-  // 从 from 里先拿（避免 outbox 满时只拿一半）
-  let removed;
-  if (from === 'items') {
-    removed = removeItem(gs, itemId, qty);
-  } else {
-    removed = removeFromOutbox(gs, itemId, qty);
-  }
-  if (removed <= 0) return false;
+  // 从 from bag 里拿走完整 entry 快照（带 value）
+  const snapshot = _takeEntryFromBag(gs, from, itemId, qty);
+  if (!snapshot) return false;
 
-  // 放回 to
+  EventBus.emit(GE.INVENTORY_CHANGE, { type: 'remove', bag: from, itemId, qty: snapshot.qty });
+
+  // 放到 to bag（保留 value）
   let ok;
   if (to === 'items') {
-    addItem(gs, itemId, removed);
-    ok = true;
+    ok = addItem(gs, snapshot.itemId, snapshot.qty, { value: snapshot.value });
   } else {
-    ok = addToOutbox(gs, itemId, removed);
-    // 若 outbox 满无法放入，回滚 —— 放回原背包
+    ok = addToOutbox(gs, snapshot.itemId, snapshot.qty, { value: snapshot.value });
     if (!ok) {
-      addItem(gs, itemId, removed);
+      // 回滚
+      addItem(gs, snapshot.itemId, snapshot.qty, { value: snapshot.value });
+      EventBus.emit(GE.INVENTORY_CHANGE, { type: 'add', bag: from, itemId: snapshot.itemId, qty: snapshot.qty });
     }
   }
   return ok;

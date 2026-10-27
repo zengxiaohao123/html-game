@@ -547,10 +547,7 @@ export class InfoPanel {
             onclick: () => {
               const curTile = gs.map.outerTiles[tileIdx];
               const v = Math.max(0, curTile.contentState?.tulipValue || 0);
-              if (v < 1) {
-                EventBus.emit(GE.TOAST_SHOW, { text: '🌷 郁金香价值还不够（< 1）', duration: 2000 });
-                return;
-              }
+              // 任何时候都能采摘（价值 ≤ 0 时按 0 算，玩家亏金币但花田清空）
               InventorySystem.addItem(gs, 'item_tulip', 1, { value: v });
               curTile.contentId = null;
               curTile.contentState = {};
