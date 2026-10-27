@@ -765,54 +765,24 @@ const ResourceBus = {
 };
 
 // ════════════════════════════════════════════════════════════════
-// ——— 技能卡地块内容（skill_*） —— Phase 4 新增 ———
-// 每个 skill 可以被 BuildMode 放进地块；走到 contentId === skill.id 的格时
-// 触发一次，消耗掉（tile.contentId = null）
-//
-// 触发时 fire SkillSystem.triggerSkillAtTile('onEnter') 让 SkillSystem 自己走冷却/目标判定
-// 同时 emit GE.SKILL_TRIGGERED（UI 层监听）
+// ——— 技能卡地块内容（skill_*） —— Phase 4 修复后 ———
+// 技能卡作为 contentId 放进 outerTiles 后，触发由 SkillSystem.triggerSkillByHook 统一处理
+// （遍历 outerTiles 找 skill_* 地块，按 hooks[hookType] + cooldown 触发）。
+// 不再注册 HookDispatcher hook，不再消耗 tile.contentId（持续存在持续触发）。
+// 连携技（isLinkSkill:true）也不走 HookDispatcher，它们是实时窗口按键触发的。
 // ════════════════════════════════════════════════════════════════
 
-/** 给每个 characters.js 的 skill 生成一个 Facility-like 对象（有 id/name/emoji/register） */
-// 关键：连携技（isLinkSkill:true）不走 onEnter 自动触发，它们是实时窗口按键触发的。
-// 所以 SKILL_FACILITIES 必须过滤掉 isLinkSkill 技能，避免给连携技注册错误的 onEnter hook。
-export const SKILL_FACILITIES = Object.values(SKILLS).filter((s) => !s.isLinkSkill).map((skill) => ({
+/** 技能卡元数据：仅提供 id/name/emoji 供 UI 渲染（不再注册 onEnter hook，SkillSystem 统一处理） */
+export const SKILL_FACILITIES = Object.values(SKILLS).map((skill) => ({
   id: skill.id,
   name: skill.name,
   emoji: skill.emoji,
-
-  register() {
-    HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
-      if (!isMine(gs, tileIdx, this.id)) return;
-
-      // 1) 让 SkillSystem 走一遍完整触发流程（team 遍历 + 冷却 + 目标判定 + CombatSystem + 豌豆架）
-      try {
-        // 这里动态 import，避免循环依赖
-        import('../systems/SkillSystem.js').then(({ SkillSystem }) => {
-          SkillSystem.triggerSkillAtTile(gs, tileIdx);
-        }).catch((e) => devLog.warn('[skill-card] SkillSystem import failed:', e));
-      } catch (_) { /* ignore */ }
-
-      // 2) 消耗（触发后 tile.contentId 置空）—— 消耗版本，Phase 5 如需 cooldown 不消耗再说
-      const tile = gs.map.outerTiles[tileIdx];
-      tile.contentId = null;
-
-      EventBus.emit(GE.SKILL_TRIGGERED, { skillId: skill.id, roleId: skill.roleId, triggerSource: 'tile' });
-      EventBus.emit(GE.TILE_UPDATED, { tileIdx });
-      EventBus.emit(GE.TOAST_SHOW, {
-        text: `⚡ 触发技能：${skill.emoji} ${skill.name}`,
-        duration: 1500,
-      });
-      devLog.info('[skill-card] tile triggered skill', skill.id, '→ consumed');
-    }, this);
-  },
 }));
 
 export function registerSkillHooks() {
-  for (const s of SKILL_FACILITIES) {
-    if (typeof s.register === 'function') s.register();
-  }
-  devLog.info('[facilities] skill_* onEnter hooks registered, count =', SKILL_FACILITIES.length);
+  // Phase 4 修复：技能触发已由 SkillSystem.triggerSkillByHook 统一处理
+  // 此处不再注册 HookDispatcher hook；连携技也由 LinkSkillSystem 实时窗口处理
+  console.log('[facilities] SKILL_FACILITIES metadata-only (no hooks registered, SkillSystem handles trigger)');
 }
 
 // ════════════════════════════════════════════════════════════════

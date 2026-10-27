@@ -30,6 +30,7 @@ import { ShopPanel } from './ui/panels/ShopPanel.js';
 import { VehiclePanel } from './ui/panels/VehiclePanel.js';
 import { TaskPanel } from './ui/panels/TaskPanel.js';
 import { CodexPanel } from './ui/panels/CodexPanel.js';
+import { MainMenu } from './ui/MainMenu.js';
 
 function loadStylesheet(href) {
   if (document.querySelector(`link[href="${href}"]`)) return;
@@ -162,6 +163,12 @@ inputManager.bind();
 // 5. 广播 BOOT
 EventBus.emit(GE.BOOT, { gs });
 
+// 6. 主菜单遮罩 —— 启动立即显示，覆盖游戏界面；玩家点"新的游戏"/"读取存档"才进入游戏
+const mainMenu = new MainMenu(director);
+director.mainMenu = mainMenu;
+mainMenu.show();
+
 console.log('转盘农场 Phase 2B 启动 ✓');
 devLog.info('已挂载:', { mapView, topBar, funcBar, hotBar, spiritArea, toast, settingsPanel, infoPanel, inventoryPanel });
 devLog.info('WASD 移动 / P 睡觉 / B 背包 / Tab 建造 / ESC 设置');
+devLog.info('MainMenu shown, 等待玩家选择...');

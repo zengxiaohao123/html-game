@@ -9,6 +9,7 @@ import { GE } from '../core/GameEvents.js';
 import { Storage } from '../state/storage.js';
 import { AUTOSAVE_SLOT, SLOTS_MAX } from '../utils/constants.js';
 import { createEl, qs } from './dom.js';
+import { devLog } from '../core/Logger.js';
 
 export class SettingsPanel {
   /**
@@ -93,6 +94,27 @@ export class SettingsPanel {
 
     // 关闭按钮
     this._createBtn('✖️ 关闭（ESC）', () => this.hide(), this.panel, '#ff6b6b');
+
+    // 返回主菜单按钮（修复 5c）：自动存档到 slot 1 → 关闭面板 → 显示主菜单
+    this._createBtn('🏠 返回主菜单', () => {
+      // 自动存档到 slot 1（AUTOSAVE_SLOT）
+      const gs = this.director?.getGS?.();
+      if (gs) {
+        const ok = Storage.save(AUTOSAVE_SLOT, gs);
+        if (ok) {
+          EventBus.emit(GE.TOAST_SHOW, { text: '💾 已自动存档到 Slot 1', duration: 1500 });
+        } else {
+          EventBus.emit(GE.TOAST_SHOW, { text: '⚠️ 自动存档失败', duration: 2000 });
+        }
+      }
+      // 关闭设置面板
+      this.hide();
+      // 显示主菜单遮罩
+      if (typeof this.director?.mainMenu?.show === 'function') {
+        this.director.mainMenu.show();
+      }
+      devLog.info('[Settings] returned to main menu');
+    }, this.panel, '#b8860b');
 
     // 订阅 UI_PANEL_OPEN（ESC 触发）
     EventBus.on(GE.UI_PANEL_OPEN, ({ panel }) => {

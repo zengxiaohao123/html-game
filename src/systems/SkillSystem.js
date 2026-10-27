@@ -1,41 +1,32 @@
 // src/systems/SkillSystem.js
-// Phase 3 —— 技能触发入口
+// Phase 4 重构：技能从"角色 team 遍历"改为"地块遍历"
 // 核心职责：
 //   triggerSkillByHook(hookType, params)
-//     遍历 team.activeGroup 里所有角色的所有技能，找 hooks[hookType] === true 的；
-//     用 findLegalTarget 找目标；调 CombatSystem.calculateDamage；emit SKILL_TRIGGERED。
+//     遍历所有 outerTiles，找 contentId 为 skill_* 的地块；
+//     若 skillDef.hooks[hookType] 为 true + cooldown 通过 → 执行 CombatSystem.calculateDamage。
+//     技能持续存在（不消耗 tile.contentId），按 tileIdx + skillId 独立 cooldown。
 //     同时 fire HookDispatcher.fire('onUseSkill', ...) 让豌豆架储存豌豆。
-//   triggerSkillAtTile(tileIdx)  —— 辅助：走到某格时主动触发 onEnter
 //
-// 为什么不用 HookDispatcher 直接注册技能？
+//   triggerSkillAtTile(tileIdx)  —— 辅助：走到某格时主动触发 onEnter（由 facilities.js 或 UI 调用）
+//
+// 为什么不注册到 HookDispatcher？
 //   HookDispatcher 是词条 hook（设施/资源/祝福/睡觉 等时机），是数据层写死时机；
-//   SkillSystem 要额外做：
-//     1) 过滤当前 team（只对编队角色生效）
-//     2) 合法目标筛选（找生物）
-//     3) 技能冷却 & cooldown 递减
-//   所以技能不注册到 HookDispatcher，而是 SkillSystem 统一按 hook 时机 fire。
+//   SkillSystem 要额外做：合法目标筛选 + 技能冷却 & cooldown 递减 + 连携技检测。
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { HookDispatcher } from '../core/HookDispatcher.js';
 import { devLog } from '../core/Logger.js';
-import { getSkill, getSkillsByRole, CHARACTERS } from '../data/characters.js';
+import { getSkill, getSkillsByRole, CHARACTERS, SKILLS } from '../data/characters.js';
 import { CombatSystem } from './CombatSystem.js';
 import { TalentSystem } from './TalentSystem.js';
 import { LinkSkillSystem } from './LinkSkillSystem.js';
 
-// 每技能的运行时 cooldown（回合数）：skillId → remainingTurns
-// GS 本身不持久化 cooldown（每次从 max 重启也 OK；Phase 3 简化为内存）
-const skillCooldown = new Map();
-
 /**
- * 触发类型映射到"我能攻击的 fence tile"筛选逻辑：
-//   'onEnter' / 'onPass' → 当前玩家所在 tileIdx 对应哪块 fence tile？
-//     Phase 3 简化：onEnter 表示玩家进入某外圈格；外圈 8 格 与 中心 1×1 fence
-//     不在同一坐标空间 —— 但设计文档 §13 说"默认离 tile 最近的敌人"。
-//     初始 1×1 fence，所以默认直接攻击 fence[0] 里的所有 danger 生物。
-//     扩图后再做邻居/距离计算。
+ * 每技能的运行时 cooldown：tileIdx + skillId → remainingTurns
+ * 改为 GS 持久化（跨回合/跨日不丢失），resetSkillCooldowns 清空
  */
+
 function getCreaturesInFence(gs) {
   const list = [];
   for (const t of gs.map.fence) {
@@ -47,14 +38,10 @@ function getCreaturesInFence(gs) {
   return list;
 }
 
-/**
- * 找合法目标：默认不打友善；取离 tileIdx 最近（Phase 3 简化：离"中心"最近 = 直接列第 1 只 danger）
- */
 function findLegalTarget(gs, skill, tileIdx) {
   const allCreatures = getCreaturesInFence(gs);
   if (allCreatures.length === 0) return null;
 
-  // targetCategory: 'danger_extreme' → 只打危险/极度危险
   let pool = allCreatures;
   if (skill.targetCategory === 'danger_extreme') {
     pool = allCreatures.filter(c => c.category === 'danger' || c.category === 'extreme');
@@ -63,60 +50,60 @@ function findLegalTarget(gs, skill, tileIdx) {
   }
   if (pool.length === 0) return null;
 
-  // 简化：取 hp 最低的一只（方便快速击杀）
   pool.sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp));
   return pool[0];
 }
 
 /**
- * 触发某时机下的所有角色技能
+ * 触发某时机下，**所有 outerTiles 上放置的技能**
  * @param {string} hookType  'onEnter' / 'onPass' / 'onBlessed'
  * @param {{gs: object, tileIdx: number}} params
  */
 export function triggerSkillByHook(hookType, params) {
-  const { gs, tileIdx } = params || {};
+  const { gs } = params || {};
   if (!gs) return;
 
-  const activeGroup = gs.team?.activeGroup ?? 0;
-  const group = gs.team?.groups?.[activeGroup];
-  if (!group) return;
-
-  const rolesInTeam = group.roles || [];
+  gs.skillCooldowns = gs.skillCooldowns || {};
   let anyTriggered = false;
 
-  // 每个角色的所有技能依次检查
-  for (const roleId of rolesInTeam) {
-    const roleDef = CHARACTERS[roleId];
-    if (!roleDef) continue;
-    const skills = getSkillsByRole(roleId);
-    for (const skill of skills) {
-      if (!skill.hooks || !skill.hooks[hookType]) continue;
+  // 遍历所有 outerTiles 上的技能地块
+  for (let i = 0; i < gs.map.outerTiles.length; i++) {
+    const tile = gs.map.outerTiles[i];
+    if (!tile?.contentId) continue;
+    if (!tile.contentId.startsWith('skill_')) continue;
 
-      // 冷却检查
-      const cd = skillCooldown.get(skill.id) || 0;
-      if (cd > 0) continue;
+    const skillDef = SKILLS[tile.contentId];
+    if (!skillDef) continue;
 
-      // 找目标
-      const target = findLegalTarget(gs, skill, tileIdx);
-      if (!target) continue;
+    // triggerCondition 钩子匹配（用 hooks[hookType] 字段）
+    if (!skillDef.hooks || !skillDef.hooks[hookType]) continue;
 
-      // 触发！
-      anyTriggered = true;
-      fireOneSkill(gs, roleDef, skill, target);
-    }
+    // cooldown 检查：按 tileIdx + skillId 独立
+    const cdKey = `skill_${skillDef.id}_${i}`;
+    if (gs.skillCooldowns[cdKey] && gs.skillCooldowns[cdKey] > 0) continue;
+
+    // 连携技不走普通 hook 触发（它们是实时窗口按键触发的）
+    if (skillDef.isLinkSkill) continue;
+
+    // 找目标
+    const target = findLegalTarget(gs, skillDef, i);
+    if (!target) continue;
+
+    // 触发！
+    anyTriggered = true;
+    fireOneSkill(gs, skillDef, target, cdKey);
   }
 
   if (anyTriggered) {
-    // 让豌豆架储存豌豆（豌豆架只关心"有技能被用"，不关心目标）
-    HookDispatcher.fire('onUseSkill', { gs, tileIdx });
+    HookDispatcher.fire('onUseSkill', { gs });
   }
 }
 
-function fireOneSkill(gs, roleDef, skill, target) {
+function fireOneSkill(gs, skill, target, cdKey) {
+  const roleDef = CHARACTERS[skill.roleId];
   devLog.info('[SkillSystem] fire', skill.name, '→', target.kind, '(hp', target.hp, '/', target.maxHp, ')');
-  EventBus.emit(GE.SKILL_TRIGGERED, { skillId: skill.id, roleId: roleDef.id, targetKind: target.kind });
+  EventBus.emit(GE.SKILL_TRIGGERED, { skillId: skill.id, roleId: skill.roleId, targetKind: target.kind });
 
-  // 多段（精巧射击 hits=2）
   const hits = skill.hits || 1;
   for (let h = 0; h < hits; h++) {
     const result = CombatSystem.calculateDamage({
@@ -127,32 +114,26 @@ function fireOneSkill(gs, roleDef, skill, target) {
       realDamage: !!skill.realDamage,
       player: gs.player,
       gs,
-      roleId: roleDef.id,
-      attackerRoleId: roleDef.id,
+      roleId: skill.roleId,
+      attackerRoleId: skill.roleId,
     });
-    if (result.immune) {
-      // 免疫就停，不再继续后续 hit
-      break;
-    }
+    if (result.immune) break;
   }
 
-  // 额外效果
   applySkillExtraEffects(gs, skill, target);
 
-  // 冷却
-  if (skill.cooldown && skill.cooldown > 0) {
-    skillCooldown.set(skill.id, skill.cooldown);
+  // 设置 cooldown（如果 skill 有 cooldown 字段，按 tile + skill 独立）
+  if (cdKey && skill.cooldown && skill.cooldown > 0) {
+    gs.skillCooldowns = gs.skillCooldowns || {};
+    gs.skillCooldowns[cdKey] = skill.cooldown;
   }
 
-  // 击败判定
   if (target.hp <= 0) {
     defeatCreature(gs, target);
   }
 
-  // ── Agent 3：连携技检测 ──
-  // 每次普通技能触发后，让 LinkSkillSystem 有机会入队（焚灭计数、追猎计数、元素累计已由 TalentSystem.recordElementDamage 记录）
   if (!skill.isLinkSkill) {
-    LinkSkillSystem.onSkillFired(gs, { roleId: roleDef.id, skillId: skill.id, skill, target });
+    LinkSkillSystem.onSkillFired(gs, { roleId: skill.roleId, skillId: skill.id, skill, target });
   }
 }
 
@@ -162,7 +143,6 @@ function applySkillExtraEffects(gs, skill, target) {
 
   switch (eff.type) {
     case 'self_hp_drain': {
-      // 拼命：流失 8% hp，可致死
       const loss = Math.max(1, Math.floor(gs.player.hp * eff.percent));
       gs.player.hp -= loss;
       if (gs.player.hp < 0) gs.player.hp = 0;
@@ -180,8 +160,6 @@ function applySkillExtraEffects(gs, skill, target) {
       break;
     }
     case 'pioneer_multiplier': {
-      // Phase 3 简化：开拓技能已在 damageMultiplier 体现了 0.6×；
-      // 设计文档的 "每消耗 1 块 +70%" 先不做真实地形消耗
       break;
     }
   }
@@ -192,20 +170,17 @@ function defeatCreature(gs, target) {
   EventBus.emit(GE.CREATURE_DEFEATED, { creature: target });
   EventBus.emit(GE.TOAST_SHOW, { text: `✓ 击败 ${target.name || target.kind}`, duration: 1500 });
 
-  // 从 fence tile 和 gs.creatures 里移除
   for (const t of gs.map.fence) {
     t.creatures = (t.creatures || []).filter(cid => cid !== target.id);
   }
   gs.creatures = gs.creatures.filter(c => c.id !== target.id);
 
   HookDispatcher.fire('onCreatureDefeated', { gs, creature: target });
-
-  // ── Agent 3：天赋 好奇心 ──
   TalentSystem.onCreatureDefeated(gs, target);
 }
 
 /**
- * 主动触发某格的所有技能（外部辅助）
+ * 主动触发某格的所有技能（外部辅助：UI 手动触发）
  */
 export function triggerSkillAtTile(gs, tileIdx) {
   triggerSkillByHook('onEnter', { gs, tileIdx });
@@ -215,11 +190,12 @@ export function triggerSkillAtTile(gs, tileIdx) {
  * 推进回合后，递减所有技能 cooldown（GameDirector 上层调用 TurnSystem 后再调这个）
  */
 export function advanceSkillCooldowns(gs) {
-  for (const [skillId, remaining] of skillCooldown.entries()) {
-    if (remaining > 0) {
-      skillCooldown.set(skillId, remaining - 1);
+  if (!gs.skillCooldowns) return;
+  for (const key of Object.keys(gs.skillCooldowns)) {
+    if (gs.skillCooldowns[key] > 0) {
+      gs.skillCooldowns[key] -= 1;
     } else {
-      skillCooldown.delete(skillId);
+      delete gs.skillCooldowns[key];
     }
   }
 }
@@ -227,8 +203,13 @@ export function advanceSkillCooldowns(gs) {
 /**
  * 清除所有技能 cooldown（新一天重置）
  */
-export function resetSkillCooldowns() {
-  skillCooldown.clear();
+export function resetSkillCooldowns(gs) {
+  if (gs) gs.skillCooldowns = {};
+}
+
+/** 辅助：按 id 取技能（UI 层用） */
+export function getSkillById(id) {
+  return SKILLS[id] || null;
 }
 
 export const SkillSystem = {
@@ -236,4 +217,5 @@ export const SkillSystem = {
   triggerSkillAtTile,
   advanceSkillCooldowns,
   resetSkillCooldowns,
+  getSkillById,
 };

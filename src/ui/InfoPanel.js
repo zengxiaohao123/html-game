@@ -268,38 +268,304 @@ export class InfoPanel {
       });
     }
 
-    // 设施类地块 —— 各设施有自己的功能按钮
+    // 设施类地块 —— 功能选项区（§16.4：区分"身处该格"vs"随时可点"）
     if (contentId && contentId.startsWith('facility_')) {
-      createEl('div', { style: { marginTop: '12px', textAlign: 'center' }, parent: this.bodyWrap });
+      const tileIdx = this.currentTileIdx;
+      const tile = gs.map.outerTiles[tileIdx];
+      const onTile = gs.player.x === tile.idx; // 玩家是否身处该格
 
-      if (contentId === 'facility_tulip') {
-        // 郁金香花田（§10.6）：功能 = 采摘（获得当前价值×1 郁金香 + 失去地块内容）
-        const tile = gs.map.outerTiles[this.currentTileIdx];
-        const value = Math.max(0, tile.contentState?.tulipValue || 0);
-        createEl('button', {
-          class: 'action-btn',
-          style: { fontSize: '14px', background: '#ffe0f0' },
-          text: `🌷 采摘（当前价值 ${value}）`,
-          parent: this.bodyWrap,
-          onclick: () => {
-            const curTile = gs.map.outerTiles[this.currentTileIdx];
-            const v = Math.max(0, curTile.contentState?.tulipValue || 0);
-            if (v < 1) {
-              EventBus.emit(GE.TOAST_SHOW, { text: '🌷 郁金香还没价值（价值 < 1）', duration: 2000 });
-              return;
-            }
-            InventorySystem.addItem(gs, 'item_tulip', 1);
-            curTile.contentId = null;
-            curTile.contentState = {};
-            EventBus.emit(GE.TILE_UPDATED, { tileIdx: this.currentTileIdx });
-            EventBus.emit(GE.INVENTORY_CHANGE);
-            EventBus.emit(GE.TOAST_SHOW, { text: `🌷 采摘成功！获得价值 ${v} 的郁金香`, duration: 2000 });
-            // 刷新面板
-            this._renderBody();
-          },
-        });
+      createEl('div', { style: { marginTop: '12px', textAlign: 'center' }, parent: this.bodyWrap });
+      createEl('div', {
+        style: {
+          fontSize: '13px', fontWeight: '700', color: '#8a6a3a',
+          borderTop: '2px dashed #b8a888', paddingTop: '8px', marginBottom: '6px',
+        },
+        text: onTile ? '⚡ 功能选项（你在该格）' : '⚡ 功能选项（未在该格）',
+        parent: this.bodyWrap,
+      });
+
+      // 每个设施的功能选项
+      switch (contentId) {
+        case 'facility_potato': {
+          // 🥔 土豆田：onTile 时显示滑动条收获
+          const stored = tile.contentState?.potatoStored ?? 0;
+          if (onTile) {
+            createEl('div', {
+              style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
+              text: `🥔 已储存 ${stored} / 30`,
+              parent: this.bodyWrap,
+            });
+            const range = createEl('input', {
+              attrs: { type: 'range', min: 0, max: stored, value: stored, step: 1 },
+              style: { width: '100%' },
+              parent: this.bodyWrap,
+            });
+            const qtyLabel = createEl('div', {
+              style: { fontSize: '13px', color: '#5a4a3a', textAlign: 'center', margin: '4px 0' },
+              text: `选择收获数量：${stored}`,
+              parent: this.bodyWrap,
+            });
+            range.addEventListener('input', () => {
+              qtyLabel.textContent = `选择收获数量：${range.value}`;
+            });
+            createEl('button', {
+              class: 'action-btn',
+              style: { width: '100%', fontSize: '13px', background: '#fff0c0' },
+              text: '🥔 确认收获',
+              disabled: stored <= 0,
+              parent: this.bodyWrap,
+              onclick: () => {
+                const qty = parseInt(range.value, 10) || 0;
+                if (qty <= 0) return;
+                const curTile = gs.map.outerTiles[tileIdx];
+                const cs = curTile.contentState || (curTile.contentState = {});
+                const actually = Math.min(qty, cs.potatoStored || 0);
+                InventorySystem.addItem(gs, 'item_potato', actually);
+                cs.potatoStored = (cs.potatoStored || 0) - actually;
+                EventBus.emit(GE.INVENTORY_CHANGE);
+                EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+                EventBus.emit(GE.TOAST_SHOW, { text: `🥔 收获 +${actually} 土豆`, duration: 1800 });
+                this._renderBody();
+              },
+            });
+          } else {
+            createEl('div', {
+              style: { fontSize: '12px', color: '#aaa', textAlign: 'center', margin: '6px 0' },
+              text: `（走到该格可收获 🥔 ${stored}/30）`,
+              parent: this.bodyWrap,
+            });
+          }
+          break;
+        }
+
+        case 'facility_strawberry': {
+          // 🍓 草莓田：onTile + 满时出现"取走草莓"按钮
+          const stored = tile.contentState?.strawberryStored ?? 0;
+          const full = stored >= 5;
+          if (onTile) {
+            createEl('div', {
+              style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
+              text: `🍓 已储存 ${stored} / 5${full ? '（已满！）' : ''}`,
+              parent: this.bodyWrap,
+            });
+            createEl('button', {
+              class: 'action-btn',
+              style: { width: '100%', fontSize: '13px', background: '#ffcce0' },
+              text: '🍓 取走草莓',
+              disabled: !full,
+              parent: this.bodyWrap,
+              onclick: () => {
+                const curTile = gs.map.outerTiles[tileIdx];
+                const cs = curTile.contentState || (curTile.contentState = {});
+                const qty = cs.strawberryStored || 0;
+                if (qty <= 0) return;
+                InventorySystem.addItem(gs, 'item_strawberry', qty);
+                cs.strawberryStored = 0;
+                EventBus.emit(GE.INVENTORY_CHANGE);
+                EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+                EventBus.emit(GE.TOAST_SHOW, { text: `🍓 收获 +${qty} 草莓`, duration: 1800 });
+                this._renderBody();
+              },
+            });
+          } else {
+            createEl('div', {
+              style: { fontSize: '12px', color: '#aaa', textAlign: 'center', margin: '6px 0' },
+              text: `（走到该格可取走 🍓 满时按钮出现 ${stored}/5）`,
+              parent: this.bodyWrap,
+            });
+          }
+          break;
+        }
+
+        case 'facility_pea': {
+          // 🫛 豌豆架：onTile 时显示滑动条收获
+          const stored = tile.contentState?.peaStored ?? 0;
+          if (onTile) {
+            createEl('div', {
+              style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
+              text: `🫛 已储存 ${stored} / 10`,
+              parent: this.bodyWrap,
+            });
+            const range = createEl('input', {
+              attrs: { type: 'range', min: 0, max: stored, value: stored, step: 1 },
+              style: { width: '100%' },
+              parent: this.bodyWrap,
+            });
+            const qtyLabel = createEl('div', {
+              style: { fontSize: '13px', color: '#5a4a3a', textAlign: 'center', margin: '4px 0' },
+              text: `选择收获数量：${stored}`,
+              parent: this.bodyWrap,
+            });
+            range.addEventListener('input', () => {
+              qtyLabel.textContent = `选择收获数量：${range.value}`;
+            });
+            createEl('button', {
+              class: 'action-btn',
+              style: { width: '100%', fontSize: '13px', background: '#d0f0d0' },
+              text: '🫛 确认收获',
+              disabled: stored <= 0,
+              parent: this.bodyWrap,
+              onclick: () => {
+                const qty = parseInt(range.value, 10) || 0;
+                if (qty <= 0) return;
+                const curTile = gs.map.outerTiles[tileIdx];
+                const cs = curTile.contentState || (curTile.contentState = {});
+                const actually = Math.min(qty, cs.peaStored || 0);
+                InventorySystem.addItem(gs, 'item_pea', actually);
+                cs.peaStored = (cs.peaStored || 0) - actually;
+                EventBus.emit(GE.INVENTORY_CHANGE);
+                EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+                EventBus.emit(GE.TOAST_SHOW, { text: `🫛 收获 +${actually} 豌豆`, duration: 1800 });
+                this._renderBody();
+              },
+            });
+          } else {
+            createEl('div', {
+              style: { fontSize: '12px', color: '#aaa', textAlign: 'center', margin: '6px 0' },
+              text: `（走到该格可收获 🫛 ${stored}/10）`,
+              parent: this.bodyWrap,
+            });
+          }
+          break;
+        }
+
+        case 'facility_tulip': {
+          // 🌷 郁金香：随时可点采摘
+          const value = Math.max(0, tile.contentState?.tulipValue || 0);
+          createEl('div', {
+            style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
+            text: `🌷 当前价值：${value}`,
+            parent: this.bodyWrap,
+          });
+          createEl('button', {
+            class: 'action-btn',
+            style: { width: '100%', fontSize: '13px', background: '#ffe0f0' },
+            text: `🌷 采摘（获得 1 × 郁金香）`,
+            parent: this.bodyWrap,
+            onclick: () => {
+              const curTile = gs.map.outerTiles[tileIdx];
+              const v = Math.max(0, curTile.contentState?.tulipValue || 0);
+              if (v < 1) {
+                EventBus.emit(GE.TOAST_SHOW, { text: '🌷 郁金香价值还不够（< 1）', duration: 2000 });
+                return;
+              }
+              InventorySystem.addItem(gs, 'item_tulip', 1);
+              curTile.contentId = null;
+              curTile.contentState = {};
+              EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+              EventBus.emit(GE.INVENTORY_CHANGE);
+              EventBus.emit(GE.TOAST_SHOW, { text: `🌷 采摘成功！获得价值 ${v} 的郁金香`, duration: 2000 });
+              this._renderBody();
+            },
+          });
+          break;
+        }
+
+        case 'facility_henhouse': {
+          // 🐔 鸡舍：onTile 时显示鸡蛋滑动条；随时显示开门/关门
+          const stored = tile.contentState?.eggStored ?? 0;
+          const doorOpen = tile.contentState?.doorOpen ?? true;
+          if (onTile) {
+            createEl('div', {
+              style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
+              text: `🥚 已储存 ${stored} / 10`,
+              parent: this.bodyWrap,
+            });
+            const range = createEl('input', {
+              attrs: { type: 'range', min: 0, max: stored, value: stored, step: 1 },
+              style: { width: '100%' },
+              parent: this.bodyWrap,
+            });
+            const qtyLabel = createEl('div', {
+              style: { fontSize: '13px', color: '#5a4a3a', textAlign: 'center', margin: '4px 0' },
+              text: `选择收获数量：${stored}`,
+              parent: this.bodyWrap,
+            });
+            range.addEventListener('input', () => {
+              qtyLabel.textContent = `选择收获数量：${range.value}`;
+            });
+            createEl('button', {
+              class: 'action-btn',
+              style: { width: '100%', fontSize: '13px', background: '#fff0c0', marginBottom: '6px' },
+              text: '🥚 确认收获鸡蛋',
+              disabled: stored <= 0,
+              parent: this.bodyWrap,
+              onclick: () => {
+                const qty = parseInt(range.value, 10) || 0;
+                if (qty <= 0) return;
+                const curTile = gs.map.outerTiles[tileIdx];
+                const cs = curTile.contentState || (curTile.contentState = {});
+                const actually = Math.min(qty, cs.eggStored || 0);
+                InventorySystem.addItem(gs, 'item_egg', actually);
+                cs.eggStored = (cs.eggStored || 0) - actually;
+                EventBus.emit(GE.INVENTORY_CHANGE);
+                EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+                EventBus.emit(GE.TOAST_SHOW, { text: `🥚 收获 +${actually} 鸡蛋`, duration: 1800 });
+                this._renderBody();
+              },
+            });
+          } else {
+            createEl('div', {
+              style: { fontSize: '12px', color: '#aaa', textAlign: 'center', margin: '6px 0' },
+              text: `（走到该格可收获 🥚 ${stored}/10）`,
+              parent: this.bodyWrap,
+            });
+          }
+          // 随时可点：开门/关门
+          createEl('button', {
+            class: 'action-btn',
+            style: { width: '100%', fontSize: '13px', background: '#e0e0ff' },
+            text: doorOpen ? '🚪 关门（限制鸡舍生物活动范围）' : '🚪 开门（鸡舍生物可自由活动）',
+            parent: this.bodyWrap,
+            onclick: () => {
+              const curTile = gs.map.outerTiles[tileIdx];
+              const cs = curTile.contentState || (curTile.contentState = {});
+              cs.doorOpen = !cs.doorOpen;
+              EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+              EventBus.emit(GE.TOAST_SHOW, {
+                text: cs.doorOpen ? '🚪 鸡舍门已打开' : '🚪 鸡舍门已关闭',
+                duration: 1500,
+              });
+              this._renderBody();
+            },
+          });
+          break;
+        }
+
+        case 'facility_slimehouse': {
+          // 🟢 史莱姆屋：随时显示开门/关门
+          const doorOpen = tile.contentState?.doorOpen ?? true;
+          createEl('button', {
+            class: 'action-btn',
+            style: { width: '100%', fontSize: '13px', background: '#c0f0c0' },
+            text: doorOpen ? '🚪 关门（限制史莱姆活动范围）' : '🚪 开门（史莱姆可自由活动）',
+            parent: this.bodyWrap,
+            onclick: () => {
+              const curTile = gs.map.outerTiles[tileIdx];
+              const cs = curTile.contentState || (curTile.contentState = {});
+              cs.doorOpen = !cs.doorOpen;
+              EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+              EventBus.emit(GE.TOAST_SHOW, {
+                text: cs.doorOpen ? '🚪 史莱姆屋门已打开' : '🚪 史莱姆屋门已关闭',
+                duration: 1500,
+              });
+              this._renderBody();
+            },
+          });
+          break;
+        }
+
+        default: {
+          // 其他设施（home/tent/wheat/rice/corn/cabbage）：暂不渲染额外按钮
+          createEl('div', {
+            style: { fontSize: '11px', color: '#b0a090', textAlign: 'center', margin: '4px 0' },
+            text: '（暂无额外功能选项）',
+            parent: this.bodyWrap,
+          });
+        }
       }
-      // 其他 facility_ 前缀：暂不渲染额外按钮（Phase 5 逐设施补）
+
+      // "前往"按钮在下面统一渲染（任何格都能前往，§7）
     }
 
     // 资源类地块 / 技能卡地块 —— "进入/使用" 按钮（Phase 4）

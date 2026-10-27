@@ -128,6 +128,7 @@ export function placeContent(gs, tileIdx, contentId) {
 
 /**
  * 拆除（清空 contentId）。Phase 2B UI 可能需要，但不作为放置的必经路径，单独提供。
+ * 修复 4b：skill_* 被拆除后回背包。
  */
 export function clearContent(gs, tileIdx) {
   if (!gs.buildMode) return { ok: false, reason: 'notInBuildMode' };
@@ -137,8 +138,18 @@ export function clearContent(gs, tileIdx) {
     EventBus.emit(GE.TOAST_SHOW, { text: '🏠 【永恒】不可拆除', duration: 2000 });
     return { ok: false, reason: 'unreplaceable' };
   }
+  const removedId = tile.contentId;
   tile.contentId = null;
+
+  // 修复 4b：skill_* 被拆除后回背包（不消失）
+  if (removedId.startsWith('skill_')) {
+    InventorySystem.addItem(gs, removedId, 1);
+    EventBus.emit(GE.TOAST_SHOW, { text: `🛠️ 拆除技能卡 ${removedId} → 回背包`, duration: 1500 });
+    devLog.info('[Build] skill card returned to inventory on clear:', removedId);
+  }
+
   EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+  EventBus.emit(GE.INVENTORY_CHANGE, { type: 'clear', tileIdx, contentId: removedId });
   return { ok: true };
 }
 
