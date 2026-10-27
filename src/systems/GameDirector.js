@@ -10,6 +10,7 @@ import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { HookDispatcher } from '../core/HookDispatcher.js';
 import { createInitialState } from '../state/gameState.js';
+import { migrateGS } from '../state/migrate.js';
 import { devLog } from '../core/Logger.js';
 import { registerFacilities } from '../data/facilities.js';
 import { MovementSystem } from './MovementSystem.js';
@@ -156,6 +157,7 @@ export class GameDirector {
       devLog.warn('[GameDirector.loadGame] loadedGs 为空');
       return false;
     }
+    migrateGS(loadedGs);  // ← 迁移：补全旧存档缺失的 Phase 4 字段
     this.gs = loadedGs;
 
     // 清理旧的定时器（防止 loadGame 多次调用时 timer 累积）

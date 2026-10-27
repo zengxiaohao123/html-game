@@ -67,6 +67,9 @@ export function createInitialState() {
       minStamina: -3,
       gold: 0,
       position: 'outer',
+      // Phase 4 天赋相关字段
+      dodgeRate: 0,              // 蹁跹天赋
+      nextMoveNoStamina: false,  // 芋圆精灵
     },
 
     // ── 地图 ──
@@ -109,6 +112,12 @@ export function createInitialState() {
         { roles: [], spirit: null },
       ],
       dailyModifyCount: 0,
+      // Phase 4 天赋/连携技相关字段
+      dailyElementDamages: [],              // 风暴眼连携技
+      huntAttackCount: 0,                   // 追猎连携技
+      twinBuffNextAtkCritRateBonus: 0,      // 比翼天赋
+      twinBuffActiveDays: 0,                // 比翼天赋
+      xiayangRebornCooldownDay: 0,          // 涅槃天赋
     },
 
     // ── 祝福 ──
@@ -128,11 +137,23 @@ export function createInitialState() {
     // ── Buff/Debuff ──
     activeBuffs: [],
 
+    // ── 载具系统（Phase 4） ──
+    vehicle: {
+      current: null,
+      available: [],
+      chanceUsedToday: false,
+    },
+
+    // ── 冷却记录（Phase 4） ──
+    skillCooldowns: {},         // SkillSystem 用
+    linkSkillCooldowns: {},     // LinkSkillSystem 用
+
     // ── 选中 / UI 状态 ──
     uiState: {
       selectedTileIdx: null,
       infoTab: 'content',
       activePanel: null,
+      blessing: false,          // 祈福动画中标记
     },
   };
 }

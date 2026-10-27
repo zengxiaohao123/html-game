@@ -59,6 +59,8 @@ export class VehiclePanel {
     EventBus.on(GE.UI_PANEL_CLOSE, ({ panel }) => { if (panel === 'vehicle' && this.helper?.visible) this.helper.hide(); });
     EventBus.on(GE.VEHICLE_GAIN,     () => { if (this.helper?.visible) this._refresh(); });
     EventBus.on(GE.VEHICLE_ATTACH,   () => { if (this.helper?.visible) this._refresh(); });
+    // 读档/重置时面板若开着必须刷新（车辆数据可能从存档恢复）
+    EventBus.on(GE.STATE_RESET,      () => { if (this.helper?.visible) this._refresh(); });
   }
 
   _getGS() { return this.director?.getGS?.(); }
@@ -155,9 +157,19 @@ export class VehiclePanel {
     });
   }
 
-  show() { this.helper?.show(); }
+  show() {
+    this.helper?.show();
+    this._refresh();
+  }
   hide() { this.helper?.hide(); }
-  toggle() { this.helper?.toggle(); }
+  toggle() {
+    if (this.helper?.visible) {
+      this.helper.hide();
+    } else {
+      this.helper?.show();
+      this._refresh();
+    }
+  }
 }
 
 export default VehiclePanel;
