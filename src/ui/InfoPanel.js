@@ -19,6 +19,7 @@ import { SKILLS } from '../data/characters.js';
 import { SPIRITS } from '../data/characters.js';
 import { VEHICLES } from '../data/vehicles.js';
 import { VehicleSystem } from '../systems/VehicleSystem.js';
+import { getCreatureDef } from '../data/creatures.js';
 import { createEl, qs } from './dom.js';
 
 /** Phase 2B 完整词条描述字典（10 设施 + 5 资源） */
@@ -100,15 +101,15 @@ export class InfoPanel {
   constructor() {
     this.root = null;
     this.tabsWrap = null;
-    this.tabs = [];
     this.bodyWrap = null;
-    this.activeTab = 0;
-    this.currentTileIdx = null;
+    this.currentTileIdx = null;     // 当前选中的外圈地块 idx（null = 未选中，InfoPanel 滑出）
     this.currentGs = null;
+    this.mode = 'tile';             // 'tile' | 'bless'（点击精灵时无地块 tab）
+    this._slideTimeout = null;
   }
 
   mount(parent = qs('#app')) {
-    // 外层
+    // 外层：初始 transform: translateX(420px) 滑出屏幕右侧
     this.root = createEl('div', {
       class: ['info-panel'],
       style: {
@@ -129,37 +130,17 @@ export class InfoPanel {
         flexDirection: 'column',
         gap: '12px',
         overflow: 'hidden',
+        // 滑入滑出动画：transform 过渡 0.3s
+        transform: 'translateX(420px)',
+        transition: 'transform 0.35s cubic-bezier(0.33, 1, 0.68, 1)',
       },
       parent,
     });
 
-    // 4 tab 按钮
-    const tabs = ['地块内容', '状态', '单位', '祈福'];
+    // tab bar 容器（每次 renderBody 动态重建）
     this.tabsWrap = createEl('div', {
-      style: { display: 'flex', gap: '5px', flexShrink: '0' },
+      style: { display: 'flex', gap: '5px', flexShrink: '0', flexWrap: 'wrap' },
       parent: this.root,
-    });
-    this.tabs = [];
-    tabs.forEach((label, i) => {
-      const tab = createEl('button', {
-        class: ['info-tab', i === 0 ? 'active' : ''],
-        style: {
-          flex: '1', padding: '6px 10px',
-          border: '2px solid #b8a888',
-          borderRadius: '8px 8px 0 0',
-          backgroundColor: i === 0 ? '#f0e0c0' : 'transparent',
-          color: i === 0 ? '#5a4a3a' : '#888',
-          fontWeight: i === 0 ? '700' : '400',
-          fontSize: '14px',
-          cursor: 'pointer',
-          fontFamily: 'inherit',
-          boxShadow: 'none',
-        },
-        text: label,
-        onclick: () => this._switchTab(i),
-        parent: this.tabsWrap,
-      });
-      this.tabs.push(tab);
     });
 
     // body 容器
@@ -172,49 +153,142 @@ export class InfoPanel {
     return this.root;
   }
 
-  /** 切换 tab */
-  _switchTab(idx) {
-    this.activeTab = idx;
-    this.tabs.forEach((t, i) => {
-      if (i === idx) {
-        t.classList.add('active');
-        t.style.backgroundColor = '#f0e0c0';
-        t.style.color = '#5a4a3a';
-        t.style.fontWeight = '700';
-      } else {
-        t.classList.remove('active');
-        t.style.backgroundColor = 'transparent';
-        t.style.color = '#888';
-        t.style.fontWeight = '400';
+  /** 滑入屏幕（有选中内容才会调用） */
+  slideIn() {
+    if (!this.root) return;
+    this.root.style.transform = 'translateX(0)';
+  }
+  /** 滑出屏幕（隐藏） */
+  slideOut() {
+    if (!this.root) return;
+    this.root.style.transform = 'translateX(420px)';
+  }
+
+  /** 根据当前状态重建 tab 按钮条（动态 tab） */
+  _rebuildTabs() {
+    if (!this.tabsWrap) return;
+    // 清空
+    while (this.tabsWrap.firstChild) this.tabsWrap.removeChild(this.tabsWrap.firstChild);
+
+    const gs = this._getGS();
+    const tile = this.currentTileIdx != null ? gs?.map?.outerTiles?.[this.currentTileIdx] : null;
+
+    // 根据当前模式决定显示哪些 tab
+    const tabs = [];
+    if (this.mode === 'bless') {
+      // 祈福模式：只显示祈福 tab
+      tabs.push({ label: '🧘 祈福', render: 'bless' });
+    } else {
+      // 地块点击模式
+      // 0. 地块内容 —— 总是存在
+      tabs.push({ label: '📖 内容', render: 'content' });
+
+      // 1. 状态 —— 只在该地块确实有状态时显示（地块自身 states[]）
+      const hasTileStates = tile && Array.isArray(tile.states) && tile.states.length > 0;
+      if (hasTileStates) {
+        tabs.push({ label: '✨ 状态', render: 'state' });
       }
+
+      // 2. 单位 —— 只在该地块确实有单位时显示
+      //    外圈：只有玩家自己（player.x === tile.idx 才显示）
+      //    栅栏内地块：一格多生物（CreatureSystem）
+      if (tile && gs) {
+        const isPlayerHere = gs.player?.x === tile.idx;
+        // 栅栏内单位：gs.map.fence?.cells[row][col] 可能有 creatures[]
+        let hasCreatures = false;
+        if (gs.map?.fence && typeof tile.fenceRow === 'number' && typeof tile.fenceCol === 'number') {
+          const cell = gs.map.fence.cells?.[tile.fenceRow]?.[tile.fenceCol];
+          hasCreatures = !!(cell?.creatures && cell.creatures.length > 0);
+        }
+        if (isPlayerHere || hasCreatures) {
+          tabs.push({ label: '👥 单位', render: 'unit' });
+        }
+      }
+    }
+
+    // 如果没有可显示的 tab（理论上不会发生，内容 tab 至少有），直接 return 不渲染
+    if (tabs.length === 0) return;
+
+    // 默认激活第一个
+    this.activeTabIdx = 0;
+
+    // 渲染 tab 按钮
+    tabs.forEach((t, i) => {
+      const isActive = i === this.activeTabIdx;
+      const btn = createEl('button', {
+        class: ['info-tab', isActive ? 'active' : ''],
+        style: {
+          flex: '1', padding: '6px 10px', minWidth: '60px',
+          border: '2px solid #b8a888',
+          borderRadius: '8px 8px 0 0',
+          backgroundColor: isActive ? '#f0e0c0' : 'transparent',
+          color: isActive ? '#5a4a3a' : '#888',
+          fontWeight: isActive ? '700' : '400',
+          fontSize: '13px',
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+          boxShadow: 'none',
+        },
+        text: t.label,
+        parent: this.tabsWrap,
+      });
+      btn.onclick = () => {
+        this.activeTabIdx = i;
+        this._renderBody();
+      };
     });
-    this._renderBody();
+
+    // 缓存 render 列表供 _renderBody 使用
+    this._currentTabs = tabs;
   }
 
   _renderBody() {
-    if (!this.bodyWrap) return;
+    if (!this.bodyWrap || !this.root) return;
     while (this.bodyWrap.firstChild) this.bodyWrap.removeChild(this.bodyWrap.firstChild);
+
+    // 先重建 tab 按钮条
+    this._rebuildTabs();
 
     const gs = this._getGS();
     const tileIdx = this.currentTileIdx;
 
-    if (!gs || tileIdx === null) {
-      createEl('div', {
-        style: { padding: '20px', textAlign: 'center', color: '#999', fontSize: '14px' },
-        text: '点击地图上的地块查看详情',
-        parent: this.bodyWrap,
-      });
+    // 无内容 → 滑出
+    if (this.mode === 'tile' && tileIdx === null) {
+      this.slideOut();
       return;
     }
 
-    const tile = gs.map.outerTiles[tileIdx];
-    if (!tile) return;
+    // 有内容 → 滑入
+    this.slideIn();
 
-    switch (this.activeTab) {
-      case 0: this._renderContentTab(tile, gs); break;
-      case 1: this._renderStateTab(tile); break;
-      case 2: this._renderUnitTab(tile); break;
-      case 3: this._renderBlessTab(); break;
+    // 祈福模式
+    if (this.mode === 'bless') {
+      this._renderBlessTab();
+      return;
+    }
+
+    // 地块点击模式
+    const tile = gs.map.outerTiles[tileIdx];
+    if (!tile) {
+      this.slideOut();
+      return;
+    }
+
+    // 根据当前激活的 tab render
+    const tabs = this._currentTabs || [];
+    const active = tabs[this.activeTabIdx];
+    if (!active) {
+      // 可能动态 tab 数量变化后 activeIdx 越界 → 切回 0
+      this.activeTabIdx = 0;
+      this._rebuildTabs();
+      return this._renderBody();
+    }
+
+    switch (active.render) {
+      case 'content': this._renderContentTab(tile, gs); break;
+      case 'state':   this._renderStateTab(tile); break;
+      case 'unit':    this._renderUnitTab(tile, gs); break;
+      case 'bless':   this._renderBlessTab(); break;
     }
   }
 
@@ -772,52 +846,77 @@ export class InfoPanel {
   }
 
   // ════════════════════════════════════════════════════════════
-  // Tab 2 —— 单位（玩家 hp/atk/stamina/gold + 栅栏内生物占位）
+  // Tab —— 单位（只显示该地块上的单位，不是场上所有）
+  //   外圈：player.x === tile.idx 才显示主角
+  //   栅栏内：一格可能多生物（CreatureSystem 存 fenceRow/Col）
   // ════════════════════════════════════════════════════════════
-  _renderUnitTab(tile) {
-    const gs = this._getGS();
-    const playerTileIdx = gs.player.x;
-    const isHere = tile.idx === playerTileIdx;
+  _renderUnitTab(tile, gs) {
+    const isPlayerHere = gs.player?.x === tile.idx;
 
-    createEl('div', {
-      style: {
-        fontSize: '16px', fontWeight: '700', color: '#3a2e20',
-        marginBottom: '10px',
-      },
-      text: isHere ? '🧑‍🎤 余默（在本格）' : `🧑‍🎤 余默（在 idx=${playerTileIdx}）`,
-      parent: this.bodyWrap,
-    });
-
-    const p = gs.player;
-    const stats = [
-      ['❤️ 生命',   `${p.hp} / ${p.maxHp}`],
-      ['⚔️ 攻击',   `${p.atk}`],
-      ['🔷 行动力', `${p.stamina} / ${p.maxStamina}`],
-      ['🪙 金币',   `${p.gold}`],
-      ['🕐 回合计',  `${gs.turn}`],
-      ['📅 天数',    `${gs.day}`],
-    ];
-    for (const [label, value] of stats) {
-      const row = createEl('div', { class: ['player-info-row'], parent: this.bodyWrap });
-      createEl('span', { class: ['stat-label'], text: label, parent: row });
-      createEl('span', { class: ['stat-value'], text: value, parent: row });
+    if (isPlayerHere) {
+      createEl('div', {
+        style: { fontSize: '16px', fontWeight: '700', color: '#3a2e20', marginBottom: '10px' },
+        text: '🧑‍🎤 余默',
+        parent: this.bodyWrap,
+      });
+      const p = gs.player;
+      const stats = [
+        ['❤️ 生命',   `${p.hp} / ${p.maxHp}`],
+        ['⚔️ 攻击',   `${p.atk}`],
+        ['🔷 行动力', `${p.stamina} / ${p.maxStamina}`],
+        ['🪙 金币',   `${p.gold}`],
+        ['🕐 回合计',  `${gs.turn}`],
+        ['📅 天数',    `${gs.day}`],
+      ];
+      for (const [label, value] of stats) {
+        const row = createEl('div', { class: ['player-info-row'], parent: this.bodyWrap });
+        createEl('span', { class: ['stat-label'], text: label, parent: row });
+        createEl('span', { class: ['stat-value'], text: value, parent: row });
+      }
     }
 
-    // 栅栏内生物占位（Phase 3 CreatureSystem 创建后再接入）
-    createEl('div', {
-      style: { marginTop: '16px', borderTop: '2px dashed #b8a888', paddingTop: '10px' },
-      parent: this.bodyWrap,
-    });
-    createEl('div', {
-      style: { fontSize: '14px', color: '#3a2e20', fontWeight: '700', marginBottom: '6px' },
-      text: '🐣 栅栏内生物',
-      parent: this.bodyWrap,
-    });
-    createEl('div', {
-      style: { color: '#b0a090', fontSize: '13px' },
-      text: '（暂无生物 —— Phase 3 CreatureSystem）',
-      parent: this.bodyWrap,
-    });
+    // 栅栏内生物：读 fence.cells[row][col].creatures[]
+    const hasFenceCell = gs.map?.fence
+      && typeof tile.fenceRow === 'number'
+      && typeof tile.fenceCol === 'number';
+    if (hasFenceCell) {
+      const cell = gs.map.fence.cells?.[tile.fenceRow]?.[tile.fenceCol];
+      const creatureIds = cell?.creatures || [];
+      if (creatureIds.length > 0) {
+        if (isPlayerHere) {
+          // 主角和栅栏生物都在同一格（理论上不会发生，外圈格不在栅栏内）
+          createEl('div', {
+            style: { marginTop: '16px', borderTop: '2px dashed #b8a888', paddingTop: '10px' },
+            parent: this.bodyWrap,
+          });
+        }
+        createEl('div', {
+          style: { fontSize: '14px', color: '#3a2e20', fontWeight: '700', marginBottom: '8px' },
+          text: `🐣 栅栏内生物（${creatureIds.length}）`,
+          parent: this.bodyWrap,
+        });
+        // 从 gs.creatures 找完整对象
+        for (const id of creatureIds) {
+          const c = gs.creatures?.find(x => x.id === id);
+          if (!c) continue;
+          const def = getCreatureDef?.(c.kind) || {};
+          const emoji = def.emoji || '🐾';
+          createEl('div', {
+            style: { fontSize: '13px', color: '#3a2e20', padding: '3px 0' },
+            text: `${emoji} ${def.name || c.kind} · ❤️${c.hp}/${c.maxHp} · ⚔️${c.atk}`,
+            parent: this.bodyWrap,
+          });
+        }
+      }
+    }
+
+    if (!isPlayerHere && !hasFenceCell) {
+      createEl('div', {
+        style: { color: '#999', fontSize: '13px' },
+        text: '（该地块上无单位）',
+        parent: this.bodyWrap,
+      });
+    }
   }
 
   // ════════════════════════════════════════════════════════════
@@ -896,37 +995,37 @@ export class InfoPanel {
   // ════════════════════════════════════════════════════════════
   // 事件订阅（保留 Phase 1 骨架 + 补充 BLESS_DONE / GOLD_CHANGE / STAMINA_CHANGE 刷新）
   // ════════════════════════════════════════════════════════════
-  /** 选中指定 idx 的 tile（公开接口，供 SpiritArea 等调用） */
+  /** 选中指定 idx 的 tile（公开接口） */
   selectTile(tileIdx) {
+    this.mode = 'tile';
     this.currentTileIdx = tileIdx;
-    this._switchTab(this.activeTab);
+    this._renderBody();
   }
 
-  /** 切到"祈福"tab（公开接口，供 SpiritArea 点击 momo 调用） */
+  /** 切到祈福模式（供 SpiritArea 点击 momo 调用） */
   showBlessTab() {
-    // 同时把玩家所在 tile 选中（让 InfoPanel 有一个 tile 上下文）
-    const gs = this._getGS();
-    if (gs) this.currentTileIdx = gs.player.x;
-    this._switchTab(3);
+    this.mode = 'bless';
+    this.currentTileIdx = null;
+    this._renderBody();
   }
 
   _subscribeEvents() {
     EventBus.on(GE.TILE_CLICKED, ({ tileIdx }) => {
+      this.mode = 'tile';
       this.currentTileIdx = tileIdx;
-      this.root.classList.remove('slide-out');
-      this.root.classList.add('slide-in');
       this._renderBody();
     });
 
-    // 建造模式下 InfoPanel 完全隐藏（玩家看不到）
+    // 建造模式下 InfoPanel 完全隐藏
     EventBus.on(GE.UI_MODE_CHANGE, ({ mode }) => {
       if (!this.root) return;
       this.root.style.display = mode === 'build' ? 'none' : '';
+      if (mode === 'build') this.slideOut();
     });
 
     EventBus.on(GE.STATE_RESET, ({ gs }) => {
       this.currentGs = gs;
-      if (this.currentTileIdx !== null) this._renderBody();
+      if (this.currentTileIdx !== null || this.mode === 'bless') this._renderBody();
     });
 
     EventBus.on(GE.TILE_UPDATED, (payload = {}) => {
@@ -936,64 +1035,61 @@ export class InfoPanel {
       }
     });
 
-    // 祈福开始（扣消耗 + 动画中） → Tab3 立即刷新成"抽奖中…"禁用态
     EventBus.on(GE.BLESS_START, () => {
-      if (this.activeTab === 3) this._renderBody();
+      this._renderBody();
     });
 
-    // 祈福完成 → 选中祝福目标并切到"状态"tab
     EventBus.on(GE.BLESS_DONE, ({ tileIdx }) => {
       if (tileIdx !== undefined && tileIdx !== null) {
+        this.mode = 'tile';
         this.currentTileIdx = tileIdx;
-        this._switchTab(1); // 切到"状态"tab，让玩家看到 blessed 状态
+        this._renderBody();
       }
     });
 
-    // 玩家数值变化 → "单位"tab 或"祈福"tab 重刷
     EventBus.on(GE.STAMINA_CHANGE, () => {
-      if ((this.activeTab === 2 || this.activeTab === 3) && this.currentTileIdx !== null) {
-        this._renderBody();
-      }
+      this._renderBody();
     });
     EventBus.on(GE.GOLD_CHANGE, () => {
-      if ((this.activeTab === 2 || this.activeTab === 3) && this.currentTileIdx !== null) {
-        this._renderBody();
-      }
+      this._renderBody();
     });
 
-    // Boot 时拿 GS
     EventBus.on(GE.BOOT, ({ gs }) => {
       this.currentGs = gs;
+      this.slideOut();
     });
 
-    // 载具变化 → 「前往」按钮区域依赖载具状态，必须实时刷新
     EventBus.on(GE.VEHICLE_ATTACH, () => {
-      if (this.currentTileIdx !== null) this._renderBody();
+      if (this.mode === 'tile' && this.currentTileIdx !== null) this._renderBody();
     });
     EventBus.on(GE.VEHICLE_GAIN, () => {
-      if (this.currentTileIdx !== null) this._renderBody();
+      if (this.mode === 'tile' && this.currentTileIdx !== null) this._renderBody();
     });
 
-    // SpiritArea 点击 momo 切到祈福 tab
+    // 精灵点击 → 祈福模式
     EventBus.on('ui:infoShowBless', () => {
       this.showBlessTab();
     });
 
-    // 点击非地块 / 非 InfoPanel / 非 momo 区域 → 信息区消失
+    // 点击 InfoPanel 内部 → 不关
+    this.root?.addEventListener?.('click', (e) => e.stopPropagation());
+
+    // 点击非 InfoPanel / 非地块 / 非 momo / 非栅栏 → InfoPanel 滑出
     document.addEventListener('click', (e) => {
       if (this._ignoreDocumentClick) return;
-      // 探索模式下才响应空白点击
       if (this.currentGs?.uiState?.buildMode) return;
 
       const t = e.target;
       if (!t || !this.root) return;
-      if (this.root.contains(t)) return;                          // 点击 InfoPanel 内部 → 不关
-      if (t.closest('.map-tile')) return;                         // 点击地块 → MapView 会 emit TILE_CLICKED
-      if (t.closest('.spirit-area')) return;                     // 点击 momo 精灵区域
-      if (t.closest('.fence') || t.closest('.sprite-container')) return; // 栅栏 / 其他角色精灵
-      // 其他区域（页面空白、FuncBar、面板遮罩等）→ 关闭
+      if (this.root.contains(t)) return;
+      if (t.closest('.map-tile')) return;
+      if (t.closest('.spirit-area')) return;
+      if (t.closest('.fence') || t.closest('.sprite-container')) return;
+
+      // 其他区域 → 滑出
       this.currentTileIdx = null;
-      this._renderBody();
+      this.mode = 'tile';
+      this.slideOut();
     });
   }
 

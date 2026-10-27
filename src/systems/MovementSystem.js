@@ -33,38 +33,8 @@ export function move(gs, direction) {
     return null;
   }
 
-  // === 装备载具时：严格走载具规则 ===
-  // WASD 只是方向式载具的快捷键，等价于"点击方向上可达格 → 前往"
-  // 若方向上找不到合法落点（极端特殊载具），WASD 也会失败
-  if (gs.vehicle?.current) {
-    const vehResult = VehicleSystem.tryMove(gs, { type: 'direction', direction });
-    if (!vehResult.ok) {
-      devLog.info('[MovementSystem] 载具方向', direction, '无合法落点:', vehResult.reason);
-      EventBus.emit(GE.MOVE_BLOCKED, { direction, currentIdx: gs.player.x });
-      return null;
-    }
-
-    // 载具移动后的附加逻辑：粘液 debuff（目标格）+ 蹁跹天赋
-    const targetIdx = vehResult.finalIdx;
-    const targetTile = gs.map.outerTiles[targetIdx];
-    if (targetTile && Array.isArray(targetTile.states)) {
-      const slimeStateIdx = targetTile.states.findIndex(s => s.type === 'slime');
-      if (slimeStateIdx >= 0) {
-        CombatSystem.applyTrueDamageToPlayer(gs.player, 5, { reason: 'slime_hit_by_vehicle' });
-        gs.player.stamina -= 1;
-        EventBus.emit(GE.STAMINA_CHANGE, {
-          newValue: gs.player.stamina, delta: -1, maxStamina: gs.player.maxStamina,
-        });
-        targetTile.states.splice(slimeStateIdx, 1);
-        EventBus.emit(GE.TOAST_SHOW, { text: '🟢 粘液：hp -5 stamina -1', duration: 1500 });
-        devLog.info('[MovementSystem] slime state triggered (vehicle) → removed');
-      }
-    }
-    TalentSystem.onMoveEnd(gs);
-
-    return targetIdx;
-  }
-
+  // WASD 永远只走 1 步相邻格，无论是否装备载具
+  // 载具的"一次移动更远"只通过 InfoPanel 点击「前往」走 VehicleSystem.tryMove
   const neighbors = Distance.outerNeighbors(gs.map.size, gs.player.x);
   const targetIdx = neighbors[dirIdx];
 
@@ -75,7 +45,7 @@ export function move(gs, direction) {
     return null;
   }
 
-  // === 可行走：执行移动 ===
+  // === 可行走：执行 1 步移动 ===
   const fromIdx = gs.player.x;
 
   // 1. 扣 stamina（芋圆 nextMoveNoStamina = true 时免行动力消耗 —— 设计文档 §12.2）
@@ -130,6 +100,11 @@ export function move(gs, direction) {
 
   // 7. Agent 3：天赋 蹁跹 onMoveEnd（+6HP）
   TalentSystem.onMoveEnd(gs);
+
+  // 8. 装备载具时：WASD 1 步移动也消耗 1 次载具使用次数（载具用完自动卸下）
+  if (gs.vehicle?.current) {
+    VehicleSystem.useOnce(gs);
+  }
 
   devLog.info('[MovementSystem] 移动成功:', fromIdx, '→', targetIdx, direction);
   return targetIdx;
