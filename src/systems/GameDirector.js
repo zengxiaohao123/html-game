@@ -142,8 +142,10 @@ export class GameDirector {
 
     // 6. 广播 BOOT 事件（UI 模块会收到）
     EventBus.emit(GE.BOOT, { gs: this.gs });
+    // 7. 同步 STATE_RESET（让缓存了 this.gs 的 UI 模块（TopBar 等）也能更新到新 GS 引用）
+    EventBus.emit(GE.STATE_RESET, { gs: this.gs });
 
-    // 6. 标记启动完成
+    // 8. 标记启动完成
     this.started = true;
     devLog.info('GameDirector 启动完成 ✓ day=', this.gs.day, 'stamina=', this.gs.player.stamina);
   }

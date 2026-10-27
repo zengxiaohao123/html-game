@@ -217,6 +217,9 @@ export class TopBar {
   }
 
   _subscribeEvents() {
+    // BOOT（新游戏启动 / startNewGame）和 STATE_RESET（读档/手动重置）都要更新 this.gs 引用
+    // GameDirector.start() 会同时 emit BOOT + STATE_RESET，这里双保险
+    EventBus.on(GE.BOOT,        ({ gs }) => { this.gs = gs; this._renderAll(); });
     EventBus.on(GE.STATE_RESET, ({ gs }) => { this.gs = gs; this._renderAll(); });
     EventBus.on(GE.STAMINA_CHANGE,    () => this._renderAll());
     EventBus.on(GE.HP_CHANGE,         () => this._renderAll());
@@ -226,7 +229,7 @@ export class TopBar {
     EventBus.on(GE.CAPACITY_CHANGE,   () => this._renderAll());
     EventBus.on(GE.CREATURE_SPAWNED,  () => this._renderAll());
     EventBus.on(GE.CREATURE_DEFEATED, () => this._renderAll());
-    EventBus.on(GE.GOLD_CHANGE,       () => { console.log('[TopBar] 🔔 GOLD_CHANGE, this.gs=', this.gs ? 'OK' : 'NULL', 'gold=', this.gs?.player?.gold); this._renderAll(); });   // Phase 4
+    EventBus.on(GE.GOLD_CHANGE,       () => { this._renderAll(); });   // Phase 4
     EventBus.on(GE.TURN_ADVANCE,      () => this._renderAll());   // Phase 4
   }
 }
