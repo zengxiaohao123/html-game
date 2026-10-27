@@ -35,6 +35,16 @@ export class GameDirector {
   }
 
   /**
+   * 新游戏（主菜单入口）：先清理 Panel 栈再 start()
+   */
+  startNewGame() {
+    this.openPanels = [];
+    // 关闭所有已开的 Panel（逐个发 CLOSE 事件让 UI 清理）
+    EventBus.emit(GE.STATE_RESET);
+    this.start();
+  }
+
+  /**
    * 启动游戏：创建 GS + 注册设施 + 广播 BOOT
    */
   start() {
