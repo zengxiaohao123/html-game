@@ -14,6 +14,7 @@ import { EventBus } from '../../core/EventBus.js';
 import { GE } from '../../core/GameEvents.js';
 import { Assets } from '../../core/Assets.js';
 import { ITEMS } from '../../data/items.js';
+import { getDef as getFacilityDef } from '../../data/facilities.js';
 import { InventorySystem } from '../../systems/InventorySystem.js';
 import { OUTBOX_SLOTS } from '../../utils/constants.js';
 import { createEl, qs } from '../dom.js';
@@ -529,15 +530,10 @@ export class InventoryPanel {
     if (!itemId) return '未知';
     const d = ITEMS[itemId];
     if (d?.name) return d.name;
-    const facilitiesMap = {
-      facility_home: '家', facility_tent: '帐篷',
-      facility_wheat: '麦田', facility_rice: '稻田', facility_potato: '土豆田',
-      facility_tulip: '郁金香', facility_strawberry: '草莓田', facility_pea: '豌豆架',
-      facility_henhouse: '鸡舍', facility_slimehouse: '史莱姆屋',
-      resource_event: '事件格', resource_reward: '奖励格',
-      resource_hunt: '狩猎格', resource_shop: '商店', resource_bus: '巴士站',
-    };
-    return facilitiesMap[itemId] || itemId;
+    // 优先从 facilities.js 读设施/资源名（单一数据源，避免硬编码漂移）
+    const fd = getFacilityDef(itemId);
+    if (fd?.name) return fd.name;
+    return itemId;
   }
 }
 

@@ -69,6 +69,17 @@ export class FuncBar {
         title: item.label,
         onclick: () => this._onAction(item.action),
       });
+      // 按钮内部：emoji 在上 + 文字在下
+      createEl('span', {
+        text: item.emoji,
+        style: { fontSize: '18px', lineHeight: '1' },
+        parent: btn,
+      });
+      createEl('span', {
+        text: item.label,
+        style: { fontSize: '7px', color: '#888', lineHeight: '1', marginTop: '1px' },
+        parent: btn,
+      });
       // 悬浮提示
       createEl('div', {
         style: {

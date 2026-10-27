@@ -310,22 +310,11 @@ const FacilityPotato = {
       }
     }, this);
 
-    // onEnter：若玩家当前格有储存土豆，则自动取走（简化版）
+    // onEnter 自动取走已删除 —— 收获土豆改为 InfoPanel 手动滑动条触发（§16.4）
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
-      const key = flagKey(this.id, 'onEnter');
-      if (gs.map.outerTiles[tileIdx].dailyFlags[key]) return;
-      gs.map.outerTiles[tileIdx].dailyFlags[key] = true;
-
-      const tile = gs.map.outerTiles[tileIdx];
-      const state = tile.contentState || (tile.contentState = {});
-      const stored = state.potatoStored || 0;
-      if (stored > 0) {
-        InventorySystem.addItem(gs, 'item_potato', stored);
-        state.potatoStored = 0;
-        EventBus.emit(GE.TOAST_SHOW, { text: `🥔 收获 +${stored} 土豆`, duration: 1800 });
-        EventBus.emit(GE.TILE_UPDATED, { tileIdx });
-      }
+      // 占位：InfoPanel 手动操作，此处不再自动 InventorySystem.addItem
+      devLog.info('[potato] onEnter (manual harvest via InfoPanel now)');
     }, this);
 
     // onBlessed：储存 +5（立即触发，跳过每日 flag 检查）
@@ -404,20 +393,10 @@ const FacilityStrawberry = {
       EventBus.emit(GE.TILE_UPDATED, { tileIdx });
     }, this);
 
+    // onEnter 自动取走已删除 —— 满时手动取走改为 InfoPanel 按钮触发（§16.4）
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
-      const key = flagKey(this.id, 'onEnter');
-      if (gs.map.outerTiles[tileIdx].dailyFlags[key]) return;
-      gs.map.outerTiles[tileIdx].dailyFlags[key] = true;
-      const tile = gs.map.outerTiles[tileIdx];
-      const state = tile.contentState || (tile.contentState = {});
-      const stored = state.strawberryStored || 0;
-      if (stored >= STRAWBERRY_MAX) {
-        InventorySystem.addItem(gs, 'item_strawberry', stored);
-        state.strawberryStored = 0;
-        EventBus.emit(GE.TOAST_SHOW, { text: `🍓 已满！收获 +${stored} 草莓`, duration: 2000 });
-        EventBus.emit(GE.TILE_UPDATED, { tileIdx });
-      }
+      devLog.info('[strawberry] onEnter (manual full-harvest via InfoPanel now)');
     }, this);
 
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
@@ -470,18 +449,10 @@ const FacilityPea = {
       // 豌豆架每 2 回合限 1 次 —— Phase 2A 暂不主动 fire 此 hook，SkillSystem fire onUseSkill 会做 turn 差判断
     }, this);
 
-    // onEnter：取走
+    // onEnter 自动取走已删除 —— 收获豌豆改为 InfoPanel 手动滑动条触发（§16.4）
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
-      const tile = gs.map.outerTiles[tileIdx];
-      const state = tile.contentState || (tile.contentState = {});
-      const stored = state.peaStored || 0;
-      if (stored > 0) {
-        InventorySystem.addItem(gs, 'item_pea', stored);
-        state.peaStored = 0;
-        EventBus.emit(GE.TOAST_SHOW, { text: `🫛 收获 +${stored} 豌豆`, duration: 1800 });
-        EventBus.emit(GE.TILE_UPDATED, { tileIdx });
-      }
+      devLog.info('[pea] onEnter (manual harvest via InfoPanel now)');
     }, this);
 
     // onBlessed：自动取走储存的豌豆
@@ -513,22 +484,12 @@ const FacilityHenhouse = {
   emoji: Assets.facilities.facility_henhouse,
 
   register() {
-    // 进入时：每日限 1 次生成小鸡 + 取走鸡蛋
+    // 进入时：每日限 1 次生成小鸡（取走鸡蛋已改为 InfoPanel 手动滑动条 §16.4）
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
       const tile = gs.map.outerTiles[tileIdx];
-      const state = tile.contentState || (tile.contentState = {});
 
-      // 1) 取走鸡蛋（由 CreatureSystem.dailyTick 给鸡产蛋到 InventorySystem，此处不再产蛋；
-      //    仍保留 Phase 2A 的 eggStored 兼容，但不再每日自动产）
-      const stored = state.eggStored || 0;
-      if (stored > 0) {
-        InventorySystem.addItem(gs, 'item_egg', stored);
-        state.eggStored = 0;
-        EventBus.emit(GE.TOAST_SHOW, { text: `🥚 收获 +${stored} 鸡蛋`, duration: 1800 });
-      }
-
-      // 2) 生成小鸡（每日限 1 次；每个鸡舍至多 4 只）
+      // 生成小鸡（每日限 1 次；每个鸡舍至多 4 只）
       const spawnKey = flagKey(this.id, 'spawn');
       if (!tile.dailyFlags[spawnKey]) {
         // 统计属于该鸡舍的生物数量
