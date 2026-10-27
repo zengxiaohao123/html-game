@@ -16,8 +16,10 @@ import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { Random } from '../core/Random.js';
 import { VEHICLES } from '../data/vehicles.js';
-import { Distance } from '../core/Distance.js';
+import { Distance, outerXYToIdx } from '../core/Distance.js';
 import { Direction } from '../utils/Direction.js';
+import { HookDispatcher } from '../core/HookDispatcher.js';
+import { SkillSystem } from './SkillSystem.js';
 
 function ensureVehicleState(gs) {
   if (!gs.vehicle) {
@@ -208,6 +210,21 @@ export function tryMove(gs, opts = {}) {
 
   // 更新位置
   gs.player.x = targetIdx;
+
+  // Phase 4：载具移动也要触发 onPass / onEnter hook（设施词条正常工作）
+  //   onPass：路径上除最后一格外的每一格（轮子穿越最多 2 格时，第一格是 onPass）
+  if (path && path.length > 0) {
+    for (const passIdx of path) {
+      if (passIdx !== targetIdx) {
+        HookDispatcher.fire('onPass', { gs, tileIdx: passIdx });
+        SkillSystem.triggerSkillByHook?.('onPass', { gs, tileIdx: passIdx });
+      }
+    }
+  }
+  //   onEnter：最终停留格
+  HookDispatcher.fire('onEnter', { gs, tileIdx: targetIdx });
+  SkillSystem.triggerSkillByHook?.('onEnter', { gs, tileIdx: targetIdx });
+
   EventBus.emit(GE.MOVE, { fromIdx, toIdx: targetIdx, byVehicle: true });
   EventBus.emit(GE.TILE_UPDATED, { tileIdx: fromIdx });
   EventBus.emit(GE.TILE_UPDATED, { tileIdx: targetIdx });
@@ -215,6 +232,68 @@ export function tryMove(gs, opts = {}) {
   devLog.info('[VehicleSystem.tryMove]', def.name, fromIdx, '→', targetIdx, 'path=', path);
 
   return { ok: true, path, finalIdx: targetIdx };
+}
+
+/**
+ * 外部调用：消耗 1 次载具使用（WASD 普通移动消耗）
+ */
+export function useOnce(gs) {
+  return consumeUsage(gs);
+}
+
+/**
+ * 判断当前装备的载具能否到达目标格
+ * @returns {{ ok: boolean, reason?: string, def?: object }}
+ */
+export function canVehicleReach(gs, targetIdx) {
+  ensureVehicleState(gs);
+  const cur = gs.vehicle.current;
+  if (!cur) return { ok: false, reason: 'noVehicle' };
+
+  const def = VEHICLES[cur.vehicleId];
+  if (!def) return { ok: false, reason: 'unknown' };
+
+  const fromIdx = gs.player.x;
+  if (targetIdx === fromIdx) return { ok: false, reason: 'sameTile' };
+
+  if (def.movePattern === 'directional') {
+    // 轮子：同方向最多 maxRange 格
+    const { x: fx, y: fy } = Distance.outerIdxToXY(gs.map.size, fromIdx);
+    const { x: tx, y: ty } = Distance.outerIdxToXY(gs.map.size, targetIdx);
+    const dx = tx - fx;
+    const dy = ty - fy;
+    // 必须严格只沿一个方向（dx===0 或 dy===0）
+    if (dx !== 0 && dy !== 0) return { ok: false, reason: 'notAligned' };
+    const dist = Math.max(Math.abs(dx), Math.abs(dy));
+    if (dist === 0 || dist > (def.maxRange || 2)) return { ok: false, reason: 'outOfRange' };
+
+    // 确认路径上每一格都是外圈格（不 wrap 逻辑）
+    const stepX = dx === 0 ? 0 : Math.sign(dx);
+    const stepY = dy === 0 ? 0 : Math.sign(dy);
+    let cx = fx, cy = fy;
+    for (let i = 0; i < dist; i++) {
+      cx += stepX; cy += stepY;
+      if (outerXYToIdx(gs.map.size, cx, cy) === null) {
+        return { ok: false, reason: 'pathBlocked' };
+      }
+    }
+    return { ok: true, def };
+  }
+
+  if (def.movePattern === 'line') {
+    // 扫帚：同行或同列任意格
+    if (!sameRowOrCol(gs, fromIdx, targetIdx)) {
+      return { ok: false, reason: 'notSameRowCol' };
+    }
+    return { ok: true, def };
+  }
+
+  if (def.movePattern === 'any') {
+    // 巧遇：任意格（外圈都是合法的）
+    return { ok: true, def };
+  }
+
+  return { ok: false, reason: 'badPattern' };
 }
 
 /**
@@ -230,5 +309,7 @@ export const VehicleSystem = {
   attachVehicle,
   detachVehicle,
   tryMove,
+  useOnce,
+  canVehicleReach,
   onDayStart,
 };

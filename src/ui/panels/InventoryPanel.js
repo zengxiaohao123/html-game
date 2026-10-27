@@ -150,6 +150,8 @@ export class InventoryPanel {
     EventBus.on(GE.UI_PANEL_CLOSE, ({ panel }) => {
       if (panel === 'inventory' && this.visible) this.hide();
     });
+    // Tab 切换探索/建造模式时实时刷新（物品"放入出货箱/放置"两种行为依赖当前模式）
+    EventBus.on(GE.UI_MODE_CHANGE, () => this.visible && this._reRender());
   }
 
   // ─────────────────────── 开关 ───────────────────────

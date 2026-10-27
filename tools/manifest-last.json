@@ -1,0 +1,11 @@
+{
+  "root": "C:\\Users\\10436\\game\\code",
+  "files": [
+    { "path": "src/core/GameEvents.js",      "local": "src/core/GameEvents.js",      "encoding": "utf-8" },
+    { "path": "src/data/facilities.js",      "local": "src/data/facilities.js",      "encoding": "utf-8" },
+    { "path": "src/systems/VehicleSystem.js","local": "src/systems/VehicleSystem.js","encoding": "utf-8" },
+    { "path": "src/ui/MapView.js",           "local": "src/ui/MapView.js",           "encoding": "utf-8" },
+    { "path": "src/ui/TopBar.js",            "local": "src/ui/TopBar.js",            "encoding": "utf-8" },
+    { "path": "src/ui/panels/VehiclePanel.js","local": "src/ui/panels/VehiclePanel.js","encoding": "utf-8" }
+  ]
+}

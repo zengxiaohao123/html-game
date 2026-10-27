@@ -18,6 +18,7 @@ import { devLog } from '../core/Logger.js';
 import { SkillSystem } from './SkillSystem.js';
 import { CombatSystem } from './CombatSystem.js';
 import { TalentSystem } from './TalentSystem.js';
+import { VehicleSystem } from './VehicleSystem.js';
 
 /**
  * 尝试移动玩家
@@ -97,6 +98,11 @@ export function move(gs, direction) {
 
   // 7. Agent 3：天赋 蹁跹 onMoveEnd（+6HP）
   TalentSystem.onMoveEnd(gs);
+
+  // 8. Phase 4：若玩家装备了载具，每次 WASD 1 步也消耗 1 次使用
+  if (gs.vehicle?.current) {
+    VehicleSystem.useOnce(gs);
+  }
 
   devLog.info('[MovementSystem] 移动成功:', fromIdx, '→', targetIdx, direction);
   return targetIdx;

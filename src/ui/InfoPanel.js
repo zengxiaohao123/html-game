@@ -17,6 +17,8 @@ import { InventorySystem } from '../systems/InventorySystem.js';
 import { getDef } from '../data/facilities.js';
 import { SKILLS } from '../data/characters.js';
 import { SPIRITS } from '../data/characters.js';
+import { VEHICLES } from '../data/vehicles.js';
+import { VehicleSystem } from '../systems/VehicleSystem.js';
 import { createEl, qs } from './dom.js';
 
 /** Phase 2B 完整词条描述字典（10 设施 + 5 资源） */
@@ -621,37 +623,115 @@ export class InfoPanel {
       // 其他 resource_ 前缀（resource_bus / resource_bed / ...）— 设计文档均无功能选项，词条自动触发
     }
 
-    // ── “前往”按钮（一步可达玩家当前位置的相邻格） ──
+    // ── "前往"按钮（根据载具状态决定可达范围和调用方式） ──
     if (gs && tile.idx !== gs.player.x) {
-      const isAdj = Distance.isOuterAdjacent(gs.map.size, gs.player.x, tile.idx);
+      const hasVehicle = !!(gs.vehicle?.current);
+      let canGo = false;
+      let goLabel = '🚪 前往（一步抵达）';
+      let goDisabled = false;
+      let goReason = null;
+      let reachInfo = null;  // { pattern, maxRange, ... }
+
+      if (!hasVehicle) {
+        // 无载具：只允许相邻格
+        const isAdj = Distance.isOuterAdjacent(gs.map.size, gs.player.x, tile.idx);
+        if (isAdj) {
+          canGo = true;
+        } else {
+          canGo = false;
+          goReason = '不是相邻格';
+        }
+      } else {
+        // 有载具：按载具 movePattern 判断可达性
+        const reach = VehicleSystem.canVehicleReach(gs, tile.idx);
+        if (reach.ok) {
+          canGo = true;
+          reachInfo = reach.def;
+          // 动态拼按钮文字
+          if (reachInfo.movePattern === 'directional') {
+            goLabel = `🚗 ${reachInfo.emoji || ''} ${reachInfo.name}：前往（同方向最多 ${reachInfo.maxRange} 格）`;
+          } else if (reachInfo.movePattern === 'line') {
+            goLabel = `🧹 ${reachInfo.emoji || ''} ${reachInfo.name}：前往（同行/同列任意格）`;
+          } else if (reachInfo.movePattern === 'any') {
+            goLabel = `✨ ${reachInfo.emoji || ''} ${reachInfo.name}：前往（任意格）`;
+          }
+          goLabel += ` · 剩 ${gs.vehicle.current.usageLeft} 次`;
+        } else {
+          canGo = false;
+          goReason = reach.reason;
+        }
+      }
+
       createEl('div', {
         style: { marginTop: '10px', textAlign: 'center' },
         parent: this.bodyWrap,
       });
-      if (isAdj) {
+
+      if (canGo) {
         createEl('button', {
           class: 'action-btn',
           style: { fontSize: '14px', background: '#fff0c0' },
-          text: '🚪 前往（一步抵达）',
+          text: goLabel,
+          disabled: goDisabled,
           parent: this.bodyWrap,
           onclick: () => {
-            // 计算方向：比较 player.x 与 tile.idx 的坐标差
             const director = window.__gameDirector;
-            if (!director?.move) return;
-            const { x: px, y: py } = Distance.outerIdxToXY(gs.map.size, gs.player.x);
-            const { x: tx, y: ty } = Distance.outerIdxToXY(gs.map.size, tile.idx);
-            let dir = null;
-            if (tx > px) dir = 'right';
-            else if (tx < px) dir = 'left';
-            else if (ty > py) dir = 'down';
-            else if (ty < py) dir = 'up';
-            if (dir) director.move(dir);
+            if (!director) return;
+            if (!hasVehicle) {
+              // 无载具：普通 1 步相邻移动（保持原逻辑）
+              const { x: px, y: py } = Distance.outerIdxToXY(gs.map.size, gs.player.x);
+              const { x: tx, y: ty } = Distance.outerIdxToXY(gs.map.size, tile.idx);
+              let dir = null;
+              if (tx > px) dir = 'right';
+              else if (tx < px) dir = 'left';
+              else if (ty > py) dir = 'down';
+              else if (ty < py) dir = 'up';
+              if (dir) director.move(dir);
+            } else {
+              // 有载具：调 VehicleSystem.tryMove
+              const pattern = reachInfo?.movePattern;
+              const directorObj = window.__gameDirector;
+              let result;
+              if (pattern === 'directional') {
+                // 轮子：算出方向，走 tryMove({ type:'direction', direction })
+                const { x: px, y: py } = Distance.outerIdxToXY(gs.map.size, gs.player.x);
+                const { x: tx, y: ty } = Distance.outerIdxToXY(gs.map.size, tile.idx);
+                let dir = null;
+                if (tx > px) dir = 'right';
+                else if (tx < px) dir = 'left';
+                else if (ty > py) dir = 'down';
+                else if (ty < py) dir = 'up';
+                result = VehicleSystem.tryMove(gs, { type: 'direction', direction: dir });
+              } else {
+                // 扫帚 / 巧遇：指定目标格
+                result = VehicleSystem.tryMove(gs, { type: 'target', targetIdx: tile.idx });
+              }
+              if (!result.ok) {
+                EventBus.emit(GE.TOAST_SHOW, {
+                  text: `🚗 载具移动失败：${result.reason || '未知原因'}`,
+                  duration: 1500,
+                });
+              }
+            }
           },
         });
       } else {
         createEl('div', {
           style: { marginTop: '6px', fontSize: '12px', color: '#b0a090', textAlign: 'center' },
-          text: '❌ 不可前往（不是相邻格）',
+          text: hasVehicle
+            ? `❌ 载具无法到达（${goReason || '不在移动范围内'}）`
+            : '❌ 不可前往（不是相邻格）',
+          parent: this.bodyWrap,
+        });
+      }
+
+      // 载具状态提示（有载具时显示在前往按钮上方）
+      if (hasVehicle) {
+        const cur = gs.vehicle.current;
+        const def = VEHICLES[cur.vehicleId];
+        createEl('div', {
+          style: { marginTop: '4px', fontSize: '11px', color: '#8a6a3a', textAlign: 'center', fontStyle: 'italic' },
+          text: `当前装备：${def?.emoji || ''} ${def?.name || cur.vehicleId} · 剩余 ${cur.usageLeft} 次`,
           parent: this.bodyWrap,
         });
       }
