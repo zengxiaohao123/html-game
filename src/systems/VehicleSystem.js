@@ -158,19 +158,38 @@ export function tryMove(gs, opts = {}) {
   let path = [];
 
   if (def.movePattern === 'directional') {
-    // 轮子：指定方向最多 2 格
+    // 轮子：指定方向最多 maxRange 格。
+    // 穿越栅栏/虚空合法，只要求最终落点是外圈格。
     const dirIdx = Direction.dirToIndex(opts.direction);
     if (dirIdx === -1) return { ok: false, reason: 'badDirection' };
-    const neighbors1 = Distance.outerNeighbors(gs.map.size, fromIdx);
-    const first = neighbors1[dirIdx];
-    if (first == null) return { ok: false, reason: 'blocked' };
-    const neighbors2 = Distance.outerNeighbors(gs.map.size, first);
-    const second = neighbors2[dirIdx];
-    // 最多 2 格，取最远的合法目标
-    targetIdx = second != null ? second : first;
-    path = [first];
-    if (second != null) path.push(second);
-    // 轮子允许穿越但不能停留 —— 因为外圈所有格都是合法停留，所以直接走到最远
+
+    const { x: fx, y: fy } = Distance.outerIdxToXY(gs.map.size, fromIdx);
+    let cx = fx, cy = fy;
+
+    // 方向向量：0=up, 1=right, 2=down, 3=left
+    const [dx, dy] = [[0, -1], [1, 0], [0, 1], [-1, 0]][dirIdx];
+    const maxRange = def.maxRange || 2;
+
+    // 沿方向扫最远的合法外圈格（中间 null/栅栏都穿越）
+    let finalIdx = null;
+    let path = [];
+    for (let step = 1; step <= maxRange; step++) {
+      cx += dx; cy += dy;
+      const idx = outerXYToIdx(gs.map.size, cx, cy);
+      if (idx !== null) {
+        finalIdx = idx;
+        path.push(idx);
+      } else {
+        // null（栅栏中心/虚空）—— 轮子继续穿越，不阻挡
+        path.push(null);
+      }
+    }
+
+    if (finalIdx === null) {
+      // 方向上根本没有合法外圈格可以落脚
+      return { ok: false, reason: 'noValidLanding' };
+    }
+    targetIdx = finalIdx;
   } else if (def.movePattern === 'line') {
     // 扫帚：同行或同列任意格
     if (opts.targetIdx == null) return { ok: false, reason: 'needTarget' };
@@ -212,10 +231,10 @@ export function tryMove(gs, opts = {}) {
   gs.player.x = targetIdx;
 
   // Phase 4：载具移动也要触发 onPass / onEnter hook（设施词条正常工作）
-  //   onPass：路径上除最后一格外的每一格（轮子穿越最多 2 格时，第一格是 onPass）
+  //   onPass：路径上除最后一格外的每一格（跳过 null——穿越栅栏中心不算经过合法地块）
   if (path && path.length > 0) {
     for (const passIdx of path) {
-      if (passIdx !== targetIdx) {
+      if (passIdx != null && passIdx !== targetIdx) {
         HookDispatcher.fire('onPass', { gs, tileIdx: passIdx });
         SkillSystem.triggerSkillByHook?.('onPass', { gs, tileIdx: passIdx });
       }
@@ -257,7 +276,7 @@ export function canVehicleReach(gs, targetIdx) {
   if (targetIdx === fromIdx) return { ok: false, reason: 'sameTile' };
 
   if (def.movePattern === 'directional') {
-    // 轮子：同方向最多 maxRange 格
+    // 轮子：同方向最多 maxRange 格。穿越栅栏/虚空合法，只要落点是外圈格。
     const { x: fx, y: fy } = Distance.outerIdxToXY(gs.map.size, fromIdx);
     const { x: tx, y: ty } = Distance.outerIdxToXY(gs.map.size, targetIdx);
     const dx = tx - fx;
@@ -267,16 +286,10 @@ export function canVehicleReach(gs, targetIdx) {
     const dist = Math.max(Math.abs(dx), Math.abs(dy));
     if (dist === 0 || dist > (def.maxRange || 2)) return { ok: false, reason: 'outOfRange' };
 
-    // 确认路径上每一格都是外圈格（不 wrap 逻辑）
-    const stepX = dx === 0 ? 0 : Math.sign(dx);
-    const stepY = dy === 0 ? 0 : Math.sign(dy);
-    let cx = fx, cy = fy;
-    for (let i = 0; i < dist; i++) {
-      cx += stepX; cy += stepY;
-      if (outerXYToIdx(gs.map.size, cx, cy) === null) {
-        return { ok: false, reason: 'pathBlocked' };
-      }
-    }
+    // 只验证落点是合法外圈格 —— 中途穿越栅栏/虚空/null 都是合法的
+    const finalIdx = outerXYToIdx(gs.map.size, tx, ty);
+    if (finalIdx === null) return { ok: false, reason: 'badTarget' };
+
     return { ok: true, def };
   }
 
