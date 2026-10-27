@@ -235,10 +235,16 @@ export class GameDirector {
    * 二级子面板（如 TeamPanel 的快捷编队）由各 Panel 内部自行关闭
    */
   handleESC() {
+    // SettingsPanel 打开时：直接关闭它，不经过 openPanels 栈
+    // （SettingsPanel 通过 GE.UI_PANEL_OPEN/CLOSE 自己管理 visible，不在 openPanels 里）
+    if (this.settingsPanel?.visible) {
+      this.settingsPanel.hide();
+      devLog.info('[GameDirector] ESC → 关闭设置面板');
+      return;
+    }
     // 栈顶优先关
     const stackTop = this.openPanels[this.openPanels.length - 1];
     if (stackTop) {
-      // emit UI_PANEL_CLOSE，对应的 Panel._subscribe 会收到并 helper.hide()
       EventBus.emit(GE.UI_PANEL_CLOSE, { panel: stackTop });
       devLog.info('[GameDirector] ESC 关闭栈顶:', stackTop);
       return;

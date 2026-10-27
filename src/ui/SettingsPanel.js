@@ -259,6 +259,8 @@ export class SettingsPanel {
         fontWeight: '700',
         transition: 'background-color 0.1s',
         width: '100%',
+        textAlign: 'center',
+        letterSpacing: '2px',
       },
       onclick: onClick,
       parent,

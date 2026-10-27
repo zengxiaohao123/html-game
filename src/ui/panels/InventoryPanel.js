@@ -14,6 +14,7 @@ import { EventBus } from '../../core/EventBus.js';
 import { GE } from '../../core/GameEvents.js';
 import { Assets } from '../../core/Assets.js';
 import { ITEMS } from '../../data/items.js';
+import { SKILLS } from '../../data/characters.js';
 import { getDef as getFacilityDef } from '../../data/facilities.js';
 import { InventorySystem } from '../../systems/InventorySystem.js';
 import { OUTBOX_SLOTS } from '../../utils/constants.js';
@@ -526,12 +527,21 @@ export class InventoryPanel {
 
   _resolveEmoji(itemId) {
     if (!itemId) return '❓';
+    // 郁金香等带动态 value 的产物：直接查 ITEMS
     const d = ITEMS[itemId];
     if (d?.emoji) return d.emoji;
-    return Assets.getEmoji('facilities', itemId)
-      || Assets.getEmoji('resources', itemId)
-      || Assets.getEmoji('items', itemId)
-      || '❓';
+    // 设施（facility_*） / 资源（resource_*）
+    const facilityEmoji = Assets.getEmoji('facilities', itemId);
+    if (facilityEmoji !== '❓') return facilityEmoji;
+    const resourceEmoji = Assets.getEmoji('resources', itemId);
+    if (resourceEmoji !== '❓') return resourceEmoji;
+    // 技能卡（skill_*）：从 SKILLS 数组查
+    if (itemId.startsWith('skill_')) {
+      const skill = SKILLS?.[itemId];
+      if (skill?.emoji) return skill.emoji;
+    }
+    // items 兜底
+    return Assets.getEmoji('items', itemId) || '❓';
   }
 
   _resolveName(itemId) {

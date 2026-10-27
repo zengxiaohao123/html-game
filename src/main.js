@@ -119,6 +119,7 @@ infoPanel.mount();
 
 const settingsPanel = new SettingsPanel(director);
 settingsPanel.mount();
+director.settingsPanel = settingsPanel;
 
 // Phase 2B 新增：背包面板
 const inventoryPanel = new InventoryPanel(director);

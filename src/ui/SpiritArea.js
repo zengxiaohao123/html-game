@@ -67,6 +67,8 @@ export class SpiritArea {
     // 监听队伍变化刷新精灵显示
     EventBus.on(GE.STATE_RESET, () => this._refresh());
     EventBus.on(GE.BOOT, () => this._refresh());
+    EventBus.on(GE.SPIRIT_CHANGE, () => this._refresh());
+    EventBus.on(GE.TEAM_CHANGE, () => this._refresh());
 
     // hover 效果
     this.root.addEventListener('mouseenter', () => {
@@ -93,7 +95,8 @@ export class SpiritArea {
     const spirit = spiritId ? SPIRITS[spiritId] : SPIRITS.momo;
     if (this.spiritEmojiEl) this.spiritEmojiEl.textContent = spirit?.emoji || '👻';
     if (this.spiritNameEl) this.spiritNameEl.textContent = spirit?.name || '';
-    if (this.spiritDescEl) this.spiritDescEl.textContent = spirit?.description || '';
+    // 左侧精灵区不显示描述（过长），emoji + 名字足够
+    if (this.spiritDescEl) this.spiritDescEl.style.display = 'none';
   }
 }
 

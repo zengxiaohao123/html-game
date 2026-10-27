@@ -551,7 +551,7 @@ export class InfoPanel {
                 EventBus.emit(GE.TOAST_SHOW, { text: '🌷 郁金香价值还不够（< 1）', duration: 2000 });
                 return;
               }
-              InventorySystem.addItem(gs, 'item_tulip', 1);
+              InventorySystem.addItem(gs, 'item_tulip', 1, { value: v });
               curTile.contentId = null;
               curTile.contentState = {};
               EventBus.emit(GE.TILE_UPDATED, { tileIdx });

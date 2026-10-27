@@ -38,18 +38,27 @@ export function countItem(gs, itemId, bag = 'items') {
  * @param {number} qty
  * @returns {number} 实际添加数量
  */
-export function addItem(gs, itemId, qty) {
+export function addItem(gs, itemId, qty, extra = {}) {
   if (!itemId || qty <= 0) return 0;
   const list = gs.inventory.items;
-  const existing = list.find(i => i.itemId === itemId);
-  if (existing) {
-    existing.qty += qty;
+  // 带 value 的物品（如郁金香）不能合并到同一 itemId 的堆里 —— 分堆存 value
+  const useValue = extra?.value !== undefined;
+  let targetIdx = -1;
+  if (!useValue) {
+    targetIdx = list.findIndex(i => i.itemId === itemId && i.value === undefined);
   } else {
-    list.push({ itemId, qty });
+    targetIdx = list.findIndex(i => i.itemId === itemId && i.value === extra.value);
+  }
+  if (targetIdx >= 0) {
+    list[targetIdx].qty += qty;
+  } else {
+    const entry = { itemId, qty };
+    if (useValue) entry.value = extra.value;
+    list.push(entry);
   }
   EventBus.emit(GE.ITEM_GAINED, { itemId, qty });
   EventBus.emit(GE.INVENTORY_CHANGE, { type: 'add', bag: 'items', itemId, qty });
-  devLog.info('[Inventory] addItem', itemId, 'x', qty, '→', countItem(gs, itemId));
+  devLog.info('[Inventory] addItem', itemId, 'x', qty, 'extra=', extra, '→', countItem(gs, itemId));
   return qty;
 }
 
