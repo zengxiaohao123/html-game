@@ -30,74 +30,90 @@ export class SettingsPanel {
       style: {
         position: 'fixed',
         inset: '0',
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        backgroundColor: 'rgba(0,0,0,0.6)',
         zIndex: 5000,
-        display: 'none', // 初始隐藏
+        display: 'none',
         alignItems: 'center',
         justifyContent: 'center',
-        animation: 'fade-in 0.2s ease-out',
       },
-      onclick: () => this.hide(), // 点击遮罩关闭
+      onclick: () => this.hide(),
       parent,
     });
 
-    // 面板本体（宽度加大以容纳 8 槽网格）
+    // 面板本体
     this.panel = createEl('div', {
       class: ['settings-panel'],
       style: {
-        width: 'min(560px, 92vw)',
-        padding: '20px 24px',
+        width: 'min(680px, 94vw)',
+        maxHeight: '88vh',
+        padding: '28px 30px 20px 30px',
         backgroundColor: '#fffbe6',
-        border: '4px solid #3a3a3a',
-        borderRadius: '20px',
-        boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
-        fontFamily: '"LXGW WenKai TC", sans-serif',
-        textAlign: 'center',
-        maxHeight: '86vh',
+        border: '4px solid #2a2a2a',
+        borderRadius: '24px',
+        boxShadow: '0 12px 40px rgba(0,0,0,0.4)',
+        fontFamily: '"LXGW WenKai TC", system-ui, sans-serif',
         overflowY: 'auto',
+        boxSizing: 'border-box',
       },
       parent: this.mask,
     });
 
-    // 标题
-    createEl('h2', {
-      style: {
-        margin: '0 0 16px 0',
-        fontSize: '22px',
-        color: '#333',
-      },
-      text: '⚙️ 设置',
-      parent: this.panel,
-    });
-
-    // 分区 1：存档槽位 —— 标题
+    // ══ 标题栏 ══
     createEl('div', {
       style: {
-        fontSize: '15px', fontWeight: '800', color: '#5a4a3a',
-        marginBottom: '10px', textAlign: 'left', borderBottom: '2px dashed #b8a888', paddingBottom: '6px',
+        fontSize: '26px',
+        fontWeight: '900',
+        color: '#2a2a2a',
+        textAlign: 'center',
+        marginBottom: '20px',
+        letterSpacing: '4px',
       },
-      text: '💾 存档槽位（共 8 槽）',
+      text: '⚙️ 设 置',
       parent: this.panel,
     });
 
-    // 存档槽位网格
+    // ══ 存档槽位分区标题 ══
+    const sectionHeader = createEl('div', {
+      style: {
+        fontSize: '16px',
+        fontWeight: '800',
+        color: '#4a3a1a',
+        padding: '8px 14px',
+        backgroundColor: '#f5e8c8',
+        borderLeft: '5px solid #c89a3c',
+        borderRight: '5px solid #c89a3c',
+        borderRadius: '8px',
+        marginBottom: '14px',
+      },
+      text: '💾 存 档 管 理（8 槽）  •  点击槽位查看详情',
+      parent: this.panel,
+    });
+
+    // ══ 存档槽位网格（4x2） ══
     this.slotsGrid = createEl('div', {
       style: {
         display: 'grid',
         gridTemplateColumns: 'repeat(4, 1fr)',
-        gap: '8px',
-        marginBottom: '14px',
+        gap: '10px',
+        marginBottom: '20px',
       },
       parent: this.panel,
     });
     this._refreshSlots();
 
-    // 关闭按钮
-    this._createBtn('✖️ 关闭（ESC）', () => this.hide(), this.panel, '#ff6b6b');
+    // ══ 按钮行（底部，两个大按钮横排） ══
+    const btnRow = createEl('div', {
+      style: {
+        display: 'flex',
+        gap: '16px',
+        paddingTop: '12px',
+        borderTop: '3px dashed #c89a3c',
+      },
+      parent: this.panel,
+    });
 
-    // 返回主菜单按钮（修复 5c）：自动存档到 slot 1 → 关闭面板 → 显示主菜单
-    this._createBtn('返回主菜单', () => {
-      // 自动存档到 slot 1（AUTOSAVE_SLOT）
+    this._createBtn('✖️ 关 闭', () => this.hide(), btnRow, '#c84040', true);
+    this._createBtn('🏠 返回主菜单', () => {
       const gs = this.director?.getGS?.();
       if (gs) {
         const ok = Storage.save(AUTOSAVE_SLOT, gs);
@@ -107,28 +123,36 @@ export class SettingsPanel {
           EventBus.emit(GE.TOAST_SHOW, { text: '⚠️ 自动存档失败', duration: 2000 });
         }
       }
-      // 关闭设置面板
       this.hide();
-      // 显示主菜单遮罩
       if (typeof this.director?.mainMenu?.show === 'function') {
         this.director.mainMenu.show();
       }
-      devLog.info('[Settings] returned to main menu');
-    }, this.panel, '#b8860b');
+    }, btnRow, '#a87808', true);
 
-    // 订阅 UI_PANEL_OPEN（ESC 触发）
+    // 提示文字
+    createEl('div', {
+      style: {
+        textAlign: 'center',
+        fontSize: '12px',
+        color: '#9a8a6a',
+        marginTop: '12px',
+        letterSpacing: '1px',
+      },
+      text: '💡 快捷键 ESC 打开 / 关闭设置  •  读档后自动关闭面板',
+      parent: this.panel,
+    });
+
+    // ══ 事件订阅 ══
     EventBus.on(GE.UI_PANEL_OPEN, ({ panel }) => {
       if (panel === 'settings') {
-        this.toggle();
+        this.show();
       }
     });
 
-    // 订阅 STATE_RESET：其他原因触发的话也隐藏面板
     EventBus.on(GE.STATE_RESET, () => {
       if (this.visible) this.hide();
     });
 
-    // 订阅 SAVE_DONE / LOAD_DONE：存档/读档后刷新槽位显示
     EventBus.on(GE.SAVE_DONE, () => { if (this.visible) this._refreshSlots(); });
     EventBus.on(GE.LOAD_DONE, () => { if (this.visible) this._refreshSlots(); });
   }
@@ -244,24 +268,34 @@ export class SettingsPanel {
   }
 
   /** 创建按钮 */
-  _createBtn(text, onClick, parent, color = '#3a3a3a') {
+  _createBtn(text, onClick, parent, color = '#3a3a3a', filled = false) {
+    const btnStyle = {
+      padding: '14px 20px',
+      fontSize: '17px',
+      fontFamily: 'inherit',
+      fontWeight: '800',
+      borderRadius: '12px',
+      cursor: 'pointer',
+      transition: 'all 0.15s',
+      textAlign: 'center',
+      letterSpacing: '2px',
+      boxSizing: 'border-box',
+    };
+    if (filled) {
+      btnStyle.backgroundColor = color;
+      btnStyle.color = '#fff';
+      btnStyle.border = `3px solid ${color}`;
+      btnStyle.flex = '1';
+      btnStyle.boxShadow = '0 4px 12px rgba(0,0,0,0.25)';
+    } else {
+      btnStyle.backgroundColor = '#fff';
+      btnStyle.color = color;
+      btnStyle.border = `3px solid ${color}`;
+      btnStyle.width = '100%';
+    }
     return createEl('button', {
       class: ['settings-btn'],
-      style: {
-        padding: '12px 16px',
-        fontSize: '16px',
-        fontFamily: 'inherit',
-        border: '3px solid ' + color,
-        borderRadius: '12px',
-        backgroundColor: '#fff',
-        color: color,
-        cursor: 'pointer',
-        fontWeight: '700',
-        transition: 'background-color 0.1s',
-        width: '100%',
-        textAlign: 'center',
-        letterSpacing: '2px',
-      },
+      style: btnStyle,
       onclick: onClick,
       parent,
     });

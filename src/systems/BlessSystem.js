@@ -190,7 +190,7 @@ export function blessCommit(gs, targetIdx) {
   gs.team.dailyBlessCount += 1;
 
   if (spirit === 'qingfeng') {
-    // 晴风：HP +6（不超 maxHp），攻击力 +8%（每层按叠后算：atk = floor(atk * 1.08)）
+    // 晴风：HP +6（不超 maxHp），攻击力 +8%（每层按叠后算，保留 1 位小数；UI 显示 floor）
     // 文档 §12.2："使本日内角色攻击力 +8%" 严格按叠后算（不是加之前的 atk 算）
     const hpDelta = 6;
     const prevHp = gs.player.hp;
@@ -200,13 +200,14 @@ export function blessCommit(gs, targetIdx) {
       EventBus.emit(GE.HP_CHANGE, { newValue: gs.player.hp, delta: actualHpDelta, reason: 'bless_qingfeng' });
     }
     const prevAtk = gs.player.atk;
-    gs.player.atk = Math.floor(gs.player.atk * 1.08);
+    // 保留 1 位小数，不立即取整；UI 显示时 floor
+    gs.player.atk = Math.round(gs.player.atk * 1.08 * 10) / 10;
     const atkDelta = gs.player.atk - prevAtk;
     EventBus.emit(GE.ATK_CHANGE, { newValue: gs.player.atk, reason: 'bless_qingfeng' });
     if (!gs.team.dailyQingfengAtkBonus) gs.team.dailyQingfengAtkBonus = 0;
     gs.team.dailyQingfengAtkBonus += 1;
-    EventBus.emit(GE.TOAST_SHOW, { text: `🌬️ 晴风：HP +${actualHpDelta}，攻击力 +${gs.player.atk - prevAtk}（共 ${gs.team.dailyQingfengAtkBonus} 层）`, duration: 2000 });
-    devLog.info('[Bless] qingfeng effect: hp+', actualHpDelta, 'atk+', gs.player.atk - prevAtk, 'total stacks=', gs.team.dailyQingfengAtkBonus);
+    EventBus.emit(GE.TOAST_SHOW, { text: `🌬️ 晴风：HP +${actualHpDelta}，攻击力 +${Math.floor(atkDelta)}（共 ${gs.team.dailyQingfengAtkBonus} 层）`, duration: 2000 });
+    devLog.info('[Bless] qingfeng effect: hp+', actualHpDelta, 'atk+', atkDelta.toFixed(1), 'total stacks=', gs.team.dailyQingfengAtkBonus);
   } else if (spirit === 'yuyuan') {
     // 芋圆：下次移动不消耗行动力（不可叠加，仅限本日内）
     gs.player.nextMoveNoStamina = true;

@@ -136,8 +136,11 @@ export function loadFromOutbox(gs) {
   let earnedGold = 0;
   const clearedItems = [];
   for (const entry of outbox) {
+    // value 来源：entry.value（郁金香动态 value）> ITEMS[].value
     const itemDef = ITEMS[entry.itemId];
-    const unitValue = itemDef ? itemDef.value : 0;
+    const unitValue = (entry.value !== undefined && entry.value !== null)
+      ? entry.value
+      : (itemDef ? itemDef.value : 0);
     earnedGold += unitValue * entry.qty;
     clearedItems.push({ itemId: entry.itemId, qty: entry.qty, unitValue });
   }

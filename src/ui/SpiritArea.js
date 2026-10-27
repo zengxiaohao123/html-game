@@ -67,7 +67,6 @@ export class SpiritArea {
     // 监听队伍变化刷新精灵显示
     EventBus.on(GE.STATE_RESET, () => this._refresh());
     EventBus.on(GE.BOOT, () => this._refresh());
-    EventBus.on(GE.SPIRIT_CHANGE, () => this._refresh());
     EventBus.on(GE.TEAM_CHANGE, () => this._refresh());
 
     // hover 效果

@@ -283,11 +283,14 @@ export class InventoryPanel {
     const ITEM = ITEMS[this.selectedItemId];
     const emoji = this._resolveEmoji(this.selectedItemId);
     const name = this._resolveName(this.selectedItemId);
-    // value 查找：先 ITEMS，再 facilities/getDef（设施/资源在背包里时也能显示价值）
-    let value = ITEM?.value;
-    if (typeof value !== 'number') {
-      const fd = getFacilityDef(this.selectedItemId);
-      if (fd && typeof fd.value === 'number') value = fd.value;
+    // value 查找：entry.value（郁金香动态 value）> ITEMS[].value（静态）> facilities value
+    let value = entry.value;
+    if (value === undefined || value === null || typeof value !== 'number') {
+      value = ITEM?.value;
+      if (typeof value !== 'number') {
+        const fd = getFacilityDef(this.selectedItemId);
+        if (fd && typeof fd.value === 'number') value = fd.value;
+      }
     }
     const desc = DESCRIPTIONS[this.selectedItemId] || '（暂无描述）';
 

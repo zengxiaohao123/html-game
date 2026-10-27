@@ -201,7 +201,7 @@ export class TopBar {
     const extremeNow  = 0;
 
     if (this.hpText)      this.hpText.textContent      = `${p.hp}/${p.maxHp}`;
-    if (this.atkText)     this.atkText.textContent     = `${p.atk}`;
+    if (this.atkText)     this.atkText.textContent     = `${Math.floor(p.atk)}`;
     if (this.staminaText) this.staminaText.textContent = `${p.stamina}/${p.maxStamina}`;
     if (this.friendlyText) this.friendlyText.textContent = `友善 ${friendlyNow}/${c.friendly}`;
     if (this.dangerText)   this.dangerText.textContent   = `危险 ${dangerNow}/${c.danger}`;
