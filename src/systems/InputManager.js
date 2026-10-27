@@ -159,13 +159,8 @@ export class InputManager {
         break;
 
       case 'settings': {
-        // 正确的多关顺序：先关已开的二级面板，全部关完再打开设置
-        const curActive = gs?.uiState?.activePanel || null;
-        if (curActive) {
-          EventBus.emit(GE.UI_PANEL_CLOSE, { panel: curActive });
-        } else {
-          EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'settings' });
-        }
+        // v0.4-1: ESC 走 GameDirector 的层级栈逻辑
+        this.director?.handleESC?.();
         break;
       }
 

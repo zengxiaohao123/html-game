@@ -169,7 +169,7 @@ const FacilityTent = {
 // ════════════════════════════════════════════════════════════════
 const FacilityWheat = {
   id: 'facility_wheat',
-  name: '麦田',
+  name: '小麦田块',
   emoji: Assets.facilities.facility_wheat,
 
   register() {
@@ -218,7 +218,7 @@ const FacilityWheat = {
 // ════════════════════════════════════════════════════════════════
 const FacilityRice = {
   id: 'facility_rice',
-  name: '稻田',
+  name: '水稻田块',
   emoji: Assets.facilities.facility_rice,
 
   register() {
@@ -288,7 +288,7 @@ const FacilityRice = {
 const POTATO_MAX_STORED = 30;
 const FacilityPotato = {
   id: 'facility_potato',
-  name: '土豆田',
+  name: '土豆田块',
   emoji: Assets.facilities.facility_potato,
 
   register() {
@@ -389,7 +389,7 @@ const FacilityTulip = {
 const STRAWBERRY_MAX = 5;
 const FacilityStrawberry = {
   id: 'facility_strawberry',
-  name: '草莓田',
+  name: '草莓田块',
   emoji: Assets.facilities.facility_strawberry,
 
   register() {
@@ -444,7 +444,7 @@ const FacilityStrawberry = {
 const PEA_MAX = 10;
 const FacilityPea = {
   id: 'facility_pea',
-  name: '豌豆架',
+  name: '豌豆田块',
   emoji: Assets.facilities.facility_pea,
 
   register() {
@@ -632,7 +632,7 @@ const FacilitySlimehouse = {
 // ════════════════════════════════════════════════════════════════
 const FacilityCorn = {
   id: 'facility_corn',
-  name: '玉米田地',
+  name: '玉米田块',
   emoji: '🌽',
 
   register() {
@@ -671,7 +671,7 @@ const FacilityCorn = {
 // ════════════════════════════════════════════════════════════════
 const FacilityCabbage = {
   id: 'facility_cabbage',
-  name: '卷心菜田地',
+  name: '卷心菜田块',
   emoji: '🥬',
 
   register() {

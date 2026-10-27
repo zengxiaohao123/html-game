@@ -1,9 +1,9 @@
 // RolePanel.js —— Phase 4 重写
 // 快捷键 C  ·  外观严格套 InventoryPanel 模板（_panelHelper）
 // 3 角色 emoji 横排（余默🧑💧 夏阳🔥 陆悠悠🌪️风属性——characters.js 实导出为准）
-// 中间 tab：技能 / 羁绊（Phase 4 羁绊空着）
+// 中间 tab：技能 / 羁绊
 // 右侧属性栏
-// 选角色 → DialogBox 确认 → emit GE.CHARACTER_SELECTED
+// 纯查看页 —— 没有"选此角色"概念，角色切换直接点头像
 
 import { EventBus } from '../../core/EventBus.js';
 import { GE } from '../../core/GameEvents.js';
@@ -26,7 +26,7 @@ export class RolePanel {
     this.tabsRow = null;
     this.tabBody = null;
     this.attrCol = null;
-    this.activeTab = 'skills';   // 'skills' | 'talents' | 'bond'
+    this.activeTab = 'skills';   // 'skills' | 'bond'
     this.selectedRoleId = 'yumo';
   }
 
@@ -65,13 +65,13 @@ export class RolePanel {
       parent: main,
     });
 
-    // tab 切换
+    // tab 切换（只有两个：技能、羁绊）
     this.tabsRow = createEl('div', {
       style: { display: 'flex', gap: '6px', marginBottom: '6px' },
       parent: body,
     });
-    ['skills', 'talents', 'bond'].forEach((k) => {
-      const label = k === 'skills' ? '📚 技能' : k === 'talents' ? '🌟 天赋' : '💞 羁绊';
+    ['skills', 'bond'].forEach((k) => {
+      const label = k === 'skills' ? '📚 技能' : '💞 羁绊';
       createEl('button', {
         class: ['action-btn'],
         style: {
@@ -84,17 +84,6 @@ export class RolePanel {
       });
     });
 
-    // 底部确认按钮
-    const foot = createEl('div', {
-      style: { display: 'flex', gap: '8px', justifyContent: 'flex-end', paddingTop: '8px', borderTop: '2px dashed #b8a888' },
-      parent: body,
-    });
-    createEl('button', { class: 'action-btn', text: '取消', parent: foot, onclick: () => this.hide() });
-    createEl('button', {
-      class: 'action-btn', text: '✅ 确认选此角色', parent: foot,
-      onclick: () => this._confirm(),
-    });
-
     this._refresh();
   }
 
@@ -104,7 +93,7 @@ export class RolePanel {
   }
 
   _refresh() {
-    // heads
+    // heads —— 点头像直接切换，无确认
     this.headsRow.innerHTML = '';
     Object.values(CHARACTERS).forEach((c) => {
       const sel = this.selectedRoleId === c.id;
@@ -130,43 +119,46 @@ export class RolePanel {
     if (!c) return;
 
     if (this.activeTab === 'skills') {
-      createEl('div', { style: { fontSize: '13px', fontWeight: '700', color: '#5a4a3a', marginBottom: '6px' }, text: `${c.name} 的技能 / 天赋`, parent: this.tabBody });
-      const skills = getSkillsByRole(c.id);
-      skills.forEach((sk) => {
-        const row = createEl('div', {
-          style: { padding: '8px 10px', marginBottom: '6px', background: 'rgba(255,255,255,0.8)', border: '2px solid #b8a888', borderRadius: '10px' },
-          parent: this.tabBody,
-        });
-        const top = createEl('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }, parent: row });
-        createEl('span', { style: { fontSize: '18px', fontFamily: EMOJI_FONT }, text: sk.emoji, parent: top });
-        createEl('span', { style: { fontWeight: '800', fontSize: '14px' }, text: sk.name, parent: top });
-        if (sk.isLinkSkill) {
-          createEl('span', { style: { fontSize: '10px', color: '#c07a20', background: '#ffe099', padding: '0 6px', borderRadius: '8px', marginLeft: 'auto', border: '1px solid #c07a20' }, text: '连携技', parent: top });
-        }
-        createEl('div', { style: { fontSize: '12px', color: '#4a3a2a', lineHeight: '1.6' }, text: sk.description || '', parent: row });
-      });
-    } else if (this.activeTab === 'talents') {
-      createEl('div', { style: { fontSize: '13px', fontWeight: '700', color: '#5a4a3a', marginBottom: '6px' }, text: `${c.name} 的天赋`, parent: this.tabBody });
+      // —— 上半区：天赋 ——
       const myTalents = Object.values(TALENTS).filter(t => t.roleId === c.id);
+      createEl('div', { style: { fontSize: '13px', fontWeight: '800', color: '#5a4a3a', marginBottom: '4px' }, text: '🌟 天赋', parent: this.tabBody });
       if (myTalents.length === 0) {
-        createEl('div', { style: { color: '#b0a090', fontSize: '12px', fontStyle: 'italic', padding: '10px' }, text: '（暂无私属天赋）', parent: this.tabBody });
+        createEl('div', { style: { color: '#b0a090', fontSize: '12px', fontStyle: 'italic', padding: '6px 10px', border: '2px dashed #b8a888', borderRadius: '8px', marginBottom: '8px' }, text: '（暂无私属天赋）', parent: this.tabBody });
       } else {
         myTalents.forEach((t) => {
           const isPassive = t.triggerCondition === 'passive';
           const triggerLabel = isPassive ? '🔵 被动' : '🟡 触发型';
           const row = createEl('div', {
-            style: { padding: '8px 10px', marginBottom: '6px', background: 'rgba(255,255,255,0.8)', border: '2px solid #b8a888', borderRadius: '10px' },
+            style: { padding: '6px 10px', marginBottom: '4px', background: 'rgba(255,255,255,0.8)', border: '2px solid #b8a888', borderRadius: '10px' },
             parent: this.tabBody,
           });
-          const top = createEl('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }, parent: row });
-          createEl('span', { style: { fontSize: '18px', fontFamily: EMOJI_FONT }, text: t.emoji, parent: top });
+          const top = createEl('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }, parent: row });
+          createEl('span', { style: { fontSize: '16px', fontFamily: EMOJI_FONT }, text: t.emoji, parent: top });
           createEl('span', { style: { fontWeight: '800', fontSize: '14px' }, text: t.name, parent: top });
           createEl('span', { style: { fontSize: '10px', color: isPassive ? '#2a8a3a' : '#c07a20', background: isPassive ? '#e8f5e9' : '#ffe099', padding: '0 6px', borderRadius: '8px', marginLeft: 'auto', border: `1px solid ${isPassive ? '#2a8a3a' : '#c07a20'}` }, text: triggerLabel, parent: top });
-          createEl('div', { style: { fontSize: '11px', color: '#7a6a56', marginBottom: '2px' }, text: `触发：${t.triggerCondition}`, parent: row });
-          createEl('div', { style: { fontSize: '12px', color: '#4a3a2a', lineHeight: '1.6' }, text: t.description || '', parent: row });
+          createEl('div', { style: { fontSize: '11px', color: '#7a6a56', marginBottom: '1px' }, text: `触发：${t.triggerCondition}`, parent: row });
+          createEl('div', { style: { fontSize: '12px', color: '#4a3a2a', lineHeight: '1.5' }, text: t.description || '', parent: row });
         });
       }
+
+      // —— 下半区：技能 ——
+      const skills = getSkillsByRole(c.id);
+      createEl('div', { style: { fontSize: '13px', fontWeight: '800', color: '#5a4a3a', marginTop: '8px', marginBottom: '4px' }, text: '⚔️ 技能', parent: this.tabBody });
+      skills.forEach((sk) => {
+        const row = createEl('div', {
+          style: { padding: '6px 10px', marginBottom: '4px', background: 'rgba(255,255,255,0.8)', border: '2px solid #b8a888', borderRadius: '10px' },
+          parent: this.tabBody,
+        });
+        const top = createEl('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }, parent: row });
+        createEl('span', { style: { fontSize: '18px', fontFamily: EMOJI_FONT }, text: sk.emoji, parent: top });
+        createEl('span', { style: { fontWeight: '800', fontSize: '14px' }, text: sk.name, parent: top });
+        if (sk.isLinkSkill) {
+          createEl('span', { style: { fontSize: '10px', color: '#c07a20', background: '#ffe099', padding: '0 6px', borderRadius: '8px', marginLeft: 'auto', border: '1px solid #c07a20' }, text: '连携技', parent: top });
+        }
+        createEl('div', { style: { fontSize: '12px', color: '#4a3a2a', lineHeight: '1.5' }, text: sk.description || '', parent: row });
+      });
     } else {
+      // bond tab
       createEl('div', {
         style: { color: '#8a7a66', fontSize: '13px', padding: '20px', textAlign: 'center', fontStyle: 'italic' },
         text: '💞 羁绊等级 / 好感度（Phase 5 开放）\n敬请期待～',
@@ -192,22 +184,6 @@ export class RolePanel {
       const r = createEl('div', { style: { display: 'flex', justifyContent: 'space-between', fontSize: '13px' }, parent: this.attrCol });
       createEl('span', { style: { color: '#7a6a56' }, text: k, parent: r });
       createEl('span', { style: { fontWeight: '800', color: '#3a2e20' }, text: v, parent: r });
-    });
-  }
-
-  _confirm() {
-    const c = CHARACTERS[this.selectedRoleId];
-    EventBus.emit(GE.DIALOG_SHOW, {
-      title: '确认角色选择',
-      content: `确定将 ${c.emoji} ${c.name} 设为目标角色吗？`,
-      options: [
-        { label: '取消', onSelect: () => {} },
-        { label: '确定', onSelect: () => {
-          EventBus.emit(GE.CHARACTER_SELECTED, { roleId: c.id });
-          EventBus.emit(GE.TOAST_SHOW, { text: `✅ 已选择：${c.name}`, duration: 1400 });
-          devLog.info('[RolePanel] CHARACTER_SELECTED', c.id);
-        }},
-      ],
     });
   }
 

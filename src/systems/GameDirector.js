@@ -30,6 +30,8 @@ export class GameDirector {
     this.gs = null;
     /** 是否已启动 */
     this.started = false;
+    /** Panel 栈 —— 后开的在上，ESC 先关栈顶 */
+    this.openPanels = [];
   }
 
   /**
@@ -71,6 +73,22 @@ export class GameDirector {
     // 编队修改 → 重新 fire passive（烹饪/蹁跹等常驻天赋按 roleId guard）
     EventBus.on(GE.TEAM_CHANGE, () => {
       TalentSystem.firePassive(this.gs);
+    });
+
+    // v0.4-1: Panel 栈维护
+    EventBus.on(GE.UI_PANEL_OPEN, ({ panel }) => {
+      if (!panel) return;
+      // 避免重复入栈（同一个 panel 打开时 toggle 可能触发）
+      if (!this.openPanels.includes(panel)) {
+        this.openPanels.push(panel);
+      }
+      devLog.info('[GameDirector] openPanels +', panel, '→', this.openPanels);
+    });
+    EventBus.on(GE.UI_PANEL_CLOSE, ({ panel }) => {
+      if (!panel) return;
+      const idx = this.openPanels.indexOf(panel);
+      if (idx >= 0) this.openPanels.splice(idx, 1);
+      devLog.info('[GameDirector] openPanels -', panel, '→', this.openPanels);
     });
 
     // 每秒定时：pruneExpired（连携技超时）+ periodicConditionScan（炽燃/弱点击破条件检测）
@@ -180,6 +198,24 @@ export class GameDirector {
    */
   getGS() {
     return this.gs;
+  }
+
+  /**
+   * ESC 层级栈关闭：关栈顶的 Panel，栈空则打开设置
+   * 二级子面板（如 TeamPanel 的快捷编队）由各 Panel 内部自行关闭
+   */
+  handleESC() {
+    // 栈顶优先关
+    const stackTop = this.openPanels[this.openPanels.length - 1];
+    if (stackTop) {
+      // emit UI_PANEL_CLOSE，对应的 Panel._subscribe 会收到并 helper.hide()
+      EventBus.emit(GE.UI_PANEL_CLOSE, { panel: stackTop });
+      devLog.info('[GameDirector] ESC 关闭栈顶:', stackTop);
+      return;
+    }
+    // 栈空 → 打开设置
+    EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'settings' });
+    devLog.info('[GameDirector] ESC 栈空 → 打开设置');
   }
 }
 
