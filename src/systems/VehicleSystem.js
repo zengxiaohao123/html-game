@@ -43,7 +43,7 @@ export function gainVehicle(gs, vehicleId) {
     vehicleId,
     usageLeft: def.usageCount || 1,
   });
-  EventBus.emit(GE.VEHICLE_ATTACH, { vehicleId, attached: false });
+  EventBus.emit(GE.VEHICLE_GAIN, { vehicleId });
   EventBus.emit(GE.TOAST_SHOW, { text: `🚗 获得载具 ${def.emoji || ''} ${def.name}`, duration: 1500 });
   devLog.info('[VehicleSystem.gainVehicle]', vehicleId);
 }

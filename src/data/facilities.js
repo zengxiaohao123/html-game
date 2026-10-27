@@ -18,6 +18,7 @@ import { GE } from '../core/GameEvents.js';
 import { Assets } from '../core/Assets.js';
 import { devLog } from '../core/Logger.js';
 import { InventorySystem } from '../systems/InventorySystem.js';
+import { VehicleSystem } from '../systems/VehicleSystem.js';
 import { Distance } from '../core/Distance.js';
 import { CreatureSystem } from '../systems/CreatureSystem.js';
 import { Random } from '../core/Random.js';
@@ -790,9 +791,9 @@ const ResourceBus = {
       if (delta > 0) {
         EventBus.emit(GE.STAMINA_CHANGE, { newValue: newS, delta, maxStamina: gs.player.maxStamina });
       }
-      // 获得 1 轮子
-      InventorySystem.addItem(gs, 'item_wheel', 1);
-      EventBus.emit(GE.TOAST_SHOW, { text: `🚌 行动力 +1 🚗 +1 轮子`, duration: 2000 });
+      // 获得 1 载具：轮子（按设计文档 §14.7：巴士站 → vehicle_wheel）
+      VehicleSystem.gainVehicle(gs, 'vehicle_wheel');
+      EventBus.emit(GE.TOAST_SHOW, { text: `🚌 行动力 +1 🚗 +1 轮子载具`, duration: 2000 });
       devLog.info('[bus] stamina +1, +1 wheel');
     }, this);
   },

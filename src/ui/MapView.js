@@ -315,7 +315,6 @@ export class MapView {
     EventBus.on(GE.MOVE, ({ toIdx }) => {
       if (!this.gs) return;
       this.renderPlayer(this.gs);
-      // 移动后玩家格 class 可能变，刷新所有 tile
       this.renderAllTiles(this.gs);
     });
 

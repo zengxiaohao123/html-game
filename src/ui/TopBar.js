@@ -226,7 +226,7 @@ export class TopBar {
     EventBus.on(GE.CAPACITY_CHANGE,   () => this._renderAll());
     EventBus.on(GE.CREATURE_SPAWNED,  () => this._renderAll());
     EventBus.on(GE.CREATURE_DEFEATED, () => this._renderAll());
-    EventBus.on(GE.GOLD_CHANGE,       () => this._renderAll());   // Phase 4
+    EventBus.on(GE.GOLD_CHANGE,       () => { console.log('[TopBar] 🔔 GOLD_CHANGE, this.gs=', this.gs ? 'OK' : 'NULL', 'gold=', this.gs?.player?.gold); this._renderAll(); });   // Phase 4
     EventBus.on(GE.TURN_ADVANCE,      () => this._renderAll());   // Phase 4
   }
 }

@@ -69,6 +69,7 @@ export const GE = {
   SHOP_OPEN:          'shop:open',
   SHOP_BUY:           'shop:buy',
   FORGE_COMPLETE:     'forge:complete',
+  VEHICLE_GAIN:       'vehicle:gain',
   VEHICLE_ATTACH:     'vehicle:attach',
   CHARACTER_SELECTED: 'character:selected',
   TEAM_CHANGE:        'team:change',

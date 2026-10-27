@@ -57,7 +57,8 @@ export class VehiclePanel {
   _subscribe() {
     EventBus.on(GE.UI_PANEL_OPEN, ({ panel }) => { if (panel === 'vehicle') this.toggle(); });
     EventBus.on(GE.UI_PANEL_CLOSE, ({ panel }) => { if (panel === 'vehicle' && this.helper?.visible) this.helper.hide(); });
-    EventBus.on(GE.VEHICLE_ATTACH, () => { if (this.helper?.visible) this._refresh(); });
+    EventBus.on(GE.VEHICLE_GAIN,     () => { if (this.helper?.visible) this._refresh(); });
+    EventBus.on(GE.VEHICLE_ATTACH,   () => { if (this.helper?.visible) this._refresh(); });
   }
 
   _getGS() { return this.director?.getGS?.(); }
