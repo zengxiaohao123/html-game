@@ -140,21 +140,10 @@ export class VehiclePanel {
 
   _detach() {
     const gs = this._getGS(); if (!gs) return;
-    const cur = gs.vehicle?.current;
-    if (!cur) return;
-    const def = VEHICLES[cur.vehicleId];
-    EventBus.emit(GE.DIALOG_SHOW, {
-      title: '卸下载具', content: `确定卸下 ${def?.emoji || ''} ${def?.name || cur.vehicleId}？`,
-      options: [
-        { label: '取消', onSelect: () => {} },
-        { label: '确定', onSelect: () => {
-          VehicleSystem.detachVehicle(gs);
-          EventBus.emit(GE.TOAST_SHOW, { text: '📦 载具已卸库存', duration: 1200 });
-          devLog.info('[VehiclePanel] detach');
-          this._refresh();
-        }},
-      ],
-    });
+    VehicleSystem.detachVehicle(gs);
+    EventBus.emit(GE.TOAST_SHOW, { text: '📦 载具已卸库存', duration: 1200 });
+    devLog.info('[VehiclePanel] detach');
+    this._refresh();
   }
 
   show() {

@@ -103,8 +103,9 @@ export class InfoPanel {
     this.tabsWrap = null;
     this.bodyWrap = null;
     this.currentTileIdx = null;     // 当前选中的外圈地块 idx（null = 未选中，InfoPanel 滑出）
+    this.currentFenceIdx = null;    // 当前选中的栅栏内地块 idx
     this.currentGs = null;
-    this.mode = 'tile';             // 'tile' | 'bless'（点击精灵时无地块 tab）
+    this.mode = 'tile';             // 'tile' | 'fence' | 'bless'
     this._slideTimeout = null;
   }
 
@@ -172,29 +173,30 @@ export class InfoPanel {
 
     const gs = this._getGS();
     const tile = this.currentTileIdx != null ? gs?.map?.outerTiles?.[this.currentTileIdx] : null;
+    const fenceCell = this.currentFenceIdx != null ? gs?.map?.fence?.[this.currentFenceIdx] : null;
 
     // 根据当前模式决定显示哪些 tab
     const tabs = [];
     if (this.mode === 'bless') {
       // 祈福模式：只显示祈福 tab
       tabs.push({ label: '🧘 祈福', render: 'bless' });
+    } else if (this.mode === 'fence') {
+      // 栅栏内模式
+      tabs.push({ label: '📖 内容', render: 'fenceContent' });
+      if (fenceCell?.creatures && fenceCell.creatures.length > 0) {
+        tabs.push({ label: '👥 生物', render: 'fenceCreatures' });
+      }
     } else {
-      // 地块点击模式
-      // 0. 地块内容 —— 总是存在
+      // 外圈地块点击模式
       tabs.push({ label: '📖 内容', render: 'content' });
 
-      // 1. 状态 —— 只在该地块确实有状态时显示（地块自身 states[]）
       const hasTileStates = tile && Array.isArray(tile.states) && tile.states.length > 0;
       if (hasTileStates) {
         tabs.push({ label: '✨ 状态', render: 'state' });
       }
 
-      // 2. 单位 —— 只在该地块确实有单位时显示
-      //    外圈：只有玩家自己（player.x === tile.idx 才显示）
-      //    栅栏内地块：一格多生物（CreatureSystem）
       if (tile && gs) {
         const isPlayerHere = gs.player?.x === tile.idx;
-        // 栅栏内单位：gs.map.fence?.cells[row][col] 可能有 creatures[]
         let hasCreatures = false;
         if (gs.map?.fence && typeof tile.fenceRow === 'number' && typeof tile.fenceCol === 'number') {
           const cell = gs.map.fence.cells?.[tile.fenceRow]?.[tile.fenceCol];
@@ -206,13 +208,17 @@ export class InfoPanel {
       }
     }
 
-    // 如果没有可显示的 tab（理论上不会发生，内容 tab 至少有），直接 return 不渲染
     if (tabs.length === 0) return;
 
-    // 默认激活第一个
-    this.activeTabIdx = 0;
+    if (this.activeTabIdx === undefined || this.activeTabIdx >= tabs.length) {
+      this.activeTabIdx = 0;
+    }
+    const prevRender = this._currentTabs?.[this.activeTabIdx]?.render;
+    const stillValid = tabs.some(t => t.render === prevRender);
+    if (!stillValid && prevRender !== undefined) {
+      this.activeTabIdx = 0;
+    }
 
-    // 渲染 tab 按钮
     tabs.forEach((t, i) => {
       const isActive = i === this.activeTabIdx;
       const btn = createEl('button', {
@@ -238,7 +244,6 @@ export class InfoPanel {
       };
     });
 
-    // 缓存 render 列表供 _renderBody 使用
     this._currentTabs = tabs;
   }
 
@@ -246,19 +251,20 @@ export class InfoPanel {
     if (!this.bodyWrap || !this.root) return;
     while (this.bodyWrap.firstChild) this.bodyWrap.removeChild(this.bodyWrap.firstChild);
 
-    // 先重建 tab 按钮条
     this._rebuildTabs();
 
     const gs = this._getGS();
-    const tileIdx = this.currentTileIdx;
 
     // 无内容 → 滑出
-    if (this.mode === 'tile' && tileIdx === null) {
+    if (this.mode === 'tile' && this.currentTileIdx === null) {
+      this.slideOut();
+      return;
+    }
+    if (this.mode === 'fence' && this.currentFenceIdx === null) {
       this.slideOut();
       return;
     }
 
-    // 有内容 → 滑入
     this.slideIn();
 
     // 祈福模式
@@ -267,22 +273,33 @@ export class InfoPanel {
       return;
     }
 
-    // 地块点击模式
-    const tile = gs.map.outerTiles[tileIdx];
+    // 栅栏内模式
+    if (this.mode === 'fence') {
+      const fenceCell = gs.map.fence[this.currentFenceIdx];
+      if (!fenceCell) {
+        this.slideOut();
+        return;
+      }
+      const tabs = this._currentTabs || [];
+      const active = tabs[this.activeTabIdx];
+      if (!active) { this.activeTabIdx = 0; this._rebuildTabs(); return this._renderBody(); }
+      switch (active.render) {
+        case 'fenceContent':   this._renderFenceContentTab(fenceCell, gs); break;
+        case 'fenceCreatures': this._renderFenceCreaturesTab(fenceCell, gs); break;
+      }
+      return;
+    }
+
+    // 外圈地块模式
+    const tile = gs.map.outerTiles[this.currentTileIdx];
     if (!tile) {
       this.slideOut();
       return;
     }
 
-    // 根据当前激活的 tab render
     const tabs = this._currentTabs || [];
     const active = tabs[this.activeTabIdx];
-    if (!active) {
-      // 可能动态 tab 数量变化后 activeIdx 越界 → 切回 0
-      this.activeTabIdx = 0;
-      this._rebuildTabs();
-      return this._renderBody();
-    }
+    if (!active) { this.activeTabIdx = 0; this._rebuildTabs(); return this._renderBody(); }
 
     switch (active.render) {
       case 'content': this._renderContentTab(tile, gs); break;
@@ -939,7 +956,7 @@ export class InfoPanel {
       style: { fontSize: '15px', color: '#3a2e20', lineHeight: '1.6', marginBottom: '8px' },
       text: blessing
         ? `✨ ${spiritName} 正在为你挑选福地… 抽奖动画进行中`
-        : `${spiritName} 会随机为 1 格挂上【祝福】效果。祝福状态只持续 1 天，但受祝福时会立即触发该设施的【受祝福时】词条。`,
+        : `${spiritName} 会随机为 1 格添加祝福`,
       parent: this.bodyWrap,
     });
 
@@ -993,6 +1010,137 @@ export class InfoPanel {
   }
 
   // ════════════════════════════════════════════════════════════
+  // 栅栏内地块 —— 内容 tab（terrain + 地形量 + 物品）
+  // ════════════════════════════════════════════════════════════
+  _renderFenceContentTab(cell, gs) {
+    const TERRAIN_NAMES = {
+      none: '空地', grass: '草地', flower: '花圃',
+      wood: '木材', stone: '石料', water: '水池', sand: '沙地', wheat: '麦田',
+    };
+    const TERRAIN_EMOJI = {
+      none: '⬜', grass: '🌱', flower: '🌸', wood: '🪵',
+      stone: '🪨', water: '💧', sand: '🏖️', wheat: '🌾',
+    };
+
+    // 标题
+    createEl('div', {
+      style: { fontSize: '15px', fontWeight: '700', color: '#3a2e20', marginBottom: '8px' },
+      text: `🏡 栅栏内 (${cell.row}, ${cell.col})`,
+      parent: this.bodyWrap,
+    });
+
+    // terrain
+    const terrainName = TERRAIN_NAMES[cell.terrain] || cell.terrain || '空地';
+    const terrainEmoji = TERRAIN_EMOJI[cell.terrain] || '⬜';
+    createEl('div', {
+      style: { fontSize: '14px', color: '#3a2e20', marginBottom: '6px' },
+      text: `${terrainEmoji} 地形：${terrainName}`,
+      parent: this.bodyWrap,
+    });
+
+    // terrain amount
+    if (cell.terrain && cell.terrain !== 'none') {
+      createEl('div', {
+        style: { fontSize: '13px', color: '#888', marginBottom: '6px' },
+        text: `储量：${cell.terrainAmount ?? 0}`,
+        parent: this.bodyWrap,
+      });
+    }
+
+    // items
+    if (cell.items && cell.items.length > 0) {
+      createEl('div', {
+        style: { marginTop: '8px', fontSize: '14px', fontWeight: '700', color: '#3a2e20', marginBottom: '6px' },
+        text: '📦 物品堆',
+        parent: this.bodyWrap,
+      });
+      for (const item of cell.items) {
+        const def = typeof item === 'string'
+          ? (gs.capacity?.friendly?.[item] || gs.capacity?.danger?.[item] || null)
+          : null;
+        const name = def?.name || item?.name || (typeof item === 'string' ? item : '物品');
+        const emoji = def?.emoji || '📦';
+        const qty = typeof item === 'object' ? item.qty ?? 1 : 1;
+        createEl('div', {
+          style: { fontSize: '13px', color: '#3a2e20', padding: '2px 0' },
+          text: `${emoji} ${name} ×${qty}`,
+          parent: this.bodyWrap,
+        });
+      }
+    }
+
+    if ((!cell.items || cell.items.length === 0) && (!cell.terrain || cell.terrain === 'none')) {
+      createEl('div', {
+        style: { color: '#999', fontSize: '12px', fontStyle: 'italic', marginTop: '8px' },
+        text: '（空地，可放置地形或建筑）',
+        parent: this.bodyWrap,
+      });
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // 栅栏内地块 —— 生物 tab
+  // ════════════════════════════════════════════════════════════
+  _renderFenceCreaturesTab(cell, gs) {
+    const creatureIds = cell.creatures || [];
+    if (creatureIds.length === 0) {
+      createEl('div', {
+        style: { color: '#999', fontSize: '13px', fontStyle: 'italic' },
+        text: '（此格暂无生物）',
+        parent: this.bodyWrap,
+      });
+      return;
+    }
+
+    createEl('div', {
+      style: { fontSize: '15px', fontWeight: '700', color: '#3a2e20', marginBottom: '10px' },
+      text: `🐣 生物列表（${creatureIds.length}）`,
+      parent: this.bodyWrap,
+    });
+
+    for (const id of creatureIds) {
+      const c = gs.creatures?.find(x => x.id === id);
+      if (!c) continue;
+      const def = getCreatureDef?.(c.kind) || {};
+      const emoji = def.emoji || '🐾';
+      const name = def.name || c.kind;
+
+      const wrap = createEl('div', {
+        style: {
+          padding: '8px', marginBottom: '6px',
+          border: '2px solid #d4c4a4', borderRadius: '8px',
+          backgroundColor: 'rgba(255,250,230,0.6)',
+        },
+        parent: this.bodyWrap,
+      });
+
+      createEl('div', {
+        style: { fontSize: '14px', fontWeight: '700', color: '#3a2e20' },
+        text: `${emoji} ${name}`,
+        parent: wrap,
+      });
+
+      // 生命 / 攻击
+      if (typeof c.hp === 'number') {
+        createEl('div', {
+          style: { fontSize: '12px', color: '#666', marginTop: '2px' },
+          text: `❤️ ${c.hp}/${c.maxHp ?? c.hp}${typeof c.atk === 'number' ? ` · ⚔️ ${c.atk}` : ''}`,
+          parent: wrap,
+        });
+      }
+
+      // 特殊 tag
+      if (c.age !== undefined) {
+        createEl('div', {
+          style: { fontSize: '11px', color: '#999', marginTop: '2px' },
+          text: `年龄：${c.age} · 状态：${c.alive !== false ? '存活' : '死亡'}`,
+          parent: wrap,
+        });
+      }
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════
   // 事件订阅（保留 Phase 1 骨架 + 补充 BLESS_DONE / GOLD_CHANGE / STAMINA_CHANGE 刷新）
   // ════════════════════════════════════════════════════════════
   /** 选中指定 idx 的 tile（公开接口） */
@@ -1013,6 +1161,14 @@ export class InfoPanel {
     EventBus.on(GE.TILE_CLICKED, ({ tileIdx }) => {
       this.mode = 'tile';
       this.currentTileIdx = tileIdx;
+      this.currentFenceIdx = null;
+      this._renderBody();
+    });
+
+    EventBus.on(GE.FENCE_TILE_CLICKED, ({ fenceIdx }) => {
+      this.mode = 'fence';
+      this.currentFenceIdx = fenceIdx;
+      this.currentTileIdx = null;
       this._renderBody();
     });
 
@@ -1083,11 +1239,13 @@ export class InfoPanel {
       if (!t || !this.root) return;
       if (this.root.contains(t)) return;
       if (t.closest('.map-tile')) return;
+      if (t.closest('.fence-tile')) return;
       if (t.closest('.spirit-area')) return;
-      if (t.closest('.fence') || t.closest('.sprite-container')) return;
+      if (t.closest('.sprite-container')) return;
 
       // 其他区域 → 滑出
       this.currentTileIdx = null;
+      this.currentFenceIdx = null;
       this.mode = 'tile';
       this.slideOut();
     });

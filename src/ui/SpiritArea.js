@@ -57,7 +57,7 @@ export class SpiritArea {
     // 精灵效果描述
     this.spiritDescEl = createEl('div', {
       text: '祈福：每日首次减半消耗',
-      style: { fontSize: '9px', color: '#8a6a3a', lineHeight: '1.2', textAlign: 'center', maxWidth: '80px' },
+      style: { fontSize: '12px', color: '#8a6a3a', lineHeight: '1.3', textAlign: 'center', maxWidth: '100px', fontWeight: '600' },
       parent: this.root,
     });
 

@@ -11,6 +11,8 @@ import { GE } from '../core/GameEvents.js';
 import { Distance } from '../core/Distance.js';
 import { Assets } from '../core/Assets.js';
 import { BuildSystem } from '../systems/BuildSystem.js';
+import { SKILLS } from '../data/characters.js';
+import { getCreatureDef } from '../data/creatures.js';
 import { createEl, qs } from './dom.js';
 
 const TILE_SIZE = 80;
@@ -101,7 +103,16 @@ export class MapView {
     }
 
     if (tile.contentId) {
-      const contentEmoji = Assets.getEmoji('facilities', tile.contentId);
+      // 按 contentId 前缀选 group（facility_ → facilities, resource_ → resources, skill_ → characters.SKILLS）
+      let contentEmoji = null;
+      if (tile.contentId.startsWith('resource_')) {
+        contentEmoji = Assets.getEmoji('resources', tile.contentId);
+      } else if (tile.contentId.startsWith('skill_')) {
+        contentEmoji = SKILLS?.[tile.contentId]?.emoji || null;
+      }
+      if (!contentEmoji) {
+        contentEmoji = Assets.getEmoji('facilities', tile.contentId);
+      }
       createEl('span', {
         class: ['tile-content'],
         style: {
@@ -249,10 +260,27 @@ export class MapView {
       parent: this.root,
     });
 
+    // terrain → emoji 映射
+    const TERRAIN_EMOJI = {
+      none: null,
+      grass: '🌱',
+      flower: '🌸',
+      wood: '🪵',
+      stone: '🪨',
+      water: '💧',
+      sand: '🏖️',
+      wheat: '🌾',
+    };
+
     for (let r = 0; r < fenceRowCols; r++) {
       for (let c = 0; c < fenceRowCols; c++) {
-        createEl('div', {
+        const fenceIdx = r * fenceRowCols + c;
+        const cell = gs.map.fence[fenceIdx];
+        const tileEl = createEl('div', {
           class: ['fence-tile'],
+          'data-fence-row': r,
+          'data-fence-col': c,
+          'data-fence-idx': fenceIdx,
           style: {
             position: 'absolute',
             left: `${c * fenceTileSize}px`,
@@ -260,8 +288,58 @@ export class MapView {
             width: `${fenceTileSize}px`,
             height: `${fenceTileSize}px`,
             boxSizing: 'border-box',
+            border: '1px dashed rgba(100,100,100,0.25)',
+            cursor: 'pointer',
           },
           parent: fenceEl,
+        });
+
+        // terrain emoji（如果有）
+        if (cell?.terrain && cell.terrain !== 'none') {
+          const emoji = TERRAIN_EMOJI[cell.terrain];
+          if (emoji) {
+            createEl('span', {
+              style: {
+                position: 'absolute', left: '50%', top: '50%',
+                transform: 'translate(-50%, -50%)',
+                fontSize: '26px', lineHeight: '1', pointerEvents: 'none',
+              },
+              text: emoji,
+              parent: tileEl,
+            });
+          }
+        }
+
+        // creatures（如果有）—— 简单显示第一个 creature 的 emoji
+        if (cell?.creatures && cell.creatures.length > 0) {
+          // 找到 creature 对象
+          const creatureIds = cell.creatures;
+          const creatureDefs = cell.creatures.map(id => {
+            const c = gs.creatures?.find(x => x.id === id);
+            if (!c) return null;
+            const def = getCreatureDef?.(c.kind);
+            return def?.emoji || '🐾';
+          }).filter(Boolean);
+
+          if (creatureDefs.length > 0) {
+            createEl('div', {
+              style: {
+                position: 'absolute', left: '50%', bottom: '2px',
+                transform: 'translateX(-50%)',
+                fontSize: '14px', lineHeight: '1',
+                pointerEvents: 'none',
+                whiteSpace: 'nowrap',
+              },
+              text: creatureDefs.join(''),
+              parent: tileEl,
+            });
+          }
+        }
+
+        // 点击 → emit FENCE_TILE_CLICKED → InfoPanel 显示
+        tileEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          EventBus.emit(GE.FENCE_TILE_CLICKED, { row: r, col: c, fenceIdx });
         });
       }
     }

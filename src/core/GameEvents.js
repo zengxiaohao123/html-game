@@ -30,6 +30,7 @@ export const GE = {
   // ── 地图 ──
   TILE_UPDATED: 'tile:updated',
   TILE_CLICKED: 'tile:clicked',
+  FENCE_TILE_CLICKED: 'fence:tile_clicked',
   TERRAIN_DEPLETED: 'terrain:depleted',
 
   // ── 背包 / 放置 ──
