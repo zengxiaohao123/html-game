@@ -568,6 +568,62 @@ export class InfoPanel {
           break;
         }
 
+        case 'facility_dandelion': {
+          // 🌼 蒲公英田地：价值随移动距离增长，随时可采摘（采摘后地块内容消失）
+          const v = Math.max(0, tile.contentState?.dandelionValue || 1);
+          createEl('div', {
+            style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
+            text: `🌼 当前价值：${v}（每移动 1 格 +1）`,
+            parent: this.bodyWrap,
+          });
+          createEl('button', {
+            class: 'action-btn',
+            style: { width: '100%', fontSize: '13px', background: '#fff2cc' },
+            text: '🌼 采摘（获得 1 × 蒲公英）',
+            parent: this.bodyWrap,
+            onclick: () => {
+              const curTile = gs.map.outerTiles[tileIdx];
+              const cur = Math.max(0, curTile.contentState?.dandelionValue || 1);
+              InventorySystem.addItem(gs, 'item_dandelion', 1, { value: cur });
+              curTile.contentId = null;
+              curTile.contentState = {};
+              EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+              EventBus.emit(GE.INVENTORY_CHANGE);
+              EventBus.emit(GE.TOAST_SHOW, { text: `🌼 采摘成功！获得价值 ${cur} 的蒲公英`, duration: 2000 });
+              this._renderBody();
+            },
+          });
+          break;
+        }
+
+        case 'facility_ghost_grass': {
+          // 🌙 幽怜草田地：受祝福加价，本日未受祝福次日枯萎（站该格采摘）
+          const v = Math.max(0, tile.contentState?.ghostValue || 12);
+          createEl('div', {
+            style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
+            text: `🌙 当前价值：${v}`,
+            parent: this.bodyWrap,
+          });
+          createEl('button', {
+            class: 'action-btn',
+            style: { width: '100%', fontSize: '13px', background: '#e8e0ff' },
+            text: '🌙 采摘（获得 1 × 幽怜草）',
+            parent: this.bodyWrap,
+            onclick: () => {
+              const curTile = gs.map.outerTiles[tileIdx];
+              const cur = Math.max(0, curTile.contentState?.ghostValue || 12);
+              InventorySystem.addItem(gs, 'item_ghost_grass', 1, { value: cur });
+              curTile.contentId = null;
+              curTile.contentState = {};
+              EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+              EventBus.emit(GE.INVENTORY_CHANGE);
+              EventBus.emit(GE.TOAST_SHOW, { text: `🌙 采摘成功！获得价值 ${cur} 的幽怜草`, duration: 2000 });
+              this._renderBody();
+            },
+          });
+          break;
+        }
+
         case 'facility_henhouse': {
           // 🐔 鸡舍：onTile 时显示鸡蛋滑动条；随时显示开门/关门
           const stored = tile.contentState?.eggStored ?? 0;
@@ -688,7 +744,15 @@ export class InfoPanel {
           style: { fontSize: '14px' },
           text: '🏪 进入商店',
           parent: this.bodyWrap,
-          onclick: () => EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'shop' }),
+          onclick: () => EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'shop', tileIdx: tile.idx }),
+        });
+      } else if (contentId === 'resource_magic_shop') {
+        createEl('button', {
+          class: 'action-btn',
+          style: { fontSize: '14px' },
+          text: '🔮 进入魔法商店',
+          parent: this.bodyWrap,
+          onclick: () => EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'magicShop', tileIdx: tile.idx }),
         });
       } else if (contentId.startsWith('skill_')) {
         // Phase 4 —— 技能卡地块：显示技能详情 + 手动触发

@@ -17,6 +17,8 @@ import { TalentSystem } from './TalentSystem.js';
 import { LinkSkillSystem } from './LinkSkillSystem.js';
 import { Storage } from '../state/storage.js';
 import { VehicleSystem } from './VehicleSystem.js';
+import { CalendarSystem } from './CalendarSystem.js';
+import { ShopSystem } from './ShopSystem.js';
 
 /**
  * 开始新的一天
@@ -36,7 +38,11 @@ export function startNewDay(gs) {
 
   gs.day += 1;
   gs.turn = 0;
-  devLog.info('[DaySystem] 新的一天！day =', gs.day);
+
+  // 0.2 日历推进（v0.5 §6.1）：周 = 7 天 / 月 = 28 天 / 一年 4 个月
+  const cal = CalendarSystem.tickDay(gs);
+  devLog.info('[DaySystem] 新的一天！', CalendarSystem.formatCalendar(gs),
+    cal.newWeek ? '（新的一周）' : '', cal.newMonth ? '（新月份）' : '', cal.newYear ? '（新年）' : '');
 
   // 1. 重置所有每日计数器为 0
   gs.dailyCounters = {};
@@ -110,11 +116,16 @@ export function startNewDay(gs) {
   // 8.7 Agent 3：载具 巧遇 每天限次重置
   VehicleSystem.onDayStart(gs);
 
+  // 8.75 v0.5：每周一商店自动刷新（免费，不占手动次数）
+  if (cal.newWeek) {
+    ShopSystem.weeklyRefreshAll(gs);
+  }
+
   // 8.8 Agent 3：自动存档 slot 1
   Storage.autoSave(gs);
 
   // 9. 广播 DAY_START 事件
-  EventBus.emit(GE.DAY_START, { day: gs.day });
+  EventBus.emit(GE.DAY_START, { day: gs.day, calendar: gs.calendar, ...cal });
   EventBus.emit(GE.TILE_UPDATED); // 地图整体刷新
   EventBus.emit(GE.STAT_CHANGE);  // 所有 UI 数值刷新
 }

@@ -21,25 +21,25 @@ import { OUTBOX_SLOTS } from '../../utils/constants.js';
 import { createEl, qs } from '../dom.js';
 
 /** 8 个 tab 定义 —— 以 task-briefs §9 为准，示意图只参考排版不参考文字 */
+// 分类以「物品库」的 tier1/tier2 为准，不再靠 id 前缀猜。
+// 前缀法会把载具、消耗道具混进「产物」，物品库扩充后会持续失准。
+const tier2Is = (t) => (id) => ITEMS[id]?.tier2 === t;
+const tier1Is = (t) => (id) => ITEMS[id]?.tier1 === t;
 const TABS = [
   { id: 'all',      label: '总览',  match: () => true },
-  { id: 'facility', label: '设施',  match: id => id.startsWith('facility_') },
-  { id: 'resource', label: '资源',  match: id => id.startsWith('resource_') },
-  { id: 'skill',    label: '技能',  match: id => id.startsWith('skill_') },
-  { id: 'terrain',  label: '地形',  match: id => id.startsWith('terrain_') },
-  { id: 'item',     label: '产物',  match: id => id.startsWith('item_') },
-  { id: 'consum',   label: '道具',  match: id => ['collectible_','grimoire_','potion_'].some(p => id.startsWith(p)) },
-  { id: 'misc',     label: '杂物',  match: id => !(
-    id.startsWith('facility_') || id.startsWith('resource_') ||
-    id.startsWith('item_') || id.startsWith('skill_') ||
-    id.startsWith('terrain_') || ['collectible_','grimoire_','potion_'].some(p => id.startsWith(p))
-  )},
+  { id: 'facility', label: '设施',  match: tier2Is('设施') },
+  { id: 'resource', label: '资源',  match: tier2Is('资源') },
+  { id: 'skill',    label: '技能',  match: tier2Is('技能') },
+  { id: 'terrain',  label: '地形',  match: tier1Is('地形') },
+  { id: 'item',     label: '产物',  match: tier1Is('产物') },
+  { id: 'consum',   label: '道具',  match: tier1Is('道具') },
+  { id: 'misc',     label: '杂物',  match: tier1Is('杂物') },
 ];
 
 /** 简短描述字典（UI 用） */
 const DESCRIPTIONS = {
   facility_home:      '唯一且永恒，不可被替换。经过/进入获得金币，睡觉时行动力回满。',
-  facility_tent:      '可被替换，替换时原内容自动回背包。',
+  facility_tent:      '睡觉时行动力回满；受祝福可额外 +3 行动力。',
   facility_wheat:     '最基础的农作物。每日产出小麦，草地相邻加成。',
   facility_rice:      '每日产出稻草，草地/水面相邻有额外加成。',
   facility_potato:    '每日自动储存土豆，进入时一次性取走。',

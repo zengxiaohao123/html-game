@@ -127,6 +127,11 @@ export class TopBar {
       parent: dayPill,
     });
     this.dayText = createEl('span', { style: { fontSize: '15px', fontWeight: '800', color: '#5a4a3a' }, text: '', parent: dayPill });
+    // v0.5 §16.7：日历精确到「某年某月某日 星期X」，由 CalendarSystem 提供
+    this.calText = createEl('span', {
+      style: { fontSize: '12px', fontWeight: '700', color: '#8a7a63', marginLeft: '6px' },
+      text: '', parent: dayPill,
+    });
 
     // 金币 pill（单独一行，按 ui-main.png 金色特殊样式）
     const goldPill = createEl('div', { style: goldPillStyle(), parent: this.row3 });
@@ -213,6 +218,14 @@ export class TopBar {
 
     // Phase 4 —— 左下 row3
     if (this.dayText)  this.dayText.textContent  = `第 ${this.gs.day} 天`;
+    if (this.calText) {
+      this.calText.textContent = this.gs.calendar
+        ? `${this.gs.calendar.month}月${this.gs.calendar.dayOfMonth}日 周${'一二三四五六日'[this.gs.calendar.weekday - 1] || ''}`
+        : '';
+      this.calText.title = this.gs.calendar
+        ? `${this.gs.calendar.year} 年 ${this.gs.calendar.month} 月 ${this.gs.calendar.dayOfMonth} 日`
+        : '';
+    }
     if (this.goldText) this.goldText.textContent = `${p.gold}`;
   }
 

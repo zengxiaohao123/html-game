@@ -137,5 +137,76 @@ assert(Array.isArray(gs.player.visitedTodayIdx) && gs.player.visitedTodayIdx.len
 assert(Object.keys(gs.buildDailyPlaced).length === 0, 'buildDailyPlaced 已重置');
 assert(gs.player.stamina <= gs.player.maxStamina, '行动力溢出已清除', gs.player.stamina);
 
+head('商店抽取与交易');
+const { getShop, buy, sell, refreshShop, manualRefreshCost, planCounts, SHOP_KINDS, weeklyRefreshAll } =
+  await import('../src/systems/ShopSystem.js');
+const { CalendarSystem } = await import('../src/systems/CalendarSystem.js');
+
+gs.map.outerTiles[1].contentId = 'resource_shop';
+gs.map.outerTiles[1].contentState = {};
+const shop = getShop(gs, 1);
+assert(!!shop, '商店状态已生成');
+assert(shop.stock.length === 12, '商店共 12 格商品', shop.stock.length);
+
+// 各类数量落在区间内
+const byGroup = {};
+for (const s of shop.stock) byGroup[s.group] = (byGroup[s.group] || 0) + 1;
+const gcfg = SHOP_KINDS.shop.groups;
+const inRange = gcfg.every((g) => (byGroup[g.label] || 0) >= 0 && (byGroup[g.label] || 0) <= g.max);
+assert(inRange, '各类数量不超过上限', byGroup);
+assert((byGroup['收藏品'] || 0) >= 4, '收藏品至少 4 格', byGroup['收藏品']);
+
+gs.player.gold = 1000;
+const firstBuyable = shop.stock.findIndex((s) => !s.sold && s.price != null);
+const before = gs.player.gold;
+const b = buy(gs, 1, firstBuyable);
+assert(b.ok, '购买成功', b);
+assert(gs.player.gold === before - b.price, '金币按买价扣除');
+assert(shop.stock[firstBuyable].sold === true, '该格已售出');
+const b2 = buy(gs, 1, firstBuyable);
+assert(!b2.ok, '同一格不能买第二次（每件只卖 1 个）');
+
+assert(manualRefreshCost(shop) === 4, '首次刷新 4 金币', manualRefreshCost(shop));
+const g1 = gs.player.gold;
+const rf1 = refreshShop(gs, 1);
+assert(rf1.ok && gs.player.gold === g1 - 4, '刷新扣 4 金币');
+assert(manualRefreshCost(shop) === 8, '第二次刷新 8 金币', manualRefreshCost(shop));
+refreshShop(gs, 1);
+assert(manualRefreshCost(shop) === 12, '第三次刷新 12 金币', manualRefreshCost(shop));
+refreshShop(gs, 1);
+assert(manualRefreshCost(shop) === null, '三次用完 → 不可再刷新');
+assert(!refreshShop(gs, 1).ok, '超出次数刷新被拒绝');
+
+head('商店出售');
+addItem(gs, 'item_wheat', 3);
+const goldBefore = gs.player.gold;
+const sv = sell(gs, 'item_wheat');
+assert(sv.ok && sv.value === 2, '小麦卖价 = 物品价值 2', sv);
+assert(gs.player.gold === goldBefore + 2, '卖出加金币');
+assert(countItem(gs, 'item_wheat') === 2, '背包小麦 -1');
+addItem(gs, 'grimoire_grain_full', 1);
+assert(!sell(gs, 'grimoire_grain_full').ok, '魔导书不可出售');
+
+head('魔法商店');
+gs.map.outerTiles[2].contentId = 'resource_magic_shop';
+gs.map.outerTiles[2].contentState = {};
+const mshop = getShop(gs, 2);
+assert(!!mshop && mshop.kind === 'magic', '魔法商店状态已生成');
+assert(mshop.stock.length === 10, '魔法商店共 10 格', mshop.stock.length);
+const mg = {};
+for (const s of mshop.stock) mg[s.group] = (mg[s.group] || 0) + 1;
+assert((mg['魔导书'] || 0) >= 3, '魔导书至少 3 格（靠占位补足）', mg);
+
+head('每周一自动刷新');
+shop.refreshUsed = 3;
+gs.calendar = { year: 1, month: 3, dayOfMonth: 7, weekday: 7 };  // 周日
+startNewDay(gs);                                                  // → 周一
+assert(gs.calendar.weekday === 1, '推进到周一', gs.calendar);
+assert(getShop(gs, 1).refreshUsed === 0, '周一重置手动刷新次数');
+assert(getShop(gs, 1).stock.length === 12, '周一重新抽满 12 格');
+
+head('日历');
+assert(CalendarSystem.formatCalendar(gs) === '1 年 3 月 8 日 星期一', '日历显示正确', CalendarSystem.formatCalendar(gs));
+
 console.log(`\n结果：${pass} 通过，${fail} 失败`);
 process.exit(fail ? 1 : 0);

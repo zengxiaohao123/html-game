@@ -28,6 +28,7 @@ import { normalizeTerrain } from './terrains.js';
 import { ITEMS } from './items.js';
 import { drawFromPool } from '../systems/RandomPool.js';
 import { HealSystem } from '../systems/HealSystem.js';
+import { ShopSystem } from '../systems/ShopSystem.js';
 
 // ── 小工具：判断是否为"我的设施"格 ──
 const isMine = (gs, tileIdx, id) => gs.map.outerTiles[tileIdx]?.contentId === id;
@@ -752,13 +753,21 @@ const ResourceShop = {
   id: 'resource_shop',
   name: '商店',
   emoji: Assets.resources.resource_shop,
-  value: 0,
-  description: '【进入时】可进入商店\n【受祝福时】下一次进入有打折商品',
+  value: 1,
+  description: '【进入时】可进入商店\n【受祝福时】下一次进入时，有概率出现打折商品',
+  internalNote: '每日至多放置 1 个；场上上限 2；不在功能区，必须通过地块功能进入',
   register() {
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
-      EventBus.emit(GE.TOAST_SHOW, { text: '🏪 进入商店（Phase 4 UI）', duration: 1500 });
-      devLog.info('[shop] onEnter (Phase 4 UI opens shop panel)');
+      EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'shop', tileIdx });
+      devLog.info('[shop] onEnter → open shop panel, tile', tileIdx);
+    }, this);
+
+    HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
+      if (!isMine(gs, tileIdx, this.id)) return;
+      const shop = ShopSystem.getShop(gs, tileIdx);
+      if (shop) shop.discountPending = true;
+      EventBus.emit(GE.TOAST_SHOW, { text: '✨ 商店受祝福 → 下次进入有打折商品', duration: 2000 });
     }, this);
   },
 };
@@ -1001,8 +1010,7 @@ const ResourceMagicShop = {
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
       const tile = gs.map.outerTiles[tileIdx];
       if (!tile || tile.contentId !== this.id) return;
-      const st = tile.contentState || (tile.contentState = {});
-      st.freeRefreshPending = (st.freeRefreshPending || 0) + 1;
+      ShopSystem.grantFreeRefresh(gs, tileIdx);
       EventBus.emit(GE.TOAST_SHOW, { text: '✨ 下次进入魔法商店，首次刷新免费', duration: 2000 });
     }, this);
   },

@@ -54,6 +54,8 @@ export function createInitialState() {
     gameOver: false,
     day: 1,
     turn: 0,
+    // 日历（v0.5 §6.1）：开局 1 年 3 月 1 日 星期一；周 7 天 / 月 28 天 / 一年 4 个月
+    calendar: { year: 1, month: 3, dayOfMonth: 1, weekday: 1 },
 
     // ── 玩家 ──
     player: {
