@@ -1,0 +1,10 @@
+{
+  "name": "turntable-farm",
+  "private": true,
+  "type": "module",
+  "description": "《转盘农场》纯前端 SPA。无构建工具，此文件仅用于 Node 侧冒烟脚本以 ESM 方式 import src/ 下的模块。",
+  "scripts": {
+    "check": "node tools/check-data.mjs",
+    "gen": "python tools/gen_library.py"
+  }
+}
