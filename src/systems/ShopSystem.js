@@ -134,6 +134,17 @@ export function generateStock(kind, rand = Math.random) {
   return stock;
 }
 
+/** 受祝福的"打折商品"：随机 30% 的格子打 7 折 */
+function applyBlessDiscount(stock) {
+  for (const item of stock) {
+    if (item.price != null && Math.random() < 0.3) {
+      item.price = Math.max(1, Math.floor(item.price * 0.7));
+      item.discounted = true;
+    }
+  }
+  return stock;
+}
+
 /** 取（必要时创建 / 换周刷新）某个商店地块的状态 */
 export function getShop(gs, tileIdx) {
   const tile = gs.map.outerTiles[tileIdx];
@@ -183,6 +194,7 @@ export function refreshShop(gs, tileIdx, opts = {}) {
   if (!shop) return { ok: false, reason: 'notShop' };
   if (opts.free) {                    // 每周自动刷新（外部调用）
     shop.stock = generateStock(shop.kind);
+    if (shop.discountPending) { applyBlessDiscount(shop.stock); shop.discountPending = false; }
     return { ok: true, cost: 0 };
   }
 
@@ -201,6 +213,10 @@ export function refreshShop(gs, tileIdx, opts = {}) {
   if (cost === 0 && shop.freeRefreshPending > 0) shop.freeRefreshPending -= 1;
   shop.refreshUsed += 1;
   shop.stock = generateStock(shop.kind);
+  if (shop.discountPending) {
+    applyBlessDiscount(shop.stock);
+    shop.discountPending = false;
+  }
 
   EventBus.emit(GE.TOAST_SHOW, { text: `🏪 已刷新（-${cost} 金币）`, duration: 1400 });
   devLog.info('[Shop] 手动刷新', shop.kind, 'cost=', cost, 'used=', shop.refreshUsed);
