@@ -16,6 +16,7 @@ import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { Random } from '../core/Random.js';
 import { VEHICLES } from '../data/vehicles.js';
+import { ITEMS } from '../data/items.js';
 import { Distance, outerXYToIdx } from '../core/Distance.js';
 import { Direction } from '../utils/Direction.js';
 import { HookDispatcher } from '../core/HookDispatcher.js';
@@ -29,6 +30,39 @@ function ensureVehicleState(gs) {
       chanceUsedToday: false, // 心想事成 巧遇 每天限 1 次
     };
   }
+}
+
+/** 两格外圈格的曼哈顿距离（可穿越栅栏/虚空，只看坐标差） */
+function manhattan(gs, a, b) {
+  const pa = Distance.outerIdxToXY(gs.map.size, a);
+  const pb = Distance.outerIdxToXY(gs.map.size, b);
+  if (!pa || !pb) return Infinity;
+  return Math.abs(pa.x - pb.x) + Math.abs(pa.y - pb.y);
+}
+
+/** 落点是否满足该载具的 landFilter（设施 / 资源 / 技能 / 指定 contentId） */
+export function landOk(gs, idx, def) {
+  const filter = def?.landFilter;
+  if (!filter) return true;
+  const tile = gs.map.outerTiles[idx];
+  if (!tile || !tile.contentId) return false;
+  if (filter.contentIds) return filter.contentIds.includes(tile.contentId);
+  if (filter.tier2) return ITEMS[tile.contentId]?.tier2 === filter.tier2;
+  return true;
+}
+
+/** 当前载具所有合法落点（供 UI 高亮 / 随机传送用） */
+export function listLandingTiles(gs) {
+  ensureVehicleState(gs);
+  const cur = gs.vehicle.current;
+  if (!cur) return [];
+  const fromIdx = gs.player.x;
+  const out = [];
+  for (const t of gs.map.outerTiles) {
+    if (t.idx === fromIdx) continue;
+    if (canVehicleReach(gs, t.idx).ok) out.push(t.idx);
+  }
+  return out;
 }
 
 /**
@@ -201,24 +235,47 @@ export function tryMove(gs, opts = {}) {
     // 简化：路径 = [targetIdx]（1 格视为直达）
     path = [targetIdx];
   } else if (def.movePattern === 'any') {
-    // 巧遇：任意格（不能进 fence）
+    // 任意格（巧遇 / 图腾 / 号角 / 飞毯 / 购物车 / 大巴 / 飞剑 —— 落点再由 landFilter 约束）
     if (opts.targetIdx == null) return { ok: false, reason: 'needTarget' };
     if (opts.targetIdx === fromIdx) return { ok: false, reason: 'sameTile' };
     targetIdx = opts.targetIdx;
     path = [targetIdx];
+  } else if (def.movePattern === 'range') {
+    // 曼哈顿距离 ≤ maxRange 的任意格（马匹 / 重弹簧 / 拓荒者）
+    if (opts.targetIdx == null) return { ok: false, reason: 'needTarget' };
+    if (opts.targetIdx === fromIdx) return { ok: false, reason: 'sameTile' };
+    if (manhattan(gs, fromIdx, opts.targetIdx) > (def.maxRange || 2)) {
+      return { ok: false, reason: 'outOfRange' };
+    }
+    targetIdx = opts.targetIdx;
+    path = [targetIdx];
+  } else if (def.movePattern === 'random') {
+    // 随机一格（momo 图腾）：优先本日未进入过的地块
+    const cands = listLandingTiles(gs);
+    if (cands.length === 0) return { ok: false, reason: 'noLanding' };
+    const visited = Array.isArray(gs.player?.visitedTodayIdx) ? gs.player.visitedTodayIdx : null;
+    const prefer = def.preferUnvisitedToday && visited
+      ? cands.filter((i) => !visited.includes(i))
+      : [];
+    const pool = prefer.length ? prefer : cands;
+    targetIdx = pool[Math.floor(Math.random() * pool.length)];
+    path = [targetIdx];
   } else {
     return { ok: false, reason: 'badPattern' };
   }
+
+  // 落点限制（设施 / 资源 / 技能 / 指定地块）
+  if (!landOk(gs, targetIdx, def)) return { ok: false, reason: 'landFilter' };
 
   // 消耗载具使用次数
   consumeUsage(gs);
 
   // 扣 stamina（载具也是移动，消耗 1 stamina，除非有果腹收藏品 —— 简化不考虑）
   // 芋圆 nextMoveNoStamina 也适用载具移动
-  const isFree = !!gs.player.nextMoveNoStamina;
-  if (isFree) {
+  const isFree = !!gs.player.nextMoveNoStamina || !!def.freeStamina;
+  if (gs.player.nextMoveNoStamina) {
     gs.player.nextMoveNoStamina = false;
-  } else {
+  } else if (!def.freeStamina) {
     gs.player.stamina -= 1;
     EventBus.emit(GE.STAMINA_CHANGE, {
       newValue: gs.player.stamina,
@@ -229,6 +286,19 @@ export function tryMove(gs, opts = {}) {
 
   // 更新位置
   gs.player.x = targetIdx;
+
+  // 到达后额外效果（拓荒者 +5 行动力；购物车 +4 金币）
+  if (def.staminaGain) {
+    gs.player.stamina += def.staminaGain;
+    EventBus.emit(GE.STAMINA_CHANGE, {
+      newValue: gs.player.stamina, delta: def.staminaGain, maxStamina: gs.player.maxStamina,
+    });
+    EventBus.emit(GE.TOAST_SHOW, { text: `${def.emoji} ${def.name} 行动力 +${def.staminaGain}`, duration: 1500 });
+  }
+  if (def.goldOnArrive) {
+    gs.player.gold += def.goldOnArrive;
+    EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: def.goldOnArrive });
+  }
 
   // Phase 4：载具移动也要触发 onPass / onEnter hook（设施词条正常工作）
   //   onPass：路径上除最后一格外的每一格（跳过 null——穿越栅栏中心不算经过合法地块）
@@ -289,7 +359,7 @@ export function canVehicleReach(gs, targetIdx) {
     // 只验证落点是合法外圈格 —— 中途穿越栅栏/虚空/null 都是合法的
     const finalIdx = outerXYToIdx(gs.map.size, tx, ty);
     if (finalIdx === null) return { ok: false, reason: 'badTarget' };
-
+    if (!landOk(gs, targetIdx, def)) return { ok: false, reason: 'landFilter' };
     return { ok: true, def };
   }
 
@@ -298,11 +368,21 @@ export function canVehicleReach(gs, targetIdx) {
     if (!sameRowOrCol(gs, fromIdx, targetIdx)) {
       return { ok: false, reason: 'notSameRowCol' };
     }
+    if (!landOk(gs, targetIdx, def)) return { ok: false, reason: 'landFilter' };
     return { ok: true, def };
   }
 
-  if (def.movePattern === 'any') {
-    // 巧遇：任意格（外圈都是合法的）
+  if (def.movePattern === 'range') {
+    // 曼哈顿距离内任意格（可穿越栅栏/虚空，只看坐标差）
+    if (manhattan(gs, fromIdx, targetIdx) > (def.maxRange || 2)) {
+      return { ok: false, reason: 'outOfRange' };
+    }
+    if (!landOk(gs, targetIdx, def)) return { ok: false, reason: 'landFilter' };
+    return { ok: true, def };
+  }
+
+  if (def.movePattern === 'any' || def.movePattern === 'random') {
+    if (!landOk(gs, targetIdx, def)) return { ok: false, reason: 'landFilter' };
     return { ok: true, def };
   }
 

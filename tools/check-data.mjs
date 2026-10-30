@@ -57,7 +57,8 @@ for (const [code, pool] of Object.entries(POOLS)) {
   console.log(line);
 
   if (pool.drawMin != null && real < pool.drawMin) {
-    bad(`${code} 可用候选 ${real} 条 < 抽取下限 ${pool.drawMin} 条 —— 不补内容或不允许重复就抽不出来`);
+    // 占位物品会自动补入（RandomPool.resolveCandidates），所以这里只告警不判死
+    warn(`${code} 可用候选 ${real} 条 < 抽取下限 ${pool.drawMin} 条 —— 将自动用占位物品补足`);
   } else if (pool.drawMax != null && real < pool.drawMax) {
     warn(`${code} 可用候选 ${real} 条 < 抽取上限 ${pool.drawMax} 条 —— 抽满时会重复/不足`);
   }

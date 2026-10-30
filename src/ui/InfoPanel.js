@@ -82,11 +82,19 @@ const FACILITY_DESCRIPTIONS = {
 };
 
 const TERRAIN_DESCRIPTIONS = {
-  none: '空地块：可建造设施',
-  grass: '🟩 草地：相邻麦田 +1 小麦 / 相邻稻田 +1 稻草',
-  water: '🌊 水面：相邻稻田 +2 稻草',
-  mud:  '🟟 泥地：史莱姆粘液相关',
+  terrain_none:      '无地形：可在此放置设施 / 资源 / 技能',
+  terrain_grass:     '🟩 草地：10 草元素量，生物可啃食，部分设施产出加成',
+  terrain_water:     '🌊 水面：10 水元素量，不阻碍移动，相邻稻田 +2 稻草',
+  terrain_ice:       '🧊 冰面：10 冰元素量，徒步进入会被迫向前滑行（载具不受影响）',
+  // 旧 id 别名（兼容旧存档）
+  none:  '无地形：可在此放置设施 / 资源 / 技能',
+  grass: '🟩 草地：10 草元素量',
+  water: '🌊 水面：10 水元素量',
+  mud:   '无地形',
 };
+
+/** 地形 id 归一化（旧存档里可能是 'none' / 'grass'） */
+const normTerrain = (v) => (!v ? 'terrain_none' : (TERRAIN_DESCRIPTIONS[v] ? (v.startsWith('terrain_') ? v : 'terrain_' + v) : 'terrain_none'));
 
 /** 状态类型 → emoji + 显示名 */
 const STATE_META = {
@@ -337,9 +345,9 @@ export class InfoPanel {
         descriptions = FACILITY_DESCRIPTIONS[contentId] || ['（词条未配置）'];
       }
     } else {
-      icon = Assets.getEmoji('terrains', tile.terrain || 'none');
-      name = (TERRAIN_DESCRIPTIONS[tile.terrain || 'none'] || '空地').split('：')[0];
-      descriptions = [TERRAIN_DESCRIPTIONS[tile.terrain || 'none'] || '可在此建造设施'];
+      icon = Assets.getEmoji('terrains', tile.terrain || 'terrain_none');
+      name = (TERRAIN_DESCRIPTIONS[tile.terrain || 'terrain_none'] || '空地').split('：')[0];
+      descriptions = [TERRAIN_DESCRIPTIONS[tile.terrain || 'terrain_none'] || '可在此建造设施'];
     }
 
     createEl('span', {
@@ -353,7 +361,7 @@ export class InfoPanel {
     createEl('span', { text: name, parent: titleRow });
 
     // 地形提示
-    if (tile.terrain && tile.terrain !== 'none') {
+    if (tile.terrain && normTerrain(tile.terrain) !== 'terrain_none') {
       createEl('div', {
         style: { fontSize: '13px', color: '#8a6a3a', marginBottom: '8px' },
         text: `地形：${Assets.getEmoji('terrains', tile.terrain)} ${tile.terrain}`,
@@ -1011,12 +1019,12 @@ export class InfoPanel {
   // ════════════════════════════════════════════════════════════
   _renderFenceContentTab(cell, gs) {
     const TERRAIN_NAMES = {
-      none: '空地', grass: '草地', flower: '花圃',
-      wood: '木材', stone: '石料', water: '水池', sand: '沙地', wheat: '麦田',
+      terrain_none: '无地形', terrain_grass: '草地', terrain_water: '水面', terrain_ice: '冰面',
+      none: '无地形', grass: '草地', water: '水面', mud: '无地形',
     };
     const TERRAIN_EMOJI = {
-      none: '⬜', grass: '🌱', flower: '🌸', wood: '🪵',
-      stone: '🪨', water: '💧', sand: '🏖️', wheat: '🌾',
+      terrain_none: '⬜', terrain_grass: '🟩', terrain_water: '🌊', terrain_ice: '🧊',
+      none: '⬜', grass: '🟩', water: '🌊', mud: '⬜',
     };
 
     // 标题
@@ -1036,7 +1044,7 @@ export class InfoPanel {
     });
 
     // terrain amount
-    if (cell.terrain && cell.terrain !== 'none') {
+    if (cell.terrain && normTerrain(cell.terrain) !== 'terrain_none') {
       createEl('div', {
         style: { fontSize: '13px', color: '#888', marginBottom: '6px' },
         text: `储量：${cell.terrainAmount ?? 0}`,
@@ -1066,7 +1074,7 @@ export class InfoPanel {
       }
     }
 
-    if ((!cell.items || cell.items.length === 0) && (!cell.terrain || cell.terrain === 'none')) {
+    if ((!cell.items || cell.items.length === 0) && (!cell.terrain || normTerrain(cell.terrain) === 'terrain_none')) {
       createEl('div', {
         style: { color: '#999', fontSize: '12px', fontStyle: 'italic', marginTop: '8px' },
         text: '（空地，可放置地形或建筑）',

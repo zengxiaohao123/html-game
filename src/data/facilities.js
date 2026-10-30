@@ -24,6 +24,9 @@ import { CreatureSystem } from '../systems/CreatureSystem.js';
 import { Random } from '../core/Random.js';
 import { SLIME_KINDS } from './creatures.js';
 import { SKILLS } from './characters.js';
+import { normalizeTerrain } from './terrains.js';
+import { ITEMS } from './items.js';
+import { drawFromPool } from '../systems/RandomPool.js';
 
 // ── 小工具：判断是否为"我的设施"格 ──
 const isMine = (gs, tileIdx, id) => gs.map.outerTiles[tileIdx]?.contentId === id;
@@ -37,7 +40,7 @@ function hasAdjacentWater(gs, tileIdx) {
   for (const nIdx of neighbors) {
     if (nIdx === null || nIdx === undefined) continue;
     const nTile = gs.map.outerTiles[nIdx];
-    if (nTile && nTile.terrain === 'water') return true;
+    if (nTile && normalizeTerrain(nTile.terrain) === 'terrain_water') return true;
   }
   return false;
 }
@@ -194,7 +197,7 @@ const FacilityWheat = {
       let total = 0;
       for (const t of tiles) {
         let qty = 2;
-        if (t.terrain === 'grass') qty += 1;
+        if (normalizeTerrain(t.terrain) === 'terrain_grass') qty += 1;
         total += qty;
       }
       if (total > 0) {
@@ -209,7 +212,7 @@ const FacilityWheat = {
       if (!isMine(gs, tileIdx, this.id)) return;
       const tile = gs.map.outerTiles[tileIdx];
       let qty = 3;
-      if (tile.terrain === 'grass') qty += 1;
+      if (normalizeTerrain(tile.terrain) === 'terrain_grass') qty += 1;
       InventorySystem.addItem(gs, 'item_wheat', qty);
       EventBus.emit(GE.TOAST_SHOW, { text: `🌾 祝福 ×3 +${qty} 小麦`, duration: 2000 });
       devLog.info('[wheat] onBlessed instant +', qty);
@@ -244,7 +247,7 @@ const FacilityRice = {
 
       for (const t of tiles) {
         let qty = 1;
-        if (t.terrain === 'grass') qty += 1;
+        if (normalizeTerrain(t.terrain) === 'terrain_grass') qty += 1;
         if (hasAdjacentWater(gs, t.idx)) qty += 2;
         totalBase += qty;
 
@@ -800,6 +803,228 @@ const ResourceBus = {
 };
 
 // ════════════════════════════════════════════════════════════════
+// v0.5 新增 4 种设施（物品库 FAC-013 ~ FAC-016）
+// ════════════════════════════════════════════════════════════════
+
+// ── FAC-013 野生种子 🌱 ──
+// 【放置时】变为随机设施（调用【设施池1】= POOL-01）
+// 占位物品：平时不进随机池，只有池子候选不足时才补入；允许叠加，无【唯一】
+const FacilityWildSeed = {
+  id: 'facility_wild_seed',
+  name: '野生种子',
+  emoji: Assets.facilities.facility_wild_seed,
+  value: 1,
+  description: '【放置时】变为随机设施',
+  internalNote: '占位物品：允许叠加，没有【唯一】；效果需调用设施池1',
+
+  register() {
+    HookDispatcher.register('onPlace', ({ gs, tileIdx }) => {
+      const tile = gs.map.outerTiles[tileIdx];
+      if (!tile || tile.contentId !== this.id) return;
+
+      // 从设施池1 抽 1 个设施；抽中占位（野生种子）时重抽，避免自己变自己
+      let picked = null;
+      for (let i = 0; i < 8; i++) {
+        const [hit] = drawFromPool('POOL-01', 1, { unique: true });
+        if (hit && hit.id && hit.id !== this.id) { picked = hit; break; }
+      }
+      if (!picked) {
+        devLog.warn('[wildSeed] 设施池1 抽不到非占位设施，保持原样');
+        return;
+      }
+      tile.contentId = picked.id;
+      EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+      EventBus.emit(GE.TOAST_SHOW, { text: `🌱 野生种子长成了 ${ITEMS[picked.id]?.name || picked.name}`, duration: 2200 });
+      devLog.info('[wildSeed] →', picked.id);
+    }, this);
+  },
+};
+
+// ── FAC-014 蒲公英田地 🌼 ──
+// 【放置时】【受祝福时】储存蒲公英×1（至多 1）
+// 【移动后】按本次移动的曼哈顿距离提升储存蒲公英价值（初始 1）
+// 可随时采摘：获得等同当前价值的蒲公英 ×1，并失去该地块内容
+const FacilityDandelion = {
+  id: 'facility_dandelion',
+  name: '蒲公英田地',
+  emoji: Assets.facilities.facility_dandelion,
+  value: 1,
+  description: '【移动后】根据本次移动经过的距离提升储存的蒲公英的价值\n【放置时】【受祝福时】储存蒲公英 ×1（至多 1 个）\n可以随时采摘',
+  internalNote: '每移动 1 格曼哈顿距离价值 +1（初始 1）；使用载具移动按起点到落点计算',
+
+  register() {
+    const ensureStored = (tile) => {
+      const st = tile.contentState || (tile.contentState = {});
+      if (!st.dandelionStored) {
+        st.dandelionStored = true;
+        st.dandelionValue = st.dandelionValue || 1;
+      }
+      return st;
+    };
+
+    HookDispatcher.register('onPlace', ({ gs, tileIdx }) => {
+      const tile = gs.map.outerTiles[tileIdx];
+      if (!tile || tile.contentId !== this.id) return;
+      const st = ensureStored(tile);
+      st.dandelionValue = 1;
+      EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+    }, this);
+
+    HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
+      const tile = gs.map.outerTiles[tileIdx];
+      if (!tile || tile.contentId !== this.id) return;
+      ensureStored(tile);   // 已储存则不叠加（至多 1 个）
+      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 蒲公英价值提升至 ${Math.max(0, tile.contentState.dandelionValue)}`, duration: 1800 });
+      EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+    }, this);
+
+    // onMoveEnd：params.distance = 本次移动的曼哈顿距离（由 MovementSystem 传入）
+    HookDispatcher.register('onMoveEnd', ({ gs, distance = 0 }) => {
+      if (distance <= 0) return;
+      const tiles = gs.map.outerTiles.filter((t) => t.contentId === this.id);
+      for (const t of tiles) {
+        const st = t.contentState || (t.contentState = {});
+        if (!st.dandelionStored) continue;
+        st.dandelionValue = (st.dandelionValue || 1) + distance;
+      }
+      if (tiles.length) EventBus.emit(GE.TILE_UPDATED);
+    }, this);
+  },
+};
+
+// ── FAC-015 幽怜草田地 🌙 ──
+// 【放置时】储存幽怜草×1（至多 1，初始价值 12）
+// 【进入时】可以采摘
+// 【受祝福时】储存的幽怜草价值 +12（同一日内第 2 次起每次衰减 2，最低 +0）
+// 【每一日开始时】本日未受到过祝福 → 直接枯萎（地块内容消失，变空地块）
+const FacilityGhostGrass = {
+  id: 'facility_ghost_grass',
+  name: '幽怜草田地',
+  emoji: Assets.facilities.facility_ghost_grass,
+  value: 12,
+  description: '【放置时】储存幽怜草 ×1（至多 1 个）\n【进入时】可以采摘\n【受祝福时】储存的幽怜草价值 +12（同一日内多次祝福有衰减）\n若本日没有受到过祝福则下一日开始时会直接枯萎',
+  internalNote: '初始价格 12；同日第 2 次起每次价值增加 -2，最低 +0；枯萎 = 地块内容直接失去',
+
+  register() {
+    HookDispatcher.register('onPlace', ({ gs, tileIdx }) => {
+      const tile = gs.map.outerTiles[tileIdx];
+      if (!tile || tile.contentId !== this.id) return;
+      const st = tile.contentState || (tile.contentState = {});
+      st.ghostStored = true;
+      st.ghostValue = 12;
+      st.ghostBlessCountToday = 0;
+      st.ghostBlessedToday = false;
+      EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+    }, this);
+
+    HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
+      const tile = gs.map.outerTiles[tileIdx];
+      if (!tile || tile.contentId !== this.id) return;
+      const st = tile.contentState || (tile.contentState = {});
+      if (!st.ghostStored) return;
+      const n = (st.ghostBlessCountToday || 0) + 1;
+      const gain = Math.max(0, 12 - 2 * (n - 1));   // 第 1 次 +12，第 2 次 +10，第 3 次 +8 …
+      st.ghostValue = (st.ghostValue || 12) + gain;
+      st.ghostBlessCountToday = n;
+      st.ghostBlessedToday = true;
+      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 幽怜草价值 +${gain} → ${st.ghostValue}`, duration: 1800 });
+      EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+    }, this);
+
+    HookDispatcher.register('onDailyStart', ({ gs }) => {
+      const tiles = gs.map.outerTiles.filter((t) => t.contentId === this.id);
+      for (const t of tiles) {
+        const st = t.contentState || (t.contentState = {});
+        if (st.ghostStored && st.ghostBlessedToday === false) {
+          t.contentId = null;
+          t.contentState = {};
+          EventBus.emit(GE.TOAST_SHOW, { text: '🌙 昨日未受祝福，幽怜草枯萎了', duration: 2000 });
+          EventBus.emit(GE.TILE_UPDATED, { tileIdx: t.idx });
+        }
+        // 新的一天重置本日计数
+        st.ghostBlessCountToday = 0;
+        st.ghostBlessedToday = false;
+      }
+    }, this);
+  },
+};
+
+// ── FAC-016 艾草田地 🍃 ──
+// 【每一日开始时】获得艾草 ×2
+// 【角色回复生命值时】获得艾草 ×1（任意途径回血都算）
+// 【受祝福时】为角色回复 25% 生命值
+const FacilityMugwort = {
+  id: 'facility_mugwort',
+  name: '艾草田地',
+  emoji: Assets.facilities.facility_mugwort,
+  value: 2,
+  description: '【每一日开始时】获得艾草 ×2\n【角色回复生命值时】获得艾草 ×1\n【受祝福时】为角色回复 25% 生命值',
+  internalNote: '任意途径回复生命值都算，注意订阅所有回血来源',
+
+  register() {
+    HookDispatcher.register('onDailyStart', ({ gs }) => {
+      const tiles = gs.map.outerTiles.filter((t) => t.contentId === this.id);
+      if (!tiles.length) return;
+      const total = tiles.length * 2;
+      InventorySystem.addItem(gs, 'item_mugwort', total);
+      EventBus.emit(GE.TOAST_SHOW, { text: `🍃 艾草田地 +${total} 艾草`, duration: 1800 });
+    }, this);
+
+    HookDispatcher.register('onHeal', ({ gs, amount = 0 }) => {
+      if (amount <= 0) return;
+      const tiles = gs.map.outerTiles.filter((t) => t.contentId === this.id);
+      if (!tiles.length) return;
+      InventorySystem.addItem(gs, 'item_mugwort', tiles.length);
+      devLog.info('[mugwort] onHeal +', tiles.length);
+    }, this);
+
+    HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
+      const tile = gs.map.outerTiles[tileIdx];
+      if (!tile || tile.contentId !== this.id) return;
+      const heal = Math.max(1, Math.floor(gs.player.maxHp * 0.25));
+      const before = gs.player.hp;
+      gs.player.hp = Math.min(gs.player.maxHp, gs.player.hp + heal);
+      const actual = gs.player.hp - before;
+      if (actual > 0) EventBus.emit(GE.HP_CHANGE, { newValue: gs.player.hp, delta: actual });
+      HookDispatcher.fire('onHeal', { gs, amount: actual, source: this.id });
+      EventBus.emit(GE.TOAST_SHOW, { text: `🍃 艾草祝福 回复 ${actual} 生命`, duration: 1800 });
+    }, this);
+  },
+};
+
+// ── RES-006 魔法商店 🔮 ──
+// 【进入时】可进入魔法商店；【受祝福时】下一次进入时首次刷新免费
+// 每日至多放置 1 个；场上总数上限 2
+const ResourceMagicShop = {
+  id: 'resource_magic_shop',
+  name: '魔法商店',
+  emoji: Assets.resources.resource_magic_shop,
+  value: 1,
+  description: '【进入时】可进入魔法商店\n【受祝福时】下一次进入时，首次刷新免费',
+  internalNote: '每日至多放置 1 个；场上上限 2；首次刷新免费 = 本次进入无论第几次刷新均 0 金币，但正常消耗刷新次数',
+
+  register() {
+    HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
+      if (!isMine(gs, tileIdx, this.id)) return;
+      const key = flagKey(this.id, 'onEnter');
+      if (gs.map.outerTiles[tileIdx].dailyFlags[key]) return;
+      gs.map.outerTiles[tileIdx].dailyFlags[key] = true;
+      // 打开魔法商店页面（B4 实现 UI；此处先发事件，UI 未接时由 Toast 兜底）
+      EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'magicShop', tileIdx });
+      EventBus.emit(GE.TOAST_SHOW, { text: '🔮 进入魔法商店', duration: 1500 });
+    }, this);
+
+    HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
+      const tile = gs.map.outerTiles[tileIdx];
+      if (!tile || tile.contentId !== this.id) return;
+      const st = tile.contentState || (tile.contentState = {});
+      st.freeRefreshPending = (st.freeRefreshPending || 0) + 1;
+      EventBus.emit(GE.TOAST_SHOW, { text: '✨ 下次进入魔法商店，首次刷新免费', duration: 2000 });
+    }, this);
+  },
+};
+
+// ════════════════════════════════════════════════════════════════
 // ——— 技能卡地块内容（skill_*） —— Phase 4 修复后 ———
 // 技能卡作为 contentId 放进 outerTiles 后，触发由 SkillSystem.triggerSkillByHook 统一处理
 // （遍历 outerTiles 找 skill_* 地块，按 hooks[hookType] + cooldown 触发）。
@@ -825,12 +1050,13 @@ export function registerSkillHooks() {
 // ════════════════════════════════════════════════════════════════
 
 export const ALL_FACILITIES = [
-  // 12 种设施
+  // 16 种设施（FAC-001 ~ FAC-016）
   FacilityHome, FacilityTent, FacilityWheat, FacilityRice, FacilityPotato,
   FacilityTulip, FacilityStrawberry, FacilityPea, FacilityHenhouse, FacilitySlimehouse,
   FacilityCorn, FacilityCabbage,
-  // 5 种资源类地块内容
-  ResourceEvent, ResourceReward, ResourceHunt, ResourceShop, ResourceBus,
+  FacilityWildSeed, FacilityDandelion, FacilityGhostGrass, FacilityMugwort,
+  // 6 种资源类地块内容（RES-001 ~ RES-006）
+  ResourceEvent, ResourceReward, ResourceHunt, ResourceShop, ResourceBus, ResourceMagicShop,
 ];
 
 /**

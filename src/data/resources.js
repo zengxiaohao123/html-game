@@ -1,5 +1,5 @@
 // src/data/resources.js
-// 5 种资源类地块内容定义（与 facilities.js 里的 resource_* 条目相互独立但通过同一套 HookDispatcher 注册）
+// 6 种资源类地块内容定义（RES-001 ~ RES-006，含 v0.5 新增的魔法商店）（与 facilities.js 里的 resource_* 条目相互独立但通过同一套 HookDispatcher 注册）
 // 说明：resources.js 主要作为静态数据表供 UI/调试读取；hook 注册写在 facilities.js 里（与设施同模式）。
 
 export const RESOURCES = {
@@ -27,6 +27,11 @@ export const RESOURCES = {
     id: 'resource_bus',
     name: '巴士站',
     emoji: '🚌',
+  },
+  resource_magic_shop: {
+    id: 'resource_magic_shop',
+    name: '魔法商店',
+    emoji: '🔮',
   },
 };
 

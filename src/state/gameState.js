@@ -21,7 +21,7 @@ export function createInitialState() {
   for (let idx = 0; idx < 4 * ring; idx++) {
     outerTiles.push({
       idx,
-      terrain: 'none',        // Phase 0 默认无地形
+      terrain: 'terrain_none',   // 开局 8 格全为无地形（v0.5 §9）；扩图生成的新格按 §4 的 50/40/10 抽取
       terrainAmount: 0,
       contentId: null,        // Phase 0 默认无内容
       states: [],             // 祝福/debuff 等临时状态
@@ -41,7 +41,7 @@ export function createInitialState() {
       fence.push({
         row: r,
         col: c,
-        terrain: 'none',
+        terrain: 'terrain_none',
         terrainAmount: 0,
         creatures: [],
         items: [],

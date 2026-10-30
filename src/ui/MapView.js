@@ -10,6 +10,7 @@ import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { Distance } from '../core/Distance.js';
 import { Assets } from '../core/Assets.js';
+import { normalizeTerrain } from '../data/terrains.js';
 import { BuildSystem } from '../systems/BuildSystem.js';
 import { SKILLS } from '../data/characters.js';
 import { getCreatureDef } from '../data/creatures.js';
@@ -90,7 +91,7 @@ export class MapView {
       parent: this.root,
     });
 
-    if (tile.terrain && tile.terrain !== 'none') {
+    if (tile.terrain && normalizeTerrain(tile.terrain) !== 'terrain_none') {
       createEl('span', {
         class: ['tile-terrain'],
         style: {
@@ -262,6 +263,10 @@ export class MapView {
 
     // terrain → emoji 映射
     const TERRAIN_EMOJI = {
+      terrain_none: null,
+      terrain_grass: '🌱',
+      terrain_water: '💧',
+      terrain_ice: '🧊',
       none: null,
       grass: '🌱',
       flower: '🌸',
@@ -295,7 +300,7 @@ export class MapView {
         });
 
         // terrain emoji（如果有）
-        if (cell?.terrain && cell.terrain !== 'none') {
+        if (cell?.terrain && normalizeTerrain(cell.terrain) !== 'terrain_none') {
           const emoji = TERRAIN_EMOJI[cell.terrain];
           if (emoji) {
             createEl('span', {

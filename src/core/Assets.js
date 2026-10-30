@@ -4,7 +4,7 @@
 // 未来加图片资源时，每条目可扩展为 { emoji, image: 'assets/xxx.png' } 格式。
 
 export const Assets = {
-  // ── 设施（完整 10 种）──
+  // ── 设施（16 种，对齐物品库 FAC-001 ~ FAC-016）──
   facilities: {
     facility_home: '🏠',
     facility_tent: '⛺',
@@ -16,23 +16,35 @@ export const Assets = {
     facility_pea: '🫛',
     facility_henhouse: '🐔',
     facility_slimehouse: '🟢',
+    facility_corn: '🌽',
+    facility_cabbage: '🥬',
+    facility_wild_seed: '🌱',
+    facility_dandelion: '🌼',
+    facility_ghost_grass: '🌙',
+    facility_mugwort: '🍃',
   },
 
-  // ── 资源类地块内容（完整 5 种）──
+  // ── 资源类地块内容（6 种，对齐 RES-001 ~ RES-006）──
   resources: {
     resource_event: '🎲',
     resource_reward: '🎁',
     resource_hunt: '⚔️',
     resource_shop: '🏪',
     resource_bus: '🚌',
+    resource_magic_shop: '🔮',
   },
 
-  // ── 地形 ──
+  // ── 地形（键与物品库 terrain_* 一致；后 4 个为旧 id 别名，兼容旧存档）──
   terrains: {
-    none: '🟫',       // 虚空 / 初始无地形
+    terrain_none: '⬜',
+    terrain_grass: '🟩',
+    terrain_water: '🌊',
+    terrain_ice: '🧊',
+    // 旧 id 别名
+    none: '⬜',
     grass: '🟩',
     water: '🌊',
-    mud: '🟟',
+    mud: '⬜',
   },
 
   // ── UI 图标（状态栏/功能区/emoji 占位）──

@@ -15,6 +15,7 @@ import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { Random } from '../core/Random.js';
 import { getCreatureDef, SLIME_KINDS } from '../data/creatures.js';
+import { normalizeTerrain } from '../data/terrains.js';
 import { InventorySystem } from './InventorySystem.js';
 import { CombatSystem } from './CombatSystem.js';
 
@@ -137,11 +138,11 @@ function tickAllCreaturesOnce(gs) {
     newTile.creatures.push(c.id);
     c.lastMoveTs = Date.now();
 
-    // 经过草地形时消耗 1 草元素量（简化）
-    if (newTile.terrain === 'grass' && (newTile.terrainAmount ?? 0) > 0) {
+    // 经过草地形时消耗 1 草元素量（v0.5 §13.3：小鸡可啃草代替投喂）
+    if (normalizeTerrain(newTile.terrain) === 'terrain_grass' && (newTile.terrainAmount ?? 0) > 0) {
       newTile.terrainAmount -= 1;
       if (newTile.terrainAmount <= 0) {
-        newTile.terrain = 'none';
+        newTile.terrain = 'terrain_none';
         EventBus.emit(GE.TILE_UPDATED);
       }
     }

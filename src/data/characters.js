@@ -464,6 +464,27 @@ export const SKILLS = {
     },
     description: '【连携技】我方单位对敌人造成火 / 水 / 雷 / 冰元素伤害时可用。对该敌人（至多 1 名）造成 15% 攻击力风元素伤害，施加持续 3 回合的 30%【易伤】。冷却 5 回合',
   },
+
+  // ── SKL-L-008 移形（通用连携技，技能石获得）──
+  skill_link_shift: {
+    id: 'skill_link_shift',
+    name: '移形',
+    emoji: '👣',
+    roleId: null,                     // 通用技能，不归属任何角色
+    element: 'physical',
+    damageMultiplier: 0.5,            // 基础 50%，本日每经过 1 格 +5%
+    hooks: { onEnter: false, onPass: false, onBlessed: false },
+    range: 1,
+    cooldown: 4,
+    isLinkSkill: true,
+    triggerCondition: 'afterVehicleMove',   // 使用载具移动后可用
+    extraEffect: {
+      type: 'scaling_by_daily_distance',
+      base: 0.5,
+      perTile: 0.05,
+    },
+    description: '【连携技】使用载具移动后可以使用。对 1 名敌人造成相当于 50% 攻击力的物理伤害。本日内每经过 1 格，本技能倍率 +5%。冷却 4 回合',
+  },
 };
 
 export const ALL_SKILL_IDS = Object.keys(SKILLS);

@@ -18,17 +18,24 @@
 //   onEventResolve      事件/选项结算时
 
 export const HOOK_TYPES = [
-  'onEnter',
-  'onPass',
-  'onBlessed',
-  'onDailyStart',
-  'onSleep',
-  'onReplace',
-  'onUseSkill',
-  'onEveryNTurn',
-  'onCreatureDefeated',
-  'onEventResolve',
-  'onCreatureAdded',   // §10.11 玉米田地：生物增加时触发
+  'onEnter',           // 进入时：仅最终停留格
+  'onPass',            // 经过时：路径上每一格（含终点，不含起点）
+  'onBlessed',         // 受祝福时
+  'onDailyStart',      // 每一日开始时
+  'onDailyEnd',        // 每一日结束时（穗粒满：小麦田额外 +1）
+  'onSleep',           // 睡觉时
+  'onReplace',         // 替换时（先拆后放，原子）
+  'onPlace',           // 放置时（野生种子变身、蒲公英/幽怜草初始化）
+  'onUseSkill',        // 使用技能时（普通技能 + 连携技，不含天赋）
+  'onEveryNTurn',      // 每 N 回合
+  'onMoveEnd',         // 移动后（走完一整段路径触发一次）
+  'onDodge',           // 闪避时（蹁跹：为主角回 12 血）
+  'onCraft',           // 合成或加工时（巧手：25% 返原材料）
+  'onUseItem',         // 使用时（草药、初级肥料等消耗道具）
+  'onHeal',            // 角色回复生命值时（艾草田地）
+  'onCreatureDefeated',// 生物被击败时
+  'onCreatureAdded',   // 生物增加时（玉米田地）
+  'onEventResolve',    // 事件/选项结算时
 ];
 
 // hookType → [{ cb, ctx }]
