@@ -239,6 +239,8 @@ const FacilityRice = {
         let qty = 1;
         if (normalizeTerrain(t.terrain) === 'terrain_grass') qty += 1;
         if (hasAdjacentWater(gs, t.idx)) qty += 2;
+        // 魔导书【庆丰收】：≥3 个水稻田块相连时，这些水稻田块产出翻倍
+        if (gs.flags?.riceDouble) qty *= 2;
         totalBase += qty;
 
         // 受祝福 5 日额外 +1（独立的 rice_bless state，与 1 天 blessed state 分离）

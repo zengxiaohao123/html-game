@@ -27,6 +27,8 @@ import { RolePanel } from './ui/panels/RolePanel.js';
 import { TeamPanel } from './ui/panels/TeamPanel.js';
 import { ForgePanel } from './ui/panels/ForgePanel.js';
 import { ShopPanel } from './ui/panels/ShopPanel.js';
+import { initPassiveItems } from './systems/PassiveItemSystem.js';
+import { initUseItems } from './systems/UseItemSystem.js';
 import { VehiclePanel } from './ui/panels/VehiclePanel.js';
 import { TaskPanel } from './ui/panels/TaskPanel.js';
 import { CodexPanel } from './ui/panels/CodexPanel.js';
@@ -160,6 +162,10 @@ codexPanel.mount();
 // 4. 输入
 const inputManager = new InputManager(director);
 inputManager.bind();
+
+// 4.5 获得即生效类物品（收藏品 / 魔导书 / 技能石）
+initPassiveItems(() => director.getGS());
+initUseItems();
 
 // 5. 广播 BOOT
 EventBus.emit(GE.BOOT, { gs });

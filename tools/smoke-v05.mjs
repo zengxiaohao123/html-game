@@ -208,5 +208,50 @@ assert(getShop(gs, 1).stock.length === 12, '周一重新抽满 12 格');
 head('日历');
 assert(CalendarSystem.formatCalendar(gs) === '1 年 3 月 8 日 星期一', '日历显示正确', CalendarSystem.formatCalendar(gs));
 
+head('获得即生效：技能石 / 收藏品 / 魔导书');
+const { initPassiveItems, hasConnectedRice } = await import('../src/systems/PassiveItemSystem.js');
+const { HookDispatcher } = await import('../src/core/HookDispatcher.js');
+initPassiveItems(() => gs);
+
+addItem(gs, 'skill_stone_shift', 1);
+assert(countItem(gs, 'skill_stone_shift') === 0, '技能石被消耗');
+assert(countItem(gs, 'skill_link_shift') === 1, '获得即习得【移形】');
+
+gs.player.hp = 50;
+gs.player.maxHp = 100;
+addItem(gs, 'collectible_royal_pillow', 1);
+HookDispatcher.fire('onSleep', { gs });
+assert(gs.player.hp === 65, '皇家枕头：睡觉回复 15% 生命', gs.player.hp);
+
+gs.player.hp = 50;
+addItem(gs, 'collectible_deadwood', 1);
+HookDispatcher.fire('onMoveEnd', { gs, distance: 1 });
+assert(gs.player.hp === 57, '枯木新枝：移动后回 6+1% 生命', gs.player.hp);
+
+addItem(gs, 'collectible_membership_card', 1);
+const { effectivePrice } = await import('../src/systems/ShopSystem.js');
+assert(effectivePrice(gs, { id: 'item_wheat', price: 10 }) === 5, '会员卡：商品五折');
+
+const facBefore = gs.inventory.items.reduce((n, e) => n + (e.itemId.startsWith('facility_') ? e.qty : 0), 0);
+addItem(gs, 'collectible_farm_guide', 1);
+const facAfter = gs.inventory.items.reduce((n, e) => n + (e.itemId.startsWith('facility_') ? e.qty : 0), 0);
+assert(facAfter >= facBefore + 3, '《农业指南》：获得 3 个随机设施', { facBefore, facAfter });
+
+head('消耗道具使用');
+const { useItem } = await import('../src/systems/UseItemSystem.js');
+addItem(gs, 'item_beer', 1);
+const stBefore = gs.player.stamina;
+const ub = useItem(gs, 'item_beer');
+assert(ub.ok, '啤酒使用成功', ub);
+assert(gs.player.stamina === stBefore + 3, '啤酒 行动力 +3', gs.player.stamina);
+assert(countItem(gs, 'item_beer') === 0, '啤酒已消耗');
+
+addItem(gs, 'item_trap', 1);
+gs.map.outerTiles[0].contentState = {};
+const ut = useItem(gs, 'item_trap', { tileIdx: 0 });
+assert(ut.ok, '陷阱放置成功', ut);
+assert(gs.map.outerTiles[0].contentState.placedItems?.[0]?.itemId === 'item_trap', '陷阱进入地块状态');
+assert(!useItem(gs, 'item_trap', { tileIdx: 0 }).ok || countItem(gs, 'item_trap') === 0, '同名陷阱不能重复放置或已无库存');
+
 console.log(`\n结果：${pass} 通过，${fail} 失败`);
 process.exit(fail ? 1 : 0);

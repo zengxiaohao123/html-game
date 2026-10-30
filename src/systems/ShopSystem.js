@@ -56,6 +56,18 @@ export const SHOP_KINDS = {
 const UNSELLABLE_TIER3 = new Set(['魔导书', '技能石', '收藏品']);
 const UNSHELLABLE_TIER1 = new Set(['载具']);
 
+/** 会员卡等折扣（0 = 无折扣） */
+export function currentDiscount(gs) {
+  return gs?.flags?.shopDiscount || 0;
+}
+
+/** 商品的实付价（已含折扣） */
+export function effectivePrice(gs, item) {
+  const base = item?.price ?? ITEMS[item?.id]?.value ?? 0;
+  const d = currentDiscount(gs);
+  return d > 0 ? Math.max(1, Math.floor(base * (1 - d))) : base;
+}
+
 export function isSellable(itemId) {
   const it = ITEMS[itemId];
   if (!it) return false;
@@ -225,7 +237,7 @@ export function buy(gs, tileIdx, slotIdx) {
   const item = shop.stock[slotIdx];
   if (!item || item.sold) return { ok: false, reason: 'soldOut' };
 
-  const price = item.price ?? ITEMS[item.id]?.value ?? 0;
+  const price = effectivePrice(gs, item);
   if (gs.player.gold < price) {
     EventBus.emit(GE.TOAST_SHOW, { text: `💰 金币不足（需 ${price}）`, duration: 1600 });
     return { ok: false, reason: 'noGold' };
@@ -314,4 +326,6 @@ export const ShopSystem = {
   refreshLeft,
   weeklyRefreshAll,
   grantFreeRefresh,
+  currentDiscount,
+  effectivePrice,
 };

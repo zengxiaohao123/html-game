@@ -35,6 +35,66 @@ export const COLLECTIBLES = {
       unique: true,
     },
   },
+
+  // ── ITM-COL-003 皇家枕头 🛏️ ──
+  collectible_royal_pillow: {
+    id: 'collectible_royal_pillow',
+    itemId: 'collectible_royal_pillow',
+    name: '皇家枕头',
+    emoji: '🛏️',
+    description: '睡觉时为角色回复 15% 生命值',
+    triggerCondition: 'onSleep',
+    effectType: 'sleep_heal_percent',
+    effectParams: { percent: 0.15, unique: true },
+  },
+
+  // ── ITM-COL-004 回忆录 📔（占位收藏品，允许叠加，无【唯一】）──
+  collectible_memoir: {
+    id: 'collectible_memoir',
+    itemId: 'collectible_memoir',
+    name: '回忆录',
+    emoji: '📔',
+    description: '角色最大生命值 +2%。所有角色好感度 +1',
+    triggerCondition: 'passive',
+    effectType: 'maxhp_percent',
+    effectParams: { percent: 0.02, unique: false, stackable: true },
+  },
+
+  // ── ITM-COL-005 《农业指南》📘 ──
+  collectible_farm_guide: {
+    id: 'collectible_farm_guide',
+    itemId: 'collectible_farm_guide',
+    name: '《农业指南》',
+    emoji: '📘',
+    description: '获得 3 个随机设施',
+    triggerCondition: 'onAcquire',
+    effectType: 'grant_facilities',
+    effectParams: { count: 3, pool: 'POOL-01', unique: true, sequential: true },
+  },
+
+  // ── ITM-COL-006 枯木新枝 🪵 ──
+  collectible_deadwood: {
+    id: 'collectible_deadwood',
+    itemId: 'collectible_deadwood',
+    name: '枯木新枝',
+    emoji: '🪵',
+    description: '移动后为角色回复（6 点 + 1%）生命值',
+    triggerCondition: 'onMoveEnd',
+    effectType: 'move_heal_flat_percent',
+    effectParams: { flat: 6, percent: 0.01, unique: true },
+  },
+
+  // ── ITM-COL-007 会员卡 💳 ──
+  collectible_membership_card: {
+    id: 'collectible_membership_card',
+    itemId: 'collectible_membership_card',
+    name: '会员卡',
+    emoji: '💳',
+    description: '商店与魔法商店的所有商品售价 -50%',
+    triggerCondition: 'passive',
+    effectType: 'shop_discount',
+    effectParams: { discount: 0.5, unique: true, affectsItemValue: false },
+  },
 };
 
 export const ALL_COLLECTIBLE_IDS = Object.keys(COLLECTIBLES);

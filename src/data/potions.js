@@ -36,6 +36,66 @@ export const POTIONS = {
       ],
     },
   },
+
+  // ── ITM-CON-003 啤酒 🍺 ──
+  item_beer: {
+    id: 'item_beer',
+    itemId: 'item_beer',
+    name: '啤酒',
+    emoji: '🍺',
+    description: '使用后行动力 +3，且有 30% 概率使角色获得持续 1 天的【暴躁】buff：攻击力 +25%（不叠加）',
+    useEffect: {
+      type: 'stamina_and_buff',
+      stamina: 3,
+      buffChance: 0.3,
+      buffId: 'grumpy',
+      buffAtkBonus: 0.25,
+      buffDays: 1,
+    },
+  },
+
+  // ── ITM-CON-004 感恩节的晚餐 🍗 ──
+  item_dinner: {
+    id: 'item_dinner',
+    itemId: 'item_dinner',
+    name: '感恩节的晚餐',
+    emoji: '🍗',
+    description: '使用后，本日内我方单位会将友善生物也视为敌人',
+    useEffect: {
+      type: 'friendly_as_enemy',
+      durationDays: 1,
+      // 效果与持续时间不可叠加；我方单位含所有角色（及其技能）、精灵以及能发动攻击的设施
+    },
+  },
+
+  // ── ITM-CON-005 陷阱 🪤（放置型）──
+  item_trap: {
+    id: 'item_trap',
+    itemId: 'item_trap',
+    name: '陷阱',
+    emoji: '🪤',
+    description: '放置在任意地块后，每一日开始时有 10% 概率获得 1 个随机物品。放置在资源地块时，概率变为 30%',
+    useEffect: {
+      type: 'placed_daily_roll',
+      chance: 0.10,
+      resourceChance: 0.30,
+      pool: 'POOL-12',
+      // 多个陷阱各自独立计算
+    },
+  },
+
+  // ── ITM-CON-006 艾草熏香 🪔（放置型）──
+  item_incense: {
+    id: 'item_incense',
+    itemId: 'item_incense',
+    name: '艾草熏香',
+    emoji: '🪔',
+    description: '放置在任意地块后，在此处睡觉时，回复 30 点生命值',
+    useEffect: {
+      type: 'placed_sleep_heal',
+      healAmount: 30,
+    },
+  },
 };
 
 export const ALL_POTION_IDS = Object.keys(POTIONS);

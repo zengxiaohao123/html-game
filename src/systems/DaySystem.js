@@ -19,6 +19,7 @@ import { Storage } from '../state/storage.js';
 import { VehicleSystem } from './VehicleSystem.js';
 import { CalendarSystem } from './CalendarSystem.js';
 import { ShopSystem } from './ShopSystem.js';
+import { UseItemSystem } from './UseItemSystem.js';
 
 /**
  * 开始新的一天
@@ -81,6 +82,12 @@ export function startNewDay(gs) {
 
   // 6. 触发所有 onDailyStart hook（设施产出、生物刷新等 —— 此时 capacity.friendlyOverloaded 已就绪，wheat 等可据此归 0）
   HookDispatcher.fire('onDailyStart', { gs });
+
+  // 6.1 放置型消耗道具的每日结算（陷阱 10% / 资源地块 30% 得随机物品）
+  UseItemSystem.onDailyStart(gs);
+
+  // 6.2 清理"仅限本日"的标记（感恩节的晚餐：我方把友善生物视为敌人）
+  if (gs.flags) gs.flags.friendlyAsEnemyToday = false;
 
   // 7. Phase 3：玩家身上 buff 衰减（burn 每回合流失 3% 这里是每日 —— 实际 burn 按回合 tick；
   //     这里每日只处理心力交瘁的剩余天数）

@@ -15,6 +15,8 @@ import { GE } from '../../core/GameEvents.js';
 import { Assets } from '../../core/Assets.js';
 import { ITEMS } from '../../data/items.js';
 import { SKILLS } from '../../data/characters.js';
+import { POTIONS } from '../../data/potions.js';
+import { UseItemSystem } from '../../systems/UseItemSystem.js';
 import { getDef as getFacilityDef } from '../../data/facilities.js';
 import { InventorySystem } from '../../systems/InventorySystem.js';
 import { OUTBOX_SLOTS } from '../../utils/constants.js';
@@ -325,6 +327,23 @@ export class InventoryPanel {
 
     // 描述（topRow 下方独立一行）
     createEl('div', { class: 'inv-detail-desc', text: desc, parent: this.detailEl });
+
+    // ── 消耗道具：使用 / 放置按钮（v0.5 §14.1 使用型 / 放置型）──
+    const potion = POTIONS[this.selectedItemId];
+    if (potion?.useEffect) {
+      const isPlaced = potion.useEffect.type.startsWith('placed_');
+      const btn = createEl('button', {
+        class: ['action-btn'],
+        style: { marginTop: '8px', width: '100%', fontSize: '13px', background: isPlaced ? '#e8f0ff' : '#e8ffe8' },
+        text: isPlaced ? `📦 放置到脚下（${potion.name}）` : `✅ 使用 ${potion.name}`,
+        parent: this.detailEl,
+      });
+      btn.onclick = () => {
+        const gs = this.director.getGS();
+        const res = UseItemSystem.useItem(gs, this.selectedItemId, { tileIdx: gs.player.x });
+        if (res.ok) this._refresh();
+      };
+    }
   }
 
   // ─────────────────────── 右中：行动区（固定存在，点物品才激活） ───────────────────────

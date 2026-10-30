@@ -136,6 +136,27 @@ if (vehMod?.ALL_VEHICLE_IDS) {
 }
 if (chrMod?.ALL_SKILL_IDS) coverage('技能', libSkills, new Set(chrMod.ALL_SKILL_IDS));
 
+// 道具类：消耗道具 / 魔导书 / 技能石 / 收藏品
+const potMod = await tryImport('../src/data/potions.js');
+const bkMod = await tryImport('../src/data/grimoires.js');
+const colMod = await tryImport('../src/data/collectibles.js');
+
+const libConsumables = Object.values(ITEMS).filter((i) => i.tier2 === '消耗道具').map((i) => i.id);
+const libGrimoires = Object.values(ITEMS).filter((i) => i.tier3 === '魔导书').map((i) => i.id);
+const libStones = Object.values(ITEMS).filter((i) => i.tier3 === '技能石').map((i) => i.id);
+const libCollectibles = Object.values(ITEMS).filter((i) => i.tier3 === '收藏品').map((i) => i.id);
+
+if (potMod?.ALL_POTION_IDS) coverage('消耗道具', libConsumables, new Set(potMod.ALL_POTION_IDS));
+if (bkMod?.ALL_GRIMOIRE_IDS) coverage('魔导书', libGrimoires, new Set(bkMod.ALL_GRIMOIRE_IDS));
+if (colMod?.ALL_COLLECTIBLE_IDS) coverage('收藏品', libCollectibles, new Set(colMod.ALL_COLLECTIBLE_IDS));
+
+// 技能石靠"获得即习得"处理，检查映射表是否覆盖全部技能石
+const psv = await tryImport('../src/systems/PassiveItemSystem.js');
+if (psv?.STONE_TO_SKILL) {
+  const mapped = new Set(Object.keys(psv.STONE_TO_SKILL));
+  coverage('技能石', libStones, mapped);
+}
+
 // ────────────────────────────────────────────── 6. 词条字典 vs Hook
 head('6. 词条字典 vs HookDispatcher');
 // 词条（中文）→ hook 类型（英文）的显式对照；新增触发时点时两边都要加
