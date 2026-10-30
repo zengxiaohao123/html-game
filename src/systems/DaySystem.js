@@ -23,12 +23,27 @@ import { VehicleSystem } from './VehicleSystem.js';
  * @param {object} gs 全局状态（会被直接修改）
  */
 export function startNewDay(gs) {
+  // 0. 【每一日结束时】结算（上一日收尾：穗粒满给小麦田 +1 等，必须在 day++ 之前）
+  HookDispatcher.fire('onDailyEnd', { gs });
+
+  // 0.1 行动力溢出清除（拓荒者等允许临时超出上限，次日开始时清零，不保留到第二天）
+  if (gs.player.stamina > gs.player.maxStamina) {
+    gs.player.stamina = gs.player.maxStamina;
+    EventBus.emit(GE.STAMINA_CHANGE, {
+      newValue: gs.player.stamina, delta: 0, maxStamina: gs.player.maxStamina,
+    });
+  }
+
   gs.day += 1;
   gs.turn = 0;
   devLog.info('[DaySystem] 新的一天！day =', gs.day);
 
   // 1. 重置所有每日计数器为 0
   gs.dailyCounters = {};
+  // 商店"每日至多放置 1 个"计数
+  gs.buildDailyPlaced = {};
+  // momo 图腾"优先本日未进入过的地块"
+  gs.player.visitedTodayIdx = [];
 
   // 2. 清除所有每日限次标记（每格的 dailyFlags）
   for (const tile of gs.map.outerTiles) {

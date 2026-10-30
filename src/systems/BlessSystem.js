@@ -24,6 +24,7 @@
 // DaySystem.startNewDay() 遍历 outerTiles[].states.filter(s=>s.type==='blessed') 统一 remainingDays -= 1，清理 <= 0
 
 import { EventBus } from '../core/EventBus.js';
+import { HealSystem } from './HealSystem.js';
 import { GE } from '../core/GameEvents.js';
 import { HookDispatcher } from '../core/HookDispatcher.js';
 import { Random } from '../core/Random.js';
@@ -192,13 +193,8 @@ export function blessCommit(gs, targetIdx) {
   if (spirit === 'qingfeng') {
     // 晴风：HP +6（不超 maxHp），攻击力 +8%（每层按叠后算，保留 1 位小数；UI 显示 floor）
     // 文档 §12.2："使本日内角色攻击力 +8%" 严格按叠后算（不是加之前的 atk 算）
-    const hpDelta = 6;
-    const prevHp = gs.player.hp;
-    gs.player.hp = Math.min(gs.player.maxHp, gs.player.hp + hpDelta);
-    const actualHpDelta = gs.player.hp - prevHp;
-    if (actualHpDelta > 0) {
-      EventBus.emit(GE.HP_CHANGE, { newValue: gs.player.hp, delta: actualHpDelta, reason: 'bless_qingfeng' });
-    }
+    // 走统一回血入口，保证【角色回复生命值时】被触发（艾草田地依赖）
+    const actualHpDelta = HealSystem.healPlayer(gs, 6, { source: 'bless_qingfeng' });
     const prevAtk = gs.player.atk;
     // 保留 1 位小数，不立即取整；UI 显示时 floor
     gs.player.atk = Math.round(gs.player.atk * 1.08 * 10) / 10;

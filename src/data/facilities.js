@@ -27,6 +27,7 @@ import { SKILLS } from './characters.js';
 import { normalizeTerrain } from './terrains.js';
 import { ITEMS } from './items.js';
 import { drawFromPool } from '../systems/RandomPool.js';
+import { HealSystem } from '../systems/HealSystem.js';
 
 // ── 小工具：判断是否为"我的设施"格 ──
 const isMine = (gs, tileIdx, id) => gs.map.outerTiles[tileIdx]?.contentId === id;
@@ -108,15 +109,15 @@ const FacilityHome = {
 // ════════════════════════════════════════════════════════════════
 // 2. FacilityTent  ⛺  —— 帐篷
 // 【睡觉时】改为回满行动力
-// 【替换时】原来的地块内容被放回背包（BuildSystem.placeContent 里 fire onReplace）
 // 【受祝福时】下 1 次使用该帐篷睡觉时 +3 行动力
+// v0.5：已删除【替换时】词条 —— 被替换时旧内容与其它设施一样直接消失。
 // ════════════════════════════════════════════════════════════════
 const FacilityTent = {
   id: 'facility_tent',
   name: '帐篷',
   emoji: Assets.facilities.facility_tent,
   value: 5,
-  description: '【睡觉时】改为回满行动力\n【替换时】原来的地块内容不会消失，而是被放回背包\n【受祝福时】下 1 次使用该帐篷睡觉时，额外回复 3 点行动力',
+  description: '【睡觉时】改为回满行动力\n【受祝福时】下 1 次使用该帐篷睡觉时，额外回复 3 点行动力',
 
   register() {
     // onSleep：帐篷睡觉时回满（SleepSystem 主逻辑已在执行前判断，此处处理"受祝福时额外 +3"——
@@ -140,18 +141,6 @@ const FacilityTent = {
         }
         devLog.info('[tent] consumed tent_bless bonus, remaining =', tentBless.bonus);
       }
-    }, this);
-
-    // onReplace：BuildSystem 替换帐篷时 fire → 把当前 contentId 回背包
-    HookDispatcher.register('onReplace', ({ gs, tileIdx, oldContentId }) => {
-      // 由 BuildSystem 传入 oldContentId（此时 tile.contentId 尚未被清掉，所以也可用 tile.contentId）
-      const tile = gs.map.outerTiles[tileIdx];
-      const id = oldContentId || tile?.contentId;
-      if (!id) return;
-      // 不回帐篷自己（帐篷被帐篷替换没有意义）
-      InventorySystem.addItem(gs, id, 1);
-      EventBus.emit(GE.TOAST_SHOW, { text: `⛺ 替换，旧内容 ${id} 回背包`, duration: 1800 });
-      devLog.info('[tent] onReplace returned old content', id, 'to inventory');
     }, this);
 
     // onBlessed：push 独立的 tent_bless state（与 1 天 blessed state 分离）
@@ -981,12 +970,7 @@ const FacilityMugwort = {
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
       const tile = gs.map.outerTiles[tileIdx];
       if (!tile || tile.contentId !== this.id) return;
-      const heal = Math.max(1, Math.floor(gs.player.maxHp * 0.25));
-      const before = gs.player.hp;
-      gs.player.hp = Math.min(gs.player.maxHp, gs.player.hp + heal);
-      const actual = gs.player.hp - before;
-      if (actual > 0) EventBus.emit(GE.HP_CHANGE, { newValue: gs.player.hp, delta: actual });
-      HookDispatcher.fire('onHeal', { gs, amount: actual, source: this.id });
+      const actual = HealSystem.healPlayerByPercent(gs, 0.25, { source: this.id });
       EventBus.emit(GE.TOAST_SHOW, { text: `🍃 艾草祝福 回复 ${actual} 生命`, duration: 1800 });
     }, this);
   },

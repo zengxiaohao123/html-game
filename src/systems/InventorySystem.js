@@ -27,8 +27,10 @@ const OUTBOX_MAX = OUTBOX_SLOTS;
  */
 export function countItem(gs, itemId, bag = 'items') {
   const list = gs.inventory[bag] || [];
-  const entry = list.find(i => i.itemId === itemId);
-  return entry ? entry.qty : 0;
+  // 同名物品可能因价值不同分成多堆（郁金香 / 蒲公英 / 幽怜草），必须全部累加
+  let n = 0;
+  for (const e of list) if (e.itemId === itemId) n += e.qty;
+  return n;
 }
 
 /**
@@ -66,20 +68,33 @@ export function addItem(gs, itemId, qty, extra = {}) {
  * 从背包移除物品
  * @returns {number} 实际移除数量（若不足则只移除现有）
  */
-export function removeItem(gs, itemId, qty) {
+export function removeItem(gs, itemId, qty, opts = {}) {
   if (!itemId || qty <= 0) return 0;
   const list = gs.inventory.items;
-  const entry = list.find(i => i.itemId === itemId);
-  if (!entry || entry.qty <= 0) return 0;
-  const remove = Math.min(qty, entry.qty);
-  entry.qty -= remove;
-  if (entry.qty <= 0) {
-    const idx = list.indexOf(entry);
-    list.splice(idx, 1);
+  // opts.value 指定时只从该价值堆扣（合成 / 上架需要精确扣某一堆）
+  const matches = list.filter(
+    (i) => i.itemId === itemId && (opts.value === undefined || i.value === opts.value)
+  );
+  if (matches.length === 0) return 0;
+
+  let left = qty;
+  let removed = 0;
+  for (const entry of matches) {
+    if (left <= 0) break;
+    const take = Math.min(left, entry.qty);
+    entry.qty -= take;
+    left -= take;
+    removed += take;
+    if (entry.qty <= 0) {
+      const idx = list.indexOf(entry);
+      if (idx >= 0) list.splice(idx, 1);
+    }
   }
-  EventBus.emit(GE.INVENTORY_CHANGE, { type: 'remove', bag: 'items', itemId, qty: remove });
-  devLog.info('[Inventory] removeItem', itemId, 'x', remove);
-  return remove;
+  if (removed > 0) {
+    EventBus.emit(GE.INVENTORY_CHANGE, { type: 'remove', bag: 'items', itemId, qty: removed });
+  }
+  devLog.info('[Inventory] removeItem', itemId, 'x', removed);
+  return removed;
 }
 
 /**

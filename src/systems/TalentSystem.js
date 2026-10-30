@@ -14,6 +14,7 @@
 
 import { TALENTS, getTalentsByRole } from '../data/talents.js';
 import { EventBus } from '../core/EventBus.js';
+import { HealSystem } from './HealSystem.js';
 import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { Random } from '../core/Random.js';
@@ -175,13 +176,8 @@ export function onMoveEnd(gs) {
   for (const t of talents) {
     if (t.effectType === 'hp_regen_dodge_bonus') {
       const regen = t.effectParams?.moveRegen ?? 6;
-      const prevHp = gs.player.hp;
-      gs.player.hp = Math.min(gs.player.maxHp, gs.player.hp + regen);
-      const actual = gs.player.hp - prevHp;
-      if (actual > 0) {
-        EventBus.emit(GE.HP_CHANGE, { newValue: gs.player.hp, delta: actual, reason: 'talent_dancing' });
-        devLog.info('[TalentSystem.onMoveEnd] 蹁跹 HP +', actual);
-      }
+      const actual = HealSystem.healPlayer(gs, regen, { source: 'talent_dancing' });
+      if (actual > 0) devLog.info('[TalentSystem.onMoveEnd] 蹁跹 HP +', actual);
     }
   }
 }
@@ -393,11 +389,8 @@ export function onDodge(gs) {
   for (const t of talents) {
     if (t.effectType !== 'hp_regen_dodge_bonus') continue;
     const regen = t.effectParams?.dodgeRegenForMainChar ?? 12;
-    const prevHp = gs.player.hp;
-    gs.player.hp = Math.min(gs.player.maxHp, gs.player.hp + regen);
-    const actual = gs.player.hp - prevHp;
+    const actual = HealSystem.healPlayer(gs, regen, { source: 'talent_dancing_dodge' });
     if (actual > 0) {
-      EventBus.emit(GE.HP_CHANGE, { newValue: gs.player.hp, delta: actual, reason: 'talent_dancing_dodge' });
       EventBus.emit(GE.TOAST_SHOW, { text: `💨 蹁跹：闪避成功 +${actual} HP`, duration: 1200 });
       devLog.info('[TalentSystem.onDodge] 蹁跹 闪避 HP +', actual);
     }
