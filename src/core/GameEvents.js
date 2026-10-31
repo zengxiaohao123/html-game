@@ -63,6 +63,10 @@ export const GE = {
   UI_PANEL_CLOSE: 'ui:panel:close',
   UI_MODE_CHANGE: 'ui:mode:change',
   TOAST_SHOW:     'toast:show',
+
+  // —— 道具指向（需要选目标地块的消耗道具）——
+  TARGETING_START: 'targeting:start',
+  TARGETING_END:   'targeting:end',
   HOTBAR_SELECT_SLOT: 'hotbar:selectSlot',
 
   // ── Phase 4 —— 角色 / 编队 / 合成 / 商店 / 载具 / 连携技 / 任务 ──

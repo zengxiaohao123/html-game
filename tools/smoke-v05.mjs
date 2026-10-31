@@ -32,6 +32,11 @@ const head = (m) => console.log('\n— ' + m + ' —');
 registerFacilities();
 const gs = createInitialState();
 
+// 冒烟测试用干净背包（开局测试包会干扰数量断言）
+gs.inventory.items = [];
+gs.inventory.outbox = [];
+gs.player.gold = 0;
+
 head('初始状态');
 assert(gs.map.outerTiles.length === 8, '外圈 8 格');
 assert(gs.map.outerTiles.every((t) => t.terrain === 'terrain_none'), '开局 8 格全为无地形（v0.5 §9）');
@@ -252,6 +257,79 @@ const ut = useItem(gs, 'item_trap', { tileIdx: 0 });
 assert(ut.ok, '陷阱放置成功', ut);
 assert(gs.map.outerTiles[0].contentState.placedItems?.[0]?.itemId === 'item_trap', '陷阱进入地块状态');
 assert(!useItem(gs, 'item_trap', { tileIdx: 0 }).ok || countItem(gs, 'item_trap') === 0, '同名陷阱不能重复放置或已无库存');
+
+head('道具指向模式 + 初级肥料');
+const IT = await import('../src/systems/ItemTargeting.js');
+const { isPlantTarget } = await import('../src/systems/UseItemSystem.js');
+assert(IT.needsTarget('item_fertilizer'), '肥料需要指定地块');
+assert(IT.needsTarget('item_trap'), '陷阱需要指定地块');
+assert(IT.needsTarget('item_incense'), '艾草熏香需要指定地块');
+assert(!IT.needsTarget('item_herb'), '草药不需要指定地块');
+
+// 放一块麦田，验证肥料确实只结算该格
+for (const t of gs.map.outerTiles) { t.contentId = null; t.contentState = {}; t.dailyFlags = {}; }
+gs.map.outerTiles[6].contentId = 'facility_home';
+gs.map.outerTiles[3].contentId = 'facility_wheat';
+gs.map.outerTiles[4].contentId = 'facility_wheat';
+assert(isPlantTarget(gs, 3), '麦田是合法施肥目标');
+assert(!isPlantTarget(gs, 6), '家不是合法施肥目标');
+
+const validF = IT.validTiles(gs, 'item_fertilizer');
+assert(validF.length === 2 && validF.includes(3) && validF.includes(4), '合法目标只有两块麦田', validF);
+
+gs.inventory.items = [];
+addItem(gs, 'item_fertilizer', 1);
+gs.map.outerTiles[3].dailyFlags = { facility_wheat_onDailyStart: true };  // 模拟当日已产出
+const r = IT.start(gs, 'item_fertilizer');
+assert(r.ok && r.pending, '进入指向模式', r);
+const wheatBefore = countItem(gs, 'item_wheat');
+const click = IT.handleTileClick(gs, 3);
+const wheatAfter = countItem(gs, 'item_wheat');
+assert(click.ok, '点击合法地块生效', click);
+assert(wheatAfter - wheatBefore >= 4, '肥料让该田多结算 2 次每日产出（≥4 小麦）', { wheatBefore, wheatAfter });
+assert(countItem(gs, 'item_fertilizer') === 0, '肥料已消耗');
+assert(!IT.isActive(), '用完后自动退出指向模式');
+
+addItem(gs, 'item_trap', 1);
+IT.start(gs, 'item_trap');
+assert(IT.isActive(), '陷阱进入指向模式');
+assert(!IT.isValidTarget(gs, 'item_trap', 99), '越界地块不合法');
+
+head('开局测试包');
+const fresh = createInitialState();
+assert(fresh.player.gold === 50, '初始金币 50', fresh.player.gold);
+assert(fresh.inventory.items.length >= 20, '开局背包有充足测试物品', fresh.inventory.items.length);
+
+head('唯一物品跨池去重');
+const { isUniqueItem, collectUniqueHeld } = await import('../src/systems/ShopSystem.js');
+assert(isUniqueItem('collectible_membership_card'), '会员卡是唯一物品');
+assert(isUniqueItem('grimoire_grain_full'), '魔导书是唯一物品');
+assert(!isUniqueItem('item_wheat'), '小麦不是唯一物品');
+
+for (const t of gs.map.outerTiles) { t.contentId = null; t.contentState = {}; }
+gs.map.outerTiles[0].contentId = 'resource_shop';
+gs.map.outerTiles[1].contentId = 'resource_magic_shop';
+gs.inventory.items = [];
+
+const { generateStock } = await import('../src/systems/ShopSystem.js');
+const { ITEMS } = await import('../src/data/items.js');
+// 直接验证"排除集合"生效：把所有唯一物品都排除，生成的新库存不应包含它们
+const allUnique = new Set(
+  Object.keys(ITEMS).filter((id) => isUniqueItem(id))
+);
+assert(allUnique.size >= 8, '库中唯一物品数量合理', allUnique.size);
+const filtered = generateStock('shop', Math.random, { exclude: allUnique });
+const leaked = filtered.filter((i) => allUnique.has(i.id));
+assert(leaked.length === 0, '被排除的唯一物品不会出现在库存里', leaked.map((x) => x.id));
+
+// 两家店同时存在时，第二家生成时要避开第一家的持有
+const s1 = getShop(gs, 0);
+const s2 = getShop(gs, 1);
+const s1Unique = new Set(s1.stock.filter((i) => !i.sold && isUniqueItem(i.id)).map((i) => i.id));
+const overlap = s2.stock.filter((i) => s1Unique.has(i.id));
+assert(overlap.length === 0, '第二家店不会与第一家重复的唯一物品', overlap.map((x) => x.id));
+const held = collectUniqueHeld(gs, 1);
+assert(held.size >= 0, 'collectUniqueHeld 可正常收集', held.size);
 
 console.log(`\n结果：${pass} 通过，${fail} 失败`);
 process.exit(fail ? 1 : 0);

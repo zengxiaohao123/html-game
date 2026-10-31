@@ -76,6 +76,39 @@ export function isSellable(itemId) {
   return true;
 }
 
+/**
+ * 是否带【唯一】：场上至多 1 个，未售出前不会出现在别的商店或随机池里。
+ * 判定依据来自物品库：显性词条含【唯一】，或叠放规则里写明"自带【唯一】"。
+ */
+export function isUniqueItem(itemId) {
+  const it = ITEMS[itemId];
+  if (!it) return false;
+  if ((it.traits || []).includes('唯一')) return true;
+  const rule = it.stackRule || '';
+  // 注意：占位物品写的是"无【唯一】"，不能误判
+  return /【唯一】/.test(rule) && !/无【唯一】/.test(rule);
+}
+
+/**
+ * 收集"已经被占用"的唯一物品：其它商店里未售出的 + 玩家背包里的。
+ * 生成新库存时排除，避免同一件唯一物品同时出现在两家店。
+ */
+export function collectUniqueHeld(gs, exceptTileIdx) {
+  const held = new Set();
+  for (const t of gs.map.outerTiles) {
+    if (t.idx === exceptTileIdx) continue;
+    const stock = t.contentState?.shop?.stock;
+    if (!Array.isArray(stock)) continue;
+    for (const item of stock) {
+      if (!item.sold && isUniqueItem(item.id)) held.add(item.id);
+    }
+  }
+  for (const e of gs.inventory?.items || []) {
+    if (e.qty > 0 && isUniqueItem(e.itemId)) held.add(e.itemId);
+  }
+  return held;
+}
+
 /** 地块内容 id → 商店类型 */
 export function shopKindOfContent(contentId) {
   if (contentId === 'resource_shop') return 'shop';
@@ -104,13 +137,14 @@ export function planCounts(cfg, rand = Math.random) {
 }
 
 /** 生成一批商品 */
-export function generateStock(kind, rand = Math.random) {
+export function generateStock(kind, rand = Math.random, opts = {}) {
+  const exclude = opts.exclude || null;
   const cfg = SHOP_KINDS[kind];
   const counts = planCounts(cfg, rand);
   const stock = [];
 
   cfg.groups.forEach((g, i) => {
-    const picked = drawFromPool(g.pool, counts[i], { unique: false });
+    const picked = drawFromPool(g.pool, counts[i], { unique: false, exclude });
     for (const p of picked) {
       if (!p.id) continue;
       const def = ITEMS[p.id];
@@ -159,7 +193,7 @@ export function getShop(gs, tileIdx) {
     st.shop = {
       kind,
       weekKey: wk,
-      stock: generateStock(kind),
+      stock: generateStock(kind, Math.random, { exclude: collectUniqueHeld(gs, tileIdx) }),
       refreshUsed: 0,
       visited: false,
       freeRefreshPending: 0,
@@ -168,7 +202,7 @@ export function getShop(gs, tileIdx) {
     devLog.info('[Shop] 初次生成', kind, 'tile', tileIdx, '共', st.shop.stock.length, '件');
   } else if (st.shop.weekKey !== wk) {
     // 跨周：自动刷新（免费，不占手动次数）
-    st.shop.stock = generateStock(kind);
+    st.shop.stock = generateStock(kind, Math.random, { exclude: collectUniqueHeld(gs, tileIdx) });
     st.shop.weekKey = wk;
     st.shop.refreshUsed = 0;
     EventBus.emit(GE.TOAST_SHOW, { text: `🏪 ${SHOP_KINDS[kind].label} 已按周刷新`, duration: 1600 });
@@ -193,7 +227,7 @@ export function refreshShop(gs, tileIdx, opts = {}) {
   const shop = getShop(gs, tileIdx);
   if (!shop) return { ok: false, reason: 'notShop' };
   if (opts.free) {                    // 每周自动刷新（外部调用）
-    shop.stock = generateStock(shop.kind);
+    shop.stock = generateStock(shop.kind, Math.random, { exclude: collectUniqueHeld(gs, tileIdx) });
     if (shop.discountPending) { applyBlessDiscount(shop.stock); shop.discountPending = false; }
     return { ok: true, cost: 0 };
   }
@@ -212,7 +246,7 @@ export function refreshShop(gs, tileIdx, opts = {}) {
   EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: -cost });
   if (cost === 0 && shop.freeRefreshPending > 0) shop.freeRefreshPending -= 1;
   shop.refreshUsed += 1;
-  shop.stock = generateStock(shop.kind);
+  shop.stock = generateStock(shop.kind, Math.random, { exclude: collectUniqueHeld(gs, tileIdx) });
   if (shop.discountPending) {
     applyBlessDiscount(shop.stock);
     shop.discountPending = false;
@@ -305,7 +339,7 @@ export function weeklyRefreshAll(gs) {
     if (!shopKindOfContent(tile.contentId)) continue;
     const shop = getShop(gs, tile.idx);
     if (!shop) continue;
-    shop.stock = generateStock(shop.kind);
+    shop.stock = generateStock(shop.kind, Math.random, { exclude: collectUniqueHeld(gs, tile.idx) });
     shop.refreshUsed = 0;
     n += 1;
   }
@@ -342,6 +376,8 @@ export const ShopSystem = {
   refreshLeft,
   weeklyRefreshAll,
   grantFreeRefresh,
+  isUniqueItem,
+  collectUniqueHeld,
   currentDiscount,
   effectivePrice,
 };

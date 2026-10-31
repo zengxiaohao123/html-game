@@ -7,6 +7,7 @@
 //   UI 层只订阅事件刷新 DOM，不直接读/写 GS（只读）。
 
 import { FENCE_ROW_COLS_INITIAL, CAPACITY_FRIENDLY_INITIAL, CAPACITY_DANGER_INITIAL } from '../utils/constants.js';
+import { createStarterInventory, STARTER_GOLD } from '../data/starterPack.js';
 
 /**
  * 创建初始 GS 对象
@@ -67,7 +68,7 @@ export function createInitialState() {
       stamina: 8,
       maxStamina: 8,
       minStamina: -3,
-      gold: 0,
+      gold: STARTER_GOLD,   // 开发期给 50，便于验证商店刷新（4/8/12）
       position: 'outer',
       // Phase 4 天赋相关字段
       dodgeRate: 0,              // 蹁跹天赋
@@ -97,7 +98,7 @@ export function createInitialState() {
 
     // ── 背包 ──
     inventory: {
-      items: [],            // [{ itemId, qty }]
+      items: createStarterInventory(),   // 开局测试包（见 data/starterPack.js）
       outbox: [],           // 出货箱 12 格
     },
 

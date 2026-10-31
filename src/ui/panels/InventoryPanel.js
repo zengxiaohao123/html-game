@@ -17,6 +17,7 @@ import { ITEMS } from '../../data/items.js';
 import { SKILLS } from '../../data/characters.js';
 import { POTIONS } from '../../data/potions.js';
 import { UseItemSystem } from '../../systems/UseItemSystem.js';
+import { ItemTargeting } from '../../systems/ItemTargeting.js';
 import { getDef as getFacilityDef } from '../../data/facilities.js';
 import { InventorySystem } from '../../systems/InventorySystem.js';
 import { OUTBOX_SLOTS } from '../../utils/constants.js';
@@ -328,18 +329,32 @@ export class InventoryPanel {
     // 描述（topRow 下方独立一行）
     createEl('div', { class: 'inv-detail-desc', text: desc, parent: this.detailEl });
 
-    // ── 消耗道具：使用 / 放置按钮（v0.5 §14.1 使用型 / 放置型）──
+    // ── 消耗道具：使用 / 指向使用（v0.5 §14.1 使用型 / 放置型）──
     const potion = POTIONS[this.selectedItemId];
     if (potion?.useEffect) {
+      const needTarget = ItemTargeting.needsTarget(this.selectedItemId);
       const isPlaced = potion.useEffect.type.startsWith('placed_');
+      const label = needTarget
+        ? (isPlaced ? `📦 选择地块放置（${potion.name}）` : `🎯 选择地块使用（${potion.name}）`)
+        : `✅ 使用 ${potion.name}`;
       const btn = createEl('button', {
         class: ['action-btn'],
-        style: { marginTop: '8px', width: '100%', fontSize: '13px', background: isPlaced ? '#e8f0ff' : '#e8ffe8' },
-        text: isPlaced ? `📦 放置到脚下（${potion.name}）` : `✅ 使用 ${potion.name}`,
+        style: {
+          marginTop: '8px', width: '100%', fontSize: '13px',
+          background: needTarget ? '#fff3d0' : '#e8ffe8',
+          border: needTarget ? '2px solid #d9a441' : undefined,
+        },
+        text: label,
         parent: this.detailEl,
       });
       btn.onclick = () => {
         const gs = this.director.getGS();
+        if (needTarget) {
+          // 需要指定地块：先关背包，回到地图点选（ESC 可取消）
+          this.hide();
+          ItemTargeting.start(gs, this.selectedItemId);
+          return;
+        }
         const res = UseItemSystem.useItem(gs, this.selectedItemId, { tileIdx: gs.player.x });
         if (res.ok) this._refresh();
       };

@@ -12,6 +12,7 @@ import { Distance } from '../core/Distance.js';
 import { Assets } from '../core/Assets.js';
 import { normalizeTerrain } from '../data/terrains.js';
 import { BuildSystem } from '../systems/BuildSystem.js';
+import { ItemTargeting } from '../systems/ItemTargeting.js';
 import { SKILLS } from '../data/characters.js';
 import { getCreatureDef } from '../data/creatures.js';
 import { createEl, qs } from './dom.js';
@@ -150,6 +151,11 @@ export class MapView {
 
     // 点击事件（建造模式不 emit TILE_CLICKED，InfoPanel 不滑出）
     tileEl.addEventListener('click', () => {
+      // 指向模式（使用需要指定地块的道具）优先于其它点击行为
+      if (ItemTargeting.isActive()) {
+        ItemTargeting.handleTileClick(this.gs, tile.idx);
+        return;
+      }
       if (this.buildMode) {
         this._handleBuildTileClick(tile.idx);
         return;
@@ -377,6 +383,48 @@ export class MapView {
     });
   }
 
+  /** 指向模式的浮动提示条 */
+  _showAimHint(on) {
+    if (!on) {
+      if (this._aimHintEl) { this._aimHintEl.remove(); this._aimHintEl = null; }
+      return;
+    }
+    if (this._aimHintEl) return;
+    this._aimHintEl = createEl('div', {
+      class: ['aim-hint'],
+      text: '🎯 点击高亮地块使用道具 · ESC 取消',
+      style: {
+        position: 'absolute', left: '50%', top: '-38px', transform: 'translateX(-50%)',
+        padding: '6px 16px', borderRadius: '999px',
+        background: 'linear-gradient(135deg,#fff6c0,#f7d674)',
+        border: '2px solid #c07a20', color: '#6b4410',
+        fontSize: '13px', fontWeight: '800', whiteSpace: 'nowrap',
+        boxShadow: '0 3px 10px rgba(0,0,0,0.25)', zIndex: '50',
+        pointerEvents: 'none',
+      },
+      parent: this.root,
+    });
+  }
+
+  /** 指向模式下 ESC 只取消指向，不打开设置面板 */
+  _bindAimEsc() {
+    if (this._aimEsc) return;
+    this._aimEsc = (e) => {
+      if (e.key !== 'Escape') return;
+      if (!ItemTargeting.isActive()) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      ItemTargeting.cancel('esc');
+    };
+    window.addEventListener('keydown', this._aimEsc, true);
+  }
+
+  _unbindAimEsc() {
+    if (!this._aimEsc) return;
+    window.removeEventListener('keydown', this._aimEsc, true);
+    this._aimEsc = null;
+  }
+
   _subscribeEvents() {
     // BOOT（新游戏启动 / startNewGame）
     EventBus.on(GE.BOOT, ({ gs }) => {
@@ -392,6 +440,24 @@ export class MapView {
       this.gs = gs;
       this.renderAllTiles(gs);
       this.renderPlayer(gs);
+    });
+
+    // 道具指向模式：高亮合法地块、其余变暗
+    EventBus.on(GE.TARGETING_START, ({ valid }) => {
+      const ok = new Set(valid || []);
+      this.tileEls.forEach((el, idx) => {
+        el.classList.toggle('tile-aim-ok', ok.has(idx));
+        el.classList.toggle('tile-aim-dim', !ok.has(idx));
+      });
+      this._showAimHint(true);
+      this._bindAimEsc();
+    });
+    EventBus.on(GE.TARGETING_END, () => {
+      this.tileEls.forEach((el) => {
+        el.classList.remove('tile-aim-ok', 'tile-aim-dim');
+      });
+      this._showAimHint(false);
+      this._unbindAimEsc();
     });
 
     // MOVE

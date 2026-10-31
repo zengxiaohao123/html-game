@@ -32,11 +32,13 @@ export function allPoolCodes() {
  * @param {number} need    本次要抽几件
  * @returns {{code, pool, candidates, placeholderUsed, realCount}}
  */
-export function resolveCandidates(code, need = 1) {
+export function resolveCandidates(code, need = 1, opts = {}) {
   const pool = getPool(code);
   if (!pool) return { code, pool: null, candidates: [], placeholderUsed: false, realCount: 0 };
 
-  const real = pool.entries.filter((e) => e.id && !e.placeholder);
+  const exclude = opts.exclude || null;
+  const keep = (e) => !exclude || !exclude.has(e.id) || e.placeholder;
+  const real = pool.entries.filter((e) => e.id && !e.placeholder && keep(e));
   const ownPlaceholders = pool.entries.filter((e) => e.id && e.placeholder);
 
   // 候选够 → 占位权重 0，完全不进入抽取范围
@@ -77,8 +79,8 @@ function pickWeighted(list) {
  * @returns {Array<{id, name, price, rarity, placeholder}>}
  */
 export function drawFromPool(code, count = 1, opts = {}) {
-  const { unique = false } = opts;
-  const { candidates, placeholderUsed } = resolveCandidates(code, count);
+  const { unique = false, exclude = null } = opts;
+  const { candidates, placeholderUsed } = resolveCandidates(code, count, { exclude });
   if (candidates.length === 0) return [];
 
   const picked = [];

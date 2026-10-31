@@ -31,8 +31,45 @@ const PLANT_FACILITIES = new Set([
   'facility_dandelion', 'facility_ghost_grass', 'facility_mugwort',
 ]);
 
+/**
+ * 只对某一块地结算 N 次【每一日开始时】效果。
+ *
+ * 做法：把其它地块的 contentId 临时置空，让设施 hook 的自然过滤只剩目标格，
+ * 同时清掉该格的 dailyFlags 以绕过"每日限次"，结算完在 finally 里完整还原。
+ * 好处是完全复用设施自身的产出逻辑，不另写一套数值（避免两处口径漂移）。
+ * 只动 contentId，索引、地形、状态都不变，isMine() 判定依旧成立。
+ */
+export function runScopedDaily(gs, tileIdx, times = 1) {
+  const tiles = gs.map.outerTiles;
+  const target = tiles[tileIdx];
+  if (!target) return 0;
+
+  const stash = tiles.map((t) => t.contentId);
+  const savedFlags = { ...(target.dailyFlags || {}) };
+  try {
+    for (let i = 0; i < tiles.length; i++) {
+      if (i !== tileIdx) tiles[i].contentId = null;
+    }
+    for (let n = 0; n < times; n++) {
+      target.dailyFlags = {};
+      HookDispatcher.fire('onDailyStart', { gs, scopedTileIdx: tileIdx });
+    }
+  } finally {
+    for (let i = 0; i < tiles.length; i++) tiles[i].contentId = stash[i];
+    target.dailyFlags = savedFlags;
+  }
+  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+  return times;
+}
+
 function ensureCooldowns(gs) {
   if (!gs.itemCooldowns) gs.itemCooldowns = {};
+}
+
+/** 该格是否是肥料可作用的植物类田块 */
+export function isPlantTarget(gs, tileIdx) {
+  const t = gs.map.outerTiles[tileIdx];
+  return !!(t && t.contentId && PLANT_FACILITIES.has(t.contentId));
 }
 
 /** 该道具当前是否可用（冷却是否结束） */
@@ -76,12 +113,16 @@ export function useItem(gs, itemId, opts = {}) {
     }
 
     case 'facility_trigger_twice': {
-      // 说明：正确实现需要各设施支持"只对某一块地结算每日效果"（onlyTileIdx），
-      // 目前设施侧的每日 hook 是全局限定的，直接 fire('onDailyStart') 会让所有田地重复产出，
-      // 属于严重错误。因此这里显式拒绝，等设施侧改造后再开放。
-      EventBus.emit(GE.TOAST_SHOW, { text: '🧪 初级肥料暂未开放（等待单格结算改造）', duration: 1800 });
-      devLog.warn('[UseItem] fertilizer 未实现单格结算，已拒绝使用且不消耗');
-      return { ok: false, reason: 'notImplemented' };
+      const tileIdx = opts.tileIdx;
+      const tile = gs.map.outerTiles[tileIdx];
+      // 无效目标也照常消耗（物品库备注：无效时不返还已消耗的道具）
+      if (!tile || !tile.contentId || !PLANT_FACILITIES.has(tile.contentId)) {
+        EventBus.emit(GE.TOAST_SHOW, { text: '🧪 这里不是可施肥的田块（道具已消耗）', duration: 1800 });
+        break;
+      }
+      runScopedDaily(gs, tileIdx, eff.triggerCount || 2);
+      EventBus.emit(GE.TOAST_SHOW, { text: `🧪 ${ITEMS[tile.contentId]?.name || '田块'} 立刻结算 ${eff.triggerCount || 2} 次每日效果`, duration: 1800 });
+      break;
     }
 
     case 'stamina_and_buff': {
@@ -192,4 +233,4 @@ export function initUseItems() {
   HookDispatcher.register('onSleep', ({ gs }) => onSleep(gs));
 }
 
-export const UseItemSystem = { useItem, canUse, onDailyStart, onSleep, initUseItems };
+export const UseItemSystem = { useItem, canUse, onDailyStart, onSleep, initUseItems, runScopedDaily, isPlantTarget };
