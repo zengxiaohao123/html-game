@@ -36,6 +36,7 @@ let _tickRafId = null;
  * @param {string} kind          creatures.js 里定义的 kind：'chick' / 'slime_fire' 等
  * @param {object} [opts]
  * @param {string} [opts.facilityId] 来源设施（facility_henhouse / facility_slimehouse），用于每日心情 +1
+ * @param {number} [opts.sourceTileIdx] 来源设施所在外圈格 idx（鸡舍按实例计数/投喂归属用）
  * @returns {object|null} 新生物对象；无空位或 kind 未知 → null
  */
 export function spawnCreature(gs, kind, opts = {}) {
@@ -70,6 +71,7 @@ export function spawnCreature(gs, kind, opts = {}) {
     mood: def.mood || 0,
     stage: def.stage || 'chick',
     facilityId: opts.facilityId || null,
+    sourceTileIdx: opts.sourceTileIdx ?? null,
     lastMoveTs: Date.now(),
     activeBuffs: [],
   };
@@ -138,9 +140,12 @@ function tickAllCreaturesOnce(gs) {
     newTile.creatures.push(c.id);
     c.lastMoveTs = Date.now();
 
-    // 经过草地形时消耗 1 草元素量（v0.5 §13.3：小鸡可啃草代替投喂）
+    // 经过草地形时消耗 1 草元素量（v0.5 §13.3：鸡/小鸡可啃草代替投喂）
     if (normalizeTerrain(newTile.terrain) === 'terrain_grass' && (newTile.terrainAmount ?? 0) > 0) {
       newTile.terrainAmount -= 1;
+      // §13.3 放牧路径：啃草后「下一日开始无需消耗即【已投喂】」——打标记，
+      // 由次日 dailyTick 消费（免扣鸡舍内储存的饲料）
+      if (c.kind === 'chick' || c.kind === 'chicken') c.grazedForFeed = true;
       if (newTile.terrainAmount <= 0) {
         newTile.terrain = 'terrain_none';
         EventBus.emit(GE.TILE_UPDATED);
@@ -194,36 +199,53 @@ export function feedCreature(gs, creatureId, amount = 1) {
  *   3) 鸡产蛋
  *   4) 容量超载警告期 & 惩罚（极度危险 → 拆地块）
  *   5) 史莱姆粘液喷吐 5%（超载 15%）→ 完整实装
- *   6) 完整投喂：he nhouse 每日消耗 item_rice_straw/item_wheat + creature.growth +10 或 -5
+ *   6) 完整投喂（§13.3）：按鸡舍实例归属，优先放牧标记，其次消耗该鸡舍内储存的
+ *      item_rice_straw/item_wheat（tile.contentState.henhouseFeed），growth +(10+心情) 或饥饿
  */
 export function dailyTick(gs) {
   devLog.info('[CreatureSystem.dailyTick] day=', gs.day);
 
-  // ── 1) 完整投喂：遍历 henhouse 设施 tile ──
+  // ── 1) 完整投喂：遍历 henhouse 设施 tile（FAC-009 / §13.3） ──
   const outerTiles = gs.map.outerTiles || [];
   const henhouseTiles = outerTiles.filter(t => t.contentId === 'facility_henhouse');
   const fedCreatures = new Set(); // 本次被投喂过的 creature id
 
   for (const henhouseTile of henhouseTiles) {
-    // 找所有来自这个 henhouse 的生物
-    const henhouseCreatures = gs.creatures.filter(c => c.facilityId === 'facility_henhouse' && c.hp > 0);
+    // 只找「来自这个鸡舍实例」的生物（按 sourceTileIdx 归属；旧存档无该字段的生物无法归属，跳过）
+    const henhouseCreatures = gs.creatures.filter(
+      c => c.hp > 0 && c.sourceTileIdx === henhouseTile.idx
+    );
+    henhouseTile.contentState = henhouseTile.contentState || {};
+    const store = henhouseTile.contentState.henhouseFeed || (henhouseTile.contentState.henhouseFeed = {});
+
     for (const c of henhouseCreatures) {
       if (fedCreatures.has(c.id)) continue;
-      // 有 item_rice_straw 或 item_wheat → -1 + growth +10
-      const hasStraw = InventorySystem.countItem(gs, 'item_rice_straw') > 0;
-      const hasWheat = InventorySystem.countItem(gs, 'item_wheat') > 0;
-      if (hasStraw || hasWheat) {
-        if (hasStraw) InventorySystem.removeItem(gs, 'item_rice_straw', 1);
-        else InventorySystem.removeItem(gs, 'item_wheat', 1);
+      fedCreatures.add(c.id);
+
+      // 路径 A（§13.3 放牧）：昨日在栅栏内啃过草 → 今日无需消耗即【已投喂】
+      if (c.grazedForFeed) {
+        c.grazedForFeed = false;
+        c.lastFed = true;
         c.growth += 10 + (c.mood || 0);
-        fedCreatures.add(c.id);
+        devLog.info('[CreatureSystem] grazed → fed without store:', c.id);
+        continue;
+      }
+
+      // 路径 B（§13.3）：消耗「该鸡舍内储存」的稻草或小麦 ×1
+      const hasStraw = (store.item_rice_straw || 0) > 0;
+      const hasWheat = (store.item_wheat || 0) > 0;
+      if (hasStraw || hasWheat) {
+        if (hasStraw) store.item_rice_straw -= 1;
+        else store.item_wheat -= 1;
+        c.growth += 10 + (c.mood || 0);
         c.lastFed = true;
       } else {
-        // 无饲料 → growth -5（饥饿）+ mood -1
+        // 两者都不满足 → 【饥饿】：心情 -1
+        // TODO(饥饿成长值，待裁决): 设计文档 §13.3 与物品库 03 表 A21 均写饥饿「成长值 +5」，
+        //   而既有代码按 -5 实现，两者矛盾。按指示暂保持现状（-5），裁决后再调整。
         c.growth = Math.max(0, c.growth - 5);
         c.mood = Math.max(-5, (c.mood || 0) - 1);
         EventBus.emit(GE.TOAST_SHOW, { text: `🐣 ${c.kind || '小鸡'} 没吃的，心情-1`, duration: 1200 });
-        fedCreatures.add(c.id);
         c.lastFed = false;
       }
     }
@@ -245,12 +267,19 @@ export function dailyTick(gs) {
       }
     }
 
-    // 鸡产蛋
+    // 鸡产蛋（§13.3：已投喂才产蛋）
     if (c.kind === 'chicken') {
-      InventorySystem.addItem(gs, 'item_egg', 1);
-      const qualityChance = Math.max(0, (c.mood || 0) * 0.1);
-      if (Math.random() < qualityChance) {
-        InventorySystem.addItem(gs, 'item_golden_egg', 1);
+      // TODO(BIO-002，待裁决): 物品库 BIO-002 I 列同时写了两个互斥的「已投喂」结果
+      //   （「已投喂：心情 -1 → 不产蛋」与「已投喂：产 1 个鸡蛋」），库本身矛盾。
+      //   暂保持现状：以本日投喂结算的 lastFed 为产蛋前置。
+      if (c.lastFed) {
+        InventorySystem.addItem(gs, 'item_egg', 1);
+        const qualityChance = Math.max(0, (c.mood || 0) * 0.1);
+        if (Math.random() < qualityChance) {
+          InventorySystem.addItem(gs, 'item_golden_egg', 1);
+        }
+      } else {
+        devLog.info('[CreatureSystem] chicken 未投喂 → 不产蛋:', c.id);
       }
     }
   }
@@ -335,7 +364,7 @@ function updateCapacityAndPunish(gs) {
       cap.dangerOverloaded = true;
       // 扣玩家真实伤害 10%
       const loss = Math.max(1, Math.floor((gs.player.maxHp || gs.player.hp) * 0.10));
-      CombatSystem.applyTrueDamageToPlayer(gs.player, loss, { reason: 'danger_overload' });
+      CombatSystem.applyTrueDamageToPlayer(gs, gs.player, loss, { reason: 'danger_overload' });
       EventBus.emit(GE.TOAST_SHOW, { text: `⚠️ 危险生物超载！每日扣 ${loss} ❤️`, duration: 2500 });
     }
   } else {
@@ -349,7 +378,7 @@ function updateCapacityAndPunish(gs) {
     if (cap.extremeOverdue > 2) {
       cap.extremeOverloaded = true;
       const loss = Math.max(1, Math.floor((gs.player.maxHp || gs.player.hp) * 0.10));
-      CombatSystem.applyTrueDamageToPlayer(gs.player, loss, { reason: 'extreme_overload' });
+      CombatSystem.applyTrueDamageToPlayer(gs, gs.player, loss, { reason: 'extreme_overload' });
 
       // ── Agent 3：极度危险超载 → 拆 2 个地块内容（除了永恒设施 facility_home） ──
       const nonHomeTiles = (gs.map.outerTiles || []).filter(
@@ -377,11 +406,34 @@ function updateCapacityAndPunish(gs) {
   });
 }
 
+/**
+ * 把饲料存入鸡舍（背包 → tile.contentState.henhouseFeed）。
+ * §13.3 / FAC-009：鸡优先消耗鸡舍内储存的稻草/小麦。
+ * TODO(鸡舍投放交互，待 UI): 设计文档未写明投放的交互入口（按钮/快捷键），
+ *   此处先提供逻辑入口，UI 接线留后续批次。
+ * @returns {{ ok: boolean, reason?: string, deposited?: number }}
+ */
+export function depositHenhouseFeed(gs, tileIdx, itemId, qty = 1) {
+  const tile = gs.map.outerTiles[tileIdx];
+  if (!tile || tile.contentId !== 'facility_henhouse') return { ok: false, reason: 'notHenhouse' };
+  if (itemId !== 'item_rice_straw' && itemId !== 'item_wheat') return { ok: false, reason: 'notFeed' };
+  const n = Math.min(qty, InventorySystem.countItem(gs, itemId));
+  if (n <= 0) return { ok: false, reason: 'noItem' };
+  InventorySystem.removeItem(gs, itemId, n);
+  tile.contentState = tile.contentState || {};
+  const store = tile.contentState.henhouseFeed || (tile.contentState.henhouseFeed = {});
+  store[itemId] = (store[itemId] || 0) + n;
+  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+  devLog.info('[CreatureSystem] depositHenhouseFeed', itemId, 'x', n, '→ tile', tileIdx);
+  return { ok: true, deposited: n };
+}
+
 export const CreatureSystem = {
   spawnCreature,
   tickAllCreatures: tickAllCreaturesOnce,
   dailyTick,
   feedCreature,
+  depositHenhouseFeed,
   startRealtimeLoop,
   stopRealtimeLoop,
   resetCreatureIdCounter,

@@ -30,6 +30,8 @@ import { HookDispatcher } from '../core/HookDispatcher.js';
 import { Random } from '../core/Random.js';
 import { Distance } from '../core/Distance.js';
 import { devLog } from '../core/Logger.js';
+import { TurnSystem } from './TurnSystem.js';
+import { SleepSystem } from './SleepSystem.js';
 
 /** 祈福消耗：2 行动力 + 1 金币 */
 export const BLESS_STAMINA_COST = 2;
@@ -237,6 +239,13 @@ export function blessCommit(gs, targetIdx) {
   EventBus.emit(GE.TILE_UPDATED, { tileIdx: targetIdx });
 
   devLog.info('[Bless] commit — done, targetIdx=', targetIdx, 'blessed.remainingDays=', curBlessed?.remainingDays);
+
+  // §5.2：推进回合的行为只有三种——移动 / 祈福 / 睡觉。祈福结算完成后推进 1 回合。
+  // 若行动力过低（<= MIN_STAMINA）触发强制睡觉（§5.3），强制睡觉本身也是一次睡觉，同样推进回合。
+  const turnResult = TurnSystem.advanceTurn(gs, 0);
+  if (turnResult.forcedSleep) {
+    SleepSystem.sleep(gs, /* isAuto = */ true);
+  }
 }
 
 /**

@@ -1,11 +1,10 @@
 // src/ui/LinkSkillUI.js
 // Phase 4 重写 —— 连携技实时窗口（非 Panel，不走 panel-mask 那套）
-// 订阅 GE.LINK_SKILL_QUEUE 变化时自动显示；3 秒倒计时；按数字键 1/2/3 触发；超时自动消失
+// 订阅 GE.LINK_SKILL_QUEUE 变化时自动显示；3 秒倒计时；按 E 触发队列头部（§12.5）；超时自动消失
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { LinkSkillSystem } from '../systems/LinkSkillSystem.js';
-import { SkillSystem } from '../systems/SkillSystem.js';
 import { SKILLS } from '../data/characters.js';
 import { createEl, qs } from './dom.js';
 import { devLog } from '../core/Logger.js';
@@ -57,9 +56,10 @@ export class LinkSkillUI {
     this._keyHandler = (e) => {
       if (!this.visible) return;
       const key = e.key;
-      if (key === '1' || key === '2' || key === '3') {
+      // §12.5：每个连携技 3 秒窗口，期间按 E 使用（固定触发队列头部）
+      if (key === 'e' || key === 'E') {
         e.preventDefault();
-        this._triggerIdx(Number(key) - 1);
+        this._triggerQueueTop();
       }
     };
     window.addEventListener('keydown', this._keyHandler);
@@ -74,18 +74,20 @@ export class LinkSkillUI {
     }, 200);
   }
 
-  _triggerIdx(idx) {
+  _triggerQueueTop() {
     const gs = this._getGS(); if (!gs || !Array.isArray(gs.linkSkillQueue)) return;
-    const entry = gs.linkSkillQueue[idx];
+    const entry = gs.linkSkillQueue[0];
     if (!entry) return;
 
-    LinkSkillSystem.popLinkSkill(gs, entry.skillId);
-    // SkillSystem.triggerLinkSkill 由 Phase 3 预留，这里走 Toast 占位
-    try { SkillSystem.triggerLinkSkill?.(gs, entry.skillId); } catch (_) {}
+    // §12.5：按 E 结算队列头部连携技（fireLinkSkill 内部完成 pop + 结算 + 冷却），
+    // 使用或超时后队列依次前移
+    const result = LinkSkillSystem.fireCurrentQueueTop(gs);
     const sk = SKILLS[entry.skillId];
     const skLabel = sk ? `${sk.emoji || '⚡'} ${sk.name}` : entry.skillId;
-    EventBus.emit(GE.TOAST_SHOW, { text: `⚡ 连携技触发！${skLabel}`, duration: 1400 });
-    devLog.info('[LinkSkillUI] triggered idx', idx, entry.skillId);
+    if (result && result.ok) {
+      EventBus.emit(GE.TOAST_SHOW, { text: `⚡ 连携技触发！${skLabel}`, duration: 1400 });
+    }
+    devLog.info('[LinkSkillUI] triggered queue top', entry.skillId, result);
     this._reRender();
   }
 

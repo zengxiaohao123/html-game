@@ -54,7 +54,10 @@ export function tickDay(gs) {
     c.dayOfMonth = 1;
     const mi = MONTHS.indexOf(c.month);
     const next = MONTHS[(mi + 1) % MONTHS.length];
-    if (mi === MONTHS.length - 1) newYear = true;   // 12 月 → 次年 3 月
+    if (mi === MONTHS.length - 1) {
+      newYear = true;   // 12 月 → 次年 3 月
+      c.year += 1;      // §6.1：跨年时年份 +1（此前只置了 newYear 标记，year 从不增长）
+    }
     c.month = next;
     newMonth = true;
   }

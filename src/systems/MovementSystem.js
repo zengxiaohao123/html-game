@@ -115,7 +115,8 @@ export function move(gs, direction) {
     if (tile && Array.isArray(tile.states)) {
       const slimeIdx = tile.states.findIndex((s) => s.type === 'slime');
       if (slimeIdx >= 0) {
-        CombatSystem.applyTrueDamageToPlayer(gs.player, 5, { reason: 'slime_hit' });
+        // 注：粘液是地块 debuff（§15），不是生物主动攻击，不受生物停战阻挡
+        CombatSystem.applyTrueDamageToPlayer(gs, gs.player, 5, { reason: 'slime_hit' });
         gs.player.stamina -= 1;
         EventBus.emit(GE.STAMINA_CHANGE, {
           newValue: gs.player.stamina, delta: -1, maxStamina: gs.player.maxStamina,

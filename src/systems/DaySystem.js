@@ -100,6 +100,18 @@ export function startNewDay(gs) {
     }
   }
 
+  // 7.1 §15：按天持续的 buff（如啤酒【暴躁】remainingDays）每日开始 -1，归零移除
+  gs.activeBuffs = gs.activeBuffs.filter(b => {
+    if (typeof b.remainingDays === 'number') {
+      b.remainingDays -= 1;
+      if (b.remainingDays <= 0) {
+        devLog.info('[DaySystem] day-counted buff expired:', b.id);
+        return false;
+      }
+    }
+    return true;
+  });
+
   // 8. 精灵每日字段重置（§12.2：momo 首次祈福计数、晴风攻击加成层数、芋圆免移动标志）
   if (gs.team) {
     gs.team.dailyBlessCount = 0;

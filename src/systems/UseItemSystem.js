@@ -132,11 +132,19 @@ export function useItem(gs, itemId, opts = {}) {
       });
       if (Math.random() < (eff.buffChance ?? 0.3)) {
         gs.activeBuffs = gs.activeBuffs || [];
-        if (!gs.activeBuffs.some((b) => b.id === 'grumpy')) {
-          gs.activeBuffs.push({ id: 'grumpy', name: '暴躁', remainingDays: 1, atkBonus: eff.buffAtkBonus ?? 0.25 });
-          gs.player.atk = Math.round(gs.player.atk * (1 + (eff.buffAtkBonus ?? 0.25)) * 10) / 10;
+        // §15 / ITM-CON-003：暴躁 = 攻击力 +25%，持续 1 天，不可叠加。
+        // 加成以 buff 形式挂在 activeBuffs（remainingDays 由 DaySystem 每日 -1、归零移除），
+        // 伤害结算时由 CombatSystem 统一乘算——不再永久修改 gs.player.atk（此前乘算无法还原）。
+        const buffId = eff.buffId || 'grumpy';
+        if (!gs.activeBuffs.some((b) => b.id === buffId)) {
+          gs.activeBuffs.push({
+            id: buffId,
+            name: '暴躁',
+            remainingDays: eff.buffDays ?? 1,
+            atkBonus: eff.buffAtkBonus ?? 0.25,
+          });
         }
-        EventBus.emit(GE.TOAST_SHOW, { text: '🍺 行动力 +3，并获得【暴躁】攻击力 +25%', duration: 2000 });
+        EventBus.emit(GE.TOAST_SHOW, { text: '🍺 行动力 +3，并获得【暴躁】攻击力 +25%（持续 1 天，不叠加）', duration: 2000 });
       } else {
         EventBus.emit(GE.TOAST_SHOW, { text: '🍺 行动力 +3', duration: 1500 });
       }

@@ -45,6 +45,13 @@ export function calculateDamage(opts) {
     attacker,                  // 攻击者对象（预留）
   } = opts || {};
 
+  // ── 0. §5.4 停战解除：玩家主动攻击任意生物时，生物停战状态即告结束 ──
+  // （player 存在 = 攻击者是我方；defender.kind 存在 = 目标是生物）
+  if (gs && player && defender && defender !== player && defender.kind && gs.flags?.creatureTruce) {
+    gs.flags.creatureTruce = false;
+    devLog.info('[CombatSystem] 玩家主动攻击生物 → 解除生物停战');
+  }
+
   // ── 1. 元素免疫 ──
   if (!realDamage && elementImmuneCheck(defender, element)) {
     EventBus.emit(GE.ELEMENT_IMMUNE_HIT, { element, target: defender });
@@ -59,6 +66,13 @@ export function calculateDamage(opts) {
   let dmgElement = element || (skill ? skill.element : 'physical');
 
   let rawDamage = effAtk * dmgMul;
+
+  // ── 2.1 §15 / ITM-CON-003：【暴躁】攻击力 +25%，持续 1 天，不可叠加 ──
+  // 加成在伤害结算时统一乘算（buff 本体挂在 gs.activeBuffs，由 DaySystem 每日衰减移除），
+  // 不永久修改 gs.player.atk。
+  if (gs && player && Array.isArray(gs.activeBuffs) && gs.activeBuffs.some(b => b.id === 'grumpy')) {
+    rawDamage *= 1.25;
+  }
 
   // ── 2.5 天赋 onDamageDeal 接入 ──
   // 无所畏惧 / 何以为我 / 风息 —— 影响 rawDamage 和暴击率
@@ -240,26 +254,50 @@ export function calculateDamage(opts) {
     });
   }
 
-  // ── 11. HP 归 0 惩罚（如果最终还是打到 0） ──
+  // ── 11. 生命归 0 惩罚（§5.4，如果最终还是打到 0） ──
   if (defender === player && player.hp <= 0 && !opts._skipDeathPenalty) {
-    // HP 归 0：行动力变 0，生命回 1，扣 10% 金币（0~1000），生物停战
-    player.hp = 1;
-    EventBus.emit(GE.HP_CHANGE, { newValue: 1, reason: 'death_penalty' });
-    player.stamina = 0;
-    EventBus.emit(GE.STAMINA_CHANGE, { newValue: 0, reason: 'death_penalty' });
-    const goldLoss = Math.max(0, Math.min(1000, Math.floor(player.gold * 0.1)));
-    if (goldLoss > 0) {
-      player.gold -= goldLoss;
-      EventBus.emit(GE.GOLD_CHANGE, { newValue: player.gold, delta: -goldLoss, reason: 'death_penalty' });
-    }
-    EventBus.emit(GE.TOAST_SHOW, { text: `💀 HP 归 0！生命回 1，扣 🪙 ${goldLoss}`, duration: 2500 });
-    devLog.info('[CombatSystem] HP=0 penalty: gold -', goldLoss);
+    applyDeathPenalty(gs, player);
   }
 
   return { rawDamage, finalDamage, dodged: false, immune: false, isCrit, finalElement: dmgElement };
 }
 
-export function applyTrueDamageToPlayer(player, amount, extra = {}) {
+/**
+ * §5.4 生命归 0 惩罚：
+ *   - 行动力变为 0（已为负数的不变）
+ *   - 生命回到 1
+ *   - 扣除 10% 金币（扣除额限制在 0~1000）
+ *   - 所有生物停止主动攻击，直到玩家下次主动攻击任意生物
+ */
+export function applyDeathPenalty(gs, player) {
+  if (!player) return;
+  if (player.hp <= 0) {
+    player.hp = 1;
+    EventBus.emit(GE.HP_CHANGE, { newValue: 1, reason: 'death_penalty' });
+  }
+  // §5.4：行动力变为 0；已为负数的不变
+  if (player.stamina > 0) {
+    player.stamina = 0;
+    EventBus.emit(GE.STAMINA_CHANGE, { newValue: 0, reason: 'death_penalty' });
+  }
+  const goldLoss = Math.max(0, Math.min(1000, Math.floor((player.gold || 0) * 0.1)));
+  if (goldLoss > 0) {
+    player.gold -= goldLoss;
+    EventBus.emit(GE.GOLD_CHANGE, { newValue: player.gold, delta: -goldLoss, reason: 'death_penalty' });
+  }
+  if (gs) {
+    gs.flags = gs.flags || {};
+    gs.flags.creatureTruce = true;
+  }
+  EventBus.emit(GE.TOAST_SHOW, { text: `💀 生命归 0！生命回 1，扣 🪙 ${goldLoss}，生物停战`, duration: 2500 });
+  devLog.info('[CombatSystem] death penalty applied: gold -', goldLoss, ', creatureTruce = true');
+}
+
+/**
+ * 对玩家施加真实伤害（粘液、容量超载等不走常规伤害结算的来源）。
+ * 生命归 0 时：先检查夏阳【涅槃】天赋（与常规伤害同路径），未获救则走 §5.4 惩罚。
+ */
+export function applyTrueDamageToPlayer(gs, player, amount, extra = {}) {
   if (!player || amount <= 0) return;
   amount = Math.floor(amount);
   player.hp -= amount;
@@ -267,6 +305,16 @@ export function applyTrueDamageToPlayer(player, amount, extra = {}) {
   EventBus.emit(GE.HP_CHANGE, { newValue: player.hp, delta: -amount, ...extra });
   EventBus.emit(GE.DAMAGE_TAKEN, { target: 'player', damage: amount, isReal: true, ...extra });
   devLog.info('[CombatSystem] player takes true damage', amount, 'hp now', player.hp);
+
+  if (player.hp <= 0) {
+    const saved = gs ? TalentSystem.onHPDeath(gs, { roleId: 'xiayang' }) : false;
+    if (saved) {
+      EventBus.emit(GE.HP_CHANGE, { newValue: player.hp, reason: 'talent_reborn_saved' });
+      EventBus.emit(GE.TOAST_SHOW, { text: '🔥 涅槃触发！致命伤害被免疫', duration: 2000 });
+    } else {
+      applyDeathPenalty(gs, player);
+    }
+  }
 }
 
 function applyDamage(defender, finalDamage, opts) {
@@ -364,6 +412,7 @@ export function tickBuffsOnTarget(target) {
 export const CombatSystem = {
   elementImmuneCheck,
   calculateDamage,
+  applyDeathPenalty,
   applyTrueDamageToPlayer,
   applyBuff,
   removeBuff,

@@ -16,6 +16,7 @@
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { HookDispatcher } from '../core/HookDispatcher.js';
+import { Distance } from '../core/Distance.js';
 import { devLog } from '../core/Logger.js';
 import { getSkill, getSkillsByRole, CHARACTERS, SKILLS } from '../data/characters.js';
 import { CombatSystem } from './CombatSystem.js';
@@ -44,59 +45,62 @@ function findLegalTarget(gs, skill, tileIdx) {
 
   let pool = allCreatures;
   if (skill.targetCategory === 'danger_extreme') {
-    pool = allCreatures.filter(c => c.category === 'danger' || c.category === 'extreme');
+    // ITM-CON-004 感恩节的晚餐：本日我方把友善生物也视为敌人
+    if (gs.flags?.friendlyAsEnemyToday) {
+      pool = allCreatures.slice();
+    } else {
+      pool = allCreatures.filter(c => c.category === 'danger' || c.category === 'extreme');
+    }
   } else if (skill.targetCategory === 'friendly_danger_extreme') {
     pool = allCreatures;
   }
   if (pool.length === 0) return null;
 
-  pool.sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp));
+  // §12.3：目标 = 技能所在地块到敌人位置最近的合法单位。
+  // 外圈格用网格 (x, y)；栅栏内生物 (row, col) 对应网格坐标 (col+1, row+1)，曼哈顿距离判最近。
+  const { x: sx, y: sy } = Distance.outerIdxToXY(gs.map.size, tileIdx);
+  const dist = (c) => Math.abs(sx - (c.col + 1)) + Math.abs(sy - (c.row + 1));
+  pool.sort((a, b) => dist(a) - dist(b));
   return pool[0];
 }
 
 /**
- * 触发某时机下，**所有 outerTiles 上放置的技能**
+ * 触发某时机下，**params.tileIdx 所在地块上放置的技能**（§12：技能按其所在格的时机触发）
  * @param {string} hookType  'onEnter' / 'onPass' / 'onBlessed'
  * @param {{gs: object, tileIdx: number}} params
  */
 export function triggerSkillByHook(hookType, params) {
-  const { gs } = params || {};
+  const { gs, tileIdx } = params || {};
   if (!gs) return;
+  // §12：只触发「事件发生格」上的技能；没有 tileIdx 不触发（此前遍历全部 outerTiles，
+  // 踩任意一格会把所有地块上匹配 hook 的技能全部触发）
+  if (typeof tileIdx !== 'number') return;
 
   gs.skillCooldowns = gs.skillCooldowns || {};
-  let anyTriggered = false;
 
-  // 遍历所有 outerTiles 上的技能地块
-  for (let i = 0; i < gs.map.outerTiles.length; i++) {
-    const tile = gs.map.outerTiles[i];
-    if (!tile?.contentId) continue;
-    if (!tile.contentId.startsWith('skill_')) continue;
+  const tile = gs.map.outerTiles[tileIdx];
+  if (!tile?.contentId || !tile.contentId.startsWith('skill_')) return;
 
-    const skillDef = SKILLS[tile.contentId];
-    if (!skillDef) continue;
+  const skillDef = SKILLS[tile.contentId];
+  if (!skillDef) return;
 
-    // triggerCondition 钩子匹配（用 hooks[hookType] 字段）
-    if (!skillDef.hooks || !skillDef.hooks[hookType]) continue;
+  // triggerCondition 钩子匹配（用 hooks[hookType] 字段）
+  if (!skillDef.hooks || !skillDef.hooks[hookType]) return;
 
-    // cooldown 检查：按 tileIdx + skillId 独立
-    const cdKey = `skill_${skillDef.id}_${i}`;
-    if (gs.skillCooldowns[cdKey] && gs.skillCooldowns[cdKey] > 0) continue;
+  // cooldown 检查：按 tileIdx + skillId 独立
+  const cdKey = `skill_${skillDef.id}_${tileIdx}`;
+  if (gs.skillCooldowns[cdKey] && gs.skillCooldowns[cdKey] > 0) return;
 
-    // 连携技不走普通 hook 触发（它们是实时窗口按键触发的）
-    if (skillDef.isLinkSkill) continue;
+  // 连携技不走普通 hook 触发（它们是实时窗口按键触发的）
+  if (skillDef.isLinkSkill) return;
 
-    // 找目标
-    const target = findLegalTarget(gs, skillDef, i);
-    if (!target) continue;
+  // 找目标（§12.3：最近合法单位）
+  const target = findLegalTarget(gs, skillDef, tileIdx);
+  if (!target) return;
 
-    // 触发！
-    anyTriggered = true;
-    fireOneSkill(gs, skillDef, target, cdKey);
-  }
-
-  if (anyTriggered) {
-    HookDispatcher.fire('onUseSkill', { gs });
-  }
+  // 触发！
+  fireOneSkill(gs, skillDef, target, cdKey);
+  HookDispatcher.fire('onUseSkill', { gs });
 }
 
 function fireOneSkill(gs, skill, target, cdKey) {

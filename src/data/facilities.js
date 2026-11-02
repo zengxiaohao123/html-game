@@ -123,6 +123,9 @@ const FacilityTent = {
   register() {
     // onSleep：帐篷睡觉时回满（SleepSystem 主逻辑已在执行前判断，此处处理"受祝福时额外 +3"——
     // 用独立的 tent_bless state（与 1 天 blessed state 分离，避免 DaySystem 先清除导致丢失）
+    // TODO(P0-7，待裁决): 物品库 FAC-002 备注写「+3 允许超出行动力上限」，但 SleepSystem 的
+    //   「在家/帐篷回满」会在本 hook 之后把 stamina 覆盖为 maxStamina，+3 实际无法超出上限。
+    //   「+3 与回满谁优先」属库本身矛盾，暂保持现状（回满覆盖 +3），裁决后再调整。
     HookDispatcher.register('onSleep', ({ gs }) => {
       const cur = gs.map.outerTiles[gs.player.x];
       if (!cur || cur.contentId !== this.id) return;
@@ -506,11 +509,12 @@ const FacilityHenhouse = {
       // 生成小鸡（每日限 1 次；每个鸡舍至多 4 只）
       const spawnKey = flagKey(this.id, 'spawn');
       if (!tile.dailyFlags[spawnKey]) {
-        // 统计属于该鸡舍的生物数量
-        const sameFacility = gs.creatures.filter(c => c.facilityId === this.id).length;
-        if (sameFacility < 4) {
+        // FAC-009「每舍至多 4 只」：按本鸡舍实例计数（sourceTileIdx 归属），
+        // 不是按类型全局计数——多个鸡舍各自独立拥有 4 只额度
+        const sameHenhouse = gs.creatures.filter(c => c.sourceTileIdx === tileIdx).length;
+        if (sameHenhouse < 4) {
           tile.dailyFlags[spawnKey] = true;
-          CreatureSystem.spawnCreature(gs, 'chick', { facilityId: this.id });
+          CreatureSystem.spawnCreature(gs, 'chick', { facilityId: this.id, sourceTileIdx: tileIdx });
         } else {
           EventBus.emit(GE.TOAST_SHOW, { text: '鸡舍已满 4 只，先收获吧～', duration: 1500 });
         }
@@ -522,7 +526,8 @@ const FacilityHenhouse = {
     // 受祝福时：属于该鸡舍的随机 1 只小鸡立刻长大
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
-      const chicks = gs.creatures.filter(c => c.facilityId === this.id && c.kind === 'chick');
+      // 「属于该鸡舍」= 来源为本鸡舍实例（sourceTileIdx 归属）
+      const chicks = gs.creatures.filter(c => c.sourceTileIdx === tileIdx && c.kind === 'chick');
       if (chicks.length > 0) {
         const pick = Random.pick(chicks);
         pick.kind = 'chicken';

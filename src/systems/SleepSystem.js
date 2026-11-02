@@ -30,20 +30,31 @@ export function sleep(gs, isAuto = false) {
   // 0. Agent 3：天赋 活力满满 onSleep（换日前 fire）
   TalentSystem.onSleepStart(gs);
 
-  // 1. 触发 onSleep hook
+  // 0.5 §5.2：推进回合的行为只有三种——移动 / 祈福 / 睡觉。睡觉推进 1 回合。
+  //     advanceTurn 内部处理心力交瘁挂/移、生物 burn tick、技能冷却递减。
+  //     此刻已在睡觉流程内，忽略返回的 forcedSleep，避免递归。
+  TurnSystem.advanceTurn(gs, 0);
+
+  // 1. 捕获心力交瘁快照（必须在 startNewDay 之前：DaySystem.startNewDay 会递减 exhausted.remainingTurns
+  //    并可能将其移除；若换日后再判断，本次睡觉的心力交瘁效果会被吞掉）
+  const wasExhausted = gs.activeBuffs.some(b => b.id === TurnSystem.BUFF_EXHAUSTED);
+
+  // 2. 触发 onSleep hook
   HookDispatcher.fire('onSleep', { gs });
 
-  // 2. 换日
+  // 3. 换日
   DaySystem.startNewDay(gs);
 
-  // 3. 判断行动力回复量
-  const hasExhausted = gs.activeBuffs.some(b => b.id === TurnSystem.BUFF_EXHAUSTED);
+  // 4. 判断行动力回复量
+  // TODO(P0-7，待裁决): FAC-002 帐篷备注写「+3 允许超出行动力上限」，但帐篷 onSleep hook 给的 +3
+  //   会被下方「在家/帐篷回满」覆盖——「+3 与回满谁优先」属库本身矛盾，暂保持现状（回满覆盖 +3），
+  //   裁决后再调整。
   const currentTile = gs.map.outerTiles[gs.player.x];
   const atHome = currentTile && (currentTile.contentId === 'facility_home' || currentTile.contentId === 'facility_tent');
 
   let newStamina;
-  if (hasExhausted) {
-    // 心力交瘁：所有睡觉增益失效，固定回一半
+  if (wasExhausted) {
+    // 心力交瘁（§15）：所有睡觉增益失效，固定回一半
     newStamina = Math.ceil(gs.player.maxStamina / 2);
     devLog.info('[SleepSystem] 心力交瘁，固定回一半 stamina:', newStamina);
   } else if (atHome) {
@@ -64,13 +75,13 @@ export function sleep(gs, isAuto = false) {
     maxStamina: gs.player.maxStamina,
   });
 
-  // 4. 移除心力交瘁 buff
-  if (hasExhausted) {
+  // 5. 移除心力交瘁 buff（§15：睡一觉后解除）
+  if (wasExhausted) {
     gs.activeBuffs = gs.activeBuffs.filter(b => b.id !== TurnSystem.BUFF_EXHAUSTED);
     devLog.info('[SleepSystem] 心力交瘁 buff 已移除');
   }
 
-  // 5. 强制睡觉金币惩罚
+  // 6. 强制睡觉金币惩罚
   let goldPenalty = 0;
   if (isAuto) {
     const rawPenalty = Math.floor(gs.player.gold * SLEEP_STAMINA_PENALTY_GOLD_RATIO);
@@ -86,7 +97,7 @@ export function sleep(gs, isAuto = false) {
     }
   }
 
-  // 6. 广播 SLEEP 事件
+  // 7. 广播 SLEEP 事件
   EventBus.emit(GE.SLEEP, { day: gs.day, isAuto, goldPenalty });
   EventBus.emit(GE.TOAST_SHOW, { text: `🌙 晚安～第 ${gs.day} 天开始`, duration: 2000 });
 
