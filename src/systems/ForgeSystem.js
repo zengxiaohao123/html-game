@@ -1,110 +1,17 @@
 // src/systems/ForgeSystem.js
 // Agent 3 —— 合成系统
-// 设计文档 §16.13（简略）—— 先写死几个简单配方，recipes.js 后续补
+// 设计文档 §16.13（简略）
+// 配方数据已抽到 src/data/recipes.js，本文件只负责合成判定/扣除逻辑。
 // TalentSystem.onCraftCheck 巧手·等级 1 返原材料概率接入
-//
-// 配方（Phase 5 之前先用写死版本，待补 recipes.js 后迁移）
-//   forge_wheat_to_straw   : item_wheat ×3 → item_rice_straw ×5
-//   forge_straw_to_rope    : item_rice_straw ×5 → item_rope ×1（虚构示例）
-//   forge_corn_to_food     : item_corn ×2 + item_wheat ×1 → item_food_simple ×1（虚构）
-//   forge_cabbage_to_salad : item_cabbage ×2 → item_salad ×1（虚构）
-//   forge_strawberry_to_jam: item_strawberry ×3 → item_jam ×1（虚构）
-//
-// 注：虚构物品在 items.js 里还没定义，合成后 TalentSystem 会 addItem 时走不上 —— 简化：
-//     先用已存在的物品配方（小麦 ↔ 稻草 双向、土豆数量翻倍等）
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { InventorySystem } from './InventorySystem.js';
 import { TalentSystem } from './TalentSystem.js';
+import { ALL_RECIPE_IDS, getRecipe, getAllRecipes } from '../data/recipes.js';
 
-// TODO: Phase 5 把这些移到 src/data/recipes.js
-const RECIPES = {
-  forge_wheat_to_straw: {
-    id: 'forge_wheat_to_straw',
-    name: '小麦 → 稻草',
-    emoji: '🌾',
-    ingredients: [
-      { itemId: 'item_wheat', qty: 3 },
-    ],
-    outputs: [
-      { itemId: 'item_rice_straw', qty: 5 },
-    ],
-    description: '3 小麦 → 5 稻草',
-  },
-  forge_straw_to_wheat: {
-    id: 'forge_straw_to_wheat',
-    name: '稻草 → 小麦',
-    emoji: '🌾',
-    ingredients: [
-      { itemId: 'item_rice_straw', qty: 4 },
-    ],
-    outputs: [
-      { itemId: 'item_wheat', qty: 3 },
-    ],
-    description: '4 稻草 → 3 小麦',
-  },
-  forge_wheat_to_corn: {
-    id: 'forge_wheat_to_corn',
-    name: '小麦 → 玉米',
-    emoji: '🌽',
-    ingredients: [
-      { itemId: 'item_wheat', qty: 3 },
-    ],
-    outputs: [
-      { itemId: 'item_corn', qty: 1 },
-    ],
-    description: '3 小麦 → 1 玉米',
-  },
-  forge_corn_to_cabbage: {
-    id: 'forge_corn_to_cabbage',
-    name: '玉米 → 卷心菜',
-    emoji: '🥬',
-    ingredients: [
-      { itemId: 'item_corn', qty: 2 },
-      { itemId: 'item_wheat', qty: 1 },
-    ],
-    outputs: [
-      { itemId: 'item_cabbage', qty: 2 },
-    ],
-    description: '2 玉米 + 1 小麦 → 2 卷心菜',
-  },
-  forge_strawberry_to_pea: {
-    id: 'forge_strawberry_to_pea',
-    name: '草莓 → 豌豆',
-    emoji: '🫛',
-    ingredients: [
-      { itemId: 'item_strawberry', qty: 2 },
-    ],
-    outputs: [
-      { itemId: 'item_pea', qty: 3 },
-    ],
-    description: '2 草莓 → 3 豌豆',
-  },
-  forge_pea_to_herb: {
-    id: 'forge_pea_to_herb',
-    name: '豌豆 → 草药',
-    emoji: '🌿',
-    ingredients: [
-      { itemId: 'item_pea', qty: 3 },
-    ],
-    outputs: [
-      { itemId: 'item_herb', qty: 1 },
-    ],
-    description: '3 豌豆 → 1 草药',
-  },
-};
-
-export const ALL_RECIPE_IDS = Object.keys(RECIPES);
-
-export function getRecipe(id) {
-  return RECIPES[id] || null;
-}
-
-export function getAllRecipes() {
-  return Object.values(RECIPES);
-}
+export { ALL_RECIPE_IDS, getRecipe, getAllRecipes };
 
 /**
  * 检查配方是否满足（所有 ingredient 都有足够数量）
