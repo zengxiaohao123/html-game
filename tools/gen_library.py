@@ -128,7 +128,15 @@ def parse_items(rows, meta):
         if code not in meta:
             missing.append('%s %s' % (code, name))
             continue
-        ident, emoji = meta[code]
+        mrow = meta[code]
+        if isinstance(mrow, list) and len(mrow) >= 2:
+            ident = mrow[0]
+            emoji = mrow[1]
+            icon = (mrow[2] if len(mrow) >= 3 else '') or None
+        else:
+            ident = mrow
+            emoji = ''
+            icon = None
 
         stack_rule = cells[13]
         tier1, tier2, tier3 = cells[2], cells[3], cells[4]
@@ -141,6 +149,7 @@ def parse_items(rows, meta):
             'libCode': code,
             'name': name,
             'emoji': emoji,
+            'icon': icon,
             'tier1': tier1 or None,
             'tier2': tier2 or None,
             'tier3': tier3 or None,

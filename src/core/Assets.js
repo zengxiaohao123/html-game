@@ -1,7 +1,12 @@
 // src/core/Assets.js
-// 资源路径表 + emoji 占位表
-// MVP 阶段所有美术用 emoji；图片替换只改本文件，其他代码零改动。
-// 未来加图片资源时，每条目可扩展为 { emoji, image: 'assets/xxx.png' } 格式。
+// 资源路径表 + emoji 占位表 + icon PNG 映射表（阶段 1 新增）
+// 说明：
+//   * facilities / resources / terrains / ui / items / creatures 六组保持扁平 emoji 字符串结构——
+//     现有 20+ UI 文件直接取 emoji 字符串渲染，阶段 1 不动这些调用点。
+//   * icons 组为并行的 PNG 路径映射；只有仓库里实际存在的 PNG 才登记。
+//   * getEmoji() 保留原语义；getIcon(group, id) 新增，返回路径字符串或 null。
+//     未来 UI 层切换：凡是现在渲染 emoji 的地方，先查 getIcon，有 PNG 就用 <img src>，
+//     没有再回退 emoji——数据层改动就到此为止。
 
 export const Assets = {
   // ── 设施（16 种，对齐物品库 FAC-001 ~ FAC-016）──
@@ -94,15 +99,51 @@ export const Assets = {
     slime_wind: '🌪️',
   },
 
+  // ── icon PNG 路径映射（阶段 1 新增）──
+  // 只有仓库里 **真实存在** 的 PNG 才登记；其余条目 getIcon 返回 null，UI 层应回退 emoji。
+  // 美术按 art-icon-manifest.md 补齐 assets/images/icons/*.png 后，
+  // 把对应 id 加进来（路径同 manifest）或直接在数据文件的 icon 字段填好即可。
+  icons: {
+    facilities: {},
+    resources: {},
+    terrains: {
+      terrain_grass: 'assets/images/terrain/tile_grass.png',
+      terrain_water: 'assets/images/terrain/tile_water.png',
+      terrain_ice: 'assets/images/terrain/tile_ice.png',
+    },
+    ui: {},
+    items: {},
+    creatures: {
+      slime_fire:  'assets/images/enemies/slime_fire.png',
+      slime_water: 'assets/images/enemies/slime_water.png',
+      slime_grass: 'assets/images/enemies/slime_grass.png',
+      slime_thunder:'assets/images/enemies/slime_thunder.png',
+      slime_ice:   'assets/images/enemies/slime_ice.png',
+      slime_rock:  'assets/images/enemies/slime_rock.png',
+      slime_wind:  'assets/images/enemies/slime_wind.png',
+    },
+  },
+
   /**
    * 查表：从 Assets 各分组里按 id 取 emoji
-   * @param {string} group 'facilities'|'resources'|'terrains'|'ui'|'items'|'creatures'
-   * @param {string} id
-   * @returns {string} 找不到时返回 '❓'
    */
   getEmoji(group, id) {
     const g = Assets[group];
     if (!g) return '❓';
     return g[id] ?? '❓';
+  },
+
+  /**
+   * 查表：返回真实 PNG 路径，若仓库里没有则返回 null。
+   * UI 层可先查此方法，有 PNG 就 <img src>，没有回退 emoji。
+   * @param {string} group 'facilities'|'resources'|'terrains'|'ui'|'items'|'creatures'
+   * @param {string} id
+   * @returns {string|null}
+   */
+  getIcon(group, id) {
+    const g = Assets.icons[group];
+    if (!g) return null;
+    const p = g[id];
+    return p || null;
   },
 };
