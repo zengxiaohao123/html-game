@@ -513,6 +513,15 @@ const FacilityHenhouse = {
         }
       }
 
+      // §13.3 / BIO-002 L 列：来自鸡舍的生物，玩家每次进入鸡舍心情 +1（每日限 1 次）；
+      // 其他方式心情固定 0（不在 dailyTick 无条件结算）
+      for (const c of gs.creatures) {
+        if (!c || c.hp <= 0 || c.sourceTileIdx !== tileIdx) continue;
+        if (c.lastHenhouseMoodDay === gs.day) continue;
+        c.lastHenhouseMoodDay = gs.day;
+        c.mood = Math.min(5, (c.mood || 0) + 1);
+      }
+
       EventBus.emit(GE.TILE_UPDATED, { tileIdx });
     }, this);
 

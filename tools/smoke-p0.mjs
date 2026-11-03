@@ -12,6 +12,11 @@
 //   P0-9 生命归 0 完整惩罚 + 生物停战/解除
 //   P0-10 鸡舍无争议四项（产蛋前置/储存扣饲料/放牧路径/按实例 4 只上限）
 //
+// 2026-11-03 追加：
+//   三处库矛盾裁决（饥饿成长 +5 / 已投喂任一条件 / 帐篷 +3 先回满后超上限）
+//   第 3 批生物闭环（容量扩格加成 / 心情 +1 进鸡舍时机 / 鸡蛋储存于鸡舍 /
+//   饲料投放取回 / 史莱姆 7 变体核对 05 表）
+//
 // 用法：node tools/smoke-p0.mjs
 
 import { readFileSync } from 'node:fs';
@@ -36,6 +41,7 @@ const SkillSystem = await import('../src/systems/SkillSystem.js');
 const CreatureSystem = await import('../src/systems/CreatureSystem.js');
 const LinkSkillSystem = await import('../src/systems/LinkSkillSystem.js');
 const { addItem, countItem } = await import('../src/systems/InventorySystem.js');
+const { CREATURES } = await import('../src/data/creatures.js');
 
 let pass = 0, fail = 0;
 function assert(cond, msg, extra) {
@@ -280,38 +286,61 @@ head('P0-10 鸡舍：放牧路径（啃草次日免消耗即已投喂）');
   assert(gs.map.outerTiles[1].contentState.henhouseFeed.item_wheat === storeBefore, '放牧不消耗鸡舍内储存');
 }
 
+head('P0-10 鸡舍：心情 +1 时机 = 玩家进入鸡舍（每日限 1 次）');
+{
+  const chick1 = gs.creatures[0];
+  chick1.mood = 0;
+  chick1.lastHenhouseMoodDay = undefined;
+  gs.map.outerTiles[1].dailyFlags['facility_henhouse_spawn'] = true; // 跳过生成小鸡，只验心情
+  HookDispatcher.fire('onEnter', { gs, tileIdx: 1 });
+  assert(chick1.mood === 1, '进入鸡舍 → 心情 +1（§13.3 / BIO-002 L 列）', chick1.mood);
+  HookDispatcher.fire('onEnter', { gs, tileIdx: 1 });
+  assert(chick1.mood === 1, '同日再次进入不叠加（每日限 1 次）', chick1.mood);
+  // dailyTick 不再无条件结算心情 +1
+  const m0 = chick1.mood;
+  chick1.grazedForFeed = true; // 走投喂，避免饥饿 -1 干扰
+  CreatureSystem.dailyTick(gs);
+  assert(chick1.mood === m0, 'dailyTick 不无条件加心情', chick1.mood);
+}
+
 head('P0-10 鸡舍：饥饿 → 心情 -1、成长值 +5（2026-11-03 裁决）');
 {
   const chick1 = gs.creatures[0];
   gs.map.outerTiles[1].contentState.henhouseFeed = {};
   chick1.grazedForFeed = false;
-  // 隔离鸡舍每日心情 +1（facilityId 驱动），单独验证饥饿 -1
-  const facilityId0 = chick1.facilityId;
-  chick1.facilityId = null;
   const g0 = chick1.growth;
   const m0 = chick1.mood;
   CreatureSystem.dailyTick(gs);
-  chick1.facilityId = facilityId0;
   assert(chick1.lastFed === false, '无饲料无放牧 → 饥饿');
   assert(chick1.growth === g0 + 5, '饥饿成长值 +5（裁决：成长 +5、心情 -1）', { g0, now: chick1.growth });
   assert(chick1.mood === Math.max(-5, m0 - 1), '饥饿心情 -1', { m0, now: chick1.mood });
 }
 
-head('P0-10 鸡舍：产蛋需已投喂前置');
+head('P0-10 鸡舍：产蛋需已投喂前置 + 鸡蛋储存于来源鸡舍（OUT-11）');
 {
   const chick1 = gs.creatures[0];
   chick1.kind = 'chicken'; chick1.stage = 'adult'; chick1.growthMax = 0;
-  const eggs0 = countItem(gs, 'item_egg');
+  chick1.mood = 0; // 优质蛋概率 0，保证确定性
+  const tile1 = gs.map.outerTiles[1];
+  tile1.contentState.eggStored = 0;
 
   chick1.lastFed = false;
-  gs.map.outerTiles[1].contentState.henhouseFeed = {};
+  chick1.grazedForFeed = false;
+  tile1.contentState.henhouseFeed = {};
   CreatureSystem.dailyTick(gs);
-  assert(countItem(gs, 'item_egg') === eggs0, '饥饿（未投喂）→ 不产蛋');
+  assert(tile1.contentState.eggStored === 0, '饥饿（未投喂）→ 不产蛋');
 
-  gs.map.outerTiles[1].contentState.henhouseFeed = { item_wheat: 1 };
+  tile1.contentState.henhouseFeed = { item_wheat: 1 };
   CreatureSystem.dailyTick(gs);
   assert(chick1.lastFed === true, '本日投喂结算为已投喂');
-  assert(countItem(gs, 'item_egg') === eggs0 + 1, '已投喂 → 产 1 个鸡蛋', countItem(gs, 'item_egg'));
+  assert(tile1.contentState.eggStored === 1,
+    '已投喂 → 产 1 蛋，储存于来源鸡舍（进入时取走）', tile1.contentState.eggStored);
+
+  // 储存上限 10（OUT-11）：满后不再入库
+  tile1.contentState.eggStored = 10;
+  tile1.contentState.henhouseFeed = { item_wheat: 1 };
+  CreatureSystem.dailyTick(gs);
+  assert(tile1.contentState.eggStored === 10, '储存上限 10：满后不再入库', tile1.contentState.eggStored);
 }
 
 head('P0-7 帐篷 +3：先回满、后结算 +3 且可超上限（2026-11-03 裁决）');
@@ -340,6 +369,52 @@ head('三处库矛盾裁决：TODO 已移除');
   assert(!creatureSrc.includes('TODO(饥饿成长值'), '饥饿成长 +5：TODO 已移除');
   assert(!creatureSrc.includes('TODO(BIO-002'), 'BIO-002 已投喂语义：TODO 已移除');
   assert(creatureSrc.includes('c.growth += 5'), '饥饿成长值按裁决改为 +5');
+}
+
+head('P1-2 容量扩格加成：栅栏每多 1 格 → 友善/危险容量各 +1');
+{
+  const fence0 = gs.map.fence;
+  gs.map.fence = [{}, {}, {}, {}]; // 4 格
+  CreatureSystem.dailyTick(gs);
+  assert(gs.capacity.friendly === 7, '4 格栅栏 → 友善容量 4+3', gs.capacity.friendly);
+  assert(gs.capacity.danger === 7, '4 格栅栏 → 危险容量 4+3', gs.capacity.danger);
+  gs.map.fence = [{}]; // 初始 1 格
+  CreatureSystem.dailyTick(gs);
+  assert(gs.capacity.friendly === 4 && gs.capacity.danger === 4,
+    '1 格栅栏 → 初始容量 4/4', gs.capacity);
+  gs.map.fence = fence0;
+}
+
+head('鸡舍饲料投放/取回：depositHenhouseFeed / withdrawHenhouseFeed');
+{
+  const tile1 = gs.map.outerTiles[1];
+  tile1.contentState.henhouseFeed = {};
+  addItem(gs, 'item_wheat', 2);
+  const w0 = countItem(gs, 'item_wheat');
+  assert(CreatureSystem.depositHenhouseFeed(gs, 1, 'item_wheat', 2).ok, '投放 2 小麦入鸡舍');
+  assert(tile1.contentState.henhouseFeed.item_wheat === 2, '鸡舍储存 +2');
+  assert(countItem(gs, 'item_wheat') === w0 - 2, '背包 -2');
+  const r = CreatureSystem.withdrawHenhouseFeed(gs, 1, 'item_wheat', 1);
+  assert(r.ok && r.withdrawn === 1, '取回 1 小麦');
+  assert(tile1.contentState.henhouseFeed.item_wheat === 1, '储存剩 1');
+  assert(countItem(gs, 'item_wheat') === w0 - 1, '背包 +1');
+  CreatureSystem.withdrawHenhouseFeed(gs, 1, 'item_wheat', 1);
+  assert(!CreatureSystem.withdrawHenhouseFeed(gs, 1, 'item_wheat', 1).ok, '储存为空不可再取回');
+}
+
+head('史莱姆 7 变体：属性免疫与数值逐项核对物品库 05 表');
+{
+  // 05 表 BIO-004~BIO-010：hp 40 / atk 10 / spd 2，免疫自身属性元素
+  const expect = {
+    slime_fire: 'fire', slime_water: 'water', slime_thunder: 'thunder',
+    slime_ice: 'ice', slime_grass: 'grass', slime_wind: 'wind', slime_rock: 'rock',
+  };
+  for (const [kind, elem] of Object.entries(expect)) {
+    const def = CREATURES[kind];
+    assert(def && def.hp === 40 && def.atk === 10, `${kind} hp 40 / atk 10`, def && { hp: def.hp, atk: def.atk });
+    assert(def.element === elem && def.elementImmune === elem, `${kind} 属性/免疫 = ${elem}`, { element: def.element, immune: def.elementImmune });
+    assert(def.moveEverySec === 2, `${kind} spd 2 → moveEverySec 2`, def.moveEverySec);
+  }
 }
 
 console.log(`\n结果：${pass} 通过，${fail} 失败`);

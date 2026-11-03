@@ -253,10 +253,8 @@ export function dailyTick(gs) {
   for (const c of gs.creatures) {
     if (!c || c.hp <= 0) continue;
 
-    // 心情：facility_henhouse 来源 +1（玩家进 henhouse 简化：直接 +1）
-    if (c.facilityId === 'facility_henhouse') {
-      c.mood = Math.min(5, (c.mood || 0) + 1);
-    }
+    // 心情 +1 的触发时机在鸡舍 onEnter hook（§13.3：玩家每次进入鸡舍心情 +1，每日限 1 次），
+    // 不在此无条件结算；非鸡舍来源生物心情固定 0（BIO-002 L 列）。
 
     // 成长值（小鸡）
     if (c.stage === 'chick' && c.growthMax > 0) {
@@ -271,9 +269,25 @@ export function dailyTick(gs) {
     //   已投喂 → 产 1 蛋（心情×10% 概率优质蛋）；饥饿 → 心情 -1、不产蛋。
     if (c.kind === 'chicken') {
       if (c.lastFed) {
-        InventorySystem.addItem(gs, 'item_egg', 1);
+        // OUT-11：鸡蛋储存于来源鸡舍（上限 10），玩家进入鸡舍时取走（InfoPanel 收获滑条）。
+        //   库未写明储存满时的处理，此处按「无法入库则损失」落地（见审计报告待确认项）。
+        const henTile = c.sourceTileIdx != null ? outerTiles[c.sourceTileIdx] : null;
+        if (henTile && henTile.contentId === 'facility_henhouse') {
+          henTile.contentState = henTile.contentState || {};
+          const stored = henTile.contentState.eggStored || 0;
+          if (stored < 10) {
+            henTile.contentState.eggStored = stored + 1;
+            EventBus.emit(GE.TILE_UPDATED, { tileIdx: henTile.idx });
+          } else {
+            devLog.warn('[CreatureSystem] 鸡舍鸡蛋储存已满(10)，本次鸡蛋无法入库:', c.id);
+          }
+        } else {
+          // 旧存档 / 无鸡舍归属：直接进背包（保持既有行为）
+          InventorySystem.addItem(gs, 'item_egg', 1);
+        }
+        // 优质蛋：心情 ×10%（心情负视为 0%）——OUT-21；库未写明优质蛋储存，保持直接进背包
         const qualityChance = Math.max(0, (c.mood || 0) * 0.1);
-        if (Math.random() < qualityChance) {
+        if (Random.chance(qualityChance)) {
           InventorySystem.addItem(gs, 'item_golden_egg', 1);
         }
       } else {
@@ -329,9 +343,13 @@ function growUpChick(gs, chick) {
 
 function updateCapacityAndPunish(gs) {
   const cap = gs.capacity || (gs.capacity = {});
-  cap.friendly = cap.friendly ?? 4;
-  cap.danger = cap.danger ?? 4;
-  cap.extreme = cap.extreme ?? 0;
+  // P1-2 容量扩格加成（§13.1 / 物品库 05 表头）：栅栏每多 1 格空间 → 友善 +1、危险 +1。
+  //   初始栅栏 1 格（§2「初始 3×3：中心 1 格栅栏」），基础容量 友善 4 / 危险 4 / 极度危险 0。
+  const fenceTiles = (gs.map.fence && gs.map.fence.length) || 1;
+  const extra = Math.max(0, fenceTiles - 1);
+  cap.friendly = 4 + extra;
+  cap.danger = 4 + extra;
+  cap.extreme = 0;
   cap.friendlyOverdue = cap.friendlyOverdue ?? 0;
   cap.dangerOverdue = cap.dangerOverdue ?? 0;
   cap.extremeOverdue = cap.extremeOverdue ?? 0;
@@ -407,8 +425,7 @@ function updateCapacityAndPunish(gs) {
 /**
  * 把饲料存入鸡舍（背包 → tile.contentState.henhouseFeed）。
  * §13.3 / FAC-009：鸡优先消耗鸡舍内储存的稻草/小麦。
- * TODO(鸡舍投放交互，待 UI): 设计文档未写明投放的交互入口（按钮/快捷键），
- *   此处先提供逻辑入口，UI 接线留后续批次。
+ * 注：设计文档未写明投放的交互入口（按钮/快捷键），此处为逻辑入口，UI 接线留后续批次。
  * @returns {{ ok: boolean, reason?: string, deposited?: number }}
  */
 export function depositHenhouseFeed(gs, tileIdx, itemId, qty = 1) {
@@ -426,12 +443,31 @@ export function depositHenhouseFeed(gs, tileIdx, itemId, qty = 1) {
   return { ok: true, deposited: n };
 }
 
+/**
+ * 把饲料从鸡舍取回背包（tile.contentState.henhouseFeed → 背包），投放的逆操作。
+ * @returns {{ ok: boolean, reason?: string, withdrawn?: number }}
+ */
+export function withdrawHenhouseFeed(gs, tileIdx, itemId, qty = 1) {
+  const tile = gs.map.outerTiles[tileIdx];
+  if (!tile || tile.contentId !== 'facility_henhouse') return { ok: false, reason: 'notHenhouse' };
+  if (itemId !== 'item_rice_straw' && itemId !== 'item_wheat') return { ok: false, reason: 'notFeed' };
+  const store = tile.contentState?.henhouseFeed || {};
+  const n = Math.min(qty, store[itemId] || 0);
+  if (n <= 0) return { ok: false, reason: 'noStore' };
+  store[itemId] -= n;
+  InventorySystem.addItem(gs, itemId, n);
+  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+  devLog.info('[CreatureSystem] withdrawHenhouseFeed', itemId, 'x', n, '← tile', tileIdx);
+  return { ok: true, withdrawn: n };
+}
+
 export const CreatureSystem = {
   spawnCreature,
   tickAllCreatures: tickAllCreaturesOnce,
   dailyTick,
   feedCreature,
   depositHenhouseFeed,
+  withdrawHenhouseFeed,
   startRealtimeLoop,
   stopRealtimeLoop,
   resetCreatureIdCounter,
