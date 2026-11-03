@@ -22,10 +22,11 @@ import { VehicleSystem } from '../systems/VehicleSystem.js';
 import { Distance } from '../core/Distance.js';
 import { CreatureSystem } from '../systems/CreatureSystem.js';
 import { Random } from '../core/Random.js';
-import { SLIME_KINDS } from './creatures.js';
+import { CREATURES, SLIME_KINDS } from './creatures.js';
 import { SKILLS } from './characters.js';
 import { normalizeTerrain } from './terrains.js';
-import { ITEMS } from './items.js';
+import { ITEMS, POOLS } from './items.js';
+import { ITEM_TO_VEHICLE, VEHICLES } from './vehicles.js';
 import { drawFromPool } from '../systems/RandomPool.js';
 import { HealSystem } from '../systems/HealSystem.js';
 import { ShopSystem } from '../systems/ShopSystem.js';
@@ -707,53 +708,166 @@ const FacilityCabbage = {
 // ——— 资源类地块内容（5 种，共用同一套 HookDispatcher 注册方式）——
 // ════════════════════════════════════════════════════════════════
 
+// ── RES-001 事件点 ──
+// 物品库：【进入时】遇到随机事件（每日限一次）；【受祝福时】显示今日此事件具体内容。
+// 备注：不观测不抽取，只在即将进入或显示时才真正抽取（懒抽取）。
+// TODO(P1): 事件池内容未录入物品库（待补录清单 #12 / 设计文档 §17「事件池内容」待补充），
+//   池录入后在 resolveEventTile 内做实际抽取与文案展示。
+function resolveEventTile(gs, tileIdx, blessed) {
+  // 懒抽取：只在此处（即将进入 / 受祝福显示）才尝试抽取；事件池录入后替换 eventId
+  const eventId = null;
+  HookDispatcher.fire('onEventResolve', { gs, tileIdx, type: 'event', eventId, blessed });
+  EventBus.emit(GE.TOAST_SHOW, { text: '🎲 遇到随机事件（事件内容待补录）', duration: 2000 });
+}
+
 const ResourceEvent = {
   id: 'resource_event',
   name: '事件点',
   emoji: Assets.resources.resource_event,
   value: 5,
-  description: '【进入时】遭遇随机事件（每日限 1 次）\n【受祝福时】显示本事件今日具体内容',
+  description: '【进入时】遇到随机事件（每日限一次）\n【受祝福时】显示今日此事件具体内容',
   register() {
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
       const key = flagKey(this.id, 'onEnter');
       if (gs.map.outerTiles[tileIdx].dailyFlags[key]) return;
       gs.map.outerTiles[tileIdx].dailyFlags[key] = true;
-      EventBus.emit(GE.TOAST_SHOW, { text: '🎲 遭遇随机事件…（Phase 5 触发）', duration: 2000 });
+      resolveEventTile(gs, tileIdx, false);
+    }, this);
+
+    HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
+      if (!isMine(gs, tileIdx, this.id)) return;
+      const tile = gs.map.outerTiles[tileIdx];
+      tile.contentState = tile.contentState || {};
+      tile.contentState.eventBlessed = true; // 事件池录入后用于「显示今日具体内容」
+      resolveEventTile(gs, tileIdx, true);
     }, this);
   },
 };
+
+// ── RES-002 奖励点 ──
+// 物品库：【进入时】获得随机奖励（每日限一次）；【受祝福时】下次进入高价值奖励概率提升。
+// TODO(P1): 奖励池内容未录入物品库（待补录清单 #13 / 设计文档 §17「奖励池内容」待补充），
+//   池录入后在 resolveRewardTile 内实际抽取，并按 rewardBlessPending 提升高价值概率。
+function resolveRewardTile(gs, tileIdx) {
+  const tile = gs.map.outerTiles[tileIdx];
+  const st = tile.contentState = tile.contentState || {};
+  const blessed = !!st.rewardBlessPending;
+  if (blessed) st.rewardBlessPending = false; // 消耗「下次进入高价值奖励概率提升」
+  HookDispatcher.fire('onEventResolve', { gs, tileIdx, type: 'reward', rewardId: null, blessed });
+  EventBus.emit(GE.TOAST_SHOW, { text: '🎁 获得随机奖励（奖励内容待补录）', duration: 2000 });
+}
 
 const ResourceReward = {
   id: 'resource_reward',
   name: '奖励点',
   emoji: Assets.resources.resource_reward,
   value: 8,
-  description: '【进入时】获得随机奖励（每日限 1 次）\n【受祝福时】下 1 次进入时高价值奖励概率提升',
+  description: '【进入时】获得随机奖励（每日限一次）\n【受祝福时】下次进入高价值奖励概率提升',
   register() {
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
       const key = flagKey(this.id, 'onEnter');
       if (gs.map.outerTiles[tileIdx].dailyFlags[key]) return;
       gs.map.outerTiles[tileIdx].dailyFlags[key] = true;
-      EventBus.emit(GE.TOAST_SHOW, { text: '🎁 发现随机奖励…（Phase 5 触发）', duration: 2000 });
+      resolveRewardTile(gs, tileIdx);
+    }, this);
+
+    HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
+      if (!isMine(gs, tileIdx, this.id)) return;
+      const tile = gs.map.outerTiles[tileIdx];
+      tile.contentState = tile.contentState || {};
+      tile.contentState.rewardBlessPending = true;
+      EventBus.emit(GE.TOAST_SHOW, { text: '✨ 奖励点受祝福 → 下次进入高价值奖励概率提升', duration: 2000 });
     }, this);
   },
 };
+
+// ── RES-003 狩猎点 ──
+// 物品库：【进入时】可狩猎，概率获得随机生物（每日限一次）
+// 功能：狩猎普通生物（每日 40%~90%）/ 狩猎危险生物（每日 15%~75%）
+// 备注：受祝福时当日所有选项成功率 +50%，超出 100% 按 100% 计。
+const HUNT_RATES = {
+  normal: { min: 0.40, max: 0.90 },
+  danger: { min: 0.15, max: 0.75 },
+};
+
+/**
+ * 执行一次狩猎（每日限一次，成败均消耗次数）。
+ * @param {'normal'|'danger'} option 狩猎普通生物 / 狩猎危险生物
+ * @returns {{ok:boolean, success?:boolean, rate?:number, kind?:string, reason?:string}}
+ */
+export function huntCreature(gs, tileIdx, option) {
+  const tile = gs.map.outerTiles[tileIdx];
+  if (!tile || tile.contentId !== 'resource_hunt') return { ok: false, reason: 'notHuntTile' };
+  const range = HUNT_RATES[option];
+  if (!range) return { ok: false, reason: 'badOption' };
+  const key = flagKey('resource_hunt', 'hunt');
+  if (tile.dailyFlags[key]) return { ok: false, reason: 'alreadyHunted' };
+
+  // 候选生物（生物池 POOL-02 按类别过滤）：
+  //   普通生物 → 友善类（小鸡/鸡）；危险生物 → 史莱姆条目（BIO-003：展开为七种元素史莱姆等概率随机一种）
+  const cat = option === 'normal' ? 'friendly' : 'danger';
+  const candidates = (POOLS['POOL-02']?.entries || []).filter((e) => {
+    if (e.id === 'slime') return cat === 'danger';
+    const def = CREATURES[e.id];
+    return !!def && def.category === cat;
+  });
+  if (!candidates.length) return { ok: false, reason: 'noPoolCandidate' };
+
+  tile.dailyFlags[key] = true; // 每日限一次：成败都消耗
+
+  // 成功率在区间内随机；受祝福 → +50%，超出 100% 按 100% 计（RES-003 备注）
+  let rate = range.min + Math.random() * (range.max - range.min);
+  const st = (tile.contentState = tile.contentState || {});
+  if (st.huntBlessPending) {
+    rate = Math.min(1, rate + 0.5);
+    st.huntBlessPending = false;
+  }
+
+  if (!Random.chance(rate)) {
+    EventBus.emit(GE.TOAST_SHOW, { text: `🏹 狩猎失败（成功率 ${(rate * 100).toFixed(0)}%）`, duration: 2000 });
+    HookDispatcher.fire('onEventResolve', { gs, tileIdx, type: 'hunt', option, success: false });
+    return { ok: true, success: false, rate };
+  }
+
+  // 成功 → 获得随机生物（自动进栅栏，容量超出也允许，超载惩罚见 §13.2）
+  const picked = Random.pick(candidates);
+  const kind = picked.id === 'slime' ? Random.pick(SLIME_KINDS) : picked.id;
+
+  const creature = CreatureSystem.spawnCreature(gs, kind, { facilityId: 'resource_hunt', sourceTileIdx: null });
+  if (!creature) return { ok: false, reason: 'fenceFull' };
+  EventBus.emit(GE.TOAST_SHOW, {
+    text: `🏹 狩猎成功：${CREATURES[kind].emoji} ${CREATURES[kind].name}（成功率 ${(rate * 100).toFixed(0)}%）`,
+    duration: 2200,
+  });
+  HookDispatcher.fire('onEventResolve', { gs, tileIdx, type: 'hunt', option, success: true, kind });
+  return { ok: true, success: true, rate, kind };
+}
 
 const ResourceHunt = {
   id: 'resource_hunt',
   name: '狩猎点',
   emoji: Assets.resources.resource_hunt,
   value: 5,
-  description: '【进入时】可狩猎，概率获得随机生物（每日限 1 次）\n【受祝福时】下一次成功率提升\n功能：狩猎普通生物 / 狩猎危险生物',
+  description: '【进入时】可狩猎，概率获得随机生物（每日限一次）\n狩猎普通生物（每日 40%~90%）/ 狩猎危险生物（每日 15%~75%）\n【受祝福时】下次狩猎成功率 +50%（超出 100% 按 100% 计）',
   register() {
+    // 狩猎需玩家选择目标（普通/危险），交互入口在 InfoPanel 功能选项；进入时仅提示
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
-      const key = flagKey(this.id, 'onEnter');
-      if (gs.map.outerTiles[tileIdx].dailyFlags[key]) return;
-      gs.map.outerTiles[tileIdx].dailyFlags[key] = true;
-      EventBus.emit(GE.TOAST_SHOW, { text: '⚔️ 狩猎中…（Phase 3 触发）', duration: 2000 });
+      if (gs.map.outerTiles[tileIdx].dailyFlags[flagKey(this.id, 'hunt')]) return;
+      EventBus.emit(GE.TOAST_SHOW, { text: '🏹 狩猎点：选择狩猎目标（普通/危险）', duration: 1600 });
+    }, this);
+
+    // 受祝福：下次狩猎成功率 +50%（备注口径：当日所有选项 +50%，超出 100% 按 100%）
+    // TODO(待裁决): L 列「下次成功率提升」与备注「当日所有选项」口径略有出入，
+    //   此处按「下次狩猎」记账（与商店/魔法商店「下次」类祝福一致），裁决后调整。
+    HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
+      if (!isMine(gs, tileIdx, this.id)) return;
+      const tile = gs.map.outerTiles[tileIdx];
+      tile.contentState = tile.contentState || {};
+      tile.contentState.huntBlessPending = true;
+      EventBus.emit(GE.TOAST_SHOW, { text: '✨ 狩猎受祝福 → 下次狩猎成功率 +50%', duration: 2000 });
     }, this);
   },
 };
@@ -786,20 +900,40 @@ const ResourceBus = {
   name: '巴士站',
   emoji: Assets.resources.resource_bus,
   value: 5,
-  description: '【进入时】行动力 +1（每日限 1 次）\n【进入时】获得 1 个轮子\n【受祝福时】获得 1 个随机载具',
+  description: '【进入时】行动力 +1（每日限一次）\n【进入时】获得 1 轮子\n【受祝福时】获得 1 随机载具',
   register() {
+    // RES-005 / OUT-17：每日限一次只标注在「行动力 +1」上；轮子每次进入都给
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
-      const key = flagKey(this.id, 'onEnter');
-      if (gs.map.outerTiles[tileIdx].dailyFlags[key]) return;
-      gs.map.outerTiles[tileIdx].dailyFlags[key] = true;
+      const tile = gs.map.outerTiles[tileIdx];
 
-      // 行动力 +1（不允许超出上限，统一走 StaminaSystem 结算）
-      StaminaSystem.settleStamina(gs, 1, { reason: 'resource_bus' });
-      // 获得 1 载具：轮子（按设计文档 §14.7：巴士站 → vehicle_wheel）
+      // 行动力 +1（每日限一次；不允许超出上限，统一走 StaminaSystem 结算）
+      const staminaKey = flagKey(this.id, 'onEnter_stamina');
+      if (!tile.dailyFlags[staminaKey]) {
+        tile.dailyFlags[staminaKey] = true;
+        StaminaSystem.settleStamina(gs, 1, { reason: 'resource_bus' });
+        EventBus.emit(GE.TOAST_SHOW, { text: '🚌 巴士站：行动力 +1', duration: 1500 });
+      }
+
+      // 获得 1 轮子（无每日限次）
       VehicleSystem.gainVehicle(gs, 'vehicle_wheel');
-      EventBus.emit(GE.TOAST_SHOW, { text: `🚌 行动力 +1 🚗 +1 轮子载具`, duration: 2000 });
-      devLog.info('[bus] stamina +1, +1 wheel');
+      devLog.info('[bus] onEnter stamina(daily) + wheel');
+    }, this);
+
+    // RES-005 / OUT-18：受祝福 → 获得 1 随机载具（载具池 1 = POOL-04）；载具进载具页手动装备
+    HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
+      if (!isMine(gs, tileIdx, this.id)) return;
+      const [hit] = drawFromPool('POOL-04', 1);
+      const vehId = hit ? ITEM_TO_VEHICLE[hit.id] : null;
+      if (!vehId) {
+        devLog.warn('[bus] onBlessed 载具池 1 未抽到可映射载具:', hit?.id);
+        return;
+      }
+      VehicleSystem.gainVehicle(gs, vehId);
+      EventBus.emit(GE.TOAST_SHOW, {
+        text: `✨ 巴士站受祝福：获得载具 ${VEHICLES[vehId]?.emoji || ''} ${VEHICLES[vehId]?.name || vehId}（载具页手动装备）`,
+        duration: 2200,
+      });
     }, this);
   },
 };
@@ -1001,14 +1135,12 @@ const ResourceMagicShop = {
   internalNote: '每日至多放置 1 个；场上上限 2；首次刷新免费 = 本次进入无论第几次刷新均 0 金币，但正常消耗刷新次数',
 
   register() {
+    // §11.2 进入：踏上【魔法商店】即进入，与商店独立；「离开后本回合不可再进入」由
+    // ShopSystem.enterShop 的 leftAtTurn 检查执行 —— 与商店一致，无每日限次（§11.1 同规则）
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
-      const key = flagKey(this.id, 'onEnter');
-      if (gs.map.outerTiles[tileIdx].dailyFlags[key]) return;
-      gs.map.outerTiles[tileIdx].dailyFlags[key] = true;
-      // 打开魔法商店页面（B4 实现 UI；此处先发事件，UI 未接时由 Toast 兜底）
       EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'magicShop', tileIdx });
-      EventBus.emit(GE.TOAST_SHOW, { text: '🔮 进入魔法商店', duration: 1500 });
+      devLog.info('[magicShop] onEnter → open magic shop panel, tile', tileIdx);
     }, this);
 
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {

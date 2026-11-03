@@ -14,7 +14,7 @@ import { Distance } from '../core/Distance.js';
 import { BlessSystem, BLESS_STAMINA_COST, BLESS_GOLD_COST } from '../systems/BlessSystem.js';
 import { SkillSystem } from '../systems/SkillSystem.js';
 import { InventorySystem } from '../systems/InventorySystem.js';
-import { getDef } from '../data/facilities.js';
+import { getDef, huntCreature } from '../data/facilities.js';
 import { SKILLS } from '../data/characters.js';
 import { SPIRITS } from '../data/characters.js';
 import { VEHICLES } from '../data/vehicles.js';
@@ -73,12 +73,7 @@ const FACILITY_DESCRIPTIONS = {
     '【受祝福时】未来 3 天每日生成数量 ×2',
   ],
 
-  // —— 资源类地块内容 ——
-  resource_event: ['【进入时】触发随机事件（Phase 5）'],
-  resource_reward: ['【进入时】随机奖励（Phase 5）'],
-  resource_hunt:   ['【进入时】进入狩猎（Phase 3）'],
-  resource_shop:   ['【进入时】打开商店（Phase 4）'],
-  resource_bus:    ['【进入时】行动力 +1、获得 1 轮子'],
+  // —— 资源类地块内容：描述以 facilities.js 定义（物品库 RES-001~006 原文）为准，不在此覆盖 ——
 };
 
 const TERRAIN_DESCRIPTIONS = {
@@ -731,12 +726,99 @@ export class InfoPanel {
       // "前往"按钮在下面统一渲染（任何格都能前往，§7）
     }
 
-    // 资源类地块 / 技能卡地块 —— "进入/使用" 按钮（Phase 4）
+    // 资源类地块 / 技能卡地块 —— 功能选项区（第 4 批：资源点交互接线）
     if (contentId && (contentId.startsWith('resource_') || contentId.startsWith('skill_'))) {
       createEl('div', {
         style: { marginTop: '12px', textAlign: 'center' },
         parent: this.bodyWrap,
       });
+
+      const onTile = gs.player.x === tile.idx;
+
+      // 🏹 狩猎点（RES-003）：选择狩猎普通 / 危险生物，每日限一次，需身处该格
+      if (contentId === 'resource_hunt') {
+        const hunted = !!(tile.dailyFlags && tile.dailyFlags['resource_hunt_hunt']);
+        const huntBlessed = !!tile.contentState?.huntBlessPending;
+        if (huntBlessed) {
+          createEl('div', {
+            style: { fontSize: '12px', color: '#8a6a3a', marginBottom: '6px', textAlign: 'left' },
+            text: '✨ 受祝福：下次狩猎成功率 +50%（超出 100% 按 100% 计）',
+            parent: this.bodyWrap,
+          });
+        }
+        if (hunted) {
+          createEl('div', {
+            style: { fontSize: '12px', color: '#aaa', textAlign: 'center', margin: '6px 0' },
+            text: '（今日已狩猎，明日可再次狩猎）',
+            parent: this.bodyWrap,
+          });
+        } else {
+          createEl('div', {
+            style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
+            text: onTile ? '选择狩猎目标：' : '（需身处狩猎点才可狩猎）',
+            parent: this.bodyWrap,
+          });
+          const mkHuntBtn = (option, label, bg) => createEl('button', {
+            class: 'action-btn',
+            style: { width: '100%', fontSize: '13px', background: bg, marginBottom: '6px' },
+            text: label,
+            disabled: !onTile,
+            parent: this.bodyWrap,
+            onclick: () => {
+              const curIdx = this.currentTileIdx;
+              const r = huntCreature(gs, curIdx, option);
+              if (!r.ok) {
+                EventBus.emit(GE.TOAST_SHOW, { text: '🏹 现在无法狩猎', duration: 1500 });
+                return;
+              }
+              EventBus.emit(GE.TILE_UPDATED, { tileIdx: curIdx });
+              this._renderBody();
+            },
+          });
+          mkHuntBtn('normal', '🏹 狩猎普通生物（成功率 40%~90%）', '#ffe0b0');
+          mkHuntBtn('danger', '🏹 狩猎危险生物（成功率 15%~75%）', '#f0c0c0');
+        }
+      }
+
+      // 🎲 事件点（RES-001）：踏上即触发，此处仅显示今日状态
+      if (contentId === 'resource_event') {
+        const done = !!(tile.dailyFlags && tile.dailyFlags['resource_event_onEnter']);
+        createEl('div', {
+          style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
+          text: done ? '🎲 今日已遇到事件（每日限一次）' : '🎲 踏上此地即遇到随机事件（每日限一次）',
+          parent: this.bodyWrap,
+        });
+      }
+
+      // 🎁 奖励点（RES-002）：踏上即触发，此处仅显示今日状态
+      if (contentId === 'resource_reward') {
+        const done = !!(tile.dailyFlags && tile.dailyFlags['resource_reward_onEnter']);
+        const rewardBlessed = !!tile.contentState?.rewardBlessPending;
+        if (rewardBlessed) {
+          createEl('div', {
+            style: { fontSize: '12px', color: '#8a6a3a', marginBottom: '6px', textAlign: 'left' },
+            text: '✨ 受祝福：下次进入高价值奖励概率提升',
+            parent: this.bodyWrap,
+          });
+        }
+        createEl('div', {
+          style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
+          text: done ? '🎁 今日已领取奖励（每日限一次）' : '🎁 踏上此地即获得随机奖励（每日限一次）',
+          parent: this.bodyWrap,
+        });
+      }
+
+      // 🚌 巴士站（RES-005）：踏上即结算，此处仅显示今日行动力状态
+      if (contentId === 'resource_bus') {
+        const gotStamina = !!(tile.dailyFlags && tile.dailyFlags['resource_bus_onEnter_stamina']);
+        createEl('div', {
+          style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
+          text: gotStamina
+            ? '🚌 今日行动力 +1 已领取；每次进入仍可获得 1 轮子'
+            : '🚌 踏上此地：行动力 +1（每日限一次）并获得 1 轮子',
+          parent: this.bodyWrap,
+        });
+      }
 
       if (contentId === 'resource_shop') {
         createEl('button', {
@@ -780,7 +862,7 @@ export class InfoPanel {
           });
         }
       }
-      // 其他 resource_ 前缀（resource_bus / resource_bed / ...）— 设计文档均无功能选项，词条自动触发
+      // 其他 resource_ 前缀（如未来的新资源点）— 词条自动触发，无额外功能选项
     }
 
     // ── "前往"按钮（根据载具状态决定可达范围和调用方式） ──
