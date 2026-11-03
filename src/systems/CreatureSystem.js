@@ -240,10 +240,8 @@ export function dailyTick(gs) {
         c.growth += 10 + (c.mood || 0);
         c.lastFed = true;
       } else {
-        // 两者都不满足 → 【饥饿】：心情 -1
-        // TODO(饥饿成长值，待裁决): 设计文档 §13.3 与物品库 03 表 A21 均写饥饿「成长值 +5」，
-        //   而既有代码按 -5 实现，两者矛盾。按指示暂保持现状（-5），裁决后再调整。
-        c.growth = Math.max(0, c.growth - 5);
+        // 两者都不满足 → 【饥饿】：心情 -1、成长值 +5（§13.3 / 物品库 03 表 A21，2026-11-03 裁决确认）
+        c.growth += 5;
         c.mood = Math.max(-5, (c.mood || 0) - 1);
         EventBus.emit(GE.TOAST_SHOW, { text: `🐣 ${c.kind || '小鸡'} 没吃的，心情-1`, duration: 1200 });
         c.lastFed = false;
@@ -268,10 +266,10 @@ export function dailyTick(gs) {
     }
 
     // 鸡产蛋（§13.3：已投喂才产蛋）
+    // 【已投喂】不是互斥条件：满足任一投喂条件即视为已投喂（2026-11-03 裁决，物品库 05 表 BIO-002）：
+    //   路径 A 放牧啃草 / 路径 B 消耗鸡舍内储存饲料 —— 任一达成 lastFed=true。
+    //   已投喂 → 产 1 蛋（心情×10% 概率优质蛋）；饥饿 → 心情 -1、不产蛋。
     if (c.kind === 'chicken') {
-      // TODO(BIO-002，待裁决): 物品库 BIO-002 I 列同时写了两个互斥的「已投喂」结果
-      //   （「已投喂：心情 -1 → 不产蛋」与「已投喂：产 1 个鸡蛋」），库本身矛盾。
-      //   暂保持现状：以本日投喂结算的 lastFed 为产蛋前置。
       if (c.lastFed) {
         InventorySystem.addItem(gs, 'item_egg', 1);
         const qualityChance = Math.max(0, (c.mood || 0) * 0.1);

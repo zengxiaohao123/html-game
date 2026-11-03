@@ -16,6 +16,7 @@ import { CombatSystem } from './CombatSystem.js';
 import { TalentSystem } from './TalentSystem.js';
 import { LinkSkillSystem } from './LinkSkillSystem.js';
 import { Storage } from '../state/storage.js';
+import { StaminaSystem } from './StaminaSystem.js';
 import { VehicleSystem } from './VehicleSystem.js';
 import { CalendarSystem } from './CalendarSystem.js';
 import { ShopSystem } from './ShopSystem.js';
@@ -29,12 +30,9 @@ export function startNewDay(gs) {
   // 0. 【每一日结束时】结算（上一日收尾：穗粒满给小麦田 +1 等，必须在 day++ 之前）
   HookDispatcher.fire('onDailyEnd', { gs });
 
-  // 0.1 行动力溢出清除（拓荒者等允许临时超出上限，次日开始时清零，不保留到第二天）
+  // 0.1 行动力溢出清除（拓荒者、帐篷祝福 +3 等允许临时超出上限，次日开始时清零，不保留到第二天）
   if (gs.player.stamina > gs.player.maxStamina) {
-    gs.player.stamina = gs.player.maxStamina;
-    EventBus.emit(GE.STAMINA_CHANGE, {
-      newValue: gs.player.stamina, delta: 0, maxStamina: gs.player.maxStamina,
-    });
+    StaminaSystem.settleStamina(gs, gs.player.maxStamina - gs.player.stamina, { reason: 'overflow_clear' });
   }
 
   gs.day += 1;

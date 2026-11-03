@@ -15,6 +15,7 @@
 import { TALENTS, getTalentsByRole } from '../data/talents.js';
 import { EventBus } from '../core/EventBus.js';
 import { HealSystem } from './HealSystem.js';
+import { StaminaSystem } from './StaminaSystem.js';
 import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { Random } from '../core/Random.js';
@@ -152,16 +153,11 @@ export function onSleepStart(gs) {
   for (const t of talents) {
     if (t.effectType === 'sleep_bonus') {
       // 活力满满：额外 +2 stamina（HP 翻倍先预留标记）
+      // 不允许超出上限的回复，统一走 StaminaSystem 结算
       const extra = t.effectParams?.extraStamina ?? 2;
-      gs.player.stamina = Math.min(gs.player.maxStamina, gs.player.stamina + extra);
-      EventBus.emit(GE.STAMINA_CHANGE, {
-        newValue: gs.player.stamina,
-        delta: extra,
-        maxStamina: gs.player.maxStamina,
-        reason: 'talent_energetic',
-      });
-      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 活力满满：额外 +${extra} 行动力`, duration: 1500 });
-      devLog.info('[TalentSystem.onSleepStart] 活力满满 stamina +', extra);
+      const actual = StaminaSystem.settleStamina(gs, extra, { reason: 'talent_energetic' });
+      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 活力满满：额外 +${actual} 行动力`, duration: 1500 });
+      devLog.info('[TalentSystem.onSleepStart] 活力满满 stamina +', actual);
     }
   }
 }

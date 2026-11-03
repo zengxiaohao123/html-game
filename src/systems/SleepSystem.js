@@ -13,6 +13,7 @@ import { DaySystem } from './DaySystem.js';
 import { SLEEP_STAMINA_PENALTY_GOLD_RATIO } from '../utils/constants.js';
 import { TurnSystem } from './TurnSystem.js';
 import { TalentSystem } from './TalentSystem.js';
+import { StaminaSystem } from './StaminaSystem.js';
 
 /** 金币惩罚上下限 */
 const GOLD_PENALTY_MIN = 0;
@@ -26,6 +27,9 @@ const GOLD_PENALTY_MAX = 1000;
  */
 export function sleep(gs, isAuto = false) {
   devLog.info('[SleepSystem] 开始睡觉, isAuto =', isAuto);
+
+  // 0. 重置本次睡觉的「允许超上限」待结算行动力（帐篷祝福 +3 等 hook 会累加进来）
+  gs.pendingSleepStaminaBonus = 0;
 
   // 0. Agent 3：天赋 活力满满 onSleep（换日前 fire）
   TalentSystem.onSleepStart(gs);
@@ -45,10 +49,10 @@ export function sleep(gs, isAuto = false) {
   // 3. 换日
   DaySystem.startNewDay(gs);
 
-  // 4. 判断行动力回复量
-  // TODO(P0-7，待裁决): FAC-002 帐篷备注写「+3 允许超出行动力上限」，但帐篷 onSleep hook 给的 +3
-  //   会被下方「在家/帐篷回满」覆盖——「+3 与回满谁优先」属库本身矛盾，暂保持现状（回满覆盖 +3），
-  //   裁决后再调整。
+  // 4. 行动力结算（2026-11-03 裁决的统一结算顺序，见 StaminaSystem.js）：
+  //    第一步：结算不允许超出上限的回复（心力交瘁固定回一半 / 家、帐篷回满 / 其他回一半）
+  //    第二步：结算允许超出上限的额外增加（帐篷受祝福 +3，onSleep hook 已累加到
+  //            gs.pendingSleepStaminaBonus）——必须在「回满」之后结算且可超上限。
   const currentTile = gs.map.outerTiles[gs.player.x];
   const atHome = currentTile && (currentTile.contentId === 'facility_home' || currentTile.contentId === 'facility_tent');
 
@@ -67,13 +71,18 @@ export function sleep(gs, isAuto = false) {
     devLog.info('[SleepSystem] 其他地点，stamina 回一半:', newStamina);
   }
 
-  const staminaDelta = newStamina - gs.player.stamina;
-  gs.player.stamina = newStamina;
-  EventBus.emit(GE.STAMINA_CHANGE, {
-    newValue: newStamina,
-    delta: staminaDelta,
-    maxStamina: gs.player.maxStamina,
-  });
+  const beforeRecover = gs.player.stamina;
+  StaminaSystem.recoverStaminaTo(gs, newStamina, { reason: 'sleep_recover' });
+
+  // 第二步：允许超上限的额外增加。心力交瘁时所有睡觉增益失效（§15），待结算奖励作废。
+  const pendingBonus = gs.pendingSleepStaminaBonus || 0;
+  gs.pendingSleepStaminaBonus = 0;
+  if (!wasExhausted && pendingBonus > 0) {
+    StaminaSystem.settleStamina(gs, pendingBonus, { allowOverflow: true, reason: 'sleep_bonus_overflow' });
+    EventBus.emit(GE.TOAST_SHOW, { text: `⛺ 祝福帐篷额外 +${pendingBonus} 🔷（可超出行动力上限）`, duration: 1800 });
+    devLog.info('[SleepSystem] 回满后结算超上限行动力 +', pendingBonus, '→', gs.player.stamina);
+  }
+  const staminaDelta = gs.player.stamina - beforeRecover;
 
   // 5. 移除心力交瘁 buff（§15：睡一觉后解除）
   if (wasExhausted) {

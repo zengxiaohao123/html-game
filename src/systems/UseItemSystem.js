@@ -21,6 +21,7 @@ import { ITEMS } from '../data/items.js';
 import { POTIONS } from '../data/potions.js';
 import * as InventorySystem from './InventorySystem.js';
 import { HealSystem } from './HealSystem.js';
+import { StaminaSystem } from './StaminaSystem.js';
 import { drawFromPool } from './RandomPool.js';
 import { Random } from '../core/Random.js';
 
@@ -126,10 +127,8 @@ export function useItem(gs, itemId, opts = {}) {
     }
 
     case 'stamina_and_buff': {
-      gs.player.stamina += eff.stamina || 3;
-      EventBus.emit(GE.STAMINA_CHANGE, {
-        newValue: gs.player.stamina, delta: eff.stamina || 3, maxStamina: gs.player.maxStamina,
-      });
+      // 啤酒 +3：保持既有行为（允许临时超出上限，超出部分次日开始时清除），统一走 StaminaSystem 结算
+      StaminaSystem.settleStamina(gs, eff.stamina || 3, { allowOverflow: true, reason: 'item_beer' });
       if (Math.random() < (eff.buffChance ?? 0.3)) {
         gs.activeBuffs = gs.activeBuffs || [];
         // §15 / ITM-CON-003：暴躁 = 攻击力 +25%，持续 1 天，不可叠加。

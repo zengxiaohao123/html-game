@@ -21,6 +21,7 @@ import { Distance, outerXYToIdx } from '../core/Distance.js';
 import { Direction } from '../utils/Direction.js';
 import { HookDispatcher } from '../core/HookDispatcher.js';
 import { SkillSystem } from './SkillSystem.js';
+import { StaminaSystem } from './StaminaSystem.js';
 
 function ensureVehicleState(gs) {
   if (!gs.vehicle) {
@@ -288,11 +289,9 @@ export function tryMove(gs, opts = {}) {
   gs.player.x = targetIdx;
 
   // 到达后额外效果（拓荒者 +5 行动力；购物车 +4 金币）
+  // 拓荒者 +5 允许超出上限（物品库 VEH-015 备注 / 03 表 A34 行动力溢出），统一走 StaminaSystem 结算
   if (def.staminaGain) {
-    gs.player.stamina += def.staminaGain;
-    EventBus.emit(GE.STAMINA_CHANGE, {
-      newValue: gs.player.stamina, delta: def.staminaGain, maxStamina: gs.player.maxStamina,
-    });
+    StaminaSystem.settleStamina(gs, def.staminaGain, { allowOverflow: true, reason: def.id });
     EventBus.emit(GE.TOAST_SHOW, { text: `${def.emoji} ${def.name} 行动力 +${def.staminaGain}`, duration: 1500 });
   }
   if (def.goldOnArrive) {

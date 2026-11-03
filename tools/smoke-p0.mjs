@@ -7,7 +7,7 @@
 //   P0-4 啤酒【暴躁】临时 +25%（不永久改 atk，按天移除）
 //   P0-5 感恩节晚餐 friendlyAsEnemyToday 消费
 //   P0-6 心力交瘁睡觉固定回一半（捕获顺序修复）
-//   P0-7 帐篷 +3 与回满优先级 —— 仅 TODO 注释（验证注释存在）
+//   P0-7 帐篷 +3 与回满优先级 —— 2026-11-03 裁决：先回满、后结算 +3 且可超上限
 //   P0-8 技能只在本格触发 + 目标取最近
 //   P0-9 生命归 0 完整惩罚 + 生物停战/解除
 //   P0-10 鸡舍无争议四项（产蛋前置/储存扣饲料/放牧路径/按实例 4 只上限）
@@ -280,7 +280,7 @@ head('P0-10 鸡舍：放牧路径（啃草次日免消耗即已投喂）');
   assert(gs.map.outerTiles[1].contentState.henhouseFeed.item_wheat === storeBefore, '放牧不消耗鸡舍内储存');
 }
 
-head('P0-10 鸡舍：饥饿保持现状 -5（待裁决 TODO）');
+head('P0-10 鸡舍：饥饿 → 心情 -1、成长值 +5（2026-11-03 裁决）');
 {
   const chick1 = gs.creatures[0];
   gs.map.outerTiles[1].contentState.henhouseFeed = {};
@@ -293,7 +293,7 @@ head('P0-10 鸡舍：饥饿保持现状 -5（待裁决 TODO）');
   CreatureSystem.dailyTick(gs);
   chick1.facilityId = facilityId0;
   assert(chick1.lastFed === false, '无饲料无放牧 → 饥饿');
-  assert(chick1.growth === Math.max(0, g0 - 5), '饥饿成长值保持现状 -5（库/文档写 +5，TODO 待裁决）', { g0, now: chick1.growth });
+  assert(chick1.growth === g0 + 5, '饥饿成长值 +5（裁决：成长 +5、心情 -1）', { g0, now: chick1.growth });
   assert(chick1.mood === Math.max(-5, m0 - 1), '饥饿心情 -1', { m0, now: chick1.mood });
 }
 
@@ -314,15 +314,32 @@ head('P0-10 鸡舍：产蛋需已投喂前置');
   assert(countItem(gs, 'item_egg') === eggs0 + 1, '已投喂 → 产 1 个鸡蛋', countItem(gs, 'item_egg'));
 }
 
-head('P0-7 / 三处库矛盾：TODO 注释已就位（不改逻辑）');
+head('P0-7 帐篷 +3：先回满、后结算 +3 且可超上限（2026-11-03 裁决）');
+{
+  // 搭帐篷（5 号格）并祝福攒 +3，睡一觉：先回满再 +3，允许超出上限
+  gs.map.outerTiles[5].contentId = 'facility_tent';
+  gs.map.outerTiles[5].contentState = {};
+  gs.map.outerTiles[5].dailyFlags = {};
+  gs.map.outerTiles[5].states = [{ type: 'tent_bless', bonus: 3 }];
+  gs.player.x = 5;
+  gs.player.stamina = 0;
+  gs.activeBuffs = gs.activeBuffs.filter(b => b.id !== 'exhausted');
+  sleep(gs);
+  assert(gs.player.stamina === gs.player.maxStamina + 3,
+    '帐篷 +3 在回满之后结算且超出上限', gs.player.stamina);
+  assert(!gs.map.outerTiles[5].states.some(s => s.type === 'tent_bless'),
+    'tent_bless 一次睡觉消耗一次');
+}
+
+head('三处库矛盾裁决：TODO 已移除');
 {
   const facSrc = readFileSync(new URL('../src/data/facilities.js', import.meta.url), 'utf8');
   const sleepSrc = readFileSync(new URL('../src/systems/SleepSystem.js', import.meta.url), 'utf8');
   const creatureSrc = readFileSync(new URL('../src/systems/CreatureSystem.js', import.meta.url), 'utf8');
-  assert(facSrc.includes('TODO(P0-7，待裁决)'), '帐篷 +3 与回满优先级：facilities.js 有 TODO');
-  assert(sleepSrc.includes('TODO(P0-7，待裁决)'), '帐篷 +3 与回满优先级：SleepSystem 有 TODO');
-  assert(creatureSrc.includes('TODO(饥饿成长值，待裁决)'), '饥饿成长 +5/-5：TODO 待裁决');
-  assert(creatureSrc.includes('TODO(BIO-002，待裁决)'), 'BIO-002 两个「已投喂」互斥：TODO 待裁决');
+  assert(!facSrc.includes('TODO(P0-7') && !sleepSrc.includes('TODO(P0-7'), '帐篷 +3 与回满优先级：TODO 已移除');
+  assert(!creatureSrc.includes('TODO(饥饿成长值'), '饥饿成长 +5：TODO 已移除');
+  assert(!creatureSrc.includes('TODO(BIO-002'), 'BIO-002 已投喂语义：TODO 已移除');
+  assert(creatureSrc.includes('c.growth += 5'), '饥饿成长值按裁决改为 +5');
 }
 
 console.log(`\n结果：${pass} 通过，${fail} 失败`);

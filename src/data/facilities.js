@@ -29,6 +29,7 @@ import { ITEMS } from './items.js';
 import { drawFromPool } from '../systems/RandomPool.js';
 import { HealSystem } from '../systems/HealSystem.js';
 import { ShopSystem } from '../systems/ShopSystem.js';
+import { StaminaSystem } from '../systems/StaminaSystem.js';
 
 // ── 小工具：判断是否为"我的设施"格 ──
 const isMine = (gs, tileIdx, id) => gs.map.outerTiles[tileIdx]?.contentId === id;
@@ -97,10 +98,7 @@ const FacilityHome = {
       if (gs.player.stamina < gs.player.maxStamina) {
         const extra = 0; // Phase 2A 暂无额外
         if (extra > 0) {
-          const newS = Math.min(gs.player.maxStamina, gs.player.stamina + extra);
-          const delta = newS - gs.player.stamina;
-          gs.player.stamina = newS;
-          EventBus.emit(GE.STAMINA_CHANGE, { newValue: newS, delta, maxStamina: gs.player.maxStamina });
+          StaminaSystem.settleStamina(gs, extra, { reason: 'facility_home' });
         }
       }
     }, this);
@@ -123,27 +121,22 @@ const FacilityTent = {
   register() {
     // onSleep：帐篷睡觉时回满（SleepSystem 主逻辑已在执行前判断，此处处理"受祝福时额外 +3"——
     // 用独立的 tent_bless state（与 1 天 blessed state 分离，避免 DaySystem 先清除导致丢失）
-    // TODO(P0-7，待裁决): 物品库 FAC-002 备注写「+3 允许超出行动力上限」，但 SleepSystem 的
-    //   「在家/帐篷回满」会在本 hook 之后把 stamina 覆盖为 maxStamina，+3 实际无法超出上限。
-    //   「+3 与回满谁优先」属库本身矛盾，暂保持现状（回满覆盖 +3），裁决后再调整。
+    // 2026-11-03 裁决：+3 属于「允许超出上限的额外增加」，必须在回满之后结算且可超上限。
+    //   因此这里不直接改 stamina，只把奖励累加到 gs.pendingSleepStaminaBonus，
+    //   由 SleepSystem 在「回满」结算之后统一走 StaminaSystem 结算。
     HookDispatcher.register('onSleep', ({ gs }) => {
       const cur = gs.map.outerTiles[gs.player.x];
       if (!cur || cur.contentId !== this.id) return;
       const tentBless = cur.states?.find(s => s.type === 'tent_bless');
       if (tentBless && tentBless.bonus && tentBless.bonus > 0) {
         const bonus = tentBless.bonus;
-        const delta = Math.min(bonus, gs.player.maxStamina - gs.player.stamina);
-        if (delta > 0) {
-          gs.player.stamina += delta;
-          EventBus.emit(GE.STAMINA_CHANGE, { newValue: gs.player.stamina, delta, maxStamina: gs.player.maxStamina });
-          EventBus.emit(GE.TOAST_SHOW, { text: `⛺ 祝福帐篷额外 +${delta} 🔷`, duration: 1800 });
-        }
+        gs.pendingSleepStaminaBonus = (gs.pendingSleepStaminaBonus || 0) + bonus;
         // 一次睡觉消耗一次 bonus（每睡一次减 3，可叠加次数如 +6 → 睡两次）
         tentBless.bonus -= 3;
         if (tentBless.bonus <= 0) {
           cur.states = cur.states.filter(s => s !== tentBless);
         }
-        devLog.info('[tent] consumed tent_bless bonus, remaining =', tentBless.bonus);
+        devLog.info('[tent] tent_bless bonus → pendingSleepStaminaBonus, remaining =', tentBless.bonus);
       }
     }, this);
 
@@ -792,13 +785,8 @@ const ResourceBus = {
       if (gs.map.outerTiles[tileIdx].dailyFlags[key]) return;
       gs.map.outerTiles[tileIdx].dailyFlags[key] = true;
 
-      // 行动力 +1（上限 maxStamina）
-      const newS = Math.min(gs.player.maxStamina, gs.player.stamina + 1);
-      const delta = newS - gs.player.stamina;
-      gs.player.stamina = newS;
-      if (delta > 0) {
-        EventBus.emit(GE.STAMINA_CHANGE, { newValue: newS, delta, maxStamina: gs.player.maxStamina });
-      }
+      // 行动力 +1（不允许超出上限，统一走 StaminaSystem 结算）
+      StaminaSystem.settleStamina(gs, 1, { reason: 'resource_bus' });
       // 获得 1 载具：轮子（按设计文档 §14.7：巴士站 → vehicle_wheel）
       VehicleSystem.gainVehicle(gs, 'vehicle_wheel');
       EventBus.emit(GE.TOAST_SHOW, { text: `🚌 行动力 +1 🚗 +1 轮子载具`, duration: 2000 });
