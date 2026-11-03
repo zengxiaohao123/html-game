@@ -49,8 +49,8 @@ const DESCRIPTIONS = {
   facility_tulip:     '每日价值随机波动，运气成分较重。',
   facility_strawberry:'经过时储存草莓，积累满后一次性取走。',
   facility_pea:       '使用技能时自动储存豌豆，积累满后取走。',
-  facility_henhouse:  '鸡舍：后续 Phase 接入生物系统。',
-  facility_slimehouse:'史莱姆屋：后续 Phase 接入生物系统。',
+  facility_henhouse:  '【进入时】生成 1 只小鸡（每日限 1 次）。每个鸡舍至多生成 4 只鸡。',
+  facility_slimehouse:'【每日开始时】生成 1 只史莱姆（种类随机）。',
   resource_event:     '🎲 触发随机事件（Phase 5）。',
   resource_reward:    '🎁 随机奖励（Phase 5）。',
   resource_hunt:      '🏹 狩猎点（Phase 3）。',
@@ -63,7 +63,7 @@ const DESCRIPTIONS = {
   item_pea:           '豌豆。',
   item_egg:           '鸡蛋。',
   item_raw_meat:      '生肉。',
-  item_slime_gel:     '史莱姆胶。',
+  item_slime_gel:     '史莱姆凝胶。',
   item_wheel:         '轮子。',
 };
 

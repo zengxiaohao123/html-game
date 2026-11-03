@@ -97,20 +97,3 @@ export function drawFromPool(code, count = 1, opts = {}) {
   }
   return picked;
 }
-
-/**
- * 按类别数量区间抽一组商品（商店 / 魔法商店共用）。
- * @param {Array<{pool:string, min:number, max:number}>} groups
- * @returns {{items: Array, detail: Array}}  detail 供 UI/调试查看每类抽了几件
- */
-export function drawGroups(groups) {
-  const items = [];
-  const detail = [];
-  for (const g of groups) {
-    const n = Random.rand(g.min, g.max);
-    const picked = drawFromPool(g.pool, n);
-    items.push(...picked);
-    detail.push({ pool: g.pool, want: n, got: picked.length });
-  }
-  return { items, detail };
-}

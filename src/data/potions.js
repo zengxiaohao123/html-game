@@ -1,5 +1,5 @@
 // src/data/potions.js
-// v0.4 §14.11 消耗道具定义
+// v0.5 §14.1 消耗道具定义（道具 → 消耗道具）
 // 消耗道具在背包中，玩家主动使用时触发效果
 // Agent 3 的 InventorySystem / UseItemSystem 读取此文件执行使用逻辑
 

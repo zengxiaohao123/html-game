@@ -126,7 +126,7 @@ export class MainMenu {
         fontSize: '11px',
         color: '#8a7a66',
       },
-      text: 'v0.4 · 转盘农场项目组',
+      text: 'v0.5 · 转盘农场项目组',
       parent: this.mask,
     });
 

@@ -1,5 +1,5 @@
 // src/data/talents.js
-// v0.4 §12.7-§12.9 天赋定义（共 11 个）
+// v0.5 §12.7-§12.9 天赋定义（共 11 个，分列于三名角色小节）
 // 字段说明（Agent 3 TalentSystem 读取）：
 //   triggerCondition: 触发时机的字符串 key（Agent 3 需要自己 fire 对应事件）
 //   effectType: 效果类型字符串 key

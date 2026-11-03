@@ -1,5 +1,5 @@
 // src/data/collectibles.js
-// v0.4 §14.14 收藏品定义
+// v0.5 §14.1 收藏品定义（基础道具 → 收藏品）
 // 收藏品获得后自动生效，无需手动使用。绝大部分自带【唯一】性质
 // Agent 3 的 CollectibleSystem 读取此文件注册自动生效 hook
 

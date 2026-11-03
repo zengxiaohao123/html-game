@@ -164,7 +164,7 @@ export class InputManager {
         break;
 
       case 'settings': {
-        // v0.4-1: ESC 走 GameDirector 的层级栈逻辑
+        // §16.9：ESC 走 GameDirector 的层级栈逻辑
         this.director?.handleESC?.();
         break;
       }

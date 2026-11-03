@@ -118,7 +118,7 @@ export function startNewDay(gs) {
     gs.team.dailyQingfengAtkBonus = 0;
     // Agent 3：焚灭计数每日清空（连携技 焚灭：【每一日开始时】清空计数）
     gs.team.xiayangSkillCount = 0;
-    // v0.4-1: 编队每日修改次数清零
+    // §12.1：编队每日修改次数清零（每日至多改 3 次）
     gs.team.dailyModifyCount = 0;
   }
   if (gs.player && gs.player.nextMoveNoStamina) {

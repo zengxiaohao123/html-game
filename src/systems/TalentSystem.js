@@ -1,6 +1,6 @@
 // src/systems/TalentSystem.js
 // Agent 3 —— 天赋自动生效框架
-// 设计文档 v0.4 §12.7-§12.9 + §12.2 天赋触发时机
+// 设计文档 v0.5 §12.7-§12.9（天赋定义与触发时机）
 // 触发时机对齐表：
 //   passive            = 常驻（每次 damage 开始前 fire，或 game start 时 fire 一次设置字段）
 //   onDayStart         = DaySystem.startNewDay() 末尾
