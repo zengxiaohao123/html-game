@@ -1,13 +1,15 @@
 // src/ui/FuncBar.js
-// 底部功能栏（Phase 4 完整版：所有按钮接真 Panel）
-// 每个图标都可以点击，也可以用快捷键（按设计文档 §15.x）：
+// 功能区（§16.8：屏幕顶部右侧居右只占一行；只显示图标无文字；图标直接叠在地图上，不另设背景板）
+// 视觉顺序从右往左：设置、睡觉、角色、编队、合成、建造、背包、载具
+// （数组顺序为 设置→载具，容器用 flex row-reverse 使设置位于最右）
+// 每个图标都可以点击，也可以用快捷键（按设计文档 §16.x）：
 //   C 角色   L 编队   F 合成   T 载具   Tab 建造   B 背包   J 任务   空格 祈福   P 睡觉   ESC 设置
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { Assets } from '../core/Assets.js';
 import { BuildSystem } from '../systems/BuildSystem.js';
-import { createEl, qs } from './dom.js';
+import { createEl, qs, iconEl } from './dom.js';
 
 export class FuncBar {
   constructor(director) {
@@ -16,9 +18,9 @@ export class FuncBar {
   }
 
   mount(parent = qs('#app')) {
-    // 图标定义（从右到左）
+    // 图标定义（数组顺序 = 从右到左，容器 row-reverse 渲染）
     const icons = [
-      // 设计文档 §15.x
+      // 设计文档 §16.8
       { id: 'settings',  emoji: Assets.ui.settings,  label: '设置(ESC)',     action: 'openSettings' },
       { id: 'sleep',     emoji: Assets.ui.sleep,     label: '睡觉(P)',       action: 'sleep' },
       { id: 'role',      emoji: Assets.ui.role,      label: '角色(C)',       action: 'openRole' },
@@ -37,10 +39,11 @@ export class FuncBar {
         top: '15px',
         right: '5px',
         display: 'flex',
+        flexDirection: 'row-reverse',
         gap: '6px',
         width: 'fit-content',
         maxWidth: '100vw',
-        flexWrap: 'wrap',
+        flexWrap: 'nowrap',
         zIndex: 200,
       },
       parent,
@@ -52,26 +55,25 @@ export class FuncBar {
         style: {
           width: '44px',
           height: '44px',
-          border: '2px solid #3a3a3a',
-          borderRadius: '8px',
-          background: '#fffbe6',
+          border: 'none',
+          borderRadius: '10px',
+          background: 'transparent',
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          transition: 'transform 0.1s',
+          transition: 'transform 0.1s, background 0.15s',
           fontFamily: '"Segoe UI Emoji", sans-serif',
           flexShrink: 0,
         },
         parent: this.root,
         onclick: () => this._onAction(item.action),
       });
-      // 按钮内部：只有 emoji
-      createEl('span', {
-        text: item.emoji,
-        style: { fontSize: '28px', lineHeight: '1' },
-        parent: btn,
-      });
+      // §16.8 无实体底板，hover 仅轻微半透明白底反馈
+      btn.addEventListener('mouseenter', () => { btn.style.background = 'rgba(255,255,255,0.35)'; });
+      btn.addEventListener('mouseleave', () => { btn.style.background = 'transparent'; });
+      // 按钮内部：只有图标
+      btn.appendChild(iconEl('ui', item.id, { size: '28px', fallback: item.emoji }));
     });
   }
 

@@ -4,11 +4,12 @@
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { SPIRITS } from '../data/characters.js';
-import { createEl, qs } from './dom.js';
+import { createEl, qs, iconEl } from './dom.js';
 
 export class SpiritArea {
   constructor() {
     this.root = null;
+    this.spiritIconEl = null;
   }
 
   mount(parent = qs('#app')) {
@@ -35,24 +36,7 @@ export class SpiritArea {
       parent,
     });
 
-    // 精灵 emoji
-    this.spiritEmojiEl = createEl('span', {
-      text: '👻',
-      style: {
-        fontSize: '28px',
-        lineHeight: '1',
-        display: 'inline-block',
-        fontFamily: '"Segoe UI Emoji", "Apple Color Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif',
-      },
-      parent: this.root,
-    });
-
-    // 精灵名字
-    this.spiritNameEl = createEl('div', {
-      text: 'momo',
-      style: { fontSize: '11px', fontWeight: '700', color: '#5a4a3a', lineHeight: '1' },
-      parent: this.root,
-    });
+    // §16.6 只显示当前选用精灵的图片（图标在 _refresh 中按队伍精灵渲染，不带名字文字）
 
     // 精灵效果描述
     this.spiritDescEl = createEl('div', {
@@ -92,9 +76,15 @@ export class SpiritArea {
     const gs = window.__gameDirector?.getGS?.();
     const spiritId = gs?.team?.groups?.[gs?.team?.activeGroup ?? 0]?.spirit;
     const spirit = spiritId ? SPIRITS[spiritId] : SPIRITS.momo;
-    if (this.spiritEmojiEl) this.spiritEmojiEl.textContent = spirit?.emoji || '👻';
-    if (this.spiritNameEl) this.spiritNameEl.textContent = spirit?.name || '';
-    // 左侧精灵区不显示描述（过长），emoji + 名字足够
+    // §16.6 只留当前选用精灵的图标
+    if (this.spiritIconEl) this.spiritIconEl.remove();
+    this.spiritIconEl = iconEl('creatures', spiritId || 'momo', {
+      def: spirit,
+      fallback: spirit?.emoji || '👻',
+      size: '28px',
+    });
+    this.root.appendChild(this.spiritIconEl);
+    // 左侧精灵区不显示描述（过长）
     if (this.spiritDescEl) this.spiritDescEl.style.display = 'none';
   }
 }

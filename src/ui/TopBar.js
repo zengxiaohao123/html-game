@@ -1,19 +1,19 @@
 // src/ui/TopBar.js
-// 顶部状态栏（v3 —— 按 ui-main.png 完整布局，对照设计文档 §15.2）
+// 顶部状态栏（v4 —— 对照设计文档 §16.7：偏左布局，右上留给功能区）
 //
-// 布局（全部 absolute 定位，容器本身不占位）：
+// 布局（全部 absolute 定位，容器本身不占位，右侧留空给 FuncBar）：
 //
-//   row1 左上 (top:15px left:15px)  ❤️ hp/maxHp  ·  ⚔️ atk  ·  ⚡ stamina/maxStamina
-//   row2 顶部居中 (top:15px left:50% translateX(-50%))  友善 current/cap · 危险 · 极度危险 【放大版】
-//   row3 左上 (top:58px left:15px)  📅 第 N 天  ·  🪙 金币（金色 pill，单独突出）
-//   任务区：TopBar 下方、屏幕左侧（FuncBar 已经有📋图标，见 §15.17）
+//   row1 左上 (top:15px left:15px)   ❤️ hp/maxHp  ·  ⚔️ atk  ·  ⚡ stamina/maxStamina
+//   row2 左上 (top:55px left:15px)   容量条目：友善 current/cap · 危险 · 极度危险（超载变红缓慢闪烁）
+//   row3 左上 (top:103px left:15px)  📅 第 N 天  ·  🪙 金币（金色 pill，单独突出）
+//   任务区：TopBar 下方、屏幕左侧（📋图标，见 §16.17）
 //
 // 重要约定：所有 emoji / 图标 不采用呼吸或浮动的 idle 动画效果（用户要求）
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { Assets } from '../core/Assets.js';
-import { createEl, qs } from './dom.js';
+import { createEl, qs, iconEl } from './dom.js';
 
 const EMOJI_FONT = '"Segoe UI Emoji", "Apple Color Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif';
 
@@ -35,14 +35,14 @@ function pillStyle() {
   };
 }
 
-/** 金币 pill —— 按 ui-main.png 左侧单独一行特殊样式（金色突出） */
+/** 金币 pill —— §16.7 需重点美化：金色底 + 圆角胶囊 */
 function goldPillStyle() {
   return {
     position: 'relative',
     background: 'linear-gradient(135deg, #fff8d0 0%, #ffe070 40%, #e8a520 100%)',
     border: '3px solid #a06010',
-    borderRadius: '14px',
-    padding: '8px 16px 8px 14px',
+    borderRadius: '999px',
+    padding: '8px 18px 8px 14px',
     boxShadow: '0 3px 8px rgba(120, 70, 10, 0.35), inset 0 1px 0 rgba(255,255,255,0.5)',
     display: 'flex',
     alignItems: 'center',
@@ -95,11 +95,10 @@ export class TopBar {
     this._buildPill(this.row1, Assets.ui.atk, 'atk');
     this._buildPill(this.row1, '⚡',        'stamina');
 
-    // row2 —— 顶部居中容量长条（放大版，对照 ui-main.png）
+    // row2 —— 容量条目并入左侧区域（§16.7 偏左布局，右上留给功能区）
     this.row2 = createEl('div', {
       style: {
-        position: 'absolute', top: '15px', left: '50%',
-        transform: 'translateX(-50%)',
+        position: 'absolute', top: '55px', left: '15px',
         pointerEvents: 'auto',
         ...pillStyle(), borderRadius: '20px', padding: '6px 18px',
         fontSize: '18px', background: 'rgba(255,255,255,0.75)', gap: '18px',
@@ -113,7 +112,7 @@ export class TopBar {
     // row3 —— 左上 天数（一行） + 金币（一行）—— 竖排，对照 ui-main.png 左侧
     this.row3 = createEl('div', {
       style: {
-        position: 'absolute', top: '72px', left: '15px',
+        position: 'absolute', top: '103px', left: '15px',
         display: 'flex', flexDirection: 'column', gap: '10px', pointerEvents: 'auto',
       },
       parent: this.root,
@@ -121,11 +120,7 @@ export class TopBar {
 
     // 天数 pill（单独一行）
     const dayPill = createEl('div', { style: pillStyle(), parent: this.row3 });
-    createEl('span', {
-      text: '📅',
-      style: { fontSize: '18px', lineHeight: '1', fontFamily: EMOJI_FONT },
-      parent: dayPill,
-    });
+    dayPill.appendChild(iconEl('ui', 'day', { size: '18px', fallback: '📅' }));
     this.dayText = createEl('span', { style: { fontSize: '15px', fontWeight: '800', color: '#5a4a3a' }, text: '', parent: dayPill });
     // v0.5 §16.7：日历精确到「某年某月某日 星期X」，由 CalendarSystem 提供
     this.calText = createEl('span', {
@@ -133,13 +128,9 @@ export class TopBar {
       text: '', parent: dayPill,
     });
 
-    // 金币 pill（单独一行，按 ui-main.png 金色特殊样式）
+    // 金币 pill（单独一行，§16.7 金色特殊样式）
     const goldPill = createEl('div', { style: goldPillStyle(), parent: this.row3 });
-    createEl('span', {
-      text: '🪙',
-      style: { fontSize: '22px', lineHeight: '1', fontFamily: EMOJI_FONT },
-      parent: goldPill,
-    });
+    goldPill.appendChild(iconEl('ui', 'gold', { size: '22px', fallback: Assets.ui.gold }));
     createEl('span', {
       text: '$',
       style: { fontSize: '16px', fontWeight: '700', color: '#8a5a10' },
@@ -150,11 +141,11 @@ export class TopBar {
       text: '', parent: goldPill,
     });
 
-    // 新增：任务区独立图标（按 §15.17，在金币下方、精灵上方，独立于 FuncBar）
+    // 新增：任务区独立图标（按 §16.17，在金币下方、精灵上方，独立于 FuncBar）
     this.taskIconEl = createEl('div', {
       class: ['task-entry'],
       style: {
-        position: 'absolute', top: '168px', left: '15px',
+        position: 'absolute', top: '197px', left: '15px',
         width: '42px', height: '42px',
         pointerEvents: 'auto',
         background: 'rgba(255,255,255,0.85)',
@@ -183,11 +174,7 @@ export class TopBar {
 
   _buildPill(parent, emoji, kind) {
     const pill = createEl('div', { class: ['ui-pill'], style: pillStyle(), parent });
-    createEl('span', {
-      text: emoji,
-      style: { fontSize: '18px', lineHeight: '1', fontFamily: EMOJI_FONT, display: 'inline-block' },
-      parent: pill,
-    });
+    pill.appendChild(iconEl('ui', kind, { size: '18px', fallback: emoji }));
     const textSpan = createEl('span', { text: '', style: { fontSize: '14px', color: '#5a4a3a', lineHeight: '1' }, parent: pill });
     if (kind === 'hp')      this.hpText = textSpan;
     else if (kind === 'atk')     this.atkText = textSpan;
@@ -249,7 +236,10 @@ export class TopBar {
 
 function applyOverload(el, now, cap) {
   if (!el) return;
-  el.style.color = (now > cap) ? '#c0392b' : '#5a4a3a';
+  const over = now > cap;
+  el.style.color = over ? '#c0392b' : '#5a4a3a';
+  // §16.7 超载时变红缓慢闪烁（class 定义在 ui.css）
+  el.classList.toggle('overload-blink', over);
 }
 
 export default TopBar;

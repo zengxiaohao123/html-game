@@ -16,6 +16,7 @@ import { registerFacilities } from '../data/facilities.js';
 import { MovementSystem } from './MovementSystem.js';
 import { TurnSystem } from './TurnSystem.js';
 import { SleepSystem } from './SleepSystem.js';
+import { exitBuildMode } from './BuildSystem.js';
 import { CreatureSystem } from './CreatureSystem.js';
 import { SkillSystem } from './SkillSystem.js';
 import { InventorySystem } from './InventorySystem.js';
@@ -57,13 +58,28 @@ export class GameDirector {
       TalentSystem.firePassive(this.gs);
     });
 
-    // Panel 栈维护
+    // Panel 栈维护（§16.20 / §16.21 / §16.14 中央接线）
     EventBus.on(GE.UI_PANEL_OPEN, ({ panel }) => {
       if (!panel) return;
-      if (!this.openPanels.includes(panel)) {
-        this.openPanels.push(panel);
+      // 'magicShop' 与 'shop' 是同一个商店面板（§16.22），栈内统一记作 'shop'
+      const key = panel === 'magicShop' ? 'shop' : panel;
+
+      // §16.14：打开其他任何界面 → 退出建造模式
+      if (this.gs?.buildMode) exitBuildMode(this.gs);
+
+      // §16.20：按其他界面快捷键 → 立即关闭当前界面，再打开新界面
+      // §16.21 例外：商店已打开时，其他界面叠在商店之上（保留商店，关闭叠层回商店）
+      const keepShop = key !== 'shop' && this.openPanels.includes('shop');
+      for (const p of [...this.openPanels]) {
+        if (p === key) continue;
+        if (keepShop && p === 'shop') continue;
+        EventBus.emit(GE.UI_PANEL_CLOSE, { panel: p });
       }
-      devLog.info('[GameDirector] openPanels +', panel, '→', this.openPanels);
+
+      if (!this.openPanels.includes(key)) {
+        this.openPanels.push(key);
+      }
+      devLog.info('[GameDirector] openPanels +', key, '→', this.openPanels);
     });
     EventBus.on(GE.UI_PANEL_CLOSE, ({ panel }) => {
       if (!panel) return;
@@ -211,12 +227,17 @@ export class GameDirector {
    * @returns {boolean} 是否成功睡觉
    */
   sleep(skipConfirm = false) {
-    if (!skipConfirm) {
-      // Phase 1 简化：不做 confirm 弹窗，直接睡觉
-      // （完整 confirm 逻辑 Phase 4 UI 层再实现）
-      if (this.gs.player.stamina <= 0) {
-        EventBus.emit(GE.TOAST_SHOW, { text: '行动力不足，直接睡觉吧～', duration: 1500 });
-      }
+    // §16.10：行动力 > 0 时弹确认「行动力尚未耗尽，是否确定睡觉？」
+    if (!skipConfirm && this.gs && this.gs.player.stamina > 0) {
+      EventBus.emit(GE.DIALOG_SHOW, {
+        title: '睡觉',
+        content: '行动力尚未耗尽，是否确定睡觉？',
+        options: [
+          { label: '取消', onSelect: () => {} },
+          { label: '确定睡觉', onSelect: () => { SleepSystem.sleep(this.gs, /* isAuto = */ false); } },
+        ],
+      });
+      return false;
     }
     SleepSystem.sleep(this.gs, /* isAuto = */ false);
     return true;

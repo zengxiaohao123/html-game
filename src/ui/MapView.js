@@ -15,7 +15,7 @@ import { BuildSystem } from '../systems/BuildSystem.js';
 import { ItemTargeting } from '../systems/ItemTargeting.js';
 import { SKILLS } from '../data/characters.js';
 import { getCreatureDef } from '../data/creatures.js';
-import { createEl, qs } from './dom.js';
+import { createEl, qs, iconEl } from './dom.js';
 
 const TILE_SIZE = 80;
 const MAP_SIZE = 3;
@@ -28,6 +28,12 @@ export class MapView {
     this.tileEls = new Map();
     this.gs = null;
     this.buildMode = false;
+    // §16.3 视角缩放/拖拽平移（纯视觉，不影响数值；点击命中仍走 tile 自身事件）
+    this._scale = 1;
+    this._panX = 0;
+    this._panY = 0;
+    this._drag = null;
+    this._dragMoved = false;
   }
 
   mount(gs, parent = qs('#app')) {
@@ -41,6 +47,8 @@ export class MapView {
         position: 'relative',
         margin: '0 auto',
         flexShrink: '0',
+        transformOrigin: 'center center',
+        willChange: 'transform',
       },
       parent,
     });
@@ -50,8 +58,58 @@ export class MapView {
     this.renderPlayer(gs);
 
     this._bindDropEvents();
+    this._bindViewControls();
     this._subscribeEvents();
     return this.root;
+  }
+
+  /** §16.3 滚轮缩放（0.5~2.5，以中心缩放）+ 鼠标按住拖拽平移；只改视觉 transform */
+  _bindViewControls() {
+    const MIN_SCALE = 0.5;
+    const MAX_SCALE = 2.5;
+
+    this.root.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const step = e.deltaY > 0 ? -0.1 : 0.1;
+      this._scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, this._scale + step));
+      this._applyViewTransform();
+    }, { passive: false });
+
+    this.root.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      this._drag = { startX: e.clientX, startY: e.clientY, panX: this._panX, panY: this._panY };
+      this._dragMoved = false;
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!this._drag) return;
+      const dx = e.clientX - this._drag.startX;
+      const dy = e.clientY - this._drag.startY;
+      if (!this._dragMoved && Math.hypot(dx, dy) < 4) return;
+      this._dragMoved = true;
+      this._panX = this._drag.panX + dx;
+      this._panY = this._drag.panY + dy;
+      this._applyViewTransform();
+    });
+    window.addEventListener('mouseup', () => {
+      if (!this._drag) return;
+      const moved = this._dragMoved;
+      this._drag = null;
+      // click 在 mouseup 之后派发；延迟复位保证拖拽后的 click 被抑制
+      if (moved) setTimeout(() => { this._dragMoved = false; }, 0);
+    });
+
+    // 拖拽平移结束后抑制误触发的 tile 点击（capture 阶段，先于 tile 自身 click 监听）
+    this.root.addEventListener('click', (e) => {
+      if (this._dragMoved) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    }, true);
+  }
+
+  _applyViewTransform() {
+    if (!this.root) return;
+    this.root.style.transform = `translate(${this._panX}px, ${this._panY}px) scale(${this._scale})`;
   }
 
   renderAllTiles(gs) {
@@ -93,44 +151,47 @@ export class MapView {
     });
 
     if (tile.terrain && normalizeTerrain(tile.terrain) !== 'terrain_none') {
-      createEl('span', {
-        class: ['tile-terrain'],
-        style: {
-          position: 'absolute', bottom: '2px', right: '4px',
-          fontSize: '16px', opacity: '0.6',
-        },
-        text: Assets.getEmoji('terrains', tile.terrain),
-        parent: tileEl,
-      });
+      tileEl.appendChild(iconEl('terrains', normalizeTerrain(tile.terrain), {
+        size: '16px',
+        fallback: Assets.getEmoji('terrains', tile.terrain),
+        cls: 'tile-terrain',
+        style: { position: 'absolute', bottom: '2px', right: '4px', opacity: '0.6' },
+      }));
     }
 
     if (tile.contentId) {
       // 按 contentId 前缀选 group（facility_ → facilities, resource_ → resources, skill_ → characters.SKILLS）
-      let contentEmoji = null;
+      let group = 'facilities';
+      let def = null;
+      let fallback = null;
       if (tile.contentId.startsWith('resource_')) {
-        contentEmoji = Assets.getEmoji('resources', tile.contentId);
+        group = 'resources';
+        fallback = Assets.getEmoji('resources', tile.contentId);
       } else if (tile.contentId.startsWith('skill_')) {
-        contentEmoji = SKILLS?.[tile.contentId]?.emoji || null;
+        group = 'items';
+        def = SKILLS?.[tile.contentId] || null;
+        fallback = def?.emoji || null;
       }
-      if (!contentEmoji) {
-        contentEmoji = Assets.getEmoji('facilities', tile.contentId);
+      if (!fallback) {
+        fallback = Assets.getEmoji('facilities', tile.contentId);
       }
-      createEl('span', {
-        class: ['tile-content'],
+      tileEl.appendChild(iconEl(group, tile.contentId, {
+        def,
+        fallback,
+        size: '40px',
+        cls: 'tile-content',
         style: {
-          position: 'relative', fontSize: '40px', lineHeight: '1',
+          position: 'relative',
           filter: 'drop-shadow(0 2px 1px rgba(0,0,0,0.3))',
         },
-        text: contentEmoji,
-        parent: tileEl,
-      });
+      }));
     } else {
-      createEl('span', {
-        class: ['tile-empty'],
-        style: { fontSize: '32px', opacity: '0.3', lineHeight: '1' },
-        text: Assets.terrains.none,
-        parent: tileEl,
-      });
+      tileEl.appendChild(iconEl('terrains', 'terrain_none', {
+        size: '32px',
+        fallback: Assets.terrains.none,
+        cls: 'tile-empty',
+        style: { opacity: '0.3' },
+      }));
     }
 
     // 玩家当前位置特殊标记
@@ -223,8 +284,9 @@ export class MapView {
       const gs = this.gs;
       if (!gs) return;
       const rect = this.root.getBoundingClientRect();
-      const x = Math.floor((e.clientX - rect.left) / TILE_SIZE);
-      const y = Math.floor((e.clientY - rect.top) / TILE_SIZE);
+      // §16.3 缩放下 getBoundingClientRect 已被 scale 放大，需除回 _scale 换算回格子坐标
+      const x = Math.floor((e.clientX - rect.left) / (TILE_SIZE * this._scale));
+      const y = Math.floor((e.clientY - rect.top) / (TILE_SIZE * this._scale));
       const tileIdx = Distance.outerXYToIdx(gs.map.size, x, y);
       if (tileIdx === null || tileIdx === undefined) {
         EventBus.emit(GE.TOAST_SHOW, { text: '🛠️ 只能放在外圈地块上', duration: 2000 });
@@ -305,45 +367,43 @@ export class MapView {
           parent: fenceEl,
         });
 
-        // terrain emoji（如果有）
+        // terrain 图标（如果有）
         if (cell?.terrain && normalizeTerrain(cell.terrain) !== 'terrain_none') {
           const emoji = TERRAIN_EMOJI[cell.terrain];
           if (emoji) {
-            createEl('span', {
+            tileEl.appendChild(iconEl('terrains', normalizeTerrain(cell.terrain), {
+              size: '26px',
+              fallback: emoji,
               style: {
                 position: 'absolute', left: '50%', top: '50%',
                 transform: 'translate(-50%, -50%)',
-                fontSize: '26px', lineHeight: '1', pointerEvents: 'none',
+                pointerEvents: 'none',
               },
-              text: emoji,
-              parent: tileEl,
-            });
+            }));
           }
         }
 
-        // creatures（如果有）—— 简单显示第一个 creature 的 emoji
+        // creatures（如果有）—— 每只生物一个图标
         if (cell?.creatures && cell.creatures.length > 0) {
-          // 找到 creature 对象
-          const creatureIds = cell.creatures;
-          const creatureDefs = cell.creatures.map(id => {
-            const c = gs.creatures?.find(x => x.id === id);
-            if (!c) return null;
+          const wrap = createEl('div', {
+            style: {
+              position: 'absolute', left: '50%', bottom: '2px',
+              transform: 'translateX(-50%)',
+              display: 'flex', gap: '1px',
+              pointerEvents: 'none',
+              whiteSpace: 'nowrap',
+            },
+            parent: tileEl,
+          });
+          for (const creatureId of cell.creatures) {
+            const c = gs.creatures?.find(x => x.id === creatureId);
+            if (!c) continue;
             const def = getCreatureDef?.(c.kind);
-            return def?.emoji || '🐾';
-          }).filter(Boolean);
-
-          if (creatureDefs.length > 0) {
-            createEl('div', {
-              style: {
-                position: 'absolute', left: '50%', bottom: '2px',
-                transform: 'translateX(-50%)',
-                fontSize: '14px', lineHeight: '1',
-                pointerEvents: 'none',
-                whiteSpace: 'nowrap',
-              },
-              text: creatureDefs.join(''),
-              parent: tileEl,
-            });
+            wrap.appendChild(iconEl('creatures', c.kind, {
+              def,
+              size: '14px',
+              fallback: def?.emoji || '🐾',
+            }));
           }
         }
 
@@ -364,23 +424,22 @@ export class MapView {
     const centerX = x * TILE_SIZE + TILE_SIZE / 2;
     const centerY = y * TILE_SIZE + TILE_SIZE / 2;
 
-    this.playerEl = createEl('div', {
-      class: ['player-avatar'],
+    this.playerEl = iconEl('ui', 'player', {
+      size: '42px',
+      fallback: Assets.ui.player,
+      cls: 'player-avatar',
       style: {
         position: 'absolute',
         left: `${centerX}px`,
         top: `${centerY}px`,
         transform: 'translate(-50%, -50%)',
-        fontSize: '42px',
-        lineHeight: '1',
         pointerEvents: 'none',
         filter: 'drop-shadow(0 3px 2px rgba(0,0,0,0.4))',
         transition: 'left 0.2s ease-out, top 0.2s ease-out',
-        zIndex: 10,
+        zIndex: '10',
       },
-      text: Assets.ui.player,
-      parent: this.root,
     });
+    this.root.appendChild(this.playerEl);
   }
 
   /** 指向模式的浮动提示条 */

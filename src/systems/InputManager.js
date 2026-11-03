@@ -121,9 +121,14 @@ export class InputManager {
   _dispatchAction(action) {
     const gs = this.director?.getGS?.();
     switch (action) {
-      case 'sleep':
+      case 'sleep': {
+        // §16.10：P 键只在主界面有效，其他界面按 P 无反应
+        const uiOpen = (this.director?.openPanels?.length || 0) > 0
+          || !!this.director?.settingsPanel?.visible;
+        if (uiOpen) break;
         this.director.sleep();
         break;
+      }
 
       case 'bless':
         // 祈福走两步式：blessStart 扣消耗 + 选目标 → BlessAnimation 播完 → blessCommit

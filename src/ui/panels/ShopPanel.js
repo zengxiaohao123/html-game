@@ -1,24 +1,24 @@
 // src/ui/panels/ShopPanel.js
 // 商店 / 魔法商店页面（设计文档 v0.5 §16.21 / §16.22）
 //
-// 布局（三行结构，全部用 flex 排版，不使用绝对定位，杜绝互相压盖）：
+// 布局（左右两栏，栏内 flex 排版；刷新按钮为卡片内唯一的绝对定位元素）：
 //   ┌──────────┬───────────────────────────────────┐
-//   │          │ [🔄刷新] [🪙金币]      [售卖][购买] │
+//   │          │🔄刷新     [🪙金币]      [售卖][购买] │
 //   │ 商人立绘 │ ┌────┬────┬────┬────┐             │
-//   │ (26% 宽) │ │ 商品格 ×12（4 列 × 3 行）        │
+//   │(33.333%) │ │ 商品格 ×12（4 列 × 3 行）        │
 //   │ +对话框  │ └────┴────┴────┴────┘             │
 //   │          │                          [离开]   │
 //   └──────────┴───────────────────────────────────┘
-//
-// 与 §16.21 的一处差异：刷新按钮由"悬浮在立绘右上方"改为右栏标题行首位。
-// 悬浮方案会压住第一行商品格，实测重叠明显；放在标题行仍处于"立绘右上方"的语义位置。
+//   🔄刷新 悬浮在立绘右上方（左右两栏交界附近，absolute，z 高于商品网格）。
+//   魔法商店同布局，仅 10 格商品，4×3 网格留 2 个暗淡空格（§16.22）。
 //
 // 行为：购买每格仅 1 件；售卖价 = 物品价值；刷新 4/8/12 每周 3 次；
-//       周一自动刷新；离店本回合禁入；不遮挡顶栏与快捷栏。
+//       周一自动刷新；离店本回合禁入；不遮挡顶栏与快捷栏；
+//       ESC 先关详情弹窗、再关商店（捕获阶段拦截，见 _bindEsc）。
 
 import { EventBus } from '../../core/EventBus.js';
 import { GE } from '../../core/GameEvents.js';
-import { createEl, qs } from '../dom.js';
+import { createEl, qs, iconEl } from '../dom.js';
 import { devLog } from '../../core/Logger.js';
 import { ITEMS } from '../../data/items.js';
 import {
@@ -26,10 +26,10 @@ import {
   refreshShop, manualRefreshCost, refreshLeft, isSellable, effectivePrice,
 } from '../../systems/ShopSystem.js';
 
-/** 商人立绘占位（美术未到位时用 emoji + 对话框） */
+/** 商人立绘占位（美术未接入：iconEl 预留 PNG 入口，先回退大号 emoji + 对话框） */
 const MERCHANT = {
-  shop: { emoji: '🧑‍🌾', name: '杂货商人', line: '看看有什么需要的吧，都是好东西。' },
-  magic: { emoji: '🧙', name: '魔法商人', line: '魔导书和技能石……你确定付得起吗？' },
+  shop: { iconId: 'merchant_shop', emoji: '🧑‍🌾', name: '杂货商人', line: '看看有什么需要的吧，都是好东西。' },
+  magic: { iconId: 'merchant_magic', emoji: '🧙', name: '魔法商人', line: '魔导书和技能石……你确定付得起吗？' },
 };
 
 const UI = {
@@ -50,6 +50,7 @@ export class ShopPanel {
     this.detailEl = null;
     this.goldEl = null;
     this.refreshBtn = null;
+    this._escHandler = null;
   }
 
   get gs() { return this.director.getGS(); }
@@ -70,6 +71,7 @@ export class ShopPanel {
       parent: qs('body'),
     });
     this._subscribe();
+    this._bindEsc();
   }
 
   _subscribe() {
@@ -132,6 +134,7 @@ export class ShopPanel {
 
     const card = createEl('div', {
       style: {
+        position: 'relative',         // 悬浮刷新按钮的定位参照
         height: '100%', display: 'flex', minHeight: '0',
         background: 'linear-gradient(135deg,#fffbf0 0%,#fff3c4 100%)',
         border: UI.border, borderRadius: UI.radius,
@@ -142,6 +145,23 @@ export class ShopPanel {
     });
 
     this._renderMerchant(card);
+    this._renderRefreshBtn(card);
+
+    // §16.21「ESC / ❌」：右上角 ❌ —— 先关弹窗，再关商店页面回主界面
+    const closeBtn = createEl('button', {
+      text: '✖',
+      style: {
+        position: 'absolute', top: '10px', right: '10px', zIndex: '15',
+        width: '32px', height: '32px', border: '2px solid #3a3a3a', borderRadius: '8px',
+        background: '#fffbe6', cursor: 'pointer', fontSize: '16px', fontWeight: '700',
+        color: '#3a2e20', lineHeight: '1',
+      },
+      parent: card,
+    });
+    closeBtn.onclick = () => {
+      if (this.detailEl) this._closeDetail();
+      else this.close();
+    };
 
     const right = createEl('div', {
       style: {
@@ -183,7 +203,7 @@ export class ShopPanel {
     const m = MERCHANT[this.kind] || MERCHANT.shop;
     const col = createEl('div', {
       style: {
-        width: '26%', minWidth: '168px', maxWidth: '240px',
+        width: '33.333%', flexShrink: '0',   // §16.21：左 1/3 宽
         borderRight: UI.border,
         background: 'linear-gradient(180deg,#e8d3a9 0%,#d9bd8c 100%)',
         display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
@@ -191,14 +211,16 @@ export class ShopPanel {
       },
       parent: card,
     });
-    createEl('div', {
+    const portrait = createEl('div', {
       style: {
         flex: '1', minHeight: '0', display: 'flex',
-        alignItems: 'center', justifyContent: 'center',
-        fontSize: 'clamp(56px, 7vw, 92px)', lineHeight: '1', userSelect: 'none',
+        alignItems: 'center', justifyContent: 'center', userSelect: 'none',
       },
-      text: m.emoji, parent: col,
+      parent: col,
     });
+    portrait.appendChild(iconEl('ui', m.iconId, {
+      fallback: m.emoji, size: 'clamp(56px, 7vw, 92px)',
+    }));
     const dlg = createEl('div', {
       style: {
         margin: '0 8px 8px', padding: '8px 10px',
@@ -211,27 +233,33 @@ export class ShopPanel {
     createEl('div', { text: m.line, style: { opacity: '0.9' }, parent: dlg });
   }
 
-  /** 标题行：[刷新] [金币] ←→ [售卖][购买] */
-  _renderHeader(right) {
-    const bar = createEl('div', {
-      style: { display: 'flex', alignItems: 'center', gap: '8px', flexShrink: '0' },
-      parent: right,
-    });
-
+  /** 刷新按钮：悬浮在立绘右上方（左右两栏交界附近，§16.21） */
+  _renderRefreshBtn(card) {
     this.refreshBtn = createEl('button', {
       style: {
+        position: 'absolute', left: '33.333%', top: '12px',
+        transform: 'translateX(-50%)', zIndex: '10',
         display: 'flex', alignItems: 'center', gap: '6px',
         padding: '6px 14px', borderRadius: '999px', cursor: 'pointer',
         border: '2px solid #3a3a3a', background: '#fffbe6',
         fontSize: '13px', fontWeight: '800', color: '#3a2e20', whiteSpace: 'nowrap',
+        boxShadow: '0 3px 10px rgba(0,0,0,0.25)',
       },
-      parent: bar,
+      parent: card,
     });
     this.refreshBtn.onclick = () => {
       const res = refreshShop(this.gs, this.tileIdx);
       if (res.ok) this._render();
       else this._renderHeaderState();
     };
+  }
+
+  /** 标题行：[金币] ←→ [售卖][购买] */
+  _renderHeader(right) {
+    const bar = createEl('div', {
+      style: { display: 'flex', alignItems: 'center', gap: '8px', flexShrink: '0' },
+      parent: right,
+    });
 
     this.goldEl = createEl('div', {
       style: {
@@ -313,11 +341,13 @@ export class ShopPanel {
     const shop = getShop(this.gs, this.tileIdx);
     if (!shop) return;
     const slots = SHOP_KINDS[shop.kind].slots;
+    // 4 列 × 3 行共 12 位；魔法商店只有 10 格商品，多余 2 格渲染为暗淡空格（§16.22）
+    const total = Math.max(slots, 12);
     // 商品是固定的 3 行，垂直居中比顶对齐更稳（不会出现下方大片空白）
     this.gridEl.style.alignContent = 'center';
 
-    for (let i = 0; i < slots; i++) {
-      const item = shop.stock[i];
+    for (let i = 0; i < total; i++) {
+      const item = i < slots ? shop.stock[i] : null;
       const sold = !item || item.sold;
       const cell = this._cellBase({
         cursor: sold ? 'default' : 'pointer',
@@ -335,11 +365,10 @@ export class ShopPanel {
         },
         parent: cell,
       });
-      createEl('div', {
-        text: item.emoji || '❓',
-        style: { fontSize: '27px', lineHeight: '1', marginTop: '6px' },
-        parent: cell,
-      });
+      cell.appendChild(iconEl('items', item.id, {
+        def: ITEMS[item.id], fallback: item.emoji, size: '27px',
+        style: { marginTop: '6px' },
+      }));
       createEl('div', {
         text: item.price != null ? `🪙${item.price}` : '—',
         style: {
@@ -390,7 +419,7 @@ export class ShopPanel {
       const price = entry.value ?? def.value ?? 0;
       const sellable = isSellable(entry.itemId);
       const cell = this._cellBase({
-        cursor: sellable ? 'pointer' : 'default',
+        cursor: 'pointer',
         opacity: sellable ? '1' : '0.45',
       });
 
@@ -403,16 +432,10 @@ export class ShopPanel {
         },
         parent: cell,
       });
-      createEl('div', {
-        text: def.emoji || '❓',
-        style: { fontSize: '26px', lineHeight: '1', marginTop: '6px' },
-        parent: cell,
-      });
-      createEl('div', {
-        text: `×${entry.qty}`,
-        style: { position: 'absolute', bottom: '3px', left: '5px', fontSize: '10.5px', fontWeight: '800' },
-        parent: cell,
-      });
+      cell.appendChild(iconEl('items', entry.itemId, {
+        def, fallback: def.emoji, size: '26px',
+        style: { marginTop: '6px' },
+      }));
       createEl('div', {
         text: sellable ? `🪙${price}` : '不可售',
         style: {
@@ -421,13 +444,12 @@ export class ShopPanel {
         },
         parent: cell,
       });
-      if (sellable) {
-        cell.onclick = () => this._openDetail({
-          mode: 'sell',
-          item: { ...def, id: entry.itemId, price },
-          value: entry.value,
-        });
-      }
+      // 不可出售物品也能点开详情，只是「售卖」按钮灰化（§16.21）
+      cell.onclick = () => this._openDetail({
+        mode: 'sell',
+        item: { ...def, id: entry.itemId, price },
+        value: entry.value,
+      });
     });
   }
 
@@ -457,7 +479,9 @@ export class ShopPanel {
     });
 
     const head = createEl('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' }, parent: box });
-    createEl('div', { text: item.emoji || '❓', style: { fontSize: '38px', lineHeight: '1' }, parent: head });
+    head.appendChild(iconEl('items', item.id, {
+      def: ITEMS[item.id], fallback: item.emoji, size: '38px',
+    }));
     const info = createEl('div', { style: { flex: '1', minWidth: '0' }, parent: head });
     createEl('div', { text: item.name || item.id, style: { fontSize: '16px', fontWeight: '800' }, parent: info });
     const pay = mode === 'buy' ? effectivePrice(this.gs, item) : (item.price ?? 0);
@@ -493,15 +517,26 @@ export class ShopPanel {
       },
       parent: btns,
     });
-    ok.onclick = () => {
-      const res = mode === 'buy'
-        ? buy(this.gs, this.tileIdx, slotIdx)
-        : sell(this.gs, item.id, value !== undefined ? { value } : {});
-      if (res.ok) {
-        this._closeDetail();
-        this._render();
-      }
-    };
+    // §16.21：金币不足时「购买」灰化；不可出售物品「售卖」灰化
+    const blocked = mode === 'buy'
+      ? this.gs.player.gold < pay
+      : !isSellable(item.id);
+    if (blocked) {
+      ok.disabled = true;
+      ok.style.background = '#d8d2c4';
+      ok.style.color = '#9a938a';
+      ok.style.cursor = 'default';
+    } else {
+      ok.onclick = () => {
+        const res = mode === 'buy'
+          ? buy(this.gs, this.tileIdx, slotIdx)
+          : sell(this.gs, item.id, value !== undefined ? { value } : {});
+        if (res.ok) {
+          this._closeDetail();
+          this._render();
+        }
+      };
+    }
   }
 
   _closeDetail() {
@@ -509,6 +544,23 @@ export class ShopPanel {
       this.detailEl.remove();
       this.detailEl = null;
     }
+  }
+
+  /** 详情弹窗的 ESC：弹窗开着时 ESC 只关弹窗，不关商店（§16.21） */
+  _bindEsc() {
+    if (this._escHandler) return;
+    this._escHandler = (e) => {
+      if (e.key !== 'Escape') return;
+      if (!this.visible || !this.detailEl) return;
+      // 商店之上还叠着设置 / 其它二级界面时，交给 GameDirector 的中央层级逻辑
+      if (this.director?.settingsPanel?.visible) return;
+      const stack = this.director?.openPanels || [];
+      if (stack.length && stack[stack.length - 1] !== 'shop') return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      this._closeDetail();
+    };
+    window.addEventListener('keydown', this._escHandler, true);
   }
 }
 

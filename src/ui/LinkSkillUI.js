@@ -6,7 +6,7 @@ import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { LinkSkillSystem } from '../systems/LinkSkillSystem.js';
 import { SKILLS } from '../data/characters.js';
-import { createEl, qs } from './dom.js';
+import { createEl, qs, iconEl } from './dom.js';
 import { devLog } from '../core/Logger.js';
 
 export class LinkSkillUI {
@@ -20,16 +20,18 @@ export class LinkSkillUI {
   }
 
   mount(parent = qs('body')) {
-    // 位置：右上偏中（避开 FuncBar / TopBar），绝对定位，zIndex 4000
+    // §16.18：屏幕中央偏右展示连携技窗口；优先级高于信息区、盖在其他 UI 之上
+    // （普通面板 mask zIndex 6000、商店 5500 → 这里 6500）
     this.root = createEl('div', {
       style: {
         position: 'fixed',
-        top: '150px',
-        right: '30px',
+        top: '50%',
+        left: '62%',
+        transform: 'translate(-50%, -50%)',
         display: 'none',
         flexDirection: 'row',
         gap: '12px',
-        zIndex: 4000,
+        zIndex: 6500,
         alignItems: 'flex-start',
         pointerEvents: 'none',
       },
@@ -126,14 +128,10 @@ export class LinkSkillUI {
         },
         text: String(i + 1), parent: box,
       });
-      // 真实连携技 emoji + name
+      // 真实连携技图标 + name
       const sk = SKILLS[entry.skillId];
-      const realEmoji = sk?.emoji || '⚡';
       const realName = sk?.name || '';
-      createEl('div', {
-        style: { fontSize: '28px', fontFamily: '"Segoe UI Emoji",sans-serif', lineHeight: '1' },
-        text: realEmoji, parent: box,
-      });
+      box.appendChild(iconEl('ui', entry.skillId, { size: '28px', def: sk, fallback: sk?.emoji || '⚡' }));
       if (realName) {
         createEl('div', {
           style: { fontSize: '9px', fontWeight: '700', color: '#3a2e20', marginTop: '2px', textAlign: 'center', maxWidth: '66px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' },

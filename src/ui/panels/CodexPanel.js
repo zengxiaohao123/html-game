@@ -10,7 +10,7 @@ import { TALENTS } from '../../data/talents.js';
 import { SKILLS, CHARACTERS } from '../../data/characters.js';
 import { COLLECTIBLES } from '../../data/collectibles.js';
 import { createStandardPanel } from './_panelHelper.js';
-import { createEl } from '../dom.js';
+import { createEl, iconEl } from '../dom.js';
 
 const TABS = [
   { id: 'items',        label: '📦 物品' },
@@ -20,6 +20,14 @@ const TABS = [
 ];
 
 const EMOJI_FONT = '"Segoe UI Emoji",sans-serif';
+
+/** 按物品库归类取 iconEl 的 group（与 ForgePanel 同约定） */
+function iconGroupOfItem(it) {
+  if (it?.tier2 === '设施') return 'facilities';
+  if (it?.tier2 === '资源') return 'resources';
+  if (it?.tier1 === '地形') return 'terrains';
+  return 'items';
+}
 
 export class CodexPanel {
   constructor(director) {
@@ -79,7 +87,9 @@ export class CodexPanel {
   }
 
   _subscribe() {
-    EventBus.on(GE.UI_PANEL_OPEN, ({ panel }) => { if (panel === 'codex') this.toggle(); });
+    // 幂等显示：已显示 → 只刷新；隐藏 → 显示。绝不 toggle 关闭
+    // （开新面板关旧面板由 GameDirector 中央发 UI_PANEL_CLOSE 处理）
+    EventBus.on(GE.UI_PANEL_OPEN, ({ panel }) => { if (panel === 'codex') this.show(); });
     EventBus.on(GE.UI_PANEL_CLOSE, ({ panel }) => { if (panel === 'codex' && this.helper?.visible) this.helper.hide(); });
   }
 
@@ -101,6 +111,8 @@ export class CodexPanel {
         emoji: it.emoji,
         name: it.name,
         id: it.id,
+        group: iconGroupOfItem(it),
+        def: it,
         sub: `${it.tier1 || ''}${it.tier2 ? ' · ' + it.tier2 : ''}`,
         rarity: it.rarity,
       }));
@@ -111,6 +123,8 @@ export class CodexPanel {
           emoji: t.emoji,
           name: t.name,
           id: t.id,
+          group: 'ui',
+          def: t,
           sub: role ? `${role.emoji} ${role.name}` : '',
           rarity: null,
         };
@@ -122,6 +136,8 @@ export class CodexPanel {
           emoji: sk.emoji,
           name: sk.name + (sk.isLinkSkill ? ' ⚡' : ''),
           id: sk.id,
+          group: 'ui',
+          def: sk,
           sub: role ? `${role.emoji} ${role.name}` : (sk.roleId === null ? '通用' : ''),
           rarity: null,
         };
@@ -131,6 +147,8 @@ export class CodexPanel {
         emoji: c.emoji,
         name: c.name,
         id: c.id,
+        group: 'items',
+        def: c,
         sub: c.effectType || '',
         rarity: null,
       }));
@@ -156,7 +174,7 @@ export class CodexPanel {
         },
         parent: this.listEl,
       });
-      createEl('div', { style: { fontSize: '20px', fontFamily: EMOJI_FONT }, text: m.emoji, parent: row });
+      row.appendChild(iconEl(m.group, m.id, { size: '20px', def: m.def, fallback: m.emoji }));
       const info = createEl('div', { style: { flex: '1', minWidth: 0 }, parent: row });
       createEl('div', { style: { fontWeight: '800', fontSize: '13px' }, text: m.name, parent: info });
       if (m.sub) {
@@ -198,7 +216,9 @@ export class CodexPanel {
       style: { display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '2px solid #3a3a3a', paddingBottom: '6px', marginBottom: '6px' },
       parent: this.detailEl,
     });
-    createEl('div', { style: { fontSize: '36px', fontFamily: EMOJI_FONT }, text: entry.emoji, parent: header });
+    const group = this.activeTab === 'items' ? iconGroupOfItem(entry)
+      : this.activeTab === 'collectibles' ? 'items' : 'ui';
+    header.appendChild(iconEl(group, entry.id, { size: '36px', def: entry, fallback: entry.emoji }));
     createEl('div', { style: { flex: '1' }, parent: header });
     createEl('div', { style: { fontSize: '18px', fontWeight: '900' }, text: entry.name, parent: header });
 

@@ -6,7 +6,7 @@
 import { EventBus } from '../../core/EventBus.js';
 import { GE } from '../../core/GameEvents.js';
 import { createStandardPanel } from './_panelHelper.js';
-import { createEl, qs } from '../dom.js';
+import { createEl, qs, iconEl } from '../dom.js';
 
 /** 4 条日常任务（从设计文档 §6/§7/§8 抽取，每日重置） */
 const DAILY_TASKS = [
@@ -100,7 +100,13 @@ export class TaskPanel {
   }
 
   _subscribe() {
-    EventBus.on(GE.UI_PANEL_OPEN, ({ panel }) => { if (panel === 'task') { this.toggle(); this._refresh(); } });
+    // 幂等显示：已显示 → 只刷新；隐藏 → 显示。绝不 toggle 关闭
+    // （开新面板关旧面板由 GameDirector 中央发 UI_PANEL_CLOSE 处理）
+    EventBus.on(GE.UI_PANEL_OPEN, ({ panel }) => {
+      if (panel !== 'task') return;
+      if (!this.helper?.visible) this.helper?.show();
+      this._refresh();
+    });
     EventBus.on(GE.UI_PANEL_CLOSE, ({ panel }) => { if (panel === 'task' && this.helper?.visible) this.helper.hide(); });
     EventBus.on(GE.TASK_OPEN, () => { if (this.helper?.visible) this._refresh(); });
     EventBus.on(GE.TASK_COMPLETE, () => { if (this.helper?.visible) this._refresh(); });
@@ -112,7 +118,10 @@ export class TaskPanel {
       if (typeof delta === 'number' && delta > 0) this._inc('dailyGoldEarned', delta);
     });
     // 建造：TILE_UPDATED + tile.contentId 变化（null → 非 null）
-    EventBus.on(GE.TILE_UPDATED, ({ tileIdx }) => {
+    // 注意：DaySystem 换日时会发无 payload 的 TILE_UPDATED（地图整体刷新），需容错
+    EventBus.on(GE.TILE_UPDATED, (payload) => {
+      const tileIdx = payload?.tileIdx;
+      if (tileIdx == null) return;
       const gs = this.director?.getGS?.();
       if (!gs) return;
       const t = gs.map.outerTiles[tileIdx];
@@ -163,7 +172,10 @@ export class TaskPanel {
         parent: this.bodyEl,
       });
 
-      createEl('div', { style: { fontSize: '28px', lineHeight: '1', flexShrink: '0' }, text: done ? '✅' : task.emoji, parent: card });
+      card.appendChild(iconEl('ui', task.id, {
+        size: '28px', fallback: done ? '✅' : task.emoji,
+        style: { flexShrink: '0' },
+      }));
 
       const mid = createEl('div', { style: { flex: '1', minWidth: '0' }, parent: card });
       createEl('div', { style: { fontSize: '15px', fontWeight: '700', color: '#3a2e20' }, text: task.title, parent: mid });

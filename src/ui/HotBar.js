@@ -11,8 +11,10 @@
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { Assets } from '../core/Assets.js';
-import { createEl, qs } from './dom.js';
+import { createEl, qs, iconEl } from './dom.js';
 import { HOTBAR_SLOTS } from '../utils/constants.js';
+import { ForgeSystem } from '../systems/ForgeSystem.js';
+import { SKILLS } from '../data/characters.js';
 
 export class HotBar {
   constructor() {
@@ -170,23 +172,24 @@ export class HotBar {
       if (slot && slot.itemId) {
         slotEl.classList.add('has-content');
         slotEl.classList.remove('empty');
+        slotEl.style.opacity = '';
 
-        const emoji = this._resolveEmoji(slot.itemId);
-        createEl('div', { class: ['slot-emoji'], text: emoji, parent: slotEl });
+        slotEl.appendChild(this._createItemIcon(slot.itemId));
 
         // ★ 从背包实时读 qty（HotBar 与背包同步：物品本质属于背包）
         const invEntry = gs.inventory?.items?.find(e => e.itemId === slot.itemId);
         const qty = invEntry?.qty ?? 0;
-        if (qty > 1) {
-          createEl('div', { class: ['slot-qty'], text: `×${qty}`, parent: slotEl });
-        }
 
-        // 库存归 0 → 该 slot 仍显示 emoji（玩家知道"我选了什么"），但视觉上淡一点
-        if (qty === 0) {
-          slotEl.style.opacity = '0.55';
-        } else {
-          slotEl.style.opacity = '';
-        }
+        // §16.19 右下角恒显数量；数量为 0 时：可合成且材料够 → 「可合成」，否则「0」
+        const craftable = qty === 0 && this._canCraftItem(gs, slot.itemId);
+        createEl('div', {
+          class: ['slot-qty'],
+          text: qty > 0 ? `${qty}` : (craftable ? '可合成' : '0'),
+          style: craftable
+            ? { fontSize: '8px', color: '#2e7d32', fontWeight: '800' }
+            : {},
+          parent: slotEl,
+        });
       } else {
         slotEl.classList.remove('has-content');
         slotEl.classList.add('empty');
@@ -204,11 +207,39 @@ export class HotBar {
     }
   }
 
-  _resolveEmoji(itemId) {
-    return Assets.getEmoji('facilities', itemId)
-      || Assets.getEmoji('resources', itemId)
-      || Assets.getEmoji('items', itemId)
-      || '❓';
+  /** §16.19 数量为 0 时判断该物品是否可合成且背包材料足够 */
+  _canCraftItem(gs, itemId) {
+    for (const r of ForgeSystem.getAllRecipes()) {
+      const isOutput = (r.outputs || []).some(o => o.itemId === itemId);
+      if (isOutput && ForgeSystem.canCraft(gs, r.id)) return true;
+    }
+    return false;
+  }
+
+  /** slot 内物品图标（按前缀/数据表选 group，回退原 emoji） */
+  _createItemIcon(itemId) {
+    if (itemId.startsWith('skill_')) {
+      const def = SKILLS?.[itemId] || null;
+      return iconEl('items', itemId, { def, size: '24px', fallback: def?.emoji || '❓', cls: 'slot-emoji' });
+    }
+    let group = 'facilities';
+    let fallback = Assets.getEmoji('facilities', itemId);
+    if (!fallback || fallback === '❓') {
+      const res = Assets.getEmoji('resources', itemId);
+      if (res && res !== '❓') {
+        group = 'resources';
+        fallback = res;
+      } else {
+        const item = Assets.getEmoji('items', itemId);
+        if (item && item !== '❓') {
+          group = 'items';
+          fallback = item;
+        } else {
+          fallback = '❓';
+        }
+      }
+    }
+    return iconEl(group, itemId, { size: '24px', fallback, cls: 'slot-emoji' });
   }
 
   _getCurrentGS() {

@@ -157,3 +157,13 @@ body.build-mode .map-container {
       0 0 22px rgba(255, 210, 60, 0.8);
   }
 }
+
+/* ── 第 5 批 §16.7：容量超载时变红缓慢闪烁（TopBar 容量条目） ── */
+@keyframes overload-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+.overload-blink {
+  color: #c0392b !important;
+  animation: overload-blink 1.6s ease-in-out infinite;
+}

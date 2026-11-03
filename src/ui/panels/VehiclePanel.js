@@ -7,7 +7,7 @@
 import { EventBus } from '../../core/EventBus.js';
 import { GE } from '../../core/GameEvents.js';
 import { createStandardPanel } from './_panelHelper.js';
-import { createEl } from '../dom.js';
+import { createEl, iconEl } from '../dom.js';
 import { devLog } from '../../core/Logger.js';
 import { VEHICLES } from '../../data/vehicles.js';
 import { VehicleSystem } from '../../systems/VehicleSystem.js';
@@ -55,7 +55,9 @@ export class VehiclePanel {
   }
 
   _subscribe() {
-    EventBus.on(GE.UI_PANEL_OPEN, ({ panel }) => { if (panel === 'vehicle') this.toggle(); });
+    // 幂等显示：已显示 → 只刷新；隐藏 → 显示。绝不 toggle 关闭
+    // （开新面板关旧面板由 GameDirector 中央发 UI_PANEL_CLOSE 处理）
+    EventBus.on(GE.UI_PANEL_OPEN, ({ panel }) => { if (panel === 'vehicle') this.show(); });
     EventBus.on(GE.UI_PANEL_CLOSE, ({ panel }) => { if (panel === 'vehicle' && this.helper?.visible) this.helper.hide(); });
     EventBus.on(GE.VEHICLE_GAIN,     () => { if (this.helper?.visible) this._refresh(); });
     EventBus.on(GE.VEHICLE_ATTACH,   () => { if (this.helper?.visible) this._refresh(); });
@@ -84,10 +86,10 @@ export class VehiclePanel {
     if (v.current) {
       // v.current 是 { vehicleId, usageLeft } 对象
       const def = VEHICLES[v.current.vehicleId];
-      createEl('div', { style: { fontSize: '44px', fontFamily: '"Segoe UI Emoji",sans-serif' }, text: def?.emoji || '🚗', parent: box });
+      box.appendChild(iconEl('items', v.current.vehicleId, { size: '44px', def, fallback: def?.emoji || '🚗' }));
       createEl('div', { style: { fontSize: '12px', fontWeight: '800' }, text: def?.name || v.current.vehicleId, parent: box });
       // usageLeft 从 entry.usageLeft 读（不是 VEHICLES[id].usageCount）
-      createEl('div', { style: { fontSize: '11px', color: '#7a6a56' }, text: `剩余使用：${v.current.usageLeft} 次`, parent: this.slotEl });
+      createEl('div', { style: { fontSize: '11px', color: '#7a6a56' }, text: `剩余使用：${VehiclePanel._fmtUsage(v.current.usageLeft)} 次`, parent: this.slotEl });
       if (def?.description) {
         createEl('div', { style: { fontSize: '10px', color: '#9a8a76', textAlign: 'center', padding: '0 6px' }, text: def.description, parent: this.slotEl });
       }
@@ -108,6 +110,7 @@ export class VehiclePanel {
     } else {
       const grid = createEl('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(70px,1fr))', gap: '6px' }, parent: this.invEl });
       v.available.forEach((entry, idx) => {
+        // 同种不叠放、独立计算：每个 entry 单独一格
         const def = VEHICLES[entry.vehicleId];
         const s = createEl('div', {
           style: {
@@ -118,9 +121,10 @@ export class VehiclePanel {
           },
           parent: grid,
         });
-        createEl('div', { style: { fontSize: '26px', fontFamily: '"Segoe UI Emoji",sans-serif' }, text: def?.emoji || '🚗', parent: s });
+        s.appendChild(iconEl('items', entry.vehicleId, { size: '26px', def, fallback: def?.emoji || '🚗' }));
         createEl('div', { style: { fontSize: '10px', fontWeight: '700', textAlign: 'center' }, text: def?.name || entry.vehicleId, parent: s });
-        createEl('div', { style: { fontSize: '9px', color: '#7a6a56', textAlign: 'center' }, text: `×${entry.usageLeft}`, parent: s });
+        // 每个载具有独立使用次数：格内显示剩余次数（§16.16）
+        createEl('div', { style: { fontSize: '9px', color: '#7a6a56', textAlign: 'center' }, text: `剩余 ×${VehiclePanel._fmtUsage(entry.usageLeft)}`, parent: s });
         s.addEventListener('click', () => this._attach(idx));
       });
     }
@@ -158,6 +162,11 @@ export class VehiclePanel {
       this.helper?.show();
       this._refresh();
     }
+  }
+
+  /** 剩余次数格式化：巧遇（vehicle_chance）usageCount = Infinity → ∞ */
+  static _fmtUsage(n) {
+    return Number.isFinite(n) ? String(n) : '∞';
   }
 }
 

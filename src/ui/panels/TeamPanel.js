@@ -1,477 +1,414 @@
-// TeamPanel.js —— Phase 4 重写  ·  快捷键 L
-// 4 组 tab × 每组 3 角色 + 1 精灵槽
-// 候选池：3 角色 + 3 精灵（emoji 对齐 characters.js 实导出）
-// 启用按钮切 activeGroup；合法校验：角色数∈[1,3] + 精灵存在
-// 每日 3 次修改限制（gs.team.dailyModifyCount 由 DaySystem.startNewDay 清零）
-// 快捷编队 → 右侧展开选人交互
+// TeamPanel.js —— 第 5 批 UI 对齐（§16.12 编队页面，快捷键 L）
+// 全屏。4 组编队（默认启用第 1 组），每组 1~3 角色 + 1 精灵。
+// 队伍 1/2/3/4 显示在屏幕上中侧，点击序号切换。
+// 右下角两个按钮：快捷编队、启用。
+// 快捷编队（二级界面）：左侧滑出 1/3 宽换人界面，头像格分类排列；
+//   点角色=选中、再点=取消；选中格绿框+左上角绿色序号 1/2/3；下侧「保存」保存并退回。
+// 编队界面允许非法组成；点「启用」时检测合法性，不合法不启用、变回原编队。
+// 每日修改编队上限 3 次（gs.team.dailyModifyCount，DaySystem.startNewDay 清零）：
+//   切换启用不同编队组、换人都算一次修改；唯一例外——换人后新队伍角色和精灵
+//   与原队伍完全相同（允许顺序不同）不算修改。
+// ESC（§16.20）：快捷编队是二级界面，ESC 先关闭快捷编队回到编队主界面。
 
 import { EventBus } from '../../core/EventBus.js';
 import { GE } from '../../core/GameEvents.js';
 import { CHARACTERS, SPIRITS } from '../../data/characters.js';
 import { createStandardPanel } from './_panelHelper.js';
-import { createEl, qs } from '../dom.js';
+import { createEl, iconEl } from '../dom.js';
 import { devLog } from '../../core/Logger.js';
 
-const EMOJI_FONT = '"Segoe UI Emoji", sans-serif';
+const BOX_BORDER = '2px solid #b8a888';
 const SLOT_COUNT = 3;
+const DAILY_MODIFY_LIMIT = 3;
+const QUICK_SLIDE_MS = 240;
 
 export class TeamPanel {
   constructor(director) {
     this.director = director;
     this.helper = null;
-    this.groupTabs = null;
+    this.topRow = null;
     this.slotsWrap = null;
-    this.poolWrap = null;
+    this.quickOverlay = null;
     this.selectedGroup = 0;
-    this.pickedRoleId = null;
-    this.pickedSpiritId = null;
-    this._beforeEditSnapshot = null;
     this._quickEditMode = false;
-    this._quickSlots = [null, null, null]; // 快捷编队临时选中
-    this._quickSpiritId = null;
-    this._quickCurrentSlot = null; // 当前正在填充的序号 (0/1/2)
+    this._quickRoles = [];        // 快捷编队临时选中角色（有序，≤3）
+    this._quickSpiritId = null;   // 快捷编队临时选中精灵
+    this._quickCloseTimer = null;
+    this._keyHandler = null;
   }
 
   mount() {
     this.helper = createStandardPanel({
-      title: '👥 编队（L 切换）',
+      title: '👥 编队页面（L）',
       panelKey: 'team',
-      width: 'min(92vw, 900px)',
-      height: 'min(86vh, 720px)',
-      onMount: (_p, body) => this._build(body),
+      width: '100vw',   // §16.12：全屏
+      height: '100vh',
+      onMount: (_panel, body) => this._build(body),
     });
     this._subscribe();
+
+    // §16.20 二级界面 ESC：快捷编队打开时，ESC 只关闭快捷编队（不关整个面板）。
+    // 注册时机早于 InputManager.bind() 与 _panelHelper 的 ESC 监听，
+    // 用 stopImmediatePropagation 拦截后续监听。
+    this._keyHandler = (e) => {
+      if (e.key !== 'Escape' && e.key !== 'Esc') return;
+      if (!this.helper?.visible || !this._quickEditMode) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      this._closeQuick();
+    };
+    window.addEventListener('keydown', this._keyHandler);
   }
 
   _build(body) {
-    // 4 组 tab
-    this.groupTabs = createEl('div', {
-      style: { display: 'flex', gap: '8px', marginBottom: '6px' }, parent: body,
-    });
-    // 主区：左槽位 + 右候选池
-    const main = createEl('div', {
-      style: { flex: '1', minHeight: '0', display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: '10px' },
+    body.style.position = 'relative';
+    body.style.overflow = 'hidden';
+
+    // 队伍 1/2/3/4 —— 屏幕上中侧，点击序号切换
+    this.topRow = createEl('div', {
+      style: { display: 'flex', gap: '12px', justifyContent: 'center', padding: '6px 0', flexShrink: '0' },
       parent: body,
-    });
-    this.slotsWrap = createEl('div', {
-      style: { padding: '10px', background: 'rgba(255,255,255,0.55)', border: '2px solid #b8a888', borderRadius: '12px', overflowY: 'auto' },
-      parent: main,
-    });
-    this.poolWrap = createEl('div', {
-      style: { padding: '10px', background: 'rgba(255,255,255,0.55)', border: '2px solid #b8a888', borderRadius: '12px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' },
-      parent: main,
     });
 
-    // 底部操作：关闭 / 快捷编队 / 启用
-    const foot = createEl('div', {
-      style: { display: 'flex', gap: '8px', justifyContent: 'flex-end', borderTop: '2px dashed #b8a888', paddingTop: '8px' },
+    // 主区：当前组的槽位展示（只读；换人走快捷编队）
+    this.slotsWrap = createEl('div', {
+      style: {
+        flex: '1', minHeight: '0', overflowY: 'auto',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        gap: '10px', padding: '12px',
+      },
       parent: body,
     });
-    createEl('button', { class: 'action-btn', text: '关闭', parent: foot, onclick: () => this.hide() });
-    createEl('button', { class: 'action-btn', text: '⚡ 快捷编队', parent: foot, onclick: () => this._toggleQuickEdit() });
+
+    // 右下角两个按钮：快捷编队、启用
+    const foot = createEl('div', {
+      style: { display: 'flex', gap: '8px', justifyContent: 'flex-end', borderTop: '2px dashed #b8a888', paddingTop: '8px', flexShrink: '0' },
+      parent: body,
+    });
+    createEl('button', { class: 'action-btn', text: '⚡ 快捷编队', parent: foot, onclick: () => (this._quickEditMode ? this._closeQuick() : this._openQuick()) });
     createEl('button', { class: 'action-btn', text: '✅ 启用', parent: foot, onclick: () => this._activate() });
 
-    // 进入时拍快照
-    this._takeSnapshot();
+    // 快捷编队滑出层（左侧 1/3 宽）
+    this.quickOverlay = createEl('div', {
+      style: {
+        position: 'absolute', top: '0', left: '0', bottom: '0',
+        width: '33.33%', minWidth: '280px',
+        background: 'linear-gradient(135deg, #fffbf0 0%, #fff3c4 100%)',
+        borderRight: '3px solid #3a3a3a',
+        boxShadow: '4px 0 14px rgba(0,0,0,0.25)',
+        display: 'none', flexDirection: 'column', gap: '8px', padding: '12px',
+        transform: 'translateX(-100%)',
+        transition: `transform ${QUICK_SLIDE_MS}ms ease`,
+        zIndex: 20, overflowY: 'auto',
+      },
+      parent: body,
+    });
+
     this._refresh();
   }
 
   _subscribe() {
+    // 幂等显示：隐藏 → 显示；已显示 → 只刷新（绝不 toggle 关闭）
     EventBus.on(GE.UI_PANEL_OPEN, ({ panel }) => {
-      if (panel === 'team') {
-        if (!this.helper?.visible) {
-          this._takeSnapshot();
-          this._quickEditMode = false;
-        }
-        this.toggle();
+      if (panel !== 'team') return;
+      if (this.helper?.visible) {
+        this._refresh();
+      } else {
+        const gs = this._getGS();
+        this.selectedGroup = gs?.team?.activeGroup ?? 0;
+        this.show();
+        this._refresh();
       }
     });
-    EventBus.on(GE.UI_PANEL_CLOSE, ({ panel }) => { if (panel === 'team' && this.helper?.visible) this.helper.hide(); });
+    EventBus.on(GE.UI_PANEL_CLOSE, ({ panel }) => {
+      if (panel !== 'team') return;
+      this._abortQuick();
+      if (this.helper?.visible) this.helper.hide();
+    });
+    EventBus.on(GE.STATE_RESET, () => { if (this.helper?.visible) this._refresh(); });
   }
 
   _getGS() { return this.director?.getGS?.(); }
 
-  _takeSnapshot() {
-    const gs = this._getGS(); if (!gs?.team) return;
-    const g = gs.team.groups[this.selectedGroup];
-    this._beforeEditSnapshot = {
-      roles: [...(g?.roles || [])],
-      spirit: g?.spirit || null,
-    };
-    devLog.info('[TeamPanel] snapshot taken', this._beforeEditSnapshot);
-  }
+  // ─────────────────────────── 刷新 ───────────────────────────
 
   _refresh() {
+    if (!this.topRow) return;
     const gs = this._getGS();
     const activeGroup = gs?.team?.activeGroup ?? 0;
 
-    // tab 行
-    this.groupTabs.innerHTML = '';
+    // 队伍 1/2/3/4 序号
+    this.topRow.innerHTML = '';
     for (let i = 0; i < 4; i++) {
       const sel = i === this.selectedGroup;
       const isActive = i === activeGroup;
-      createEl('button', {
+      const btn = createEl('button', {
         class: ['action-btn'],
         style: {
+          width: '72px', height: '56px',
           background: sel ? '#ffe099' : 'rgba(255,255,255,0.7)',
-          border: sel ? '3px solid #e8a900' : '2px solid #b8a888',
-          fontWeight: sel || isActive ? '800' : '600',
+          border: sel ? '3px solid #e8a900' : BOX_BORDER,
+          fontWeight: '800', fontSize: '15px',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px',
         },
-        text: `组 ${i + 1}${isActive ? ' ✅' : ''}`,
-        parent: this.groupTabs,
+        parent: this.topRow,
         onclick: () => {
+          if (this._quickEditMode) this._closeQuick(); // 切组时收起换人界面（丢弃未保存选择）
           this.selectedGroup = i;
-          this._quickEditMode = false;
-          this._takeSnapshot();
           this._refresh();
         },
       });
-    }
-
-    const group = gs?.team?.groups?.[this.selectedGroup] || { roles: [], spirit: null };
-    if (!group.roles) group.roles = [];
-
-    if (this._quickEditMode) {
-      this._renderQuickEdit(group);
-    } else {
-      this._renderNormal(group);
-    }
-  }
-
-  // ── 普通模式渲染 ──
-  _renderNormal(group) {
-    this.slotsWrap.innerHTML = '';
-    this.poolWrap.innerHTML = '';
-
-    createEl('div', { style: { fontSize: '13px', fontWeight: '700', color: '#5a4a3a', marginBottom: '6px' }, text: `🎭 槽位（${SLOT_COUNT} 角色 + 1 精灵；点候选池 → 再点槽位；点已填槽可清空）`, parent: this.slotsWrap });
-
-    for (let i = 0; i < SLOT_COUNT; i++) {
-      this._buildRoleSlot(group.roles[i] || null, i, this.slotsWrap);
-    }
-    this._buildSpiritSlot(group.spirit || null, this.slotsWrap);
-
-    // 候选池
-    createEl('div', { style: { fontSize: '12px', fontWeight: '700', color: '#5a4a3a' }, text: '🎭 角色候选', parent: this.poolWrap });
-    const rRow = createEl('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' }, parent: this.poolWrap });
-    Object.values(CHARACTERS).forEach((c) => {
-      const sel = this.pickedRoleId === c.id;
-      const el = createEl('div', {
-        style: {
-          width: '72px', padding: '6px', background: sel ? '#ffe099' : 'rgba(255,255,255,0.8)',
-          border: sel ? '3px solid #e8a900' : '2px solid #b8a888', borderRadius: '10px',
-          cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
-        },
-        parent: rRow,
-      });
-      createEl('div', { style: { fontSize: '26px', fontFamily: EMOJI_FONT }, text: c.emoji, parent: el });
-      createEl('div', { style: { fontSize: '11px', fontWeight: '700' }, text: c.name, parent: el });
-      el.addEventListener('click', () => { this.pickedRoleId = sel ? null : c.id; this._refresh(); });
-    });
-
-    createEl('div', { style: { fontSize: '12px', fontWeight: '700', color: '#5a4a3a', marginTop: '4px' }, text: '🧚 精灵候选', parent: this.poolWrap });
-    const sRow = createEl('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' }, parent: this.poolWrap });
-    Object.values(SPIRITS).forEach((s) => {
-      const sel = this.pickedSpiritId === s.id;
-      const el = createEl('div', {
-        style: {
-          width: '72px', padding: '6px', background: sel ? '#ffe099' : 'rgba(255,255,255,0.8)',
-          border: sel ? '3px solid #e8a900' : '2px solid #b8a888', borderRadius: '10px',
-          cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
-        },
-        parent: sRow,
-      });
-      createEl('div', { style: { fontSize: '26px', fontFamily: EMOJI_FONT }, text: s.emoji, parent: el });
-      createEl('div', { style: { fontSize: '11px', fontWeight: '700' }, text: s.name, parent: el });
-      el.addEventListener('click', () => { this.pickedSpiritId = sel ? null : s.id; this._refresh(); });
-    });
-  }
-
-  // ── 快捷编队模式渲染 ──
-  _renderQuickEdit(group) {
-    // 初始化临时数据（只在第一次进入时从当前组拷贝）
-    if (!this._quickSlotsInited) {
-      this._quickSlots = [];
-      for (let i = 0; i < SLOT_COUNT; i++) this._quickSlots.push(group.roles[i] || null);
-      this._quickSpiritId = group.spirit || null;
-      this._quickSlotsInited = true;
-    }
-
-    // 左：槽位预览（大）
-    this.slotsWrap.innerHTML = '';
-    createEl('div', { style: { fontSize: '13px', fontWeight: '800', color: '#c07a20', marginBottom: '6px' }, text: '⚡ 快捷编队模式', parent: this.slotsWrap });
-    for (let i = 0; i < SLOT_COUNT; i++) {
-      this._buildQuickRoleSlot(this._quickSlots[i], i, this.slotsWrap);
-    }
-    this._buildQuickSpiritSlot(this._quickSpiritId, this.slotsWrap);
-
-    // 右：候选池（变宽）
-    this.poolWrap.innerHTML = '';
-    createEl('div', { style: { fontSize: '12px', fontWeight: '800', color: '#5a4a3a', marginBottom: '4px' }, text: '🎭 角色（点 → 填入当前高亮槽位）', parent: this.poolWrap });
-    const rRow = createEl('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }, parent: this.poolWrap });
-    Object.values(CHARACTERS).forEach((c) => {
-      const idx = this._quickSlots.indexOf(c.id);
-      const inUse = idx >= 0;
-      const el = createEl('div', {
-        style: {
-          padding: '6px', background: inUse ? '#e8f5e9' : 'rgba(255,255,255,0.8)',
-          border: inUse ? '3px solid #2a8a3a' : '2px solid #b8a888', borderRadius: '10px',
-          cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
-          position: 'relative',
-        },
-        parent: rRow,
-      });
-      if (inUse) {
-        createEl('div', { style: { position: 'absolute', top: '-4px', left: '-4px', width: '18px', height: '18px', background: '#2a8a3a', color: '#fff', borderRadius: '50%', fontSize: '11px', fontWeight: '800', display: 'flex', alignItems: 'center', justifyContent: 'center' }, text: String(idx + 1), parent: el });
+      createEl('div', { text: `队伍 ${i + 1}`, parent: btn });
+      if (isActive) {
+        createEl('div', { style: { fontSize: '10px', color: '#2a8a3a', fontWeight: '800' }, text: '✅ 已启用', parent: btn });
       }
-      createEl('div', { style: { fontSize: '26px', fontFamily: EMOJI_FONT }, text: c.emoji, parent: el });
-      createEl('div', { style: { fontSize: '11px', fontWeight: '700' }, text: c.name, parent: el });
-      el.addEventListener('click', () => this._quickPickRole(c.id));
+    }
+
+    // 当前组槽位展示（只读）
+    this.slotsWrap.innerHTML = '';
+    const group = gs?.team?.groups?.[this.selectedGroup] || { roles: [], spirit: null };
+    createEl('div', { style: { fontSize: '14px', fontWeight: '800', color: '#5a4a3a' }, text: `队伍 ${this.selectedGroup + 1}（1~3 名角色 + 1 名精灵）`, parent: this.slotsWrap });
+
+    const slotsRow = createEl('div', { style: { display: 'flex', gap: '14px', flexWrap: 'wrap', justifyContent: 'center' }, parent: this.slotsWrap });
+    const roles = (group.roles || []).filter(r => r);
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      this._buildSlotCell(roles[i] || null, 'role', slotsRow);
+    }
+    this._buildSlotCell(group.spirit || null, 'spirit', slotsRow);
+
+    if (this._quickEditMode) this._renderQuick();
+  }
+
+  // 槽位格（只读展示）
+  _buildSlotCell(id, kind, parent) {
+    const def = id ? (kind === 'role' ? CHARACTERS[id] : SPIRITS[id]) : null;
+    const cell = createEl('div', {
+      style: {
+        width: '110px', padding: '10px 6px',
+        background: def ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.4)',
+        border: def ? BOX_BORDER : '2px dashed #b8a888', borderRadius: '12px',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
+      },
+      parent,
+    });
+    if (def) {
+      cell.appendChild(iconEl('ui', def.id, { def, fallback: def.emoji, size: '52px' }));
+      createEl('div', { style: { fontSize: '13px', fontWeight: '800', color: '#3a2e20' }, text: def.name, parent: cell });
+      createEl('div', { style: { fontSize: '10px', color: '#8a6a3a' }, text: kind === 'role' ? '角色' : '精灵', parent: cell });
+    } else {
+      createEl('div', { style: { width: '52px', height: '52px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '26px', color: '#b0a090' }, text: '—', parent: cell });
+      createEl('div', { style: { fontSize: '12px', color: '#b0a090' }, text: '（空）', parent: cell });
+    }
+  }
+
+  // ─────────────────────────── 快捷编队（二级界面）───────────────────────────
+
+  _openQuick() {
+    const gs = this._getGS();
+    const group = gs?.team?.groups?.[this.selectedGroup] || { roles: [], spirit: null };
+    this._quickRoles = (group.roles || []).filter(r => r).slice(0, SLOT_COUNT);
+    this._quickSpiritId = group.spirit || null;
+    this._quickEditMode = true;
+
+    if (this._quickCloseTimer) { clearTimeout(this._quickCloseTimer); this._quickCloseTimer = null; }
+    this.quickOverlay.style.display = 'flex';
+    // 下一帧再位移，保证滑出动画生效
+    requestAnimationFrame(() => { this.quickOverlay.style.transform = 'translateX(0)'; });
+    this._renderQuick();
+  }
+
+  _closeQuick() {
+    this._quickEditMode = false;
+    if (!this.quickOverlay) return;
+    this.quickOverlay.style.transform = 'translateX(-100%)';
+    if (this._quickCloseTimer) clearTimeout(this._quickCloseTimer);
+    this._quickCloseTimer = setTimeout(() => {
+      this.quickOverlay.style.display = 'none';
+      this._quickCloseTimer = null;
+    }, QUICK_SLIDE_MS + 30);
+  }
+
+  // 面板被外部关闭时立即收起快捷编队状态（无动画）
+  _abortQuick() {
+    this._quickEditMode = false;
+    if (this._quickCloseTimer) { clearTimeout(this._quickCloseTimer); this._quickCloseTimer = null; }
+    if (this.quickOverlay) {
+      this.quickOverlay.style.transition = 'none';
+      this.quickOverlay.style.transform = 'translateX(-100%)';
+      this.quickOverlay.style.display = 'none';
+      // 恢复过渡，供下次滑出使用
+      requestAnimationFrame(() => {
+        if (this.quickOverlay) this.quickOverlay.style.transition = `transform ${QUICK_SLIDE_MS}ms ease`;
+      });
+    }
+  }
+
+  _renderQuick() {
+    this.quickOverlay.innerHTML = '';
+    createEl('div', { style: { fontSize: '16px', fontWeight: '900', color: '#3a2e20', borderBottom: '2px solid #e8a900', paddingBottom: '6px' }, text: '⚡ 快捷编队', parent: this.quickOverlay });
+    createEl('div', { style: { fontSize: '11px', color: '#8a6a3a' }, text: `队伍 ${this.selectedGroup + 1} · 点角色选中 / 再点取消（至多 ${SLOT_COUNT} 名）`, parent: this.quickOverlay });
+
+    // 角色区（分类摆放，头像下带名字）
+    createEl('div', { style: { fontSize: '13px', fontWeight: '800', color: '#5a4a3a', marginTop: '4px' }, text: '🎭 角色', parent: this.quickOverlay });
+    const rGrid = createEl('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }, parent: this.quickOverlay });
+    Object.values(CHARACTERS).forEach((c) => {
+      const idx = this._quickRoles.indexOf(c.id);
+      const sel = idx >= 0;
+      const cell = createEl('div', {
+        style: {
+          position: 'relative', padding: '8px 4px',
+          background: sel ? '#e8f5e9' : 'rgba(255,255,255,0.8)',
+          border: sel ? '3px solid #2a8a3a' : BOX_BORDER, borderRadius: '10px',
+          cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+        },
+        parent: rGrid,
+      });
+      if (sel) {
+        // 左上角绿色序号 1/2/3
+        createEl('div', {
+          style: {
+            position: 'absolute', top: '-6px', left: '-6px', width: '20px', height: '20px',
+            background: '#2a8a3a', color: '#fff', borderRadius: '50%',
+            fontSize: '12px', fontWeight: '800', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          },
+          text: String(idx + 1), parent: cell,
+        });
+      }
+      cell.appendChild(iconEl('ui', c.id, { def: c, fallback: c.emoji, size: '40px' }));
+      createEl('div', { style: { fontSize: '12px', fontWeight: '700', color: '#3a2e20' }, text: c.name, parent: cell });
+      cell.addEventListener('click', () => this._quickPickRole(c.id));
     });
 
-    createEl('div', { style: { fontSize: '12px', fontWeight: '800', color: '#5a4a3a', marginTop: '6px' }, text: '🧚 精灵（点 → 填入精灵槽）', parent: this.poolWrap });
-    const sRow = createEl('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }, parent: this.poolWrap });
+    // 精灵区
+    createEl('div', { style: { fontSize: '13px', fontWeight: '800', color: '#5a4a3a', marginTop: '6px' }, text: '🧚 精灵', parent: this.quickOverlay });
+    const sGrid = createEl('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }, parent: this.quickOverlay });
     Object.values(SPIRITS).forEach((s) => {
       const sel = this._quickSpiritId === s.id;
-      const el = createEl('div', {
+      const cell = createEl('div', {
         style: {
-          padding: '6px', background: sel ? '#e8f5e9' : 'rgba(255,255,255,0.8)',
-          border: sel ? '3px solid #2a8a3a' : '2px solid #b8a888', borderRadius: '10px',
-          cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
+          padding: '8px 4px',
+          background: sel ? '#e8f5e9' : 'rgba(255,255,255,0.8)',
+          border: sel ? '3px solid #2a8a3a' : BOX_BORDER, borderRadius: '10px',
+          cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
         },
-        parent: sRow,
+        parent: sGrid,
       });
-      createEl('div', { style: { fontSize: '26px', fontFamily: EMOJI_FONT }, text: s.emoji, parent: el });
-      createEl('div', { style: { fontSize: '11px', fontWeight: '700' }, text: s.name, parent: el });
-      el.addEventListener('click', () => { this._quickSpiritId = sel ? null : s.id; this._refresh(); });
+      cell.appendChild(iconEl('ui', s.id, { def: s, fallback: s.emoji, size: '40px' }));
+      createEl('div', { style: { fontSize: '12px', fontWeight: '700', color: '#3a2e20' }, text: s.name, parent: cell });
+      cell.addEventListener('click', () => {
+        this._quickSpiritId = sel ? null : s.id;
+        this._renderQuick();
+      });
     });
 
-    // 快捷编队底部：覆盖一个"保存"按钮（临时改 DOM）
-    const quickFoot = createEl('div', {
-      style: { display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '8px' },
-      parent: this.poolWrap,
-    });
+    // 下侧「保存」按钮：保存当前编队并退回
     createEl('button', {
       class: 'action-btn',
-      style: { background: '#e8f5e9', border: '3px solid #2a8a3a', fontWeight: '800' },
-      text: '💾 保存到组',
-      parent: quickFoot,
+      style: { marginTop: 'auto', background: '#e8f5e9', border: '3px solid #2a8a3a', fontWeight: '800', padding: '10px' },
+      text: '💾 保存',
+      parent: this.quickOverlay,
       onclick: () => this._quickSave(),
     });
-    createEl('button', {
-      class: 'action-btn',
-      text: '取消',
-      parent: quickFoot,
-      onclick: () => { this._quickEditMode = false; this._quickSlotsInited = false; this._refresh(); },
-    });
-  }
-
-  _toggleQuickEdit() {
-    this._quickEditMode = !this._quickEditMode;
-    this._quickSlotsInited = false; // 让它下次从 group 重新拷贝
-    this._refresh();
   }
 
   _quickPickRole(roleId) {
-    // 如果角色已在某个槽位，点击=移除
-    const existingIdx = this._quickSlots.indexOf(roleId);
-    if (existingIdx >= 0) {
-      this._quickSlots[existingIdx] = null;
-      this._refresh();
+    const idx = this._quickRoles.indexOf(roleId);
+    if (idx >= 0) {
+      this._quickRoles.splice(idx, 1); // 再点 = 取消
+    } else if (this._quickRoles.length < SLOT_COUNT) {
+      this._quickRoles.push(roleId);
+    } else {
+      EventBus.emit(GE.TOAST_SHOW, { text: `最多选择 ${SLOT_COUNT} 名角色`, duration: 1200 });
       return;
     }
-    // 找第一个空槽
-    const emptyIdx = this._quickSlots.findIndex(s => s === null);
-    if (emptyIdx >= 0) {
-      this._quickSlots[emptyIdx] = roleId;
-    } else {
-      // 都满了，覆盖第一个
-      this._quickSlots[0] = roleId;
-    }
-    this._refresh();
+    this._renderQuick();
+  }
+
+  // 换人是否实质改变（角色集合忽略顺序 + 精灵）
+  _sameComposition(rolesA, spiritA, rolesB, spiritB) {
+    const a = [...(rolesA || [])].filter(r => r).sort();
+    const b = [...(rolesB || [])].filter(r => r).sort();
+    return JSON.stringify(a) === JSON.stringify(b) && (spiritA || null) === (spiritB || null);
   }
 
   _quickSave() {
-    const gs = this._getGS(); if (!gs) return;
+    const gs = this._getGS(); if (!gs?.team) return;
     const g = gs.team.groups[this.selectedGroup];
-    g.roles = this._quickSlots.slice();
-    g.spirit = this._quickSpiritId;
-    this._quickEditMode = false;
-    this._quickSlotsInited = false;
-    // 保存后更新快照
-    this._takeSnapshot();
-    EventBus.emit(GE.TOAST_SHOW, { text: `💾 已保存到组 ${this.selectedGroup + 1}`, duration: 1200 });
+    const newRoles = this._quickRoles.slice();
+    const newSpirit = this._quickSpiritId;
+
+    // 唯一例外：新队伍与原队伍完全相同（允许顺序不同）→ 不算修改
+    if (this._sameComposition(newRoles, newSpirit, g.roles, g.spirit)) {
+      EventBus.emit(GE.TOAST_SHOW, { text: '编队未发生变化', duration: 1200 });
+      this._closeQuick();
+      this._refresh();
+      return;
+    }
+
+    // 每日修改编队上限 3 次
+    if ((gs.team.dailyModifyCount || 0) >= DAILY_MODIFY_LIMIT) {
+      EventBus.emit(GE.TOAST_SHOW, { text: `❌ 今日编队修改次数已用完（${DAILY_MODIFY_LIMIT}/${DAILY_MODIFY_LIMIT}），今日无法再修改`, duration: 1800 });
+      return;
+    }
+
+    g.roles = newRoles;
+    g.spirit = newSpirit;
+    gs.team.dailyModifyCount = (gs.team.dailyModifyCount || 0) + 1;
+    devLog.info('[TeamPanel] 换人已保存, 组', this.selectedGroup + 1, '今日已用', gs.team.dailyModifyCount);
+
+    // 改的是当前启用组 → 通知队伍相关 UI 刷新
+    if (this.selectedGroup === (gs.team.activeGroup ?? 0)) {
+      EventBus.emit(GE.TEAM_CHANGE, { groupIdx: this.selectedGroup, activated: true });
+    }
+    EventBus.emit(GE.TOAST_SHOW, { text: `💾 已保存到队伍 ${this.selectedGroup + 1}`, duration: 1200 });
+    this._closeQuick();
     this._refresh();
   }
 
-  _buildQuickRoleSlot(roleId, idx, parent) {
-    const def = roleId ? CHARACTERS[roleId] : null;
-    const row = createEl('div', {
-      style: { padding: '8px 10px', marginBottom: '6px', background: 'rgba(255,255,255,0.8)', border: '2px solid #2a8a3a', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' },
-      parent,
-    });
-    createEl('div', { style: { width: '26px', height: '26px', background: '#2a8a3a', color: '#fff', borderRadius: '50%', fontWeight: '800', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px' }, text: String(idx + 1), parent: row });
-    createEl('div', { style: { width: '44px', height: '44px', borderRadius: '10px', background: def ? '#fffbe6' : '#eee', border: '2px solid #b8a888', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontFamily: EMOJI_FONT }, text: def ? def.emoji : '—', parent: row });
-    createEl('div', { style: { flex: '1' }, parent: row }).innerHTML = def
-      ? `<div style="font-weight:800;color:#3a2e20">${def.name}</div><div style="font-size:11px;color:#888">${def.element}</div>`
-      : `<div style="font-weight:800;color:#b0a090">（空 — 点右侧角色填入）</div>`;
-
-    row.addEventListener('click', () => {
-      if (roleId) {
-        this._quickSlots[idx] = null;
-        this._refresh();
-      }
-    });
-  }
-
-  _buildQuickSpiritSlot(spiritId, parent) {
-    const def = spiritId ? SPIRITS[spiritId] : null;
-    const row = createEl('div', {
-      style: { padding: '8px 10px', background: 'rgba(255,255,255,0.8)', border: '2px solid #c07a20', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' },
-      parent,
-    });
-    createEl('div', { style: { width: '44px', height: '44px', borderRadius: '10px', background: def ? '#fffbe6' : '#eee', border: '2px solid #b8a888', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontFamily: EMOJI_FONT }, text: def ? def.emoji : '🧚', parent: row });
-    createEl('div', { style: { flex: '1' }, parent: row }).innerHTML = def
-      ? `<div style="font-weight:800;color:#3a2e20">${def.name}</div><div style="font-size:11px;color:#888">专属精灵</div>`
-      : `<div style="font-weight:800;color:#b0a090">（空 — 点右侧精灵填入）</div>`;
-
-    row.addEventListener('click', () => {
-      if (spiritId) {
-        this._quickSpiritId = null;
-        this._refresh();
-      }
-    });
-  }
-
-  // ── 普通模式下的槽位构建 ──
-  _buildRoleSlot(roleId, idx, parent) {
-    const def = roleId ? CHARACTERS[roleId] : null;
-    const row = createEl('div', {
-      style: { padding: '8px 10px', marginBottom: '6px', background: 'rgba(255,255,255,0.8)', border: '2px solid #b8a888', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' },
-      parent,
-    });
-    createEl('div', { style: { width: '22px', color: '#8a6a3a', fontWeight: '800' }, text: `R${idx + 1}`, parent: row });
-    createEl('div', { style: { width: '44px', height: '44px', borderRadius: '10px', background: def ? '#fffbe6' : '#eee', border: '2px solid #b8a888', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontFamily: EMOJI_FONT }, text: def ? def.emoji : '—', parent: row });
-    createEl('div', { style: { flex: '1' }, parent: row }).innerHTML = def
-      ? `<div style="font-weight:800;color:#3a2e20">${def.name}</div><div style="font-size:11px;color:#888">${def.element}</div>`
-      : `<div style="font-weight:800;color:#b0a090">（空）</div>`;
-
-    row.addEventListener('click', () => {
-      if (roleId) {
-        // 清空
-        EventBus.emit(GE.DIALOG_SHOW, {
-          title: '清空角色槽位',
-          content: `确认清空 R${idx + 1} 槽位？`,
-          options: [
-            { label: '取消', onSelect: () => {} },
-            { label: '确定', onSelect: () => this._setRole(idx, null) },
-          ],
-        });
-      } else if (this.pickedRoleId) {
-        this._setRole(idx, this.pickedRoleId);
-        this.pickedRoleId = null;
-      } else {
-        EventBus.emit(GE.TOAST_SHOW, { text: '请先在右侧选一个角色', duration: 1200 });
-      }
-    });
-  }
-
-  _buildSpiritSlot(spiritId, parent) {
-    const def = spiritId ? SPIRITS[spiritId] : null;
-    const row = createEl('div', {
-      style: { padding: '8px 10px', background: 'rgba(255,255,255,0.8)', border: '2px solid #b8a888', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' },
-      parent,
-    });
-    createEl('div', { style: { width: '44px', height: '44px', borderRadius: '10px', background: def ? '#fffbe6' : '#eee', border: '2px solid #b8a888', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontFamily: EMOJI_FONT }, text: def ? def.emoji : '🧚', parent: row });
-    createEl('div', { style: { flex: '1' }, parent: row }).innerHTML = def
-      ? `<div style="font-weight:800;color:#3a2e20">${def.name}</div><div style="font-size:11px;color:#888">专属精灵</div>`
-      : `<div style="font-weight:800;color:#b0a090">（空）</div>`;
-
-    row.addEventListener('click', () => {
-      if (spiritId) {
-        EventBus.emit(GE.DIALOG_SHOW, { title: '清空精灵槽位', content: '确认清空精灵槽位？', options: [
-          { label: '取消', onSelect: () => {} },
-          { label: '确定', onSelect: () => this._setSpirit(null) },
-        ]});
-      } else if (this.pickedSpiritId) {
-        this._setSpirit(this.pickedSpiritId);
-        this.pickedSpiritId = null;
-      } else {
-        EventBus.emit(GE.TOAST_SHOW, { text: '请先在右侧选一个精灵', duration: 1200 });
-      }
-    });
-  }
-
-  _setRole(idx, roleId) {
-    const gs = this._getGS(); if (!gs) return;
-    const g = gs.team.groups[this.selectedGroup]; g.roles[idx] = roleId;
-    this._refresh();
-  }
-  _setSpirit(spiritId) {
-    const gs = this._getGS(); if (!gs) return;
-    gs.team.groups[this.selectedGroup].spirit = spiritId;
-    this._refresh();
-  }
+  // ─────────────────────────── 启用 ───────────────────────────
 
   _activate() {
-    const gs = this._getGS(); if (!gs) return;
-    const group = gs.team.groups[this.selectedGroup];
+    const gs = this._getGS(); if (!gs?.team) return;
+    const group = gs.team.groups[this.selectedGroup] || { roles: [], spirit: null };
+    const validRoles = (group.roles || []).filter(r => r);
 
-    // ── 合法性校验 ──
-    const validRoles = (group.roles || []).filter(r => r); // 过滤空槽
+    // 合法性校验（编队界面允许非法组成，点「启用」时检测）
     if (validRoles.length < 1 || validRoles.length > SLOT_COUNT) {
-      EventBus.emit(GE.TOAST_SHOW, { text: `❌ 必须有 1~${SLOT_COUNT} 名角色`, duration: 1500 });
-      // 还原快照
-      gs.team.groups[this.selectedGroup] = JSON.parse(JSON.stringify(this._beforeEditSnapshot));
+      EventBus.emit(GE.TOAST_SHOW, { text: `❌ 编队不合法：需要 1~${SLOT_COUNT} 名角色`, duration: 1500 });
       this._refresh();
       return;
     }
     if (!group.spirit) {
-      EventBus.emit(GE.TOAST_SHOW, { text: '❌ 必须有且只有 1 名精灵', duration: 1500 });
-      gs.team.groups[this.selectedGroup] = JSON.parse(JSON.stringify(this._beforeEditSnapshot));
+      EventBus.emit(GE.TOAST_SHOW, { text: '❌ 编队不合法：需要 1 名精灵', duration: 1500 });
       this._refresh();
       return;
     }
 
-    // ── 比对顺序变化：角色集合 + 精灵是否实质改变 ──
-    const before = this._beforeEditSnapshot || { roles: [], spirit: null };
-    const newRoles = [...validRoles].sort();
-    const oldRoles = [...(before.roles || []).filter(r => r)].sort();
-    const rolesSame = JSON.stringify(newRoles) === JSON.stringify(oldRoles);
-    const spiritSame = (group.spirit || null) === (before.spirit || null);
-    const noEffectiveChange = rolesSame && spiritSame;
-
-    if (!noEffectiveChange) {
-      // ── 每日 3 次限制 ──
-      if ((gs.team.dailyModifyCount || 0) >= 3) {
-        EventBus.emit(GE.TOAST_SHOW, { text: '❌ 今日已修改 3 次，请明天再来～', duration: 1800 });
-        gs.team.groups[this.selectedGroup] = JSON.parse(JSON.stringify(this._beforeEditSnapshot));
-        this._refresh();
-        return;
-      }
-      gs.team.dailyModifyCount = (gs.team.dailyModifyCount || 0) + 1;
+    const activeGroup = gs.team.activeGroup ?? 0;
+    if (this.selectedGroup === activeGroup) {
+      EventBus.emit(GE.TOAST_SHOW, { text: `队伍 ${this.selectedGroup + 1} 已启用`, duration: 1200 });
+      this._refresh();
+      return;
     }
 
-    // ── 启用 ──
-    gs.team.activeGroup = this.selectedGroup;
+    // 切换启用不同编队组 = 一次修改 → 每日上限检查
+    if ((gs.team.dailyModifyCount || 0) >= DAILY_MODIFY_LIMIT) {
+      EventBus.emit(GE.TOAST_SHOW, { text: `❌ 今日编队修改次数已用完（${DAILY_MODIFY_LIMIT}/${DAILY_MODIFY_LIMIT}），今日无法再切换`, duration: 1800 });
+      return;
+    }
 
-    // 无论有没有实质内容变化 —— 只要 activeGroup 变了就 emit TEAM_CHANGE
+    gs.team.activeGroup = this.selectedGroup;
+    gs.team.dailyModifyCount = (gs.team.dailyModifyCount || 0) + 1;
+    devLog.info('[TeamPanel] 启用组', this.selectedGroup + 1, '今日已用', gs.team.dailyModifyCount);
+
     // SpiritArea / InfoPanel 等依赖此事件刷新队伍相关 UI（精灵名称/图标）
     EventBus.emit(GE.TEAM_CHANGE, { groupIdx: this.selectedGroup, activated: true });
-
-    if (!noEffectiveChange) {
-      devLog.info('[TeamPanel] team changed to group', this.selectedGroup + 1);
-    } else {
-      EventBus.emit(GE.TOAST_SHOW, { text: `✅ 已启用组 ${this.selectedGroup + 1}`, duration: 1200 });
-    }
-
-    // 更新快照为当前状态
-    this._takeSnapshot();
+    EventBus.emit(GE.TOAST_SHOW, { text: `✅ 已启用队伍 ${this.selectedGroup + 1}`, duration: 1200 });
     this._refresh();
   }
 
   show() { this.helper?.show(); }
   hide() { this.helper?.hide(); }
-  toggle() { this.helper?.toggle(); }
 }
 
 export default TeamPanel;

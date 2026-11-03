@@ -143,10 +143,15 @@ export class SettingsPanel {
     });
 
     // ══ 事件订阅 ══
+    // 幂等显示：收到自己的 OPEN 只负责显示/刷新，绝不 toggle 关闭
+    // （开新面板关旧面板由 GameDirector 中央发 UI_PANEL_CLOSE 处理）
     EventBus.on(GE.UI_PANEL_OPEN, ({ panel }) => {
       if (panel === 'settings') {
         this.show();
       }
+    });
+    EventBus.on(GE.UI_PANEL_CLOSE, ({ panel }) => {
+      if (panel === 'settings' && this.visible) this.hide();
     });
 
     EventBus.on(GE.STATE_RESET, () => {
@@ -301,7 +306,7 @@ export class SettingsPanel {
       // 不传 class —— 避免任何全局 CSS 规则覆盖 inline style
       style: btnStyle,
       text,
-      onclick,
+      onclick: onClick,
       parent,
     });
   }

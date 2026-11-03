@@ -2,6 +2,8 @@
 // DOM 操作工具：统一封装 DOM 创建、查询、事件绑定等
 // 所有 UI 模块都通过本工具操作 DOM，避免重复写原生 API
 
+import { Assets } from '../core/Assets.js';
+
 /**
  * 创建一个 DOM 元素
  * @param {string} tag 标签名（如 'div', 'span'）
@@ -117,4 +119,58 @@ export function clearChildren(el) {
   while (el && el.firstChild) {
     el.removeChild(el.firstChild);
   }
+}
+
+/**
+ * 图标元素（第 5 批 UI 对齐：getIcon 预留入口）
+ * 渲染优先级：
+ *   1. opts.def.icon（数据对象自带的 PNG 路径，如 creatures/characters 的 icon 字段）
+ *   2. Assets.getIcon(group, id)（Assets.icons 登记的真实 PNG）
+ *   3. 回退 emoji：opts.fallback ?? Assets.getEmoji(group, id)
+ * 美术批次只需往 Assets.icons / 数据 icon 字段补 PNG 路径，UI 结构不再改动。
+ *
+ * @param {string} group 'facilities'|'resources'|'terrains'|'ui'|'items'|'creatures'
+ * @param {string} id    资源 id（如 'facility_wheat' / 'item_egg'）
+ * @param {object} [opts]
+ *   - size: string      图标尺寸（默认 '28px'；emoji 用作 fontSize，PNG 用作宽高）
+ *   - fallback: string  强制指定回退 emoji（跳过 Assets.getEmoji 查表）
+ *   - def: object       数据定义对象（读 def.icon / def.emoji）
+ *   - cls: string       追加类名
+ *   - style: object     追加内联样式
+ * @returns {HTMLElement} <img>（有 PNG 时）或 <span>（emoji 回退）
+ */
+export function iconEl(group, id, opts = {}) {
+  const size = opts.size || '28px';
+  const extraStyle = opts.style || {};
+  const cls = ['game-icon', opts.cls || ''];
+
+  // 1. 数据对象自带 PNG 路径
+  const defIcon = opts.def && typeof opts.def.icon === 'string' && opts.def.icon
+    ? opts.def.icon : null;
+  const png = defIcon || Assets.getIcon(group, id);
+  if (png) {
+    return createEl('img', {
+      class: cls.concat('ui-icon-img'),
+      attrs: { src: png, alt: id || '', 'data-icon-id': id || '' },
+      style: {
+        width: size, height: size, objectFit: 'contain',
+        display: 'inline-block', verticalAlign: 'middle',
+        ...extraStyle,
+      },
+    });
+  }
+
+  // 2. emoji 回退
+  const emoji = opts.fallback
+    ?? (opts.def && opts.def.emoji ? opts.def.emoji : Assets.getEmoji(group, id));
+  return createEl('span', {
+    class: cls.concat('ui-icon-emoji'),
+    text: emoji,
+    attrs: { 'data-icon-id': id || '' },
+    style: {
+      fontSize: size, lineHeight: '1', display: 'inline-block',
+      fontFamily: '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif',
+      ...extraStyle,
+    },
+  });
 }
