@@ -61,6 +61,8 @@ export const Assets = {
     capacity_friendly: '🐣',
     capacity_danger: '👹',
     capacity_extreme: '💀',
+    task: '📋',
+    day: '📅',
     settings: '❌',
     sleep: '🛌',
     role: '👤',
@@ -107,11 +109,19 @@ export const Assets = {
     facilities: {},
     resources: {},
     terrains: {
+      terrain_none: 'assets/images/terrain/tile_none.png',
       terrain_grass: 'assets/images/terrain/tile_grass.png',
       terrain_water: 'assets/images/terrain/tile_water.png',
       terrain_ice: 'assets/images/terrain/tile_ice.png',
     },
-    ui: {},
+    // 第 6 批美术接入：docs/_art-references 可匹配素材（只接线，不新增创作）
+    ui: {
+      task: 'assets/images/icons/ui_task.png',           // ← 任务.png
+      build: 'assets/images/icons/ui_build.png',         // ← 建造.png
+      inventory: 'assets/images/icons/ui_inventory.png', // ← 背包.png
+      gold: 'assets/images/icons/ui_gold.png',           // ← 金币.png
+      player: 'assets/images/characters/hero.png',       // ← 主角小人模型.png（主角占位同用主角立绘）
+    },
     items: {},
     creatures: {
       slime_fire:  'assets/images/enemies/slime_fire.png',

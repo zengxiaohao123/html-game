@@ -418,5 +418,73 @@ head_('§16.10 睡觉确认 + P 键仅主界面有效');
 }
 
 // ════════════════════════════════════════════════════════════
+// 第 6 批：图标覆盖检查（每个 icon id 要么有真实素材且文件存在，要么能安全回退 emoji）
+// ════════════════════════════════════════════════════════════
+head_('图标覆盖：PNG 注册存在性 + 全量 icon id 回退安全');
+{
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const { Assets } = await import('../src/core/Assets.js');
+  const { ITEMS } = await import('../src/data/items.js');
+  const { CREATURES } = await import('../src/data/creatures.js');
+  const { CHARACTERS, SKILLS, SPIRITS } = await import('../src/data/characters.js');
+  const { BUFFS } = await import('../src/data/buffs.js');
+  const { TALENTS } = await import('../src/data/talents.js');
+
+  const groupOf = (id) => (id.startsWith('facility_') ? 'facilities'
+    : id.startsWith('resource_') ? 'resources'
+      : id.startsWith('terrain_') ? 'terrains'
+        : 'items');
+
+  // 全量 icon id 宇宙：物品库 93 + 生物 9 + 角色 3 + 精灵 3 + 技能 20 + 状态 6 + 天赋 6
+  //   + UI 固定 19 + 商人 2 + 日常任务 4（后三者 id/emoji 与调用点源码一致，见 FuncBar/TopBar/ShopPanel/TaskPanel）
+  const universe = [];
+  for (const [id, def] of Object.entries(ITEMS)) universe.push({ group: groupOf(id), id, def });
+  for (const [id, def] of Object.entries(CREATURES)) universe.push({ group: 'creatures', id, def });
+  for (const def of Object.values(CHARACTERS)) universe.push({ group: 'ui', id: def.id, def });
+  for (const def of Object.values(SPIRITS)) universe.push({ group: 'creatures', id: def.id, def });
+  // 技能 skill_* 已在 ITEMS（物品库）内，不重复计入
+  for (const def of Object.values(BUFFS)) universe.push({ group: 'ui', id: def.id, def });
+  for (const def of Object.values(TALENTS)) universe.push({ group: 'ui', id: def.id, def });
+  for (const id of Object.keys(Assets.ui)) universe.push({ group: 'ui', id, def: null }); // 含 day/task
+  universe.push({ group: 'ui', id: 'merchant_shop', def: { emoji: '🧑‍🌾' } });
+  universe.push({ group: 'ui', id: 'merchant_magic', def: { emoji: '🧙' } });
+  for (const [id, emoji] of [['place-3', '🛠️'], ['bless-1', '🙏'], ['move-10', '🚶'], ['earn-100', '💰']]) {
+    universe.push({ group: 'ui', id, def: { emoji } });
+  }
+
+  // 1) 已注册 PNG / 数据 icon 字段：文件必须真实存在（防注册笔误、防 404 破图）
+  const registered = [];
+  for (const [group, table] of Object.entries(Assets.icons)) {
+    for (const [id, p] of Object.entries(table)) registered.push({ group, id, p });
+  }
+  for (const { group, id, def } of universe) {
+    if (def && typeof def.icon === 'string' && def.icon) registered.push({ group, id, p: def.icon });
+  }
+  const missingFiles = registered.filter((r) => !fs.existsSync(path.join(repoRoot, r.p)));
+  assert(missingFiles.length === 0, `已注册 PNG 全部存在（${registered.length} 条）`, missingFiles);
+
+  // 2) 全量 icon id：要么有素材，要么能安全回退 emoji（回退值非空且非 ❓）
+  let matched = 0;
+  const unsafe = [];
+  for (const { group, id, def } of universe) {
+    const png = (def && def.icon) || Assets.getIcon(group, id) || Assets.getIcon('items', id) || Assets.getIcon('ui', id);
+    if (png) { matched++; continue; }
+    const emoji = (def && def.emoji) || Assets.getEmoji(group, id);
+    if (!emoji || emoji === '❓') unsafe.push(`${group}/${id}`);
+  }
+  assert(unsafe.length === 0, `全量 icon id 均有素材或安全 emoji 回退（宇宙 ${universe.length}）`, unsafe);
+  console.log(`  · 图标覆盖率：${matched}/${universe.length} 已匹配 PNG，其余走 emoji 安全回退`);
+
+  // 3) TopBar 任务入口图标走 iconEl 链（不再写死 emoji）
+  const taskIconChild = topBar.taskIconEl.children[0];
+  assert(taskIconChild && taskIconChild.getAttribute('data-icon-id') === 'task',
+    'TopBar 任务入口图标带 data-icon-id=task（iconEl 链）', taskIconChild && taskIconChild.tagName);
+  assert(taskIconChild.tagName === 'IMG', '任务图标命中 PNG（ui_task.png）', taskIconChild.tagName);
+}
+
+// ════════════════════════════════════════════════════════════
 console.log(`\nsmoke-ui 结果：${pass} 通过 / ${fail} 失败（共 ${pass + fail}）`);
 process.exit(fail > 0 ? 1 : 0);

@@ -160,7 +160,7 @@ export class TopBar {
       },
       parent: this.root,
     });
-    this.taskIconEl.textContent = '📋';
+    this.taskIconEl.appendChild(iconEl('ui', 'task', { size: '24px', fallback: '📋' }));
     this.taskIconEl.title = '任务（J 切换）';
     this.taskIconEl.addEventListener('click', () => {
       EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'task' });
