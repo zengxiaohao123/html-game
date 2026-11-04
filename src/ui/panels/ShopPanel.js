@@ -90,6 +90,10 @@ export class ShopPanel {
     });
     EventBus.on(GE.STATE_RESET, () => { if (this.visible) this.close(); });
     EventBus.on(GE.INVENTORY_CHANGE, () => { if (this.visible && this.tab === 'sell') this._renderGrid(); });
+    // §16.21：玩家离开商店格时自动关闭商店（商店只能在所站格子上使用）
+    EventBus.on(GE.MOVE, ({ toIdx }) => {
+      if (this.visible && this.tileIdx >= 0 && toIdx !== this.tileIdx) this.close();
+    });
   }
 
   // ────────────────────────────────────────── 打开 / 关闭

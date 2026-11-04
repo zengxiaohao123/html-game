@@ -674,7 +674,8 @@ head_('第 9 批：商店剩余预览 / 背包拖拽放置 / 粘液中文名');
   });
   assert(dt['text/plain'] === facDef.id, 'dragstart 携带物品 id');
   assert(window.__invDrag === true, 'dragstart 置全局拖拽标记');
-  assert(inventoryPanel.visible === false, '拖拽开始背包自动关闭露出地图');
+  // B-01：hide 延迟到下一帧（同步 hide 会移除拖拽源 → 浏览器取消 drag）
+  assert(inventoryPanel.visible === true, 'B-01：dragstart 时背包不同步隐藏（拖拽不被取消）');
 
   // 拖拽期间地图平移被抑制
   const transformBefore = mapView.root.style.transform;
@@ -684,6 +685,8 @@ head_('第 9 批：商店剩余预览 / 背包拖拽放置 / 粘液中文名');
     '拖背包格期间地图不触发拖拽平移');
   facSlots[0].dispatchEvent({ type: 'dragend' });
   assert(window.__invDrag === false, 'dragend 复位拖拽标记');
+  await new Promise((r) => setTimeout(r, 20));
+  assert(inventoryPanel.visible === false, 'B-01：下一帧背包隐藏露出地图');
 
   // drop 到空地块：放置成功且只放 1 个
   const targetTile = gs.map.outerTiles.find((t) => !t.contentId);
@@ -1025,6 +1028,166 @@ head_('第 12 批：弹窗连点重入 / ESC 归弹窗 / drop 复位拖拽标记
   assert(window.__invDrag === false, 'HotBar drop 后拖拽标记复位');
 
   director.dialogBox = prevDlg;
+}
+
+// ════════════════════════════════════════════════════════════
+head_('第 13 批 波 2：UI 修复验证（门控 / 信息区 / 商店 / 建造 / 编队 / 连携 / 出货箱）');
+{
+  const { HookDispatcher } = await import('../src/core/HookDispatcher.js');
+  const { LinkSkillSystem } = await import('../src/systems/LinkSkillSystem.js');
+  const { DialogBox } = await import('../src/ui/DialogBox.js');
+
+  // ── S-01 / S-02 / M-01：界面打开时 WASD / 空格 / 数字键失效（§16.20） ──
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' }); // 防御性：确保从干净状态开始
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+  inputManager.bind();
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'inventory' });
+  const x0 = gs.player.x;
+  window.dispatchEvent({ type: 'keydown', key: 'd', preventDefault() {} });
+  assert(gs.player.x === x0, 'S-01：背包打开时按 D 不移动（§16.20）');
+  gs.player.stamina = 8;
+  gs.player.gold = 10;
+  const blessN0 = gs.team.dailyBlessCount || 0;
+  window.dispatchEvent({ type: 'keydown', key: ' ', preventDefault() {} });
+  assert((gs.team.dailyBlessCount || 0) === blessN0, 'S-02：界面打开时按空格不祈福（§16.20）');
+  let selW2 = null;
+  const onSelW2 = (p) => { selW2 = p; };
+  EventBus.on(GE.HOTBAR_SELECT_SLOT, onSelW2);
+  window.dispatchEvent({ type: 'keydown', key: '1', preventDefault() {} });
+  assert(selW2 === null, 'M-01：界面打开时按 1 不触发 HotBar 选中');
+  EventBus.off(GE.HOTBAR_SELECT_SLOT, onSelW2);
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });
+
+  // ── M-02：弹窗打开时 P 不顶替弹窗（§16.10） ──
+  const dlgW2 = new DialogBox();
+  dlgW2.mount();
+  const prevDlgW2 = director.dialogBox;
+  director.dialogBox = dlgW2;
+  const dialogsW2 = [];
+  const onDlgW2 = (p) => dialogsW2.push(p);
+  EventBus.on(GE.DIALOG_SHOW, onDlgW2);
+  gs.player.stamina = 5;
+  EventBus.emit(GE.DIALOG_SHOW, { title: '已有弹窗', options: [{ label: '好的', onSelect: () => {} }] });
+  window.dispatchEvent({ type: 'keydown', key: 'p', preventDefault() {} });
+  assert(dialogsW2.length === 1 && dlgW2.titleEl._text === '已有弹窗',
+    'M-02：弹窗打开时按 P 不顶替弹窗（不弹睡觉确认）');
+  dlgW2.hide();
+  EventBus.off(GE.DIALOG_SHOW, onDlgW2);
+  director.dialogBox = prevDlgW2;
+  inputManager.unbind();
+
+  // ── S-03：信息面板地块内容描述回退物品库（def.description） ──
+  // 测试后期 8 格均已占用 → 直接覆写固定地块（本块为最后一块，无副作用）
+  const evtTile = gs.map.outerTiles[0];
+  evtTile.contentId = 'resource_event';
+  evtTile.contentState = {}; evtTile.dailyFlags = {}; evtTile.states = [];
+  infoPanel.selectTile(evtTile.idx);
+  buttonsWithText(infoPanel.root, '地块内容')[0].click();
+  assert(hasText(infoPanel.root, '遇到随机事件'), 'S-03：事件点描述回退物品库（遇到随机事件）');
+  assert(!hasText(infoPanel.root, '（词条未配置）'), 'S-03：不再出现「（词条未配置）」');
+  const cornTile = gs.map.outerTiles[1];
+  cornTile.contentId = 'facility_corn';
+  cornTile.contentState = {}; cornTile.dailyFlags = {}; cornTile.states = [];
+  infoPanel.selectTile(cornTile.idx);
+  buttonsWithText(infoPanel.root, '地块内容')[0].click();
+  assert(hasText(infoPanel.root, '获得玉米 ×1'), 'S-03：玉米描述回退物品库（获得玉米 ×1）');
+
+  // ── L-02：帐篷描述用物品库文案（无「放回背包」） ──
+  const tentTile = gs.map.outerTiles[3];
+  tentTile.contentId = 'facility_tent';
+  tentTile.contentState = {}; tentTile.dailyFlags = {}; tentTile.states = [];
+  infoPanel.selectTile(tentTile.idx);
+  buttonsWithText(infoPanel.root, '地块内容')[0].click();
+  assert(!hasText(infoPanel.root, '放回背包') && hasText(infoPanel.root, '改为回满行动力'),
+    'L-02：帐篷描述 = 物品库文案（无「放回背包」旧文案）');
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+
+  // ── M-03：踩商店格不自动打开商店（§16.21 改为点击进入） ──
+  const shopTileW2 = gs.map.outerTiles[4];
+  shopTileW2.contentId = 'resource_shop';
+  shopTileW2.contentState = {}; shopTileW2.dailyFlags = {}; shopTileW2.states = [];
+  HookDispatcher.fire('onEnter', { gs, tileIdx: shopTileW2.idx });
+  assert(shopPanel.visible === false, 'M-03：踩商店格不自动打开商店（由信息区点击进入）');
+
+  // ── M-04：离开商店格自动关闭商店 ──
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'shop', tileIdx: shopTileW2.idx });
+  assert(shopPanel.visible === true, 'M-04 前置：商店已打开');
+  EventBus.emit(GE.MOVE, {
+    fromIdx: shopTileW2.idx, toIdx: (shopTileW2.idx + 1) % 8, direction: 'right', path: [],
+  });
+  assert(shopPanel.visible === false, 'M-04：离开商店格自动关闭商店（§16.21）');
+
+  // ── M-05：建造模式下 ESC 只退出建造 ──
+  BuildSystem.enterBuildMode(gs);
+  assert(gs.buildMode === true, 'M-05 前置：已进入建造模式');
+  director.handleESC();
+  assert(gs.buildMode === false && settingsPanel.visible === false,
+    'M-05：建造模式下 ESC 只退出建造模式（不打开设置）');
+
+  // ── M-07：进入建造模式默认选中 1 号位 ──
+  window.__gameDirector = director; // HotBar._getCurrentGS 依赖（镜像 main.js）
+  BuildSystem.enterBuildMode(gs);
+  assert(hotBar.selectedSlotIdx === 0, 'M-07：进入建造模式默认选中 1 号位');
+  BuildSystem.exitBuildMode(gs);
+  assert(hotBar.selectedSlotIdx === null, 'M-07：退出建造模式清空选中');
+  window.__gameDirector = null;
+
+  // ── M-06：快捷编队打开时 ✕ / 遮罩先关二级（§16.20） ──
+  teamPanel.helper.show();
+  teamPanel._quickEditMode = true;
+  let quickClosedW2 = false;
+  const origCloseQuickW2 = teamPanel._closeQuick;
+  teamPanel._closeQuick = () => { quickClosedW2 = true; teamPanel._quickEditMode = false; };
+  const maskW2 = teamPanel.helper.root; // helper root 即 panel-mask
+  maskW2.onclick({ target: maskW2 });
+  assert(quickClosedW2 && maskW2.style.display === 'flex',
+    'M-06：快捷编队打开时点 ✕/遮罩 先关二级、不关整个面板');
+  teamPanel._closeQuick = origCloseQuickW2;
+  teamPanel.helper.hide();
+
+  // ── M-08：选项模式放信息区（§16.4） ──
+  const dlgPos = new DialogBox();
+  dlgPos.mount();
+  dlgPos.show({ title: '位置测试', options: [{ label: '甲', onSelect: () => {} }] });
+  assert(dlgPos.box.style.right === '20px' && dlgPos.box.style.transform === 'translate(0, -50%)',
+    'M-08：弹窗卡片定位信息区（右侧、垂直居中，与 InfoPanel 一致）');
+  assert(dlgPos.mask.style.backgroundColor === 'rgba(0,0,0,0)', 'M-08：遮罩透明不压暗主界面');
+  dlgPos.mask.click();
+  assert(dlgPos._selectedIdx === -1, 'M-08：点击别处仍取消选中');
+  dlgPos.hide();
+
+  // ── M-09：连携排队不计时（§12.5 窗口自成为队首起算） ──
+  gs.linkSkillQueue = [];
+  gs.linkSkillCooldowns = gs.linkSkillCooldowns || {};
+  LinkSkillSystem.enqueue(gs, { skillId: 'skill_link_yumo_drain' });
+  LinkSkillSystem.enqueue(gs, { skillId: 'skill_link_luyouyou_rise_wind' });
+  const qe1 = gs.linkSkillQueue[0];
+  const qe2 = gs.linkSkillQueue[1];
+  assert(qe1 && qe1.expireAtMs > Date.now(), 'M-09：队首开始 3 秒窗口');
+  assert(qe2 && qe2.expireAtMs === null, 'M-09：排队条目不计时（§12.5）');
+  qe1.expireAtMs = Date.now() - 10;
+  LinkSkillSystem.pruneExpired(gs);
+  assert(gs.linkSkillQueue.length === 1
+    && gs.linkSkillQueue[0].skillId === 'skill_link_luyouyou_rise_wind'
+    && gs.linkSkillQueue[0].expireAtMs > Date.now(),
+    'M-09：队首过期后新队首开始计时');
+  gs.linkSkillQueue = [];
+
+  // ── M-10：出货箱显示条目实际价值（郁金香随机价） ──
+  const outboxBackup = gs.inventory.outbox;
+  gs.inventory.outbox = [{ itemId: 'facility_tulip', qty: 1, value: 7 }];
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'inventory' });
+  assert(hasText(inventoryPanel.outboxGridEl, '🪙7'), 'M-10：出货箱显示条目实际价值（郁金香 7）');
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });
+  gs.inventory.outbox = outboxBackup;
+
+  // ── L-01：无残留 Phase 文案（玉米受祝福占位 toast 已移除） ──
+  const toastsW2 = [];
+  const onToastW2 = (p) => toastsW2.push(String(p.text || ''));
+  EventBus.on(GE.TOAST_SHOW, onToastW2);
+  HookDispatcher.fire('onBlessed', { gs, tileIdx: cornTile.idx });
+  assert(!toastsW2.some((t) => t.includes('Phase')), 'L-01：玉米受祝福无残留 Phase 文案');
+  EventBus.off(GE.TOAST_SHOW, onToastW2);
 }
 
 // ════════════════════════════════════════════════════════════

@@ -33,60 +33,6 @@ import { createEl, qs, iconEl } from './dom.js';
 const SLIDE_IN_TRANSFORM = 'translate(0, -50%)';
 const SLIDE_OUT_TRANSFORM = 'translate(calc(100% + 60px), -50%)';
 
-/** Phase 2B 完整词条描述字典（10 设施 + 5 资源） */
-const FACILITY_DESCRIPTIONS = {
-  facility_home: [
-    '【永恒】不可被替换',
-    '【经过时】获得 1 金币（每天限 1 次）',
-    '【进入时】获得 1 金币（每天限 1 次）',
-    '【睡觉时】行动力回满',
-    '【受祝福时】立即 +1 金币',
-  ],
-  facility_tent: [
-    '【睡觉时】行动力回满',
-    '【替换时】原来的地块内容被放回背包',
-    '【受祝福时】下次帐篷睡觉额外 +3 行动力',
-  ],
-  facility_wheat: [
-    '【每日开始】产出 2 小麦（草地 +1）',
-    '【受祝福时】立即额外 ×3 产出一次小麦',
-  ],
-  facility_rice: [
-    '【每日开始】稻草 ×1（草地 +1，相邻水面 +2）',
-    '【受祝福时】未来 5 日每日开始额外 +1 稻草',
-  ],
-  facility_potato: [
-    '【每日开始】储存土豆 ×3（上限 30）',
-    '【受祝福时】立即储存 +5 土豆',
-    '【进入时】取走已储存的土豆',
-  ],
-  facility_tulip: [
-    '【每日开始】价值随机 -4 ~ +10',
-    '【受祝福时】立即触发 2 次每日效果',
-  ],
-  facility_strawberry: [
-    '【经过时】储存草莓 ×1（每天限 1 次，上限 5）',
-    '【进入时】若草莓已满（≥5），取走全部',
-    '【受祝福时】储存 2 ~ 5 个（不超上限）',
-  ],
-  facility_pea: [
-    '【使用技能时】储存豌豆 ×1（每 2 回合限 1 次，上限 10）',
-    '【进入时】取走已储存的豌豆',
-    '【受祝福时】自动取走储存的豌豆',
-  ],
-  facility_henhouse: [
-    '【进入时】生成 1 只小鸡（Phase 3）',
-    '【进入时】取走储存的鸡蛋（上限 10）',
-    '【受祝福时】随机 1 只小鸡立刻长大（Phase 3）',
-  ],
-  facility_slimehouse: [
-    '【每日开始】生成 1 只史莱姆（Phase 3）',
-    '【受祝福时】未来 3 天每日生成数量 ×2',
-  ],
-
-  // —— 资源类地块内容：描述以 facilities.js 定义（物品库 RES-001~006 原文）为准，不在此覆盖 ——
-};
-
 const TERRAIN_DESCRIPTIONS = {
   terrain_none:      '无地形：可在此放置设施 / 资源 / 技能',
   terrain_grass:     '草地：10 草元素量，生物可啃食，部分设施产出加成',
@@ -359,7 +305,10 @@ export class InfoPanel {
           fallback: def?.emoji || Assets.getEmoji(group, contentId),
         });
         name = (def && def.name) || contentId;
-        descriptions = FACILITY_DESCRIPTIONS[contentId] || ['（词条未配置）'];
+        // §16.4 词条描述以物品库为准：回退 def.description（facilities.js 按物品库生成）
+        descriptions = (def && def.description)
+          ? String(def.description).split('\n').filter(Boolean)
+          : ['（词条未配置）'];
       }
     } else {
       // 空地：显示地形（含"无地形"）

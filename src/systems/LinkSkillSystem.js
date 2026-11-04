@@ -25,6 +25,20 @@ function getActiveGroupRoles(gs) {
 }
 
 /**
+ * M-09（§12.5）：3 秒窗口只在条目成为队首（可触发）时开始计时，排队不计时。
+ * 队首条目尚无窗口时立即开始计时。
+ */
+function armHeadWindow(gs) {
+  const q = gs.linkSkillQueue;
+  if (!Array.isArray(q) || q.length === 0) return;
+  const head = q[0];
+  if (!head.expireAtMs) {
+    head.expireAtMs = Date.now() + WINDOW_MS;
+    devLog.info('[LinkSkillSystem] 队首窗口开始计时', head.skillId);
+  }
+}
+
+/**
  * 入队（如果不在队列里且没冷却）
  */
 function tryEnqueue(gs, skillId, opts = {}) {
@@ -44,11 +58,13 @@ function tryEnqueue(gs, skillId, opts = {}) {
   const entry = {
     skillId,
     roleId: opts.roleId || null,
-    expireAtMs: Date.now() + WINDOW_MS,
+    // M-09（§12.5）：排队不计时，成为队首时才开始 3 秒窗口
+    expireAtMs: null,
     cooldownTurns,
     context,  // 触发上下文（如元素类型、目标 creature 对象等）
   };
   gs.linkSkillQueue.push(entry);
+  armHeadWindow(gs);
   EventBus.emit(GE.LINK_SKILL_READY, { skillId, entry });
   devLog.info('[LinkSkillSystem] enqueue', skillId);
   return entry;
@@ -171,6 +187,7 @@ export function fireLinkSkill(gs, skillId) {
 
   // 移除
   gs.linkSkillQueue = gs.linkSkillQueue.filter(e => e.skillId !== skillId);
+  armHeadWindow(gs); // M-09：新队首开始计时
   EventBus.emit(GE.LINK_SKILL_EXPIRE, { skillId, triggered: true });
 
   const skill = getSkill(skillId);
@@ -370,7 +387,9 @@ export function popLinkSkill(gs, skillId) {
   if (!gs || !Array.isArray(gs.linkSkillQueue)) return null;
   const idx = gs.linkSkillQueue.findIndex(e => e.skillId === skillId);
   if (idx >= 0) {
-    return gs.linkSkillQueue.splice(idx, 1)[0];
+    const popped = gs.linkSkillQueue.splice(idx, 1)[0];
+    armHeadWindow(gs); // M-09：新队首开始计时
+    return popped;
   }
   return null;
 }
@@ -378,15 +397,21 @@ export function popLinkSkill(gs, skillId) {
 export function pruneExpired(gs) {
   if (!gs || !Array.isArray(gs.linkSkillQueue)) return 0;
   const now = Date.now();
-  gs.linkSkillQueue = gs.linkSkillQueue.filter(e => {
-    if (e.expireAtMs < now) {
-      EventBus.emit(GE.LINK_SKILL_EXPIRE, { skillId: e.skillId, triggered: false });
-      devLog.info('[LinkSkillSystem] expired', e.skillId);
-      return false;
+  let removed = 0;
+  // M-09（§12.5）：只有队首在计时 —— 仅修剪队首；队首过期后为新队首开始计时并继续检查
+  while (gs.linkSkillQueue.length > 0) {
+    const head = gs.linkSkillQueue[0];
+    if (head.expireAtMs && head.expireAtMs < now) {
+      gs.linkSkillQueue.shift();
+      EventBus.emit(GE.LINK_SKILL_EXPIRE, { skillId: head.skillId, triggered: false });
+      devLog.info('[LinkSkillSystem] expired', head.skillId);
+      removed++;
+      armHeadWindow(gs);
+    } else {
+      break;
     }
-    return true;
-  });
-  return 0;
+  }
+  return removed;
 }
 
 export function checkReady(gs, conditionKey) {

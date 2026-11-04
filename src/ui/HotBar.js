@@ -268,8 +268,10 @@ export class HotBar {
       this.buildMode = build;
       if (build) {
         document.body.classList.add('build-mode');
-        // 建造模式默认清空选中，让玩家自己选
-        this._clearSelection();
+        // §16.14 修复：进入建造模式默认选中 1 号位（1 号位有内容时），避免「无法放置」状态
+        const first = this._getCurrentGS()?.hotbar?.[0];
+        if (first?.itemId) this._handleSlotClick(0);
+        else this._clearSelection();
       } else {
         document.body.classList.remove('build-mode');
         this._clearSelection();

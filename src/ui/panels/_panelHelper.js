@@ -15,6 +15,8 @@ import { createEl, qs } from '../dom.js';
  *   - width: string          默认 'min(92vw, 880px)'
  *   - height: string         默认 'min(86vh, 700px)'
  *   - onMount(panel, body):  panel-card 与 body 已经挂好，让调用方往 body 里填内容
+ *   - onCloseRequest():      可选；✖ / 遮罩点击 / ESC 的关闭请求先交给调用方裁决
+ *                            （如二级界面打开时先关二级），不调用则默认直接 hide()
  *   - defaultClose: boolean  默认 true，ESC 关闭 + 遮罩点击关闭
  * @returns {object} { root, bodyEl, show(), hide(), toggle() }
  */
@@ -26,6 +28,7 @@ export function createStandardPanel(opts = {}) {
     height = 'min(86vh, 700px)',
     defaultClose = true,
     onMount = null,
+    onCloseRequest = null,
     parent = qs('body'),
   } = opts;
 
@@ -99,19 +102,25 @@ export function createStandardPanel(opts = {}) {
     }
     if (panelKey) EventBus.emit(GE.UI_PANEL_CLOSE, { panel: panelKey });
   }
+  // 关闭请求：有 onCloseRequest 时交给调用方裁决（如先关二级界面），否则直接 hide
+  function requestClose() {
+    if (typeof onCloseRequest === 'function') onCloseRequest();
+    else hide();
+  }
+
   function show() {
     if (visible) return;
     visible = true;
     mask.style.display = 'flex';
     if (defaultClose) {
-      mask.onclick = (e) => { if (e.target === mask) hide(); };
-      keyHandler = (e) => { if (e.key === 'Escape') hide(); };
+      mask.onclick = (e) => { if (e.target === mask) requestClose(); };
+      keyHandler = (e) => { if (e.key === 'Escape') requestClose(); };
       window.addEventListener('keydown', keyHandler);
     }
   }
   function toggle() { visible ? hide() : show(); }
 
-  closeBtn.addEventListener('click', hide);
+  closeBtn.addEventListener('click', requestClose);
 
   if (typeof onMount === 'function') onMount(panel, body);
 

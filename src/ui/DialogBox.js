@@ -1,8 +1,8 @@
 // src/ui/DialogBox.js
 // Phase 4 —— 统一确认弹窗（所有面板的依赖组件）
-// 外观严格对齐 InventoryPanel（panel-card + 奶油白 + 关闭按钮 ✖ + 92vw×86vh → Dialog 版缩小到 460px）
 //
-// 第 11 批 §16.4 选项模式：
+// §16.4 选项模式：选项放在信息区（右侧信息面板位置），不是屏幕中央模态弹窗：
+//   · 卡片定位与 InfoPanel 一致（右侧 380px、垂直居中），遮罩透明不压暗主界面
 //   · 鼠标点击或数字键 1~6（最多 6 个），两者等效
 //   · 第一次点击 = 选中：浅绿色背景，下方小字「你确定这么做？」
 //   · 点击别处 = 取消选中；点击其他选项 = 切换选中
@@ -50,23 +50,26 @@ export class DialogBox {
   }
 
   mount(parent = qs('body')) {
-    // 遮罩 —— zIndex 必须高于 PanelHelper 的 6000，取 9000
+    // 遮罩 —— §16.4 选项在信息区：透明遮罩（不压暗主界面），仅承接「点击别处」语义
+    // zIndex 必须高于 PanelHelper 的 6000，取 9000
     this.mask = createEl('div', {
       style: {
         position: 'fixed', inset: 0,
-        backgroundColor: 'rgba(0,0,0,0.55)',
+        backgroundColor: 'rgba(0,0,0,0)',
         zIndex: 9000,
-        display: 'none', alignItems: 'center', justifyContent: 'center',
+        display: 'none',
       },
       parent,
     });
 
-    // 卡片 —— 复用 InventoryPanel 的 panel-card 视觉模板（小尺寸版）
+    // 卡片 —— 定位与 InfoPanel 一致：右侧信息区、垂直居中（§16.4）
     this.box = createEl('div', {
       class: ['panel-card'],
       style: {
-        width: 'min(460px, 92vw)',
-        maxWidth: '460px',
+        position: 'absolute',
+        right: '20px', top: '52%', transform: 'translate(0, -50%)',
+        width: '380px',
+        maxWidth: 'calc(100vw - 40px)',
         maxHeight: 'min(520px, 86vh)',
         background: 'linear-gradient(135deg, #fffbf0 0%, #fff3c4 100%)',
         border: '3px solid #3a3a3a',
@@ -170,7 +173,7 @@ export class DialogBox {
     this.visible = true;
     this.mask.style.opacity = '1';
     this.mask.style.transition = 'opacity 0.3s ease';
-    this.mask.style.display = 'flex';
+    this.mask.style.display = 'block';
 
     // §16.4：点击别处 = 取消选中（有选中时不关闭）；无选中时沿用 backdropClose 关闭
     this.mask.onclick = (e) => {

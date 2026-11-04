@@ -63,6 +63,11 @@ export class InputManager {
       const key = (e.key || '').toLowerCase();
       const gs = this.director?.getGS?.();
 
+      // ── §16.20 界面门控：任意界面/弹窗打开时，主界面快捷键无效（ESC 除外） ──
+      const uiOpen = (this.director?.openPanels?.length || 0) > 0
+        || !!this.director?.settingsPanel?.visible;
+      const dialogOpen = !!this.director?.dialogBox?.visible;
+
       // ── 建造模式 gating ──
       if (gs?.buildMode === true) {
         if (key === 'w' || key === 'a' || key === 's' || key === 'd'
@@ -80,7 +85,8 @@ export class InputManager {
 
       // ── 1-0 数字键 → HotBar 选中 ──
       // 弹窗打开时数字键归选项模式（§16.4 数字键 1~6 选择选项），此处不抢
-      if (gs && !this.director?.dialogBox?.visible) {
+      // 界面打开时主界面快捷键无效（§16.20）
+      if (gs && !uiOpen && !dialogOpen) {
         const num = parseInt(key, 10);
         if (!isNaN(num) && num >= 1 && num <= 9) {
           e.preventDefault();
@@ -95,6 +101,11 @@ export class InputManager {
       }
 
       if (KEY_TO_DIRECTION[key]) {
+        // §16.20：界面/弹窗打开时 WASD 移动无效
+        if (uiOpen || dialogOpen) {
+          e.preventDefault();
+          return;
+        }
         e.preventDefault();
         this.director.move(KEY_TO_DIRECTION[key]);
         return;
@@ -130,19 +141,22 @@ export class InputManager {
 
   _dispatchAction(action) {
     const gs = this.director?.getGS?.();
+    // §16.20 / §16.10：界面或弹窗打开时，主界面快捷键（P 睡觉 / 空格祈福）无效
+    const uiOpen = (this.director?.openPanels?.length || 0) > 0
+      || !!this.director?.settingsPanel?.visible;
+    const dialogOpen = !!this.director?.dialogBox?.visible;
     switch (action) {
       case 'sleep': {
-        // §16.10：P 键只在主界面有效，其他界面按 P 无反应
-        const uiOpen = (this.director?.openPanels?.length || 0) > 0
-          || !!this.director?.settingsPanel?.visible;
-        if (uiOpen) break;
+        // §16.10：P 键只在主界面有效，其他界面按 P 无反应（弹窗打开时不得顶替弹窗）
+        if (uiOpen || dialogOpen) break;
         this.director.sleep();
         break;
       }
 
       case 'bless':
         // 祈福走两步式：blessStart 扣消耗 + 选目标 → BlessAnimation 播完 → blessCommit
-        if (!gs) break;
+        // §16.20 / §16.6：界面打开或弹窗显示时不能祈福
+        if (!gs || uiOpen || dialogOpen) break;
         BlessSystem.blessStart(gs);
         break;
 

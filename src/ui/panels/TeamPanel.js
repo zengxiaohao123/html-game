@@ -43,6 +43,14 @@ export class TeamPanel {
       panelKey: 'team',
       width: '100vw',   // §16.12：全屏
       height: '100vh',
+      // §16.20：快捷编队（二级界面）打开时，✕ / 遮罩 / ESC 先关二级，不直接关整个面板
+      onCloseRequest: () => {
+        if (this._quickEditMode) {
+          this._closeQuick();
+          return;
+        }
+        this.helper.hide();
+      },
       onMount: (_panel, body) => this._build(body),
     });
     this._subscribe();

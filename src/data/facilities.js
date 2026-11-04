@@ -643,12 +643,9 @@ const FacilityCorn = {
       }
     }, this);
 
-    // onBlessed：获得随机 1 个生物
-    //   池子：60% 友善 / 40% 危险 / 0% 极度危险；抽中类型后从该类中等概率随机
-    // Phase 3 实现 CreatureSystem.spawnCreatureFromPool；此处先 Toast 占位
+    // onBlessed：获得随机 1 个生物（待开发：生物池未定义，效果接入前不给玩家提示）
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
-      EventBus.emit(GE.TOAST_SHOW, { text: '✨ 玉米田受祝福 → 获得随机 1 个生物（Phase 3 实现）', duration: 2200 });
       devLog.info('[corn] onBlessed TODO: spawn random creature (60% friendly / 40% danger)');
     }, this);
   },
@@ -685,17 +682,16 @@ const FacilityCabbage = {
         //    背包里没卷心菜则跳过（注意上面刚 +2 了所以一定有，但祝福效果不消耗所以不影响）
         const hasBless = t.states?.some(s => s.type === 'blessed');
         if (!hasBless) {
-          // 非祝福：消耗 1 个，投最近敌人
-          // TODO: 真正的 CombatSystem.performDamage(gs, nearestEnemy, 20, 'grass') — Phase 3 接入
-          // Phase 2A 简化：检查背包里是否真的有，然后减 1
+          // 非祝福：消耗 1 个，投最近敌人（投掷伤害待开发，接入前不给玩家提示）
+          // TODO: 真正的 CombatSystem.performDamage(gs, nearestEnemy, 20, 'grass')
           const inv = gs.player?.inventory || {};
           if (inv.item_cabbage && inv.item_cabbage > 0) {
             InventorySystem.addItem(gs, 'item_cabbage', -1);
-            EventBus.emit(GE.TOAST_SHOW, { text: `🥬 卷心菜投掷！20 点草元素伤害（Phase 3 生效）`, duration: 1800 });
+            devLog.info('[cabbage] 投掷 TODO: 20 草元素伤害');
           }
         } else {
-          // 祝福：对所有敌人分别投掷一个卷心菜，不消耗背包
-          EventBus.emit(GE.TOAST_SHOW, { text: `✨ 祝福卷心菜 → 对所有敌人各投 1 个（Phase 3 生效）`, duration: 2200 });
+          // 祝福：对所有敌人分别投掷一个卷心菜，不消耗背包（待开发）
+          devLog.info('[cabbage] 祝福投掷 TODO: 对所有敌人各投 1 个');
         }
       }
     }, this);
@@ -901,12 +897,7 @@ const ResourceShop = {
   description: '【进入时】可进入商店\n【受祝福时】下一次进入时，有概率出现打折商品',
   internalNote: '每日至多放置 1 个；场上上限 2；不在功能区，必须通过地块功能进入',
   register() {
-    HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
-      if (!isMine(gs, tileIdx, this.id)) return;
-      EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'shop', tileIdx });
-      devLog.info('[shop] onEnter → open shop panel, tile', tileIdx);
-    }, this);
-
+    // §11.1 / §16.4 / §16.21：踩格不自动进入商店，由信息区「进入商店」功能选项进入
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
       const shop = ShopSystem.getShop(gs, tileIdx);

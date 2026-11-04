@@ -263,8 +263,10 @@ export class InventoryPanel {
           }
           // 第 9 批：全局拖拽标记——拖背包格期间 MapView 不得触发拖拽平移
           window.__invDrag = true;
-          // 背包自动关闭露出地图
-          this.hide();
+          // 背包自动关闭露出地图。
+          // B-01：同步 hide() 会移除拖拽源节点 → 浏览器立即取消 drag（dragend 紧随 dragstart）。
+          // 延迟到下一帧再隐藏，保证 drag 会话成立。
+          setTimeout(() => this.hide(), 0);
         });
         slot.addEventListener('dragend', () => { window.__invDrag = false; });
       }
@@ -555,11 +557,15 @@ export class InventoryPanel {
         iconWrap.appendChild(this._iconElFor(entry.itemId, '22px'));
         if (entry.qty > 1) createEl('div', { class: 'inv-big-qty', text: `×${entry.qty}`, parent: slot });
 
+        // M-10：优先显示条目实际价值（如郁金香每日随机价），回退物品库静态价值
         const ITEM = ITEMS[entry.itemId];
-        if (ITEM && typeof ITEM.value === 'number') {
+        const val = (typeof entry.value === 'number')
+          ? entry.value
+          : (ITEM && typeof ITEM.value === 'number' ? ITEM.value : null);
+        if (val !== null) {
           createEl('div', {
             class: 'inv-outbox-value',
-            text: `🪙${ITEM.value}`,
+            text: `🪙${val}`,
             parent: slot,
           });
         }

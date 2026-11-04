@@ -272,6 +272,12 @@ export class GameDirector {
    * 二级子面板（如 TeamPanel 的快捷编队）由各 Panel 内部自行关闭
    */
   handleESC() {
+    // §16.14：建造模式下 ESC 只退出建造模式（不得打开设置面板）
+    if (this.gs?.buildMode) {
+      exitBuildMode(this.gs);
+      devLog.info('[GameDirector] ESC → 退出建造模式');
+      return;
+    }
     // SettingsPanel 打开时：直接关闭它，不经过 openPanels 栈
     // （SettingsPanel 通过 GE.UI_PANEL_OPEN/CLOSE 自己管理 visible，不在 openPanels 里）
     if (this.settingsPanel?.visible) {
