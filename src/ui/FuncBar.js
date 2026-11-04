@@ -79,6 +79,7 @@ export class FuncBar {
 
   _onAction(action) {
     // 建造模式下拦截：不能睡觉、不能祈福（祈福按钮在 FuncBar 没有，只拦睡觉）
+    // TODO(第 9 批)：设计文档未明说建造模式下睡觉按钮是否拦截；保持现状（拦截并提示），待裁决后再定
     const gs = this.director?.getGS?.();
     if (gs?.buildMode === true) {
       if (action === 'sleep') {

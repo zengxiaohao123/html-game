@@ -102,12 +102,15 @@ const TERRAIN_DESCRIPTIONS = {
 /** 地形 id 归一化（旧存档里可能是 'none' / 'grass'） */
 const normTerrain = (v) => (!v ? 'terrain_none' : (TERRAIN_DESCRIPTIONS[v] ? (v.startsWith('terrain_') ? v : 'terrain_' + v) : 'terrain_none'));
 
+import { SHOP_KINDS } from '../systems/ShopSystem.js';
+
 /** 状态类型 → emoji + 显示名 */
 const STATE_META = {
   blessed:      { emoji: '✨', name: '祝福' },
   tent_bless:   { emoji: '⛺', name: '帐篷祝福（下次睡觉+3）' },
   rice_bless:   { emoji: '🌱', name: '稻田祝福（每日 +1 稻草）' },
   slime_bless:  { emoji: '🟢', name: '史莱姆屋祝福（每日 ×2）' },
+  slime:        { emoji: '🟢', name: '粘液' },   // 第 9 批：§15 状态词条「粘液」中文登记
   // Phase 3 再扩展 buffs
 };
 
@@ -919,6 +922,31 @@ export class InfoPanel {
             : '🚌 踏上此地：行动力 +1（每日限一次）并获得 1 轮子',
           parent: this.bodyWrap,
         });
+      }
+
+      // §11.1：进入过一次后，地块内容 tab 预览剩余商品（数量与剩余格）
+      // 只读已存在的 contentState.shop（visited 由 enterShop 置位）；不在此调 getShop，避免未进店就预生成库存
+      const shopSt = tile.contentState && tile.contentState.shop;
+      if ((contentId === 'resource_shop' || contentId === 'resource_magic_shop') && shopSt && shopSt.visited) {
+        const unsold = (shopSt.stock || []).filter((it) => it && !it.sold);
+        const totalSlots = (SHOP_KINDS[shopSt.kind] && SHOP_KINDS[shopSt.kind].slots) || unsold.length;
+        createEl('div', {
+          style: { fontSize: '12px', color: '#666', margin: '6px 0 4px' },
+          text: `📦 剩余商品 ${unsold.length} 件 / 空格 ${Math.max(0, totalSlots - unsold.length)} 格`,
+          parent: this.bodyWrap,
+        });
+        const prevRow = createEl('div', {
+          style: { display: 'flex', flexWrap: 'wrap', gap: '4px', justifyContent: 'center', marginBottom: '8px' },
+          parent: this.bodyWrap,
+        });
+        unsold.forEach((it) => createEl('span', {
+          text: `${it.emoji || '🛒'} ${it.name}`,
+          style: {
+            fontSize: '11px', padding: '1px 6px', color: '#3a2e20',
+            background: 'rgba(255,255,255,0.8)', border: '1px solid #d8ccb0', borderRadius: '6px',
+          },
+          parent: prevRow,
+        }));
       }
 
       if (contentId === 'resource_shop') {

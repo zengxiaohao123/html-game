@@ -102,6 +102,7 @@ const winListeners = Object.create(null);
 globalThis.window = {
   addEventListener: (t, fn) => { (winListeners[t] ??= []).push(fn); },
   removeEventListener: (t, fn) => { const a = winListeners[t]; if (a) { const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1); } },
+  dispatchEvent: (ev) => { for (const fn of [...(winListeners[ev.type] || [])]) fn.call(globalThis.window, ev); return true; },
   innerWidth: 1280,
   innerHeight: 720,
   __gameDirector: null,
@@ -609,6 +610,97 @@ head_('第 7 批：鸡舍面板（共享额度 + 分别收获 + 投放饲料）'
     && InventorySystem.countItem(gs, 'item_wheat') === bagBefore - 1,
     '点投放小麦 → 背包 -1、鸡舍储存 +1');
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+}
+
+head_('第 9 批：商店剩余预览 / 背包拖拽放置 / 粘液中文名');
+{
+  const { ITEMS } = await import('../src/data/items.js');
+  const { enterShop, leaveShop } = await import('../src/systems/ShopSystem.js');
+  const { ALL_FACILITIES } = await import('../src/data/facilities.js');
+  const { Distance } = await import('../src/core/Distance.js');
+
+  // ── 1) §11.1 剩余商品预览：未进店不显示；进入过一次后显示（数量与剩余格） ──
+  const freshShopTile = gs.map.outerTiles.find((t) => !t.contentId);
+  freshShopTile.contentId = 'resource_shop';
+  freshShopTile.contentState = {};
+  infoPanel.selectTile(freshShopTile.idx);
+  assert(!hasText(infoPanel.root, '剩余商品'), '未进入过的商店 → 地块内容 tab 不显示预览');
+
+  const enterRes = enterShop(gs, freshShopTile.idx);
+  assert(enterRes.ok === true && freshShopTile.contentState.shop.visited === true, 'enterShop 置 visited');
+  leaveShop(gs, freshShopTile.idx);
+  infoPanel.selectTile(freshShopTile.idx);
+  const unsoldN = freshShopTile.contentState.shop.stock.filter((it) => !it.sold).length;
+  assert(hasText(infoPanel.root, '剩余商品'), '进入过一次 → 显示剩余商品预览');
+  assert(hasText(infoPanel.root, `剩余商品 ${unsoldN} 件`), '预览数量 = 未售出件数', unsoldN);
+  assert(hasText(infoPanel.root, `空格 ${12 - unsoldN} 格`), '预览显示剩余格数', 12 - unsoldN);
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+
+  // ── 2) §15【粘液】状态 tab 显示中文名 ──
+  const slimeTile = gs.map.outerTiles.find((t) => !t.contentId);
+  slimeTile.states = slimeTile.states || [];
+  slimeTile.states.push({ type: 'slime' });
+  infoPanel.selectTile(slimeTile.idx);
+  buttonsWithText(infoPanel.root, '状态')[0].click();
+  assert(hasText(infoPanel.root, '粘液'), '状态 tab 显示中文名「粘液」');
+  assert(!hasText(infoPanel.root, 'slime'), '状态 tab 不再显示原始 type');
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+
+  // ── 3) §16.15 拖拽放置：仅地块内容类可拖；拖拽不触发地图平移；落点放置且只放 1 个 ──
+  // 用背包中已有的地块内容类（设施）与产物类条目，避免重复 push 造成同 id 多格
+  const facEntry = gs.inventory.items.find((e) => /^facility_/.test(e.itemId));
+  assert(!!facEntry, '背包已有地块内容类（设施）物品');
+  const facDef = ALL_FACILITIES.find((f) => f.id === facEntry.itemId);
+  assert(!!facDef, '设施定义存在');
+  assert(!!gs.inventory.items.find((e) => e.itemId === 'item_wheat'), '背包已有产物类物品（小麦）');
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'inventory' });
+  EventBus.emit(GE.INVENTORY_CHANGE, {});
+
+  // 背包顶层元素是 mask（无 root 属性），格子搜索以 mask 为根
+  const invRoot = inventoryPanel.mask;
+  const facSlots = findAll(invRoot, (el) => el.getAttribute
+    && el.getAttribute('draggable') === 'true' && (el.title || '').includes(facDef.name));
+  assert(facSlots.length === 1, '地块内容类（设施）格可拖拽');
+  const wheatSlot = findAll(invRoot, (el) => (el.title || '').startsWith(ITEMS['item_wheat'].name + ' ×'));
+  assert(wheatSlot.length >= 1 && wheatSlot.every((el) => el.getAttribute('draggable') !== 'true'),
+    '产物类物品格不触发拖拽（无 draggable）');
+
+  // dragstart：背包自动关闭 + 全局拖拽标记
+  const dt = {};
+  facSlots[0].dispatchEvent({
+    type: 'dragstart', preventDefault() {},
+    dataTransfer: { setData: (k, v) => { dt[k] = v; }, effectAllowed: '' },
+  });
+  assert(dt['text/plain'] === facDef.id, 'dragstart 携带物品 id');
+  assert(window.__invDrag === true, 'dragstart 置全局拖拽标记');
+  assert(inventoryPanel.visible === false, '拖拽开始背包自动关闭露出地图');
+
+  // 拖拽期间地图平移被抑制
+  const transformBefore = mapView.root.style.transform;
+  mapView.root.dispatchEvent({ type: 'mousedown', button: 0, clientX: 100, clientY: 100, preventDefault() {} });
+  window.dispatchEvent({ type: 'mousemove', clientX: 320, clientY: 300 });
+  assert(mapView._drag === null && mapView.root.style.transform === transformBefore,
+    '拖背包格期间地图不触发拖拽平移');
+  facSlots[0].dispatchEvent({ type: 'dragend' });
+  assert(window.__invDrag === false, 'dragend 复位拖拽标记');
+
+  // drop 到空地块：放置成功且只放 1 个
+  const targetTile = gs.map.outerTiles.find((t) => !t.contentId);
+  let tx = -1, ty = -1;
+  for (let y = 0; y < gs.map.size && tx < 0; y++) {
+    for (let x = 0; x < gs.map.size; x++) {
+      if (Distance.outerXYToIdx(gs.map.size, x, y) === targetTile.idx) { tx = x; ty = y; break; }
+    }
+  }
+  assert(tx >= 0, '目标地块可反解网格坐标');
+  const cntBefore = InventorySystem.countItem(gs, facDef.id);
+  mapView.root.dispatchEvent({
+    type: 'drop', preventDefault() {},
+    clientX: tx * 80 + 10, clientY: ty * 80 + 10,
+    dataTransfer: { getData: () => facDef.id },
+  });
+  assert(targetTile.contentId === facDef.id, 'drop → 地块放置成功');
+  assert(InventorySystem.countItem(gs, facDef.id) === cntBefore - 1, '每拖一次只放 1 个（背包 -1）');
 }
 
 // ════════════════════════════════════════════════════════════

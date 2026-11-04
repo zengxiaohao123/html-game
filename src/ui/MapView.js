@@ -77,6 +77,8 @@ export class MapView {
 
     this.root.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
+      // 第 9 批 §16.15：背包拖拽放置期间（window.__invDrag）不得触发地图拖拽平移
+      if (window.__invDrag) return;
       this._drag = { startX: e.clientX, startY: e.clientY, panX: this._panX, panY: this._panY };
       this._dragMoved = false;
     });

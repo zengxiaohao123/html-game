@@ -252,16 +252,22 @@ export class InventoryPanel {
       iconWrap.appendChild(this._iconElFor(entry.itemId, '38px'));
       slot.title = `${name} ×${entry.qty}`;
 
-      // 拖拽放置（探索/建造模式都有效，长按拖到地图即放置）
-      slot.setAttribute('draggable', 'true');
-      slot.addEventListener('dragstart', (e) => {
-        if (e.dataTransfer) {
-          e.dataTransfer.setData('text/plain', entry.itemId);
-          e.dataTransfer.effectAllowed = 'move';
-        }
-        // 背包自动关闭露出地图
-        this.hide();
-      });
+      // 拖拽放置（§16.15）：仅地块内容类物品可拖（产物、道具等不触发拖拽）；
+      // 拖拽开始时背包自动关闭露出地图，拖到目标地块松开即放置（每次只放 1 个，见 MapView drop → placeContent）
+      if (this._isPlaceable(entry.itemId)) {
+        slot.setAttribute('draggable', 'true');
+        slot.addEventListener('dragstart', (e) => {
+          if (e.dataTransfer) {
+            e.dataTransfer.setData('text/plain', entry.itemId);
+            e.dataTransfer.effectAllowed = 'move';
+          }
+          // 第 9 批：全局拖拽标记——拖背包格期间 MapView 不得触发拖拽平移
+          window.__invDrag = true;
+          // 背包自动关闭露出地图
+          this.hide();
+        });
+        slot.addEventListener('dragend', () => { window.__invDrag = false; });
+      }
 
       slot.addEventListener('click', (e) => {
         e.stopPropagation();
