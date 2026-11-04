@@ -167,3 +167,12 @@ body.build-mode .map-container {
   color: #c0392b !important;
   animation: overload-blink 1.6s ease-in-out infinite;
 }
+
+/* ── 第 11 批 §16.4：选项二次确认——再点已选项时闪烁 + 淡金底 ── */
+@keyframes dialog-opt-flash {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+.dialog-opt-flash {
+  animation: dialog-opt-flash 0.5s ease-in-out 3;
+}

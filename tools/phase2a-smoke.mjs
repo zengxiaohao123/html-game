@@ -117,10 +117,13 @@ DaySystem.startNewDay(gs);
 const potatoStored = gs.map.outerTiles[3].contentState?.potatoStored || 0;
 assert(potatoStored >= 3, `土豆储存 ≥ 3，当前 = ${potatoStored}`);
 // 玩家走到 potato 上
+// 第 11 批更新：土豆收获已改为信息区手动滑块（§16.4），onEnter 不再自动取出
 gs.player.x = 3;
 HookDispatcher.fire('onEnter', { gs, tileIdx: 3 });
 const potatoInBag = gs.inventory.items.find(i => i.itemId === 'item_potato')?.qty || 0;
-assert(potatoInBag >= 3, `土豆被取出，背包土豆 ≥ 3：当前 = ${potatoInBag}`);
+assert(potatoInBag === 0, `onEnter 不再自动收土豆（改信息区手动收获）：背包 = ${potatoInBag}`);
+const potatoStoredAfter = gs.map.outerTiles[3].contentState?.potatoStored || 0;
+assert(potatoStoredAfter >= 3, `土豆仍储存在地块待手动收获：${potatoStoredAfter}`);
 
 // 7. Bus 核心词条：行动力 +1 + 1 轮子（每日限 1）
 console.log('\n— Bus 核心词条 —');
@@ -130,8 +133,11 @@ gs.player.x = 4;
 gs.inventory.items = [];
 HookDispatcher.fire('onEnter', { gs, tileIdx: 4 });
 assert(gs.player.stamina === Math.min(8, 5 + 1), `bus 行动力 +1：${gs.player.stamina} (max 8)`);
+// 第 11 批更新：轮子改进载具页（VehicleSystem.gainVehicle），不进背包
 const wheelQty = gs.inventory.items.find(i => i.itemId === 'item_wheel')?.qty || 0;
-assert(wheelQty >= 1, `bus 得 1 轮子：${wheelQty}`);
+assert(wheelQty === 0, `轮子不进背包：${wheelQty}`);
+const wheelInGarage = gs.vehicle.available.filter(v => v.vehicleId === 'vehicle_wheel').length;
+assert(wheelInGarage >= 1, `bus 得 1 轮子（载具页）：${wheelInGarage}`);
 
 // 再次触发应被每日限次阻挡
 const before = gs.player.stamina;
@@ -161,9 +167,9 @@ gs.inventory.items = []; // 清空背包（目的是验证 tent.onReplace 回背
 InventorySystem.addItem(gs, 'facility_wheat', 1); // 但需要有 wheat 才能替换
 const result4 = BuildSystem.placeContent(gs, 0, 'facility_wheat'); // wheat 替换 tent
 assert(result4.ok === true, 'wheat 可替换 tent');
-// tent 被替换，它的 onReplace hook 把 facility_tent addItem 回背包
+// 第 11 批更新（v0.5 §9）：tent 的〔被替换时〕条目已移除——被替换即消失，不回背包
 const returnedTent = gs.inventory.items.find(i => i.itemId === 'facility_tent')?.qty || 0;
-assert(returnedTent >= 1, `tent 被替换时回背包：当前 ${returnedTent}`);
+assert(returnedTent === 0, `tent 被替换即消失不回背包（§9）：当前 ${returnedTent}`);
 
 // 9. BlessSystem 核心词条
 console.log('\n— BlessSystem —');
@@ -173,8 +179,9 @@ gs.player.stamina = 8;
 gs.map.outerTiles[7].contentId = 'facility_strawberry';
 const r = BlessSystem.bless(gs);
 assert(r.ok === true, `bless 成功: targetIdx=${r.targetIdx}`);
-assert(gs.player.stamina === 8 - 2, `stamina -2 = ${gs.player.stamina}`);
-assert(gs.player.gold === 10 - 1, `gold -1 = ${gs.player.gold}`);
+// 第 11 批更新：初始队伍精灵 momo → 当日首次祈福消耗减半（§12.2）：体力 1 / 金币 0
+assert(r.staminaCost === 1 && gs.player.stamina === 8 - 1, `momo 首次减半 stamina -1 = ${gs.player.stamina}`);
+assert(r.goldCost === 0 && gs.player.gold === 10 - 0, `momo 首次减半 gold -0 = ${gs.player.gold}`);
 // 确认 tile.states 有 blessed
 const tile = gs.map.outerTiles[r.targetIdx];
 assert(tile.states.some(s => s.type === 'blessed'), 'tile.states 挂了 blessed');
@@ -204,9 +211,9 @@ assert(ok === true, 'addToOutbox ok');
 // 次日结算
 gs.player.gold = 0;
 const res = InventorySystem.loadFromOutbox(gs);
-// wheat(1)×3 + egg(3)×2 = 3 + 6 = 9
-assert(res.earnedGold === 3 + 6, `结算金币 = ${res.earnedGold} (wheat×3 + egg×2 = 9)`);
-assert(gs.player.gold === 9, `GS gold = ${gs.player.gold}`);
+// 第 11 批更新：按现行物品库价值结算 —— 小麦 2×3 + 鸡蛋 2×2 = 10
+assert(res.earnedGold === 10, `结算金币 = ${res.earnedGold} (wheat 2×3 + egg 2×2 = 10)`);
+assert(gs.player.gold === 10, `GS gold = ${gs.player.gold}`);
 assert(gs.inventory.outbox.length === 0, 'outbox 清空');
 
 // 11. Outbox 满 12 格拒绝

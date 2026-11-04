@@ -877,5 +877,84 @@ head_('第 10 批任务 B：MainMenu 图鉴入口（点击触发状态变化）'
 }
 
 // ════════════════════════════════════════════════════════════
+// 第 11 批：§16.4 选项模式 —— 数字键 1~6 + 两段式确认（选中→再点确认）
+// ════════════════════════════════════════════════════════════
+head_('第 11 批 §16.4：DialogBox 选项两段式 + 数字键等效 + 弹窗期间数字键不抢 HotBar');
+{
+  const { DialogBox } = await import('../src/ui/DialogBox.js');
+  const dlg = new DialogBox();
+  dlg.mount();
+  dlg.confirmFadeMs = 30; // 冒烟加速（文档口径仍为 2 秒，见 CONFIRM_FADE_MS）
+  director.dialogBox = dlg; // InputManager 数字键 gating 依赖（镜像 main.js）
+
+  const key = (k) => window.dispatchEvent({ type: 'keydown', key: k, preventDefault() {} });
+  const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // ── 1) 第一次点击 = 选中（浅绿底 + 下方小字），不触发结果 ──
+  let picked = null;
+  EventBus.emit(GE.DIALOG_SHOW, {
+    title: '测试选项',
+    content: '选一个',
+    options: [
+      { label: '甲', onSelect: () => { picked = '甲'; } },
+      { label: '乙', onSelect: () => { picked = '乙'; } },
+      { label: '丙', onSelect: () => { picked = '丙'; } },
+    ],
+  });
+  assert(dlg.visible === true && dlg._optBtns.length === 3, 'DIALOG_SHOW → 3 个选项按钮');
+  dlg._optBtns[0].click();
+  assert(dlg._selectedIdx === 0, '第一次点击 → 选中（未触发结果）', dlg._selectedIdx);
+  assert(dlg._optBtns[0].style.background === '#d9efdc', '选中项浅绿色背景');
+  assert(dlg._hintEl.style.display === 'block' && dlg._hintEl._text === '你确定这么做？',
+    '选中后下方出现小字「你确定这么做？」');
+  assert(picked === null && dlg.visible === true, '选中阶段不触发 onSelect、弹窗保留');
+
+  // ── 2) 点击别处 = 取消选中（不关闭） ──
+  dlg.mask.click();
+  assert(dlg._selectedIdx === -1 && dlg.visible === true, '点遮罩 → 取消选中且不关闭');
+  assert(dlg._optBtns[0].style.background === '' && dlg._hintEl.style.display === 'none',
+    '取消后背景与小字复位');
+
+  // ── 3) 数字键选择 = 鼠标等效；再按一次 = 确认 ──
+  key('2');
+  assert(dlg._selectedIdx === 1, '数字键 2 → 选中第 2 项');
+  key('3');
+  assert(dlg._selectedIdx === 2, '数字键 3 → 切换选中到第 3 项');
+  key('3');
+  assert(dlg._confirming === true, '再按已选数字键 → 进入确认');
+  assert(dlg._optBtns[2].style.background === '#f7e6a8', '确认项淡金色背景');
+  assert(dlg._optBtns[2].classList.contains('dialog-opt-flash'), '确认项闪烁类已加');
+  key('1');
+  assert(dlg._selectedIdx === 2 && picked === null, '确认动画期间其他数字键无效');
+
+  // ── 4) 2 秒（冒烟 30ms）后淡出并触发结果 ──
+  await sleepMs(500);
+  assert(dlg.visible === false, '确认后弹窗淡出关闭');
+  assert(picked === '丙', 'onSelect 触发且为确认的选项（状态变化）', picked);
+
+  // ── 5) 弹窗打开时数字键不抢 HotBar；关闭后恢复 ──
+  inputManager.bind();
+  let hotbarSel = null;
+  const onSel = (p) => { hotbarSel = p; };
+  EventBus.on(GE.HOTBAR_SELECT_SLOT, onSel);
+  EventBus.emit(GE.DIALOG_SHOW, {
+    title: '门禁测试',
+    options: [{ label: '唯一项', onSelect: () => { picked = '唯一项'; } }],
+  });
+  key('1');
+  assert(hotbarSel === null && dlg._selectedIdx === 0, '弹窗开时按 1 → 只选选项，不 emit HOTBAR_SELECT_SLOT');
+  dlg.hide();
+  key('1');
+  assert(hotbarSel && hotbarSel.slotIdx === 0, '弹窗关后按 1 → HotBar 选中恢复', hotbarSel);
+  EventBus.off(GE.HOTBAR_SELECT_SLOT, onSel);
+  inputManager.unbind();
+
+  // ── 6) ESC 关闭沿用 ──
+  EventBus.emit(GE.DIALOG_SHOW, { title: 'ESC 测试', options: [{ label: '好', onSelect: () => {} }] });
+  key('Escape');
+  assert(dlg.visible === false, 'ESC → 关闭弹窗');
+}
+
+// ════════════════════════════════════════════════════════════
 console.log(`\nsmoke-ui 结果：${pass} 通过 / ${fail} 失败（共 ${pass + fail}）`);
 process.exit(fail > 0 ? 1 : 0);

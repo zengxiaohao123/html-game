@@ -1,82 +1,103 @@
-// 逻辑冒烟测试（Node，无 DOM）：验证核心规则可运行
-import { GameState } from '../src/state/GameState.js';
-import { ExploreSystem } from '../src/systems/ExploreSystem.js';
-import { CombatEngine } from '../src/systems/battle/CombatEngine.js';
-import { getSkill } from '../src/data/skills.js';
-import { recomputePermanent } from '../src/systems/Permanent.js';
+// 第 11 批：按现行模块修正引用（原 ExploreSystem/CombatEngine 等旧架构已不存在）
+// 测试意图保持不变：新游戏初始化 / 移动与行动力 / 每日刷新（睡觉） / 存档读档 / 战斗分胜负
+//
+// 用法：node tools/smoke.mjs
+
+// Node 环境无 localStorage —— 与 smoke-p0 一致的桩
+globalThis.localStorage = {
+  _m: new Map(),
+  getItem(k) { return this._m.has(k) ? this._m.get(k) : null; },
+  setItem(k, v) { this._m.set(k, String(v)); },
+  removeItem(k) { this._m.delete(k); },
+};
+
+import { createInitialState } from '../src/state/gameState.js';
+import { registerFacilities } from '../src/data/facilities.js';
+import { MovementSystem } from '../src/systems/MovementSystem.js';
+import { SleepSystem } from '../src/systems/SleepSystem.js';
+import { CreatureSystem } from '../src/systems/CreatureSystem.js';
+import { SkillSystem } from '../src/systems/SkillSystem.js';
+import { Storage } from '../src/state/storage.js';
 import { EventBus } from '../src/core/EventBus.js';
-import { BattleResult } from '../src/core/Const.js';
-import { writeSave, readSave } from '../src/core/Storage.js';
+import { GE } from '../src/core/GameEvents.js';
 
-// localStorage stub
-globalThis.localStorage = { _m: new Map(), getItem(k){return this._m.has(k)?this._m.get(k):null;}, setItem(k,v){this._m.set(k,String(v));}, removeItem(k){this._m.delete(k);} };
+const { move } = MovementSystem;
+const { sleep } = SleepSystem;
+const { save, load, clearSlot } = Storage;
 
-let pass=0, fail=0;
-function assert(cond, msg){ if(cond){pass++; console.log('  ✓', msg);} else {fail++; console.log('  ✗', msg);} }
-
-console.log('— 新游戏初始化 —');
-const gs = new GameState();
-gs.inventory.add('tent',1);
-recomputePermanent(gs);
-const ex = new ExploreSystem(gs, {});
-assert(gs.map.has(0,0), '初始 3×3 中心存在');
-assert(gs.ap===5 && gs.health===30 && gs.heroHp===100, '初始 AP5/健康30/HP100');
-assert(gs.inventory.count('tent')===1, '初始背包 1 帐篷');
-assert(gs.party.members.length===3, '初始编队 3 人');
-
-console.log('— 移动 & AP —');
-const before=gs.ap;
-// 找一个可进入的相邻格
-const nb=[[1,0],[-1,0],[0,1],[0,-1]].map(([x,y])=>({x,y,t:gs.map.get(x,y)})).find(c=>c.t && gs.map.enterable(c.x,c.y));
-if(nb){ ex.goTo(nb.x,nb.y); assert(gs.ap===before-1, '移动成功扣 1 AP'); }
-else console.log('  - 无相邻可进入格（被地形阻挡），跳过');
-
-console.log('— 每日刷新 —');
-gs.day=1; ex.sleep();
-assert(gs.day===2 && gs.ap===5, '睡觉进第 2 天 AP 回满');
-let contents=new Set();
-for(const [,t] of gs.map.tiles) contents.add(t.content);
-assert(contents.size>=1, '刷新产生了 content 类型');
-
-console.log('— 存档/读档 —');
-writeSave(2, gs.serialize(), {kind:'manual',label:'test',day:gs.day});
-const rec=readSave(2);
-assert(rec && rec.snapshot.day===gs.day, '存档读档天数一致');
-
-console.log('— 战斗：史莱姆时间 —');
-const eng = new CombatEngine(gs);
-const S = eng.startBattle('slimeTime');
-assert(S!==null, '战斗成功创建');
-assert(S.enemies(false).length===3, '开局 3 只原生史莱姆');
-assert(S.leader.pos===2, '主角在左排中央 pos2');
-assert(S.hand.length<=5, '元素手牌≤5（前期为空）');
-// 主角斩击最左敌人
-const target = S.enemies()[0];
-const r1 = eng.castActive('hero_slash','hero',{side:'enemy',pos:target.pos,uid:target.uid});
-assert(r1.ok, '斩击可释放');
-// 结束玩家阶段，跑若干回合直到胜负
-let guard=0;
-let result=null;
-const off = EventBus.on('battle:end',(p)=>{result=p.result;});
-while(!result && guard++<60){
-  if(S.phase==='player'){
-    // 用所有可用主动打最左敌人
-    let acted=true;
-    while(acted){
-      acted=false;
-      for(const mid of gs.party.members){
-        if((S.activeUses[mid]||0)>0){
-          const sk = gs.party.skillSet.active.map(id=>getSkill(id)).find(s=>s&&s.owner===mid);
-          if(sk){ const tgt=S.enemies()[0]; if(tgt){ eng.castActive(sk.id,mid,{side:'enemy',pos:tgt.pos,uid:tgt.uid}); acted=true; } }
-        }
-      }
-    }
-    eng.endPlayerPhase();
-  }
-  if(S.result){ result=S.result; break; }
+let pass = 0, fail = 0;
+function check(cond, msg) {
+  if (cond) { pass++; console.log(`  ✅ ${msg}`); }
+  else { fail++; console.log(`  ❌ ${msg}`); }
 }
-off();
-assert(result!==null && [BattleResult.VICTORY,BattleResult.DEFEAT].includes(result), `战斗在 ${guard} 轮内分出胜负（${result}）`);
 
-console.log(`\n结果：${pass} 通过，${fail} 失败`);
-process.exit(fail?1:0);
+registerFacilities(); // 挂载地块内容钩子（与其他冒烟脚本一致）
+
+console.log('═══ 1. 新游戏初始化 ═══');
+const gs = createInitialState();
+check(gs.map.outerTiles.length === 8, `外圈 8 格（实际 ${gs.map.outerTiles.length}）`);
+check(gs.map.outerTiles[6].contentId === 'facility_home', 'idx=6 为家');
+check(gs.player.x === 6, `玩家初始站在家（x=${gs.player.x}）`);
+check(gs.player.stamina === 8, `初始行动力 8（实际 ${gs.player.stamina}）`);
+check(gs.player.hp === 100 && gs.player.gold === 50, '初始 HP 100 / 金币 50');
+check(gs.day === 1, `初始第 1 天（实际 ${gs.day}）`);
+check(Array.isArray(gs.inventory.items) && gs.inventory.items.length > 0, '初始背包有物品');
+
+console.log('\n═══ 2. 移动与行动力 ═══');
+gs.player.x = 7;
+const dest = move(gs, 'up');
+check(dest === 0, `从 7 向上 → 0（实际 ${dest}）`);
+check(gs.player.x === 0, '玩家坐标已更新');
+check(gs.player.stamina === 7, `移动扣 1 行动力（实际 ${gs.player.stamina}）`);
+
+console.log('\n═══ 3. 每日刷新（在家睡觉） ═══');
+gs.player.x = 6;
+const dayBefore = gs.day;
+const calBefore = gs.calendar.dayOfMonth;
+sleep(gs);
+check(gs.day === dayBefore + 1, `睡觉 → 天数 +1（${dayBefore} → ${gs.day}）`);
+check(gs.calendar.dayOfMonth === calBefore + 1 || gs.calendar.month !== 3 || gs.calendar.year !== 1,
+  `日历推进（${calBefore} → ${gs.calendar.dayOfMonth}，月/年进位亦可）`);
+check(gs.player.stamina === 8, `行动力回满（实际 ${gs.player.stamina}）`);
+
+console.log('\n═══ 4. 存档 / 读档 ═══');
+const saved = save(2, gs);
+check(saved === true, 'save(2) 成功');
+const loaded = load(2);
+check(!!loaded, 'load(2) 成功');
+check(!!loaded && loaded.day === gs.day, `读档天数一致（${loaded?.day}）`);
+check(!!loaded && loaded.player.gold === gs.player.gold, '读档金币一致');
+check(!!loaded && loaded.player.stamina === gs.player.stamina, '读档行动力一致');
+clearSlot(2);
+
+console.log('\n═══ 5. 战斗（围栏内击败危险史莱姆） ═══');
+// 围栏两格（{row, col, creatures} 结构，与 smoke-p0 P0-8 一致）
+gs.creatures = [];
+gs.map.fence = [
+  { row: 0, col: 0, creatures: [] },
+  { row: 0, col: 1, creatures: [] },
+];
+const slime = CreatureSystem.spawnCreature(gs, 'slime_grass', {});
+check(!!slime && slime.category === 'danger', '围栏内生成危险史莱姆');
+check(gs.creatures.some((c) => c.id === slime.id), '史莱姆已登记 gs.creatures');
+
+// 地块 0 放余默斩击技能石，按回合推进冷却直至分出胜负
+gs.map.outerTiles[0].contentId = 'skill_yumo_slash';
+gs.map.outerTiles[0].contentState = {};
+let defeatedEvent = null;
+const onDefeated = (p) => { defeatedEvent = p; };
+EventBus.on(GE.CREATURE_DEFEATED, onDefeated);
+const hpStart = slime.hp;
+let rounds = 0;
+while (gs.creatures.some((c) => c.id === slime.id) && rounds < 60) {
+  gs.skillCooldowns = {};
+  SkillSystem.triggerSkillByHook('onEnter', { gs, tileIdx: 0 });
+  rounds++;
+}
+check(slime.hp < hpStart, `技能造成伤害（${hpStart} → ${slime.hp}，${rounds} 回合）`);
+check(!gs.creatures.some((c) => c.id === slime.id), '史莱姆被击败移出场地');
+check(!!defeatedEvent && defeatedEvent.creature === slime, 'CREATURE_DEFEATED 事件已发出');
+EventBus.off(GE.CREATURE_DEFEATED, onDefeated);
+
+console.log(`\n${fail === 0 ? '✅' : '❌'} smoke 结果：${pass} 通过 / ${fail} 失败（共 ${pass + fail}）`);
+process.exit(fail > 0 ? 1 : 0);

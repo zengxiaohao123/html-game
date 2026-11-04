@@ -134,6 +134,7 @@ blessAnimation.mount();
 // Phase 4 新增：核心 DialogBox（统一弹窗入口，GE.DIALOG_SHOW）
 const dialogBox = new DialogBox();
 dialogBox.mount();
+director.dialogBox = dialogBox; // 第 11 批 §16.4：InputManager 据此在弹窗打开时把数字键让给选项模式
 
 // Phase 4 新增：6 个面板
 const rolePanel = new RolePanel(director);

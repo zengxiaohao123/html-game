@@ -751,7 +751,7 @@ export const ITEMS = {
   item_pioneer: {
   "id": "item_pioneer",
   "libCode": "VEH-015",
-  "name": "”拓荒者“",
+  "name": "拓荒者",
   "emoji": "🛻",
   "icon": null,
   "tier1": "载具",
@@ -3842,7 +3842,7 @@ export const POOLS = {
     {
       "libCode": "VEH-015",
       "id": "item_pioneer",
-      "name": "”拓荒者“",
+      "name": "拓荒者",
       "price": null,
       "weight": null,
       "rarity": 5,
@@ -5063,7 +5063,7 @@ export const TODO_LIST = [
     "detail": "会员卡（ITM-COL-007）描述引用「魔法商店」，设计文档与物品库均无对应条目；已确认属后续重点制作内容",
     "where": "设计文档 11 章、物品总表·资源",
     "priority": "高",
-    "status": "待补"
+    "status": "已补"
   },
   {
     "no": 24,
@@ -5117,7 +5117,7 @@ export const TODO_LIST = [
     "detail": "当前仅 ITM-ST-001 共 1 条，魔法商店技能石类最低抽 2~3 条",
     "where": "POOL-11",
     "priority": "高",
-    "status": "待补"
+    "status": "已补"
   },
   {
     "no": 30,
@@ -5126,6 +5126,6 @@ export const TODO_LIST = [
     "detail": "文档 11.2 已定义，但物品总表尚无 RES-006 条目",
     "where": "物品总表·RES",
     "priority": "中",
-    "status": "待补"
+    "status": "已补"
   }
 ];

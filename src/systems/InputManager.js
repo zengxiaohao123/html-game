@@ -79,7 +79,8 @@ export class InputManager {
       }
 
       // ── 1-0 数字键 → HotBar 选中 ──
-      if (gs) {
+      // 弹窗打开时数字键归选项模式（§16.4 数字键 1~6 选择选项），此处不抢
+      if (gs && !this.director?.dialogBox?.visible) {
         const num = parseInt(key, 10);
         if (!isNaN(num) && num >= 1 && num <= 9) {
           e.preventDefault();
