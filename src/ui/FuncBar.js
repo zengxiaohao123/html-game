@@ -44,7 +44,7 @@ export class FuncBar {
         width: 'fit-content',
         maxWidth: '100vw',
         flexWrap: 'nowrap',
-        zIndex: 200,
+        zIndex: 5600,   // 第 8 批：§16.21 商店内功能区仍可见、可点（高于商店 5500）
       },
       parent,
     });

@@ -31,7 +31,7 @@ export class SettingsPanel {
         position: 'fixed',
         inset: '0',
         backgroundColor: 'rgba(0,0,0,0.6)',
-        zIndex: 5000,
+        zIndex: 6200,   // 第 8 批：§16.21 商店内可开设置（需高于商店 5500 与普通面板 6000）
         display: 'none',
         alignItems: 'center',
         justifyContent: 'center',

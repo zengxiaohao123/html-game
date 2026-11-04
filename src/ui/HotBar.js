@@ -26,14 +26,14 @@ export class HotBar {
   }
 
   mount(parent = qs('#app')) {
-    const hotbarWrap = createEl('div', {
+    const hotbarWrap = this.wrapEl = createEl('div', {
       class: ['hotbar-wrapper'],
       style: {
         position: 'absolute',
         bottom: '16px',
         left: '50%',
         transform: 'translateX(-50%)',
-        zIndex: 100,
+        zIndex: 5600,   // 第 8 批：§16.21 商店内快捷栏仍可见、可点（高于商店 5500）
       },
       parent,
     });

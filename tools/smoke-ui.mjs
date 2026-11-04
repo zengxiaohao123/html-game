@@ -137,7 +137,7 @@ const { InventoryPanel } = await import('../src/ui/panels/InventoryPanel.js');
 const { RolePanel } = await import('../src/ui/panels/RolePanel.js');
 const { TeamPanel } = await import('../src/ui/panels/TeamPanel.js');
 const { ForgePanel } = await import('../src/ui/panels/ForgePanel.js');
-const { ShopPanel } = await import('../src/ui/panels/ShopPanel.js');
+const { ShopPanel, SHOP_GRID } = await import('../src/ui/panels/ShopPanel.js');
 const { VehiclePanel } = await import('../src/ui/panels/VehiclePanel.js');
 const { TaskPanel } = await import('../src/ui/panels/TaskPanel.js');
 const { CodexPanel } = await import('../src/ui/panels/CodexPanel.js');
@@ -372,6 +372,104 @@ head_('§16.21/16.22 ShopPanel：悬浮刷新 / 12 格 / ✖ / 金币不足灰�
   // ✖ 关闭商店（无详情弹窗时直接关店）
   closeBtn.click();
   assert(shopPanel.visible === false, '✖ → 关闭商店回主界面');
+}
+
+head_('第 8 批：商店/魔法商店逐项 UI（选项齐全/正方格/留白/灰化/关闭层级）');
+{
+  const { ITEMS } = await import('../src/data/items.js');
+  const { getShop, isSellable } = await import('../src/systems/ShopSystem.js');
+
+  // 上一块已离店（本回合禁入同一家），用新地块开一家新店
+  const shopTile = gs.map.outerTiles.find((t) => !t.contentId);
+  shopTile.contentId = 'resource_shop';
+  shopTile.contentState = {};
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'shop', tileIdx: shopTile.idx });
+  assert(shopPanel.visible === true, '新店 OPEN(shop) → 进入');
+
+  // 1) 功能选项与文档完全一致：[售卖][购买] 切换 + 悬浮刷新 + 右下离开 + 右上✖，不多不少
+  const tabLabels = shopPanel.tabBtns.map((b) => b._text);
+  assert(JSON.stringify(tabLabels) === JSON.stringify(['售卖', '购买']),
+    '切换按钮恰为 [售卖, 购买] 且顺序一致', tabLabels);
+  const refreshText = shopPanel.refreshBtn.children.map((c) => c._text || '').join('');
+  assert(refreshText.includes('刷新'), '刷新按钮含「刷新」+ 价格文案', refreshText);
+  assert(shopPanel.leaveBtn && shopPanel.leaveBtn._text === '离开', '右下角「离开」大按钮');
+  assert(buttonsWithText(shopPanel.root, '✖').length === 1, '右上角 ✖ 唯一');
+  assert(!hasText(shopPanel.root, '剩'), '刷新按钮无多余文字「剩 N 次」（次数改放 title）');
+  assert(!hasText(shopPanel.root, '已售出'), '售出格不显示「已售出」（§16.21 买完该格即空）');
+
+  // 2) 正方形格子 + 统一间距 + 居中留白不铺满
+  const cols = shopPanel.gridEl.style.gridTemplateColumns;   // repeat(4, 112px)
+  const rows = shopPanel.gridEl.style.gridAutoRows;          // 112px
+  const m = cols.match(/repeat\((\d+),\s*(\d+)px\)/);
+  assert(m && Number(m[1]) === SHOP_GRID.cols, '网格 4 列', cols);
+  assert(m && Number(m[2]) === parseInt(rows, 10), '格宽 = 格高（正方形）', { cols, rows });
+  assert(shopPanel.gridEl.style.gap === `${SHOP_GRID.gap}px`, '网格间距统一', shopPanel.gridEl.style.gap);
+  assert(shopPanel.root.style.alignItems === 'center' && shopPanel.root.style.justifyContent === 'center',
+    '卡片居中 → 四周留白');
+  assert(shopPanel.cardEl.style.width.startsWith('min(') && shopPanel.cardEl.style.height.startsWith('min('),
+    '卡片 min() 限宽高，不铺满屏幕');
+
+  // 3) 灰化条件逐项
+  const shop = getShop(gs, shopTile.idx);
+  shop.refreshUsed = 3;
+  shopPanel._renderHeaderState();
+  assert(shopPanel.refreshBtn.disabled === true, '刷新次数用完 → 刷新按钮灰化');
+  shop.refreshUsed = 0;
+  shopPanel._renderHeaderState();
+  assert(shopPanel.refreshBtn.disabled === false, '刷新次数恢复 → 按钮可用');
+
+  const goldBackup = gs.player.gold;
+  gs.player.gold = 0;
+  const firstCell = [...shopPanel.gridEl.children].find((c) => c.getAttribute('data-shop-empty') !== '1');
+  firstCell.onclick();
+  const buyOk = buttonsWithText(shopPanel.detailEl, '购买')[0];
+  assert(buyOk && buyOk.disabled === true, '金币不足 → 详情「购买」灰化');
+
+  // 4) 关闭层级：弹窗开着时 ✖ 只关弹窗，商店保留；再 ✖ 才关商店
+  buttonsWithText(shopPanel.root, '✖')[0].click();
+  assert(shopPanel.detailEl === null && shopPanel.visible === true, '弹窗开时 ✖ 只关弹窗回商店');
+  gs.player.gold = goldBackup;
+
+  // 5) 售卖 tab：背包格同卡片三要素；不可售物品「售卖」灰化且格上无多余文字
+  const unsellableId = Object.keys(ITEMS).find((id) => !isSellable(id));
+  gs.inventory.items.push({ itemId: unsellableId, qty: 1 });
+  EventBus.emit(GE.INVENTORY_CHANGE, {});
+  shopPanel.tabBtns[0].click();   // 售卖
+  assert(!hasText(shopPanel.root, '不可售'), '售卖格不显示「不可售」文字（灰化在详情按钮）');
+  const targetCell = [...shopPanel.gridEl.children].find((c) => {
+    let hit = false;
+    for (const n of walk(c)) if (n._text && n._text.includes(ITEMS[unsellableId].name)) hit = true;
+    return hit;
+  });
+  assert(!!targetCell, '售卖网格含不可售物品格', unsellableId);
+  targetCell.onclick();
+  const sellOk = buttonsWithText(shopPanel.detailEl, '售卖')[0];
+  assert(sellOk && sellOk.disabled === true, '不可售物品 → 详情「售卖」灰化');
+  buttonsWithText(shopPanel.root, '✖')[0].click();   // 关弹窗
+  gs.inventory.items = gs.inventory.items.filter((e) => e.itemId !== unsellableId);
+  shopPanel.tabBtns[1].click();   // 回购买
+
+  // 6) 常驻 UI 层级：商店遮罩 5500 之上仍可见可点（§16.21）
+  assert(Number(topBar.root.style.zIndex) > 5500, 'TopBar 层级高于商店', topBar.root.style.zIndex);
+  assert(Number(funcBar.root.style.zIndex) > 5500, 'FuncBar 层级高于商店', funcBar.root.style.zIndex);
+  assert(Number(hotBar.wrapEl.style.zIndex) > 5500, 'HotBar 层级高于商店', hotBar.wrapEl.style.zIndex);
+  assert(Number(settingsPanel.mask.style.zIndex) > 5500, '设置面板层级高于商店（二级嵌套可见）');
+
+  shopPanel.leaveBtn.click();
+  assert(shopPanel.visible === false, '「离开」→ 关闭商店');
+
+  // 7) 魔法商店：同布局，10 格商品 + 2 空格（§16.22）
+  const magicTile = gs.map.outerTiles.find((t) => !t.contentId);
+  magicTile.contentId = 'resource_magic_shop';
+  magicTile.contentState = {};
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'magicShop', tileIdx: magicTile.idx });
+  assert(shopPanel.visible === true && shopPanel.kind === 'magic', 'OPEN(magicShop) → 魔法商店');
+  assert(shopPanel.gridEl.children.length === 12, '魔法商店 4×3 网格共 12 位', shopPanel.gridEl.children.length);
+  const empties = findAll(shopPanel.gridEl, (el) => el.getAttribute && el.getAttribute('data-shop-empty') === '1');
+  assert(empties.length === 2, '魔法商店留 2 个空格', empties.length);
+  assert(hasText(shopPanel.root, '魔法商人'), '魔法商店商人对话框');
+  shopPanel.leaveBtn.click();
+  assert(shopPanel.visible === false, '魔法商店「离开」→ 关闭');
 }
 
 head_('§16.20 中央接线：开新面板关旧面板 / 开面板退建造');

@@ -1,12 +1,17 @@
 // src/ui/TopBar.js
-// 顶部状态栏（v4 —— 对照设计文档 §16.7：偏左布局，右上留给功能区）
+// 顶部状态栏（v5 —— 第 8 批提质感：单块奶油底板 + 统一胶囊层级，对照设计文档 §16.7）
 //
-// 布局（全部 absolute 定位，容器本身不占位，右侧留空给 FuncBar）：
+// 布局（左上角一整块 HUD 底板，内部三行流式排版，不再用魔法数字绝对定位）：
+//   ┌────────────────────────────────────────┐
+//   │ ❤ 12/20   ⚔ 8   ⚡ 5/10                │  row1 角色三维（小胶囊）
+//   │ ● 友善 1/4   ● 危险 0/2   ● 极度 0/1   │  row2 容量（彩点+标签+数值，超载红闪）
+//   │ 📅 第 3 天 5月12日 周一   🪙 128        │  row3 日历 + 金币（金色重点胶囊）
+//   └────────────────────────────────────────┘
+//   [📋]  任务入口（底板下方独立方钮，§16.17）
 //
-//   row1 左上 (top:15px left:15px)   ❤️ hp/maxHp  ·  ⚔️ atk  ·  ⚡ stamina/maxStamina
-//   row2 左上 (top:55px left:15px)   容量条目：友善 current/cap · 危险 · 极度危险（超载变红缓慢闪烁）
-//   row3 左上 (top:103px left:15px)  📅 第 N 天  ·  🪙 金币（金色 pill，单独突出）
-//   任务区：TopBar 下方、屏幕左侧（📋图标，见 §16.17）
+// 质感手法（不引入美术素材）：统一高度/圆角/描边语言、tabular-nums 数字对齐、
+//   层级靠字重与色彩（标签弱、数值强）、底板半透明奶油 + 细描边 + 轻投影。
+// z-index 5600：高于商店遮罩（5500），保证 §16.21「商店内顶部 UI 仍可见、可点」。
 //
 // 重要约定：所有 emoji / 图标 不采用呼吸或浮动的 idle 动画效果（用户要求）
 
@@ -15,49 +20,38 @@ import { GE } from '../core/GameEvents.js';
 import { Assets } from '../core/Assets.js';
 import { createEl, qs, iconEl } from './dom.js';
 
-const EMOJI_FONT = '"Segoe UI Emoji", "Apple Color Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif';
-
-/** 普通独立胶囊 pill 样式 */
-function pillStyle() {
+/** 统一小胶囊（row1 / row2 / 日历）：等高、圆角、细描边 */
+function chipStyle() {
   return {
-    background: 'rgba(255,255,255,0.85)',
-    border: '2px solid #3a3a3a',
-    borderRadius: '20px',
-    padding: '4px 14px',
-    fontSize: '15px',
-    fontWeight: '700',
-    color: '#5a4a3a',
     display: 'flex',
     alignItems: 'center',
     gap: '5px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
-    fontFamily: '"LXGW WenKai TC", sans-serif',
+    height: '26px',
+    padding: '0 10px',
+    borderRadius: '999px',
+    background: 'rgba(255,255,255,0.8)',
+    border: '1.5px solid #b8a888',
+    fontSize: '13px',
+    fontWeight: '800',
+    color: '#4a3a2a',
+    fontVariantNumeric: 'tabular-nums',
+    whiteSpace: 'nowrap',
   };
 }
 
-/** 金币 pill —— §16.7 需重点美化：金色底 + 圆角胶囊 */
-function goldPillStyle() {
+/** 容量彩点 */
+function dot(color) {
   return {
-    position: 'relative',
-    background: 'linear-gradient(135deg, #fff8d0 0%, #ffe070 40%, #e8a520 100%)',
-    border: '3px solid #a06010',
-    borderRadius: '999px',
-    padding: '8px 18px 8px 14px',
-    boxShadow: '0 3px 8px rgba(120, 70, 10, 0.35), inset 0 1px 0 rgba(255,255,255,0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    fontFamily: '"LXGW WenKai TC", sans-serif',
+    width: '8px', height: '8px', borderRadius: '50%',
+    background: color, flexShrink: '0',
+    boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.25)',
   };
 }
 
 export class TopBar {
   constructor() {
     this.root = null;
-    this.row1 = null;
-    this.row2 = null;
-    this.row3 = null;
-    this.taskIconEl = null;   // 新增：任务区独立图标（不在 FuncBar，按 §15.17）
+    this.taskIconEl = null;   // 任务区独立图标（不在 FuncBar，按 §16.17）
 
     this.hpText = null;
     this.atkText = null;
@@ -66,6 +60,7 @@ export class TopBar {
     this.dangerText = null;
     this.extremeText = null;
     this.dayText = null;
+    this.calText = null;
     this.goldText = null;
 
     this.gs = null;
@@ -77,86 +72,84 @@ export class TopBar {
     this.root = createEl('div', {
       class: ['top-bar'],
       style: {
-        position: 'absolute', top: '0', left: '0', right: '0', height: '0',
-        pointerEvents: 'none', zIndex: 100,
+        position: 'absolute', top: '12px', left: '12px',
+        display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px',
+        pointerEvents: 'none', zIndex: 5600,
+        fontFamily: '"LXGW WenKai TC", "Microsoft YaHei", sans-serif',
       },
       parent,
     });
 
-    // row1 —— 左上 3 pill
-    this.row1 = createEl('div', {
+    // ── HUD 底板：一块奶油半透明圆角板收纳三行信息 ──
+    const plate = createEl('div', {
+      class: ['top-bar-plate'],
       style: {
-        position: 'absolute', top: '15px', left: '15px',
-        display: 'flex', gap: '10px', pointerEvents: 'auto',
-      },
-      parent: this.root,
-    });
-    this._buildPill(this.row1, Assets.ui.hp, 'hp');
-    this._buildPill(this.row1, Assets.ui.atk, 'atk');
-    this._buildPill(this.row1, '⚡',        'stamina');
-
-    // row2 —— 容量条目并入左侧区域（§16.7 偏左布局，右上留给功能区）
-    this.row2 = createEl('div', {
-      style: {
-        position: 'absolute', top: '55px', left: '15px',
         pointerEvents: 'auto',
-        ...pillStyle(), borderRadius: '20px', padding: '6px 18px',
-        fontSize: '18px', background: 'rgba(255,255,255,0.75)', gap: '18px',
-      },
-      parent: this.root,
-    });
-    this.friendlyText = createEl('span', { style: { fontSize: '16px' }, text: '', parent: this.row2 });
-    this.dangerText   = createEl('span', { style: { fontSize: '16px' }, text: '', parent: this.row2 });
-    this.extremeText  = createEl('span', { style: { fontSize: '16px' }, text: '', parent: this.row2 });
-
-    // row3 —— 左上 天数（一行） + 金币（一行）—— 竖排，对照 ui-main.png 左侧
-    this.row3 = createEl('div', {
-      style: {
-        position: 'absolute', top: '103px', left: '15px',
-        display: 'flex', flexDirection: 'column', gap: '10px', pointerEvents: 'auto',
+        display: 'flex', flexDirection: 'column', gap: '6px',
+        padding: '8px 10px',
+        background: 'rgba(255,251,240,0.9)',
+        border: '2px solid #3a3a3a',
+        borderRadius: '14px',
+        boxShadow: '0 3px 10px rgba(0,0,0,0.22)',
       },
       parent: this.root,
     });
 
-    // 天数 pill（单独一行）
-    const dayPill = createEl('div', { style: pillStyle(), parent: this.row3 });
-    dayPill.appendChild(iconEl('ui', 'day', { size: '18px', fallback: '📅' }));
-    this.dayText = createEl('span', { style: { fontSize: '15px', fontWeight: '800', color: '#5a4a3a' }, text: '', parent: dayPill });
+    // row1 —— 角色三维：图标 + 数值
+    const row1 = createEl('div', { style: { display: 'flex', gap: '6px' }, parent: plate });
+    this._buildChip(row1, Assets.ui.hp, 'hp');
+    this._buildChip(row1, Assets.ui.atk, 'atk');
+    this._buildChip(row1, '⚡', 'stamina');
+
+    // row2 —— 容量条目（彩点 + 标签 + 数值；超载数值红字缓慢闪烁 §16.7）
+    const row2 = createEl('div', { style: { display: 'flex', gap: '6px' }, parent: plate });
+    this.friendlyText = this._buildCapChip(row2, '#4fae3f', '友善');
+    this.dangerText   = this._buildCapChip(row2, '#e67e22', '危险');
+    this.extremeText  = this._buildCapChip(row2, '#c0392b', '极度');
+
+    // row3 —— 日历胶囊 + 金币重点胶囊
+    const row3 = createEl('div', { style: { display: 'flex', gap: '6px', alignItems: 'center' }, parent: plate });
+    const dayChip = createEl('div', { style: chipStyle(), parent: row3 });
+    dayChip.appendChild(iconEl('ui', 'day', { size: '15px', fallback: '📅' }));
+    this.dayText = createEl('span', { style: { fontSize: '13px', fontWeight: '800' }, text: '', parent: dayChip });
     // v0.5 §16.7：日历精确到「某年某月某日 星期X」，由 CalendarSystem 提供
     this.calText = createEl('span', {
-      style: { fontSize: '12px', fontWeight: '700', color: '#8a7a63', marginLeft: '6px' },
-      text: '', parent: dayPill,
+      style: { fontSize: '11px', fontWeight: '700', color: '#8a7a63' },
+      text: '', parent: dayChip,
     });
 
-    // 金币 pill（单独一行，§16.7 金色特殊样式）
-    const goldPill = createEl('div', { style: goldPillStyle(), parent: this.row3 });
-    goldPill.appendChild(iconEl('ui', 'gold', { size: '22px', fallback: Assets.ui.gold }));
-    createEl('span', {
-      text: '$',
-      style: { fontSize: '16px', fontWeight: '700', color: '#8a5a10' },
-      parent: goldPill,
+    // 金币胶囊：§16.7 重点美化 —— 金色渐变 + 内高光 + 大号数字
+    const goldChip = createEl('div', {
+      style: {
+        display: 'flex', alignItems: 'center', gap: '6px',
+        height: '30px', padding: '0 12px',
+        borderRadius: '999px',
+        background: 'linear-gradient(135deg, #fff8d0 0%, #ffe070 40%, #e8a520 100%)',
+        border: '2px solid #a06010',
+        boxShadow: '0 2px 6px rgba(120,70,10,0.35), inset 0 1px 0 rgba(255,255,255,0.55)',
+        fontVariantNumeric: 'tabular-nums',
+      },
+      parent: row3,
     });
+    goldChip.appendChild(iconEl('ui', 'gold', { size: '17px', fallback: Assets.ui.gold }));
     this.goldText = createEl('span', {
-      style: { fontWeight: '900', fontSize: '20px', color: '#704010' },
-      text: '', parent: goldPill,
+      style: { fontWeight: '900', fontSize: '16px', color: '#704010' },
+      text: '', parent: goldChip,
     });
 
-    // 新增：任务区独立图标（按 §16.17，在金币下方、精灵上方，独立于 FuncBar）
+    // 任务区独立图标（§16.17：顶部左侧 UI 下方、屏幕左侧）
     this.taskIconEl = createEl('div', {
       class: ['task-entry'],
       style: {
-        position: 'absolute', top: '197px', left: '15px',
-        width: '42px', height: '42px',
         pointerEvents: 'auto',
-        background: 'rgba(255,255,255,0.85)',
-        border: '3px solid #3a3a3a',
+        width: '42px', height: '42px',
+        background: 'rgba(255,251,240,0.9)',
+        border: '2px solid #3a3a3a',
         borderRadius: '12px',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: '24px', lineHeight: '1',
-        boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
+        boxShadow: '0 3px 10px rgba(0,0,0,0.22)',
         cursor: 'pointer',
-        zIndex: 101,
-        fontFamily: EMOJI_FONT,
       },
       parent: this.root,
     });
@@ -172,14 +165,27 @@ export class TopBar {
     return this.root;
   }
 
-  _buildPill(parent, emoji, kind) {
-    const pill = createEl('div', { class: ['ui-pill'], style: pillStyle(), parent });
-    pill.appendChild(iconEl('ui', kind, { size: '18px', fallback: emoji }));
-    const textSpan = createEl('span', { text: '', style: { fontSize: '14px', color: '#5a4a3a', lineHeight: '1' }, parent: pill });
+  /** row1 小胶囊：图标 + 数值 */
+  _buildChip(parent, emoji, kind) {
+    const chip = createEl('div', { class: ['ui-pill'], style: chipStyle(), parent });
+    chip.appendChild(iconEl('ui', kind, { size: '15px', fallback: emoji }));
+    const textSpan = createEl('span', { text: '', style: { lineHeight: '1' }, parent: chip });
     if (kind === 'hp')      this.hpText = textSpan;
     else if (kind === 'atk')     this.atkText = textSpan;
     else if (kind === 'stamina') this.staminaText = textSpan;
-    return pill;
+    return chip;
+  }
+
+  /** row2 容量胶囊：彩点 + 弱标签 + 强数值（数值 span 承担超载红闪） */
+  _buildCapChip(parent, color, label) {
+    const chip = createEl('div', { style: chipStyle(), parent });
+    createEl('span', { style: dot(color), parent: chip });
+    createEl('span', {
+      text: label,
+      style: { fontSize: '11px', fontWeight: '700', color: '#8a7a63' },
+      parent: chip,
+    });
+    return createEl('span', { text: '', style: { lineHeight: '1' }, parent: chip });
   }
 
   _renderAll() {
@@ -195,15 +201,14 @@ export class TopBar {
     if (this.hpText)      this.hpText.textContent      = `${p.hp}/${p.maxHp}`;
     if (this.atkText)     this.atkText.textContent     = `${Math.floor(p.atk)}`;
     if (this.staminaText) this.staminaText.textContent = `${p.stamina}/${p.maxStamina}`;
-    if (this.friendlyText) this.friendlyText.textContent = `友善 ${friendlyNow}/${c.friendly}`;
-    if (this.dangerText)   this.dangerText.textContent   = `危险 ${dangerNow}/${c.danger}`;
-    if (this.extremeText)  this.extremeText.textContent  = `极度危险 ${extremeNow}/${c.extreme}`;
+    if (this.friendlyText) this.friendlyText.textContent = `${friendlyNow}/${c.friendly}`;
+    if (this.dangerText)   this.dangerText.textContent   = `${dangerNow}/${c.danger}`;
+    if (this.extremeText)  this.extremeText.textContent  = `${extremeNow}/${c.extreme}`;
 
     applyOverload(this.friendlyText, friendlyNow, c.friendly);
     applyOverload(this.dangerText,   dangerNow,   c.danger);
     applyOverload(this.extremeText,  extremeNow,  c.extreme);
 
-    // Phase 4 —— 左下 row3
     if (this.dayText)  this.dayText.textContent  = `第 ${this.gs.day} 天`;
     if (this.calText) {
       this.calText.textContent = this.gs.calendar
@@ -229,15 +234,15 @@ export class TopBar {
     EventBus.on(GE.CAPACITY_CHANGE,   () => this._renderAll());
     EventBus.on(GE.CREATURE_SPAWNED,  () => this._renderAll());
     EventBus.on(GE.CREATURE_DEFEATED, () => this._renderAll());
-    EventBus.on(GE.GOLD_CHANGE,       () => { this._renderAll(); });   // Phase 4
-    EventBus.on(GE.TURN_ADVANCE,      () => this._renderAll());   // Phase 4
+    EventBus.on(GE.GOLD_CHANGE,       () => this._renderAll());
+    EventBus.on(GE.TURN_ADVANCE,      () => this._renderAll());
   }
 }
 
 function applyOverload(el, now, cap) {
   if (!el) return;
   const over = now > cap;
-  el.style.color = over ? '#c0392b' : '#5a4a3a';
+  el.style.color = over ? '#c0392b' : '#4a3a2a';
   // §16.7 超载时变红缓慢闪烁（class 定义在 ui.css）
   el.classList.toggle('overload-blink', over);
 }
