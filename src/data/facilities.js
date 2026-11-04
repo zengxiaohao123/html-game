@@ -28,6 +28,13 @@ import { normalizeTerrain } from './terrains.js';
 import { ITEMS, POOLS } from './items.js';
 import { ITEM_TO_VEHICLE, VEHICLES } from './vehicles.js';
 import { drawFromPool } from '../systems/RandomPool.js';
+import {
+  EVENT_POOL_PLACEHOLDER,
+  drawPlaceholderEvent,
+  applyPlaceholderEventEffect,
+  drawPlaceholderReward,
+  grantPlaceholderReward,
+} from './placeholderPools.js';
 import { HealSystem } from '../systems/HealSystem.js';
 import { ShopSystem } from '../systems/ShopSystem.js';
 import { StaminaSystem } from '../systems/StaminaSystem.js';
@@ -711,13 +718,26 @@ const FacilityCabbage = {
 // ── RES-001 事件点 ──
 // 物品库：【进入时】遇到随机事件（每日限一次）；【受祝福时】显示今日此事件具体内容。
 // 备注：不观测不抽取，只在即将进入或显示时才真正抽取（懒抽取）。
-// TODO(P1): 事件池内容未录入物品库（待补录清单 #12 / 设计文档 §17「事件池内容」待补充），
-//   池录入后在 resolveEventTile 内做实际抽取与文案展示。
+// 2026-11-04 裁决⑥：事件池正式条目未定稿前，使用独立占位数据表（src/data/placeholderPools.js）
+//   让流程可跑通；条目均为占位，正式池录入后整组替换该表即可，本函数无需改动。
 function resolveEventTile(gs, tileIdx, blessed) {
-  // 懒抽取：只在此处（即将进入 / 受祝福显示）才尝试抽取；事件池录入后替换 eventId
-  const eventId = null;
-  HookDispatcher.fire('onEventResolve', { gs, tileIdx, type: 'event', eventId, blessed });
-  EventBus.emit(GE.TOAST_SHOW, { text: '🎲 遇到随机事件（事件内容待补录）', duration: 2000 });
+  // 懒抽取：只在此处（即将进入 / 受祝福显示）才真正抽取
+  const st = (gs.map.outerTiles[tileIdx].contentState ||= {});
+  let entry;
+  let summary = '';
+  if (blessed) {
+    // 受祝福：仅「显示今日此事件具体内容」——仅当今日已进入过（事件已结算）时复用同一条目，
+    //   不重复结算效果；否则视为预览抽取（不结算）
+    const todayFired = !!gs.map.outerTiles[tileIdx].dailyFlags[flagKey('resource_event', 'onEnter')];
+    entry = (todayFired && EVENT_POOL_PLACEHOLDER.find((e) => e.id === st.eventTodayId)) || drawPlaceholderEvent();
+    summary = '（今日事件预览）';
+  } else {
+    entry = drawPlaceholderEvent();
+    st.eventTodayId = entry.id; // 供受祝福时显示同一事件
+    summary = applyPlaceholderEventEffect(gs, entry);
+  }
+  HookDispatcher.fire('onEventResolve', { gs, tileIdx, type: 'event', eventId: entry.id, blessed });
+  EventBus.emit(GE.TOAST_SHOW, { text: `🎲 ${entry.name}${summary ? ' → ' + summary : ''}`, duration: 2200 });
 }
 
 const ResourceEvent = {
@@ -747,15 +767,17 @@ const ResourceEvent = {
 
 // ── RES-002 奖励点 ──
 // 物品库：【进入时】获得随机奖励（每日限一次）；【受祝福时】下次进入高价值奖励概率提升。
-// TODO(P1): 奖励池内容未录入物品库（待补录清单 #13 / 设计文档 §17「奖励池内容」待补充），
-//   池录入后在 resolveRewardTile 内实际抽取，并按 rewardBlessPending 提升高价值概率。
+// 2026-11-04 裁决⑥：奖励池正式条目未定稿前，使用独立占位数据表（src/data/placeholderPools.js）
+//   让流程可跑通；条目均为占位，正式池录入后整组替换该表即可，本函数无需改动。
 function resolveRewardTile(gs, tileIdx) {
   const tile = gs.map.outerTiles[tileIdx];
   const st = tile.contentState = tile.contentState || {};
   const blessed = !!st.rewardBlessPending;
   if (blessed) st.rewardBlessPending = false; // 消耗「下次进入高价值奖励概率提升」
-  HookDispatcher.fire('onEventResolve', { gs, tileIdx, type: 'reward', rewardId: null, blessed });
-  EventBus.emit(GE.TOAST_SHOW, { text: '🎁 获得随机奖励（奖励内容待补录）', duration: 2000 });
+  const entry = drawPlaceholderReward(blessed); // 受祝福 → 高价值条目权重提升
+  const summary = grantPlaceholderReward(gs, entry);
+  HookDispatcher.fire('onEventResolve', { gs, tileIdx, type: 'reward', rewardId: entry.id, blessed });
+  EventBus.emit(GE.TOAST_SHOW, { text: `🎁 ${entry.name} → ${summary}`, duration: 2000 });
 }
 
 const ResourceReward = {
@@ -818,6 +840,7 @@ export function huntCreature(gs, tileIdx, option) {
   tile.dailyFlags[key] = true; // 每日限一次：成败都消耗
 
   // 成功率在区间内随机；受祝福 → +50%，超出 100% 按 100% 计（RES-003 备注）
+  // 2026-11-04 裁决④：祝福按地块记账 —— huntBlessPending 记在本格，仅本格下一次狩猎消费
   let rate = range.min + Math.random() * (range.max - range.min);
   const st = (tile.contentState = tile.contentState || {});
   if (st.huntBlessPending) {
@@ -850,7 +873,7 @@ const ResourceHunt = {
   name: '狩猎点',
   emoji: Assets.resources.resource_hunt,
   value: 5,
-  description: '【进入时】可狩猎，概率获得随机生物（每日限一次）\n狩猎普通生物（每日 40%~90%）/ 狩猎危险生物（每日 15%~75%）\n【受祝福时】下次狩猎成功率 +50%（超出 100% 按 100% 计）',
+  description: '【进入时】可狩猎，概率获得随机生物（每日限一次）\n狩猎普通生物（每日 40%~90%）/ 狩猎危险生物（每日 15%~75%）\n【受祝福时】下一次进入本格狩猎地块时狩猎成功率 +50%（超出 100% 按 100% 计）',
   register() {
     // 狩猎需玩家选择目标（普通/危险），交互入口在 InfoPanel 功能选项；进入时仅提示
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
@@ -859,15 +882,15 @@ const ResourceHunt = {
       EventBus.emit(GE.TOAST_SHOW, { text: '🏹 狩猎点：选择狩猎目标（普通/危险）', duration: 1600 });
     }, this);
 
-    // 受祝福：下次狩猎成功率 +50%（备注口径：当日所有选项 +50%，超出 100% 按 100%）
-    // TODO(待裁决): L 列「下次成功率提升」与备注「当日所有选项」口径略有出入，
-    //   此处按「下次狩猎」记账（与商店/魔法商店「下次」类祝福一致），裁决后调整。
+    // 受祝福：下一次进入本格狩猎地块时狩猎成功率 +50%（超出 100% 按 100% 计）
+    // 2026-11-04 裁决④：按地块记账（不是全局下次）——记在本狩猎格的 tile.contentState.huntBlessPending，
+    //   仅本格下一次狩猎时消费；其他狩猎格不受影响。
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
       const tile = gs.map.outerTiles[tileIdx];
       tile.contentState = tile.contentState || {};
       tile.contentState.huntBlessPending = true;
-      EventBus.emit(GE.TOAST_SHOW, { text: '✨ 狩猎受祝福 → 下次狩猎成功率 +50%', duration: 2000 });
+      EventBus.emit(GE.TOAST_SHOW, { text: '✨ 狩猎受祝福 → 下一次进入本格狩猎地块时成功率 +50%', duration: 2000 });
     }, this);
   },
 };

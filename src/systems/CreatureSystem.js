@@ -6,9 +6,10 @@
 //   dailyTick(gs)         —— DaySystem.startNewDay 末尾调用：饥饿检测、成长、心情、产蛋、容量警告
 //   startRealtimeLoop(gs) / stopRealtimeLoop() —— requestAnimationFrame 驱动 tick
 //
-// 容量 & 超载惩罚：
+// 容量 & 超载惩罚（§13.2，2026-11-04 裁决）：
 //   友善超载 → 2 天后 友善类收益归 0（wheat/rice/strawberry/pea/henhouse 产蛋）
-//   危险超载 → 2 天后 每日开始 扣玩家真实伤害 10%
+//   危险 / 极度危险超载 → 2 天后 每日开始 对每只超容量生物
+//     按「该生物 100% 基础攻击力」扣真实伤害（基础攻击力 = 面板显示数值，不受临时强化影响）
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
@@ -270,25 +271,36 @@ export function dailyTick(gs) {
     if (c.kind === 'chicken') {
       if (c.lastFed) {
         // OUT-11：鸡蛋储存于来源鸡舍（上限 10），玩家进入鸡舍时取走（InfoPanel 收获滑条）。
-        //   库未写明储存满时的处理，此处按「无法入库则损失」落地（见审计报告待确认项）。
+        // 2026-11-04 裁决：鸡蛋与优质蛋共享同一储存额度（合计上限 10）；额度满时产出直接丢弃
+        //   —— 不进背包、不进任何储存，仅记日志；收获进背包时鸡蛋与优质蛋为两个不同物品分别占格。
         const henTile = c.sourceTileIdx != null ? outerTiles[c.sourceTileIdx] : null;
         if (henTile && henTile.contentId === 'facility_henhouse') {
           henTile.contentState = henTile.contentState || {};
-          const stored = henTile.contentState.eggStored || 0;
-          if (stored < 10) {
-            henTile.contentState.eggStored = stored + 1;
+          const cs = henTile.contentState;
+          const eggTotal = () => (cs.eggStored || 0) + (cs.eggStoredGolden || 0);
+          if (eggTotal() < 10) {
+            cs.eggStored = (cs.eggStored || 0) + 1;
             EventBus.emit(GE.TILE_UPDATED, { tileIdx: henTile.idx });
           } else {
-            devLog.warn('[CreatureSystem] 鸡舍鸡蛋储存已满(10)，本次鸡蛋无法入库:', c.id);
+            devLog.warn('[CreatureSystem] 鸡舍鸡蛋储存已满(10/10)，本次鸡蛋直接丢弃:', c.id);
+          }
+          // 优质蛋：心情 ×10%（心情负视为 0%）——OUT-21；与鸡蛋共享同一储存额度，满额同样丢弃
+          const qualityChance = Math.max(0, (c.mood || 0) * 0.1);
+          if (Random.chance(qualityChance)) {
+            if (eggTotal() < 10) {
+              cs.eggStoredGolden = (cs.eggStoredGolden || 0) + 1;
+              EventBus.emit(GE.TILE_UPDATED, { tileIdx: henTile.idx });
+            } else {
+              devLog.warn('[CreatureSystem] 鸡舍鸡蛋储存已满(10/10)，本次优质蛋直接丢弃:', c.id);
+            }
           }
         } else {
-          // 旧存档 / 无鸡舍归属：直接进背包（保持既有行为）
+          // 旧存档 / 无鸡舍归属：直接进背包（保持既有行为；两物分别占格）
           InventorySystem.addItem(gs, 'item_egg', 1);
-        }
-        // 优质蛋：心情 ×10%（心情负视为 0%）——OUT-21；库未写明优质蛋储存，保持直接进背包
-        const qualityChance = Math.max(0, (c.mood || 0) * 0.1);
-        if (Random.chance(qualityChance)) {
-          InventorySystem.addItem(gs, 'item_golden_egg', 1);
+          const qualityChance = Math.max(0, (c.mood || 0) * 0.1);
+          if (Random.chance(qualityChance)) {
+            InventorySystem.addItem(gs, 'item_golden_egg', 1);
+          }
         }
       } else {
         devLog.info('[CreatureSystem] chicken 未投喂 → 不产蛋:', c.id);
@@ -341,6 +353,25 @@ function growUpChick(gs, chick) {
   chick.emoji = '🐔';
 }
 
+/**
+ * 超载真实伤害（§13.2，2026-11-04 裁决）：对超容量的生物，逐只按
+ * 「该生物 100% 基础攻击力」累计真实伤害。
+ * 基础攻击力 = getCreatureDef(kind).atk（面板显示数值），不受敌人临时强化影响。
+ * 超容量个体取该类生物中最后 N 只（最近导致超载者，spawnCreature 追加在末尾）。
+ * @param {GameState} gs
+ * @param {'friendly'|'danger'|'extreme'} category
+ * @param {number} excess 超出容量的数量
+ * @returns {number} 应扣的真实伤害总量
+ */
+function overloadBaseAtkDamage(gs, category, excess) {
+  if (excess <= 0) return 0;
+  const list = gs.creatures.filter((c) => c && c.hp > 0 && c.category === category);
+  const picks = list.slice(Math.max(0, list.length - excess));
+  let total = 0;
+  for (const c of picks) total += Math.max(0, getCreatureDef(c.kind)?.atk || 0);
+  return total;
+}
+
 function updateCapacityAndPunish(gs) {
   const cap = gs.capacity || (gs.capacity = {});
   // P1-2 容量扩格加成（§13.1 / 物品库 05 表头）：栅栏每多 1 格空间 → 友善 +1、危险 +1。
@@ -378,10 +409,13 @@ function updateCapacityAndPunish(gs) {
     if (cap.dangerOverdue > 2) {
       devLog.warn('[CreatureSystem] danger OVERLOAD punishment triggered');
       cap.dangerOverloaded = true;
-      // 扣玩家真实伤害 10%
-      const loss = Math.max(1, Math.floor((gs.player.maxHp || gs.player.hp) * 0.10));
-      CombatSystem.applyTrueDamageToPlayer(gs, gs.player, loss, { reason: 'danger_overload' });
-      EventBus.emit(GE.TOAST_SHOW, { text: `⚠️ 危险生物超载！每日扣 ${loss} ❤️`, duration: 2500 });
+      // §13.2（2026-11-04 裁决）：对每只超容量生物按「100% 基础攻击力」扣真实伤害
+      //   基础攻击力 = 面板显示数值（getCreatureDef(kind).atk），不受敌人临时强化影响
+      const loss = overloadBaseAtkDamage(gs, 'danger', dangerCount - cap.danger);
+      if (loss > 0) {
+        CombatSystem.applyTrueDamageToPlayer(gs, gs.player, loss, { reason: 'danger_overload' });
+        EventBus.emit(GE.TOAST_SHOW, { text: `⚠️ 危险生物超载！每日开始按超容量生物基础攻击力 100% 扣真实伤害（本次 -${loss} ❤️）`, duration: 2500 });
+      }
     }
   } else {
     cap.dangerOverdue = 0;
@@ -393,8 +427,9 @@ function updateCapacityAndPunish(gs) {
     cap.extremeOverdue += 1;
     if (cap.extremeOverdue > 2) {
       cap.extremeOverloaded = true;
-      const loss = Math.max(1, Math.floor((gs.player.maxHp || gs.player.hp) * 0.10));
-      CombatSystem.applyTrueDamageToPlayer(gs, gs.player, loss, { reason: 'extreme_overload' });
+      // §13.2（2026-11-04 裁决）：真伤部分同样按「100% 基础攻击力」口径
+      const loss = overloadBaseAtkDamage(gs, 'extreme', extremeCount - cap.extreme);
+      if (loss > 0) CombatSystem.applyTrueDamageToPlayer(gs, gs.player, loss, { reason: 'extreme_overload' });
 
       // ── Agent 3：极度危险超载 → 拆 2 个地块内容（除了永恒设施 facility_home） ──
       const nonHomeTiles = (gs.map.outerTiles || []).filter(
@@ -407,7 +442,7 @@ function updateCapacityAndPunish(gs) {
         const lost = pick.contentId;
         pick.contentId = null;
         EventBus.emit(GE.TILE_UPDATED, { tileIdx: pick.idx });
-        EventBus.emit(GE.TOAST_SHOW, { text: `💥 极度危险超载！拆毁 ${lost}`, duration: 2500 });
+        EventBus.emit(GE.TOAST_SHOW, { text: `💥 极度危险超载！拆毁 ${lost}${loss > 0 ? `，并扣 ${loss} ❤️ 真伤` : ''}`, duration: 2500 });
         devLog.info('[CreatureSystem] extreme overload → demolish tile', pick.idx, 'content', lost);
       }
     }
@@ -425,7 +460,7 @@ function updateCapacityAndPunish(gs) {
 /**
  * 把饲料存入鸡舍（背包 → tile.contentState.henhouseFeed）。
  * §13.3 / FAC-009：鸡优先消耗鸡舍内储存的稻草/小麦。
- * 注：设计文档未写明投放的交互入口（按钮/快捷键），此处为逻辑入口，UI 接线留后续批次。
+ * 2026-11-04 裁决③：真实 UI 入口已接入 InfoPanel 鸡舍功能选项「投放饲料」，与取回逻辑对称。
  * @returns {{ ok: boolean, reason?: string, deposited?: number }}
  */
 export function depositHenhouseFeed(gs, tileIdx, itemId, qty = 1) {

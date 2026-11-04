@@ -18,6 +18,7 @@ import { BlessSystem, BLESS_STAMINA_COST, BLESS_GOLD_COST } from '../systems/Ble
 import { SkillSystem } from '../systems/SkillSystem.js';
 import { InventorySystem } from '../systems/InventorySystem.js';
 import { getDef, huntCreature } from '../data/facilities.js';
+import { depositHenhouseFeed } from '../systems/CreatureSystem.js';
 import { SKILLS } from '../data/characters.js';
 import { SPIRITS } from '../data/characters.js';
 import { CHARACTERS } from '../data/characters.js';
@@ -640,15 +641,21 @@ export class InfoPanel {
         }
 
         case 'facility_henhouse': {
-          // 🐔 鸡舍：onTile 时显示鸡蛋滑动条；随时显示开门/关门
+          // 🐔 鸡舍：onTile 时显示鸡蛋收获（普通/优质分开占格）+ 投放饲料；随时显示开门/关门
+          // 2026-11-04 裁决①：鸡蛋与优质蛋共享同一储存额度（合计上限 10），满额产出直接丢弃；
+          //   收获进背包时鸡蛋与优质蛋为两个不同物品分别占格。
+          // 2026-11-04 裁决③：「投放饲料」真实 UI 入口（背包稻草/小麦 → 鸡舍储存），与取回逻辑对称。
           const stored = tile.contentState?.eggStored ?? 0;
+          const storedGolden = tile.contentState?.eggStoredGolden ?? 0;
+          const storedTotal = stored + storedGolden;
           const doorOpen = tile.contentState?.doorOpen ?? true;
           if (onTile) {
             createEl('div', {
               style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
-              text: `🥚 已储存 ${stored} / 10`,
+              text: `🥚 已储存 ${storedTotal} / 10${storedGolden > 0 ? `（含 ⭐ 优质蛋 ${storedGolden}）` : ''}`,
               parent: this.bodyWrap,
             });
+            // ── 收获：普通鸡蛋 ──
             const range = this._mkHarvestSlider(this.bodyWrap, stored);
             const qtyLabel = createEl('div', {
               style: { fontSize: '13px', color: '#5a4a3a', textAlign: 'center', margin: '4px 0' },
@@ -678,10 +685,88 @@ export class InfoPanel {
                 this._renderBody();
               },
             });
+            // ── 收获：优质蛋（与鸡蛋为不同物品，分别占格） ──
+            if (storedGolden > 0) {
+              const rangeG = this._mkHarvestSlider(this.bodyWrap, storedGolden);
+              const qtyLabelG = createEl('div', {
+                style: { fontSize: '13px', color: '#5a4a3a', textAlign: 'center', margin: '4px 0' },
+                text: `选择优质蛋收获数量：${storedGolden}`,
+                parent: this.bodyWrap,
+              });
+              rangeG.addEventListener('input', () => {
+                qtyLabelG.textContent = `选择优质蛋收获数量：${rangeG.value}`;
+              });
+              createEl('button', {
+                class: 'action-btn',
+                style: { width: '100%', fontSize: '13px', background: '#ffe8a0', marginBottom: '6px' },
+                text: '⭐ 确认收获优质蛋',
+                parent: this.bodyWrap,
+                onclick: () => {
+                  const qty = parseInt(rangeG.value, 10) || 0;
+                  if (qty <= 0) return;
+                  const curTile = gs.map.outerTiles[tileIdx];
+                  const cs = curTile.contentState || (curTile.contentState = {});
+                  const actually = Math.min(qty, cs.eggStoredGolden || 0);
+                  InventorySystem.addItem(gs, 'item_golden_egg', actually);
+                  cs.eggStoredGolden = (cs.eggStoredGolden || 0) - actually;
+                  EventBus.emit(GE.INVENTORY_CHANGE);
+                  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+                  EventBus.emit(GE.TOAST_SHOW, { text: `⭐ 收获 +${actually} 优质蛋`, duration: 1800 });
+                  this._renderBody();
+                },
+              });
+            }
+            // ── 投放饲料（裁决③：背包 → 鸡舍储存，与取回逻辑对称） ──
+            const strawBag = InventorySystem.countItem(gs, 'item_rice_straw');
+            const wheatBag = InventorySystem.countItem(gs, 'item_wheat');
+            const feedStore = tile.contentState?.henhouseFeed || {};
+            createEl('div', {
+              style: { fontSize: '12px', color: '#666', margin: '8px 0 4px' },
+              text: '🌾 投放饲料（背包 → 鸡舍储存）',
+              parent: this.bodyWrap,
+            });
+            createEl('div', {
+              style: { fontSize: '12px', color: '#8a7a5a', marginBottom: '4px' },
+              text: `稻草：背包 ${strawBag} / 已存 ${feedStore.item_rice_straw || 0} · 小麦：背包 ${wheatBag} / 已存 ${feedStore.item_wheat || 0}`,
+              parent: this.bodyWrap,
+            });
+            const feedMax = Math.max(strawBag, wheatBag);
+            if (feedMax > 0) {
+              const feedRange = this._mkHarvestSlider(this.bodyWrap, feedMax);
+              feedRange.value = '1';
+              const feedLabel = createEl('div', {
+                style: { fontSize: '13px', color: '#5a4a3a', textAlign: 'center', margin: '4px 0' },
+                text: '选择投放数量：1',
+                parent: this.bodyWrap,
+              });
+              feedRange.addEventListener('input', () => {
+                feedLabel.textContent = `选择投放数量：${feedRange.value}`;
+              });
+              const mkDeposit = (itemId, name, bg) => createEl('button', {
+                class: 'action-btn',
+                style: { width: '100%', fontSize: '13px', background: bg, marginBottom: '6px' },
+                text: `🌾 投放${name}`,
+                disabled: InventorySystem.countItem(gs, itemId) <= 0,
+                parent: this.bodyWrap,
+                onclick: () => {
+                  const qty = parseInt(feedRange.value, 10) || 0;
+                  if (qty <= 0) return;
+                  const r = depositHenhouseFeed(gs, tileIdx, itemId, qty);
+                  if (!r.ok) {
+                    EventBus.emit(GE.TOAST_SHOW, { text: '🌾 背包中没有可投放的饲料', duration: 1500 });
+                    return;
+                  }
+                  EventBus.emit(GE.TOAST_SHOW, { text: `🌾 已投放 ${name} ×${r.deposited} 进鸡舍储存`, duration: 1600 });
+                  this._renderBody();
+                },
+              });
+              mkDeposit('item_rice_straw', '稻草', '#d8f0c0');
+              mkDeposit('item_wheat', '小麦', '#f0e0b0');
+            }
           } else {
             createEl('div', {
               style: { fontSize: '12px', color: '#aaa', textAlign: 'center', margin: '6px 0' },
-              text: `（走到该格可收获 🥚 ${stored}/10）`,
+              text: `（走到该格可收获 🥚 ${storedTotal}/10、投放饲料）`,
               parent: this.bodyWrap,
             });
           }
@@ -758,7 +843,7 @@ export class InfoPanel {
         if (huntBlessed) {
           createEl('div', {
             style: { fontSize: '12px', color: '#8a6a3a', marginBottom: '6px', textAlign: 'left' },
-            text: '✨ 受祝福：下次狩猎成功率 +50%（超出 100% 按 100% 计）',
+            text: '✨ 受祝福：下一次进入本格狩猎地块时狩猎成功率 +50%（超出 100% 按 100% 计）',
             parent: this.bodyWrap,
           });
         }

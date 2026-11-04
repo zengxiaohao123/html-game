@@ -486,5 +486,33 @@ head_('图标覆盖：PNG 注册存在性 + 全量 icon id 回退安全');
 }
 
 // ════════════════════════════════════════════════════════════
+// 第 7 批裁决①③：鸡舍面板 —— 共享额度显示 / 优质蛋分开收获 / 投放饲料入口
+// ════════════════════════════════════════════════════════════
+head_('第 7 批：鸡舍面板（共享额度 + 分别收获 + 投放饲料）');
+{
+  const henTile = gs.map.outerTiles.find((t) => !t.contentId);
+  henTile.contentId = 'facility_henhouse';
+  henTile.contentState = { eggStored: 3, eggStoredGolden: 2, henhouseFeed: { item_wheat: 1 } };
+  gs.player.x = henTile.idx;
+  InventorySystem.addItem(gs, 'item_wheat', 2);
+  InventorySystem.addItem(gs, 'item_rice_straw', 1);
+  infoPanel.selectTile(henTile.idx);
+  assert(hasText(infoPanel.root, '5 / 10'), '共享额度合计显示 5/10（普通 3 + 优质 2）');
+  assert(hasText(infoPanel.root, '优质蛋 2'), '优质蛋数量单独显示');
+  assert(buttonsWithText(infoPanel.root, '确认收获鸡蛋').length === 1, '普通鸡蛋收获按钮存在');
+  assert(buttonsWithText(infoPanel.root, '确认收获优质蛋').length === 1, '优质蛋收获按钮存在（两物分别占格）');
+  assert(hasText(infoPanel.root, '投放饲料'), '「投放饲料」区存在');
+  assert(buttonsWithText(infoPanel.root, '投放稻草').length === 1 && buttonsWithText(infoPanel.root, '投放小麦').length === 1,
+    '稻草 / 小麦投放按钮存在');
+  const storeBefore = henTile.contentState.henhouseFeed.item_wheat || 0;
+  const bagBefore = InventorySystem.countItem(gs, 'item_wheat');
+  buttonsWithText(infoPanel.root, '投放小麦')[0].click();
+  assert((henTile.contentState.henhouseFeed.item_wheat || 0) === storeBefore + 1
+    && InventorySystem.countItem(gs, 'item_wheat') === bagBefore - 1,
+    '点投放小麦 → 背包 -1、鸡舍储存 +1');
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+}
+
+// ════════════════════════════════════════════════════════════
 console.log(`\nsmoke-ui 结果：${pass} 通过 / ${fail} 失败（共 ${pass + fail}）`);
 process.exit(fail > 0 ? 1 : 0);
