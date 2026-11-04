@@ -47,9 +47,10 @@ export class SettingsPanel {
         width: 'min(680px, 94vw)',
         maxHeight: '88vh',
         padding: '28px 30px 20px 30px',
-        backgroundColor: '#fffbe6',
-        border: '4px solid #2a2a2a',
-        borderRadius: '24px',
+        // 第 10 批：外壳对齐基准 panel-card 语言（3px #3a3a3a / 16px 圆角 / 奶油底）
+        background: 'linear-gradient(180deg,#fffbf0,#fff3c4)',
+        border: '3px solid #3a3a3a',
+        borderRadius: '16px',
         boxShadow: '0 12px 40px rgba(0,0,0,0.4)',
         fontFamily: '"LXGW WenKai TC", system-ui, sans-serif',
         overflowY: 'auto',
@@ -61,12 +62,12 @@ export class SettingsPanel {
     // ══ 标题栏 ══
     createEl('div', {
       style: {
-        fontSize: '26px',
-        fontWeight: '900',
+        fontSize: '20px',
+        fontWeight: '800',
         color: '#2a2a2a',
         textAlign: 'center',
         marginBottom: '20px',
-        letterSpacing: '4px',
+        letterSpacing: '2px',
       },
       text: '⚙️ 设 置',
       parent: this.panel,

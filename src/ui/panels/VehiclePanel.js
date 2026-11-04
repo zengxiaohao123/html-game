@@ -22,7 +22,7 @@ export class VehiclePanel {
 
   mount() {
     this.helper = createStandardPanel({
-      title: '🚗 载具（T 切换）',
+      title: '🚗 载具（T）',
       panelKey: 'vehicle',
       width: 'min(92vw, 820px)',
       height: 'min(86vh, 680px)',
@@ -112,10 +112,11 @@ export class VehiclePanel {
       v.available.forEach((entry, idx) => {
         // 同种不叠放、独立计算：每个 entry 单独一格
         const def = VEHICLES[entry.vehicleId];
+        // 第 10 批：格子描边/圆角对齐背包基准（3px #b8a888 / 14px）
         const s = createEl('div', {
           style: {
             aspectRatio: '1/1', background: 'rgba(255,255,255,0.85)',
-            border: '2px solid #b8a888', borderRadius: '10px',
+            border: '3px solid #b8a888', borderRadius: '14px',
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px',
             cursor: 'pointer',
           },

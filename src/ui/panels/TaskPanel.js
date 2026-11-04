@@ -27,7 +27,7 @@ export class TaskPanel {
 
   mount() {
     this.helper = createStandardPanel({
-      title: '📋 任务（J 切换）',
+      title: '📋 任务（J）',
       panelKey: 'task',
       width: 'min(92vw, 720px)',
       height: 'min(86vh, 640px)',
@@ -37,19 +37,21 @@ export class TaskPanel {
   }
 
   _build(body) {
-    // ⚠️ 严格 2 tab：日常任务 / 核心任务
-    this.tabsRow = createEl('div', { style: { display: 'flex', gap: '6px' }, parent: body });
-    ['daily', 'core'].forEach((k) => {
+    // ⚠️ 严格 2 tab：日常任务 / 核心任务（第 10 批：统一基准 .tab-bar/.tab-btn，点击即更新高亮）
+    this.tabsRow = createEl('div', { class: ['tab-bar'], parent: body });
+    this.tabBtns = ['daily', 'core'].map((k) => {
       const label = k === 'daily' ? '🌞 日常任务' : '🏆 核心任务';
-      createEl('button', {
-        class: ['action-btn'],
-        style: {
-          background: this.activeTab === k ? '#ffe099' : 'rgba(255,255,255,0.7)',
-          border: this.activeTab === k ? '3px solid #e8a900' : '2px solid #b8a888',
-          fontWeight: this.activeTab === k ? '800' : '600',
-        },
+      return createEl('button', {
+        class: this.activeTab === k ? ['tab-btn', 'active'] : ['tab-btn'],
         text: label, parent: this.tabsRow,
-        onclick: () => { this.activeTab = k; this._refresh(); },
+        onclick: () => {
+          this.activeTab = k;
+          this.tabBtns.forEach((b, i) => {
+            const on = (i === 0 ? 'daily' : 'core') === k;
+            if (on) b.classList.add('active'); else b.classList.remove('active');
+          });
+          this._refresh();
+        },
       });
     });
 

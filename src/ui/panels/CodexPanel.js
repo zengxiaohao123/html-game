@@ -42,7 +42,7 @@ export class CodexPanel {
 
   mount() {
     this.helper = createStandardPanel({
-      title: '📖 图鉴（K 切换）',
+      title: '📖 图鉴（K）',
       panelKey: 'codex',
       width: 'min(92vw, 900px)',
       height: 'min(86vh, 720px)',
@@ -52,22 +52,19 @@ export class CodexPanel {
   }
 
   _build(body) {
-    // tab 切换
-    this.tabsRow = createEl('div', {
-      style: { display: 'flex', gap: '6px' }, parent: body,
-    });
-    TABS.forEach((t) => {
-      createEl('button', {
-        class: ['action-btn'],
-        style: {
-          background: this.activeTab === t.id ? '#ffe099' : 'rgba(255,255,255,0.7)',
-          border: this.activeTab === t.id ? '3px solid #e8a900' : '2px solid #b8a888',
-          fontWeight: this.activeTab === t.id ? '800' : '600',
-        },
-        text: t.label, parent: this.tabsRow,
-        onclick: () => { this.activeTab = t.id; this.selectedKey = null; this._refresh(); },
-      });
-    });
+    // tab 切换（第 10 批：统一基准 .tab-bar/.tab-btn，点击即更新高亮）
+    this.tabsRow = createEl('div', { class: ['tab-bar'], parent: body });
+    this.tabBtns = TABS.map((t) => createEl('button', {
+      class: this.activeTab === t.id ? ['tab-btn', 'active'] : ['tab-btn'],
+      text: t.label, parent: this.tabsRow,
+      onclick: () => {
+        this.activeTab = t.id; this.selectedKey = null;
+        this.tabBtns.forEach((b, i) => {
+          if (TABS[i].id === t.id) b.classList.add('active'); else b.classList.remove('active');
+        });
+        this._refresh();
+      },
+    }));
 
     // 主区：左列表 + 右详情
     const main = createEl('div', {

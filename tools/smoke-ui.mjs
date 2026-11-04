@@ -15,6 +15,7 @@ class FakeEl {
     this.children = [];
     this.parentNode = null;
     this.style = {};
+    this.style.setProperty = () => {}; // 第 10 批：滑块金色填充用 CSS 变量，桩补齐
     this.attributes = Object.create(null);
     this._listeners = Object.create(null);
     this._text = '';
@@ -701,6 +702,178 @@ head_('第 9 批：商店剩余预览 / 背包拖拽放置 / 粘液中文名');
   });
   assert(targetTile.contentId === facDef.id, 'drop → 地块放置成功');
   assert(InventorySystem.countItem(gs, facDef.id) === cntBefore - 1, '每拖一次只放 1 个（背包 -1）');
+}
+
+// ════════════════════════════════════════════════════════════
+head_('第 10 批任务 A：InfoPanel 精修后 tab/地形文案状态正确');
+{
+  infoPanel.selectTile(2);
+  assert(infoPanel.mode === 'tile', 'selectTile 后为 tile 模式', infoPanel.mode);
+  // 点「状态」tab → activeTabIdx 变化且渲染状态内容
+  buttonsWithText(infoPanel.root, '状态')[0].click();
+  assert(infoPanel.activeTabIdx === 1, '点状态 tab → activeTabIdx=1', infoPanel.activeTabIdx);
+  assert(hasText(infoPanel.root, '地形：'), '状态 tab 渲染地形行');
+  assert(!hasText(infoPanel.root, '地形：terrain_'), '地形行显示中文名（不露原始 id）');
+  assert(!hasText(infoPanel.root, 'tile idx ='), '调试文案已移除');
+  // 点回「地块内容」
+  buttonsWithText(infoPanel.root, '地块内容')[0].click();
+  assert(infoPanel.activeTabIdx === 0, '点地块内容 tab → activeTabIdx=0');
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+}
+
+head_('第 10 批任务 B：SpiritArea → InfoPanel 祈福（点击触发状态变化）');
+{
+  spiritArea.root.click();
+  assert(infoPanel.mode === 'bless', '点精灵 → InfoPanel 进入 bless 模式', infoPanel.mode);
+  assert(hasText(infoPanel.root, '祈福'), '祈福 tab 显示');
+  infoPanel.selectTile(2);
+  assert(infoPanel.mode === 'tile', 'selectTile 后退出祈福模式');
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+}
+
+head_('第 10 批任务 B：RolePanel 羁绊 tab（点击触发状态变化）');
+{
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'role' });
+  buttonsWithText(rolePanel.helper.root, '羁绊等级')[0].click();
+  assert(rolePanel.activeTab === 'bond', '点羁绊等级 → activeTab=bond', rolePanel.activeTab);
+  buttonsWithText(rolePanel.helper.root, '技能展示')[0].click();
+  assert(rolePanel.activeTab === 'skills', '点技能展示 → activeTab=skills');
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'role' });
+}
+
+head_('第 10 批任务 B：TeamPanel 切组（点击触发状态变化）');
+{
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'team' });
+  // 队伍按钮的文字在子 div 里 → 用 textContent 匹配
+  const groupBtn = (label) => findAll(teamPanel.helper.root,
+    (el) => el.tagName === 'BUTTON' && el.textContent.includes(label))[0];
+  groupBtn('队伍 2').click();
+  assert(teamPanel.selectedGroup === 1, '点队伍 2 → selectedGroup=1', teamPanel.selectedGroup);
+  groupBtn('队伍 1').click();
+  assert(teamPanel.selectedGroup === 0, '点队伍 1 → selectedGroup=0');
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'team' });
+}
+
+head_('第 10 批任务 B：ForgePanel 选配方+合成（点击触发状态变化）');
+{
+  const recipeId = Object.keys(RECIPES)[0];
+  const r = RECIPES[recipeId];
+  const outId = r.outputs[0].itemId;
+  for (const inp of r.ingredients) InventorySystem.addItem(gs, inp.itemId, inp.qty);
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'forge' });
+  // 配方格为可点 div（含配方产物名/图标），逐个试点击直到选中目标配方
+  const clickables = findAll(forgePanel.helper.root, (el) => el._listeners && el._listeners.click && el.tagName !== 'BUTTON');
+  for (const el of clickables) {
+    el.dispatchEvent({ type: 'click', target: el, preventDefault() {}, stopPropagation() {} });
+    if (forgePanel.selectedRecipeId === recipeId) break;
+  }
+  assert(forgePanel.selectedRecipeId === recipeId, '点配方格 → selectedRecipeId 命中', forgePanel.selectedRecipeId);
+  // 数量 1 后点「合成」→ 产物按配方产出数进背包
+  forgePanel.craftQty = 1;
+  const perCraft = r.outputs[0].qty || 1;
+  const cntBefore = InventorySystem.countItem(gs, outId);
+  const craftBtn = buttonsWithText(forgePanel.helper.root, '合成 ×')[0];
+  assert(!!craftBtn, '合成按钮存在');
+  craftBtn.click();
+  assert(InventorySystem.countItem(gs, outId) === cntBefore + perCraft,
+    `点合成 → 产物 +${perCraft}（背包状态变化）`,
+    { before: cntBefore, after: InventorySystem.countItem(gs, outId) });
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'forge' });
+}
+
+head_('第 10 批任务 B：InventoryPanel 切 tab（点击触发状态变化）');
+{
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'inventory' });
+  buttonsWithText(inventoryPanel.mask, '资源')[0].click();
+  assert(inventoryPanel.selectedTabIdx === 2, '点资源 tab → selectedTabIdx=2', inventoryPanel.selectedTabIdx);
+  buttonsWithText(inventoryPanel.mask, '总览')[0].click();
+  assert(inventoryPanel.selectedTabIdx === 0, '点总览 tab → selectedTabIdx=0');
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });
+}
+
+head_('第 10 批任务 B：VehiclePanel 卸下（点击触发状态变化）');
+{
+  gs.vehicle.current = { vehicleId: 'vehicle_wheel', usageLeft: 3 };
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'vehicle' });
+  const unloadBtn = buttonsWithText(vehiclePanel.helper.root, '卸下')[0];
+  assert(!!unloadBtn, '装备中 → 卸下按钮存在');
+  unloadBtn.click();
+  assert(gs.vehicle.current === null, '点卸下 → current=null');
+  // detachVehicle 把剩余次数同步回 available 里的同种载具条目（不新增）
+  assert(gs.vehicle.available.some((a) => a.vehicleId === 'vehicle_wheel' && a.usageLeft === 3),
+    '卸下后剩余次数同步回库存条目');
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'vehicle' });
+}
+
+head_('第 10 批任务 B：TaskPanel 切 tab（点击触发状态变化 + 高亮更新）');
+{
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'task' });
+  buttonsWithText(taskPanel.helper.root, '核心任务')[0].click();
+  assert(taskPanel.activeTab === 'core', '点核心任务 → activeTab=core', taskPanel.activeTab);
+  assert(taskPanel.tabBtns[1].classList.contains('active'), '核心任务 tab 点击后高亮');
+  assert(!taskPanel.tabBtns[0].classList.contains('active'), '日常任务 tab 高亮移除');
+  buttonsWithText(taskPanel.helper.root, '日常任务')[0].click();
+  assert(taskPanel.activeTab === 'daily', '点日常任务 → activeTab=daily');
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'task' });
+}
+
+head_('第 10 批任务 B：CodexPanel 切 tab（点击触发状态变化 + 高亮更新）');
+{
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'codex' });
+  buttonsWithText(codexPanel.helper.root, '天赋')[0].click();
+  assert(codexPanel.activeTab === 'talents', '点天赋 → activeTab=talents', codexPanel.activeTab);
+  assert(codexPanel.tabBtns[1].classList.contains('active'), '天赋 tab 点击后高亮');
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'codex' });
+}
+
+head_('第 10 批任务 B：SettingsPanel 槽位/返回（点击触发状态变化）');
+{
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'settings' });
+  let dialogPayload = null;
+  const onDlg = (p) => { dialogPayload = p; };
+  EventBus.on(GE.DIALOG_SHOW, onDlg);
+  settingsPanel.slotsGrid.children[1].click();
+  assert(!!dialogPayload && /Slot 2/.test(dialogPayload.title || ''), '点 Slot 2 → 弹槽位操作对话框', dialogPayload?.title);
+  EventBus.off(GE.DIALOG_SHOW, onDlg);
+  // 「返回主菜单」→ 面板关闭且 director.mainMenu 被调用（smoke 无 mainMenu → 只验证面板关闭）
+  buttonsWithText(settingsPanel.panel, '返回主菜单')[0].click();
+  assert(settingsPanel.visible === false, '点返回主菜单 → 设置面板关闭');
+}
+
+head_('第 10 批任务 B：FuncBar 建造按钮（点击触发状态变化）');
+{
+  const btns = findAll(funcBar.root, (el) => el.tagName === 'BUTTON');
+  btns[5].click(); // items[5] = 建造
+  assert(gs.buildMode === true, '点建造 → gs.buildMode=true');
+  btns[5].click();
+  assert(gs.buildMode === false, '再点建造 → 退出建造模式');
+}
+
+head_('第 10 批任务 B：HotBar 槽位选中（点击触发状态变化）');
+{
+  window.__gameDirector = director; // HotBar 经 window.__gameDirector 取 GS（镜像 main.js）
+  InventorySystem.addItem(gs, 'facility_tent', 1);
+  gs.hotbar[0] = { itemId: 'facility_tent' };
+  hotBar.renderFromGS(gs);
+  hotBar.slotEls[0].click();
+  assert(hotBar.selectedSlotIdx === 0 && hotBar.selectedContentId === 'facility_tent',
+    '点 slot 0 → 选中（idx + contentId）', { idx: hotBar.selectedSlotIdx, id: hotBar.selectedContentId });
+  assert(hotBar.slotEls[0].classList.contains('selected'), '选中格带 selected 类');
+  hotBar.slotEls[0].click();
+  assert(hotBar.selectedSlotIdx === null, '再点 → 取消选中');
+}
+
+head_('第 10 批任务 B：MainMenu 图鉴入口（点击触发状态变化）');
+{
+  const { MainMenu } = await import('../src/ui/MainMenu.js');
+  const mm = new MainMenu(director);
+  mm.show();
+  assert(mm.visible === true, 'MainMenu show() 可见');
+  buttonsWithText(mm.mask, '图鉴')[0].click();
+  assert(codexPanel.helper?.visible === true, '点图鉴 → 图鉴面板打开');
+  assert(mm.visible === false, '点按钮后主菜单隐藏');
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'codex' });
+  mm.remove();
 }
 
 // ════════════════════════════════════════════════════════════

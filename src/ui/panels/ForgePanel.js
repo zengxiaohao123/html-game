@@ -219,7 +219,9 @@ export class ForgePanel {
     this.craftQty = Math.max(0, Math.min(this.craftQty || 1, max));
 
     const qtyLabel = createEl('div', { style: { textAlign: 'center', fontSize: '18px', fontWeight: '800', color: '#e8a900', lineHeight: '1' }, text: String(this.craftQty), parent: this.craftEl });
+    // 第 10 批：滑动条统一用背包基准 .inv-action-slider（同类元素同一套尺寸语言）
     const slider = createEl('input', {
+      class: ['inv-action-slider'],
       attrs: { type: 'range', min: 0, max: Math.max(0, max), value: this.craftQty },
       style: { width: '100%', cursor: 'pointer' },
       parent: this.craftEl,
@@ -234,6 +236,8 @@ export class ForgePanel {
       qtyLabel.textContent = String(this.craftQty);
       craftBtn.textContent = `⚒️ 合成 ×${this.craftQty}`;
       craftBtn.style.opacity = this.craftQty > 0 ? 1 : 0.6;
+      slider.style.setProperty('--slider-percent',
+        max > 0 ? `${(this.craftQty / max) * 100}%` : '0%');
     };
     slider.addEventListener('input', () => {
       this.craftQty = Number(slider.value) || 0;

@@ -163,9 +163,12 @@ export class InfoPanel {
       parent,
     });
 
-    // tab bar 容器（每次 renderBody 动态重建）
+    // tab bar 容器（每次 renderBody 动态重建；第 10 批：与背包基准 .tab-btn 同一套尺寸语言）
     this.tabsWrap = createEl('div', {
-      style: { display: 'flex', gap: '5px', flexShrink: '0', flexWrap: 'wrap' },
+      style: {
+        display: 'flex', gap: '8px', flexShrink: '0', flexWrap: 'wrap',
+        borderBottom: '2px solid #b8a888', paddingBottom: '6px',
+      },
       parent: this.root,
     });
 
@@ -249,28 +252,16 @@ export class InfoPanel {
     }
 
     tabs.forEach((t, i) => {
-      const isActive = i === this.activeTabIdx;
-      const btn = createEl('button', {
-        class: ['info-tab', isActive ? 'active' : ''],
-        style: {
-          flex: '1', padding: '6px 10px', minWidth: '60px',
-          border: '2px solid #b8a888',
-          borderRadius: '8px 8px 0 0',
-          backgroundColor: isActive ? '#f0e0c0' : 'transparent',
-          color: isActive ? '#5a4a3a' : '#888',
-          fontWeight: isActive ? '700' : '400',
-          fontSize: '13px',
-          cursor: 'pointer',
-          fontFamily: 'inherit',
-          boxShadow: 'none',
-        },
+      createEl('button', {
+        class: i === this.activeTabIdx ? ['tab-btn', 'active'] : ['tab-btn'],
+        style: { flex: '1', minWidth: '60px' },
         text: t.label,
         parent: this.tabsWrap,
+        onclick: () => {
+          this.activeTabIdx = i;
+          this._renderBody();
+        },
       });
-      btn.onclick = () => {
-        this.activeTabIdx = i;
-        this._renderBody();
-      };
     });
 
     this._currentTabs = tabs;
@@ -394,7 +385,9 @@ export class InfoPanel {
         size: '18px',
         fallback: Assets.getEmoji('terrains', tile.terrain),
       }));
-      createEl('span', { text: `地形：${tile.terrain}`, parent: tRow });
+      // 第 10 批：显示中文地形名（不再露出原始 id）
+      const tName = (TERRAIN_DESCRIPTIONS[tile.terrain] || '').split('：')[0] || tile.terrain;
+      createEl('span', { text: `地形：${tName}`, parent: tRow });
     }
 
     // 词条描述（每条一行）
@@ -1107,12 +1100,6 @@ export class InfoPanel {
       }
     }
 
-    // 位置提示（调试用）
-    createEl('div', {
-      style: { marginTop: '10px', fontSize: '12px', color: '#aaa' },
-      text: `tile idx = ${tile.idx} · 地形 = ${tile.terrain}`,
-      parent: this.bodyWrap,
-    });
   }
 
   /** 收获滑动条（§16.4：较大，可占两行高度） */
@@ -1529,27 +1516,21 @@ export class InfoPanel {
       { key: 'states', label: '状态' },
     ];
     const bar = createEl('div', {
-      style: { display: 'flex', gap: '5px', marginBottom: '10px' },
+      style: { display: 'flex', gap: '8px', marginBottom: '10px' },
       parent: this.bodyWrap,
     });
     for (const t of subTabs) {
       const active = this.creatureSubTab === t.key;
-      const btn = createEl('button', {
-        style: {
-          flex: '1', padding: '4px 8px',
-          border: '2px solid #b8a888', borderRadius: '8px',
-          backgroundColor: active ? '#f0e0c0' : 'transparent',
-          color: active ? '#5a4a3a' : '#888',
-          fontWeight: active ? '700' : '400',
-          fontSize: '12px', cursor: 'pointer', fontFamily: 'inherit',
-        },
+      createEl('button', {
+        class: active ? ['tab-btn', 'active'] : ['tab-btn'],
+        style: { flex: '1', padding: '4px 8px', fontSize: '12px' },
         text: t.label,
         parent: bar,
+        onclick: () => {
+          this.creatureSubTab = t.key;
+          this._renderBody();
+        },
       });
-      btn.onclick = () => {
-        this.creatureSubTab = t.key;
-        this._renderBody();
-      };
     }
 
     if (this.creatureSubTab === 'stats') {
