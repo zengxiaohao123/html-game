@@ -20,6 +20,7 @@ import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { Random } from '../core/Random.js';
 import { ITEMS } from '../data/items.js';
+import { getCreatureDef } from '../data/creatures.js';
 import { InventorySystem } from './InventorySystem.js';
 
 // ── lazy init helpers ──
@@ -112,6 +113,18 @@ export function onDayStart(gs) {
   // 重置何以为我 —— 每日重置
   ensureTeamField(gs, 'dailyElementDamages', []);
   gs.team.dailyElementDamages = [];
+
+  // B-15：涅槃攻击加成按日递减（默认 99 天），到期回收加成
+  if (gs.team.rebornAtkBonus && gs.team.rebornAtkBonus.days > 0) {
+    gs.team.rebornAtkBonus.days -= 1;
+    if (gs.team.rebornAtkBonus.days <= 0) {
+      const back = gs.team.rebornAtkBonus.amount;
+      gs.player.atk = Math.max(1, gs.player.atk - back);
+      EventBus.emit(GE.ATK_CHANGE, { newValue: gs.player.atk, reason: 'reborn_bonus_expire' });
+      devLog.info('[TalentSystem.onDayStart] 涅槃攻击加成到期，回收', back, '→ atk', gs.player.atk);
+      gs.team.rebornAtkBonus = { amount: 0, days: 0 };
+    }
+  }
 
   // 比翼：twinBuffActiveDays 递减（若有）
   if (gs.team.twinBuffActiveDays !== undefined && gs.team.twinBuffActiveDays > 0) {
@@ -238,14 +251,13 @@ export function onDamageDeal(gs, opts = {}) {
         result.physicalMul = m;
         devLog.info('[TalentSystem.onDamageDeal] 何以为我 physicalMul=', m, '(kinds=', countDistinct, ')');
       } else {
-        // 元素：每造成一种新元素（含本次？）+20%（乘算）
-        // 文档："每造成一种元素伤害后，本日内物理伤害 -20%，该元素伤害 +20%"
-        // 这里算当前元素 bonus：如果当前元素已经记录过了不叠加（文档说重复不叠加）
-        // result.elementMul 改成：每有 distinct 元素（含自身）就 +20%
-        // 但按文档描述：造成新元素 → 该元素 +20% —— 所以最终该元素 +20%（一次性的）
-        // 简单处理：elementMul = 1 + perElBonus（只要是已记录过的元素都 +20%，不管重复不重复）
-        result.elementMul = 1 + perElBonus;
-        devLog.info('[TalentSystem.onDamageDeal] 何以为我 elementMul=', result.elementMul);
+        // 元素：文档「每造成一种元素伤害**后**……该元素伤害 +20%」
+        // B-17：recordElementDamage 在 onDamageDeal 之后调用，
+        // 因此仅当该元素已在 dailyElementDamages 里（非首次）才享受加成；首次命中无加成。
+        if (dailyEl.includes(element)) {
+          result.elementMul = 1 + perElBonus;
+          devLog.info('[TalentSystem.onDamageDeal] 何以为我 elementMul=', result.elementMul, 'element=', element);
+        }
       }
     }
 
@@ -337,7 +349,15 @@ export function onHPDeath(gs, opts = {}) {
 
   // 触发
   gs.player.hp = Math.floor(gs.player.maxHp * hpRegen);
-  gs.player.atk = Math.floor(gs.player.atk * (1 + atkBonus));
+  const newAtk = Math.floor(gs.player.atk * (1 + atkBonus));
+  const rebornBonus = newAtk - gs.player.atk;
+  gs.player.atk = newAtk;
+  // B-15（§12.6：未说明持续时间的状态默认 99 天）：记录攻击加成，到期回收
+  if (rebornBonus > 0) {
+    if (!gs.team.rebornAtkBonus) gs.team.rebornAtkBonus = { amount: 0, days: 0 };
+    gs.team.rebornAtkBonus.amount += rebornBonus;
+    gs.team.rebornAtkBonus.days = 99;
+  }
   gs.team.xiayangRebornCooldownDay = cooldown;
   EventBus.emit(GE.HP_CHANGE, { newValue: gs.player.hp, reason: 'talent_reborn' });
   EventBus.emit(GE.ATK_CHANGE, { newValue: gs.player.atk, reason: 'talent_reborn' });
@@ -359,19 +379,23 @@ export function onCreatureDefeated(gs, creature) {
     const targets = params.targets || ['danger', 'extreme'];
     if (!targets.includes(creature.category)) continue;
 
-    // 30% 额外奖励（简化：给一个随机产物 item）
-    if (Random.chance(params.extraRewardChance ?? 0.3)) {
-      const pool = ['item_wheat', 'item_rice_straw', 'item_wheat', 'item_wheat', 'item_corn', 'item_cabbage'];
-      const pick = Random.pick(pool);
-      InventorySystem.addItem(gs, pick, 1);
-      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 好奇心：额外获得 ${ITEMS[pick]?.name || pick} ×1`, duration: 1500 });
+    // B-18：30% 额外奖励 = 该生物掉落再发一份（物品库 BIO drops）
+    const def = getCreatureDef(creature.kind);
+    const drops = Array.isArray(def?.drops) ? def.drops : [];
+    if (Random.chance(params.extraRewardChance ?? 0.3) && drops.length > 0) {
+      for (const d of drops) {
+        InventorySystem.addItem(gs, d.itemId, d.qty || 1);
+        EventBus.emit(GE.TOAST_SHOW, { text: `✨ 好奇心：额外获得 ${ITEMS[d.itemId]?.name || d.itemId} ×${d.qty || 1}`, duration: 1500 });
+      }
     }
-    // 50% 额外金币（+1× 原 creature.dropValue —— 简化 +5 金币）
+    // B-18：50% 额外金币 = 掉落物售卖价值合计（ITEMS[].value）
     if (Random.chance(params.extraGoldChance ?? 0.5)) {
-      const extraGold = 5;
-      gs.player.gold += extraGold;
-      EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: extraGold });
-      EventBus.emit(GE.TOAST_SHOW, { text: `🪙 好奇心：额外金币 +${extraGold}`, duration: 1500 });
+      const extraGold = drops.reduce((sum, d) => sum + (ITEMS[d.itemId]?.value ?? 0) * (d.qty || 1), 0);
+      if (extraGold > 0) {
+        gs.player.gold += extraGold;
+        EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: extraGold });
+        EventBus.emit(GE.TOAST_SHOW, { text: `🪙 好奇心：额外金币 +${extraGold}`, duration: 1500 });
+      }
     }
   }
 }

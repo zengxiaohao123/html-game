@@ -215,7 +215,8 @@ export function getShop(gs, tileIdx) {
 export function manualRefreshCost(shop) {
   if (!shop) return null;
   if (shop.refreshUsed >= 3) return null;
-  if (shop.freeRefreshPending > 0) return 0;
+  // C-12：免费刷新只在「下次进入」内有效（enterShop 时 pending → ready；leaveShop 作废）
+  if ((shop.freeRefreshReady || 0) > 0) return 0;
   return [4, 8, 12][shop.refreshUsed] ?? null;
 }
 
@@ -228,7 +229,6 @@ export function refreshShop(gs, tileIdx, opts = {}) {
   if (!shop) return { ok: false, reason: 'notShop' };
   if (opts.free) {                    // 每周自动刷新（外部调用）
     shop.stock = generateStock(shop.kind, Math.random, { exclude: collectUniqueHeld(gs, tileIdx) });
-    if (shop.discountPending) { applyBlessDiscount(shop.stock); shop.discountPending = false; }
     return { ok: true, cost: 0 };
   }
 
@@ -244,13 +244,10 @@ export function refreshShop(gs, tileIdx, opts = {}) {
 
   gs.player.gold -= cost;
   EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: -cost });
-  if (cost === 0 && shop.freeRefreshPending > 0) shop.freeRefreshPending -= 1;
+  // C-12：RES-006 备注——免费指 0 金币，但正常消耗刷新次数
+  if (cost === 0 && (shop.freeRefreshReady || 0) > 0) shop.freeRefreshReady -= 1;
   shop.refreshUsed += 1;
   shop.stock = generateStock(shop.kind, Math.random, { exclude: collectUniqueHeld(gs, tileIdx) });
-  if (shop.discountPending) {
-    applyBlessDiscount(shop.stock);
-    shop.discountPending = false;
-  }
 
   EventBus.emit(GE.TOAST_SHOW, { text: `🏪 已刷新（-${cost} 金币）`, duration: 1400 });
   devLog.info('[Shop] 手动刷新', shop.kind, 'cost=', cost, 'used=', shop.refreshUsed);
@@ -267,6 +264,19 @@ export function enterShop(gs, tileIdx) {
     return { ok: false, reason: 'justLeft' };
   }
   shop.visited = true;
+
+  // C-12：受祝福的免费刷新绑定「下次进入」——进入时 pending → ready，本次进入的首次刷新 0 金币
+  if ((shop.freeRefreshPending || 0) > 0) {
+    shop.freeRefreshReady = (shop.freeRefreshReady || 0) + shop.freeRefreshPending;
+    shop.freeRefreshPending = 0;
+    EventBus.emit(GE.TOAST_SHOW, { text: `✨ 本次进入首次刷新免费`, duration: 1600 });
+  }
+  // C-13：RES-004【受祝福时】"下一次进入时，有概率出现打折商品"——进入即对当前库存应用
+  if (shop.discountPending) {
+    shop.discountPending = false;
+    applyBlessDiscount(shop.stock);
+    EventBus.emit(GE.TOAST_SHOW, { text: `✨ 祝福生效：部分商品打折`, duration: 1600 });
+  }
   return { ok: true, shop };
 }
 
@@ -275,6 +285,8 @@ export function leaveShop(gs, tileIdx) {
   const shop = getShop(gs, tileIdx);
   if (!shop) return { ok: false, reason: 'notShop' };
   shop.leftAtTurn = gs.turn;
+  // C-12：免费刷新机会随本次进入结束而作废（未用掉不延续到下次进入）
+  shop.freeRefreshReady = 0;
   return { ok: true };
 }
 
@@ -335,23 +347,30 @@ export function sell(gs, itemId, opts = {}) {
 /** 每周一：刷新场上所有商店（外部由 DaySystem 调用） */
 export function weeklyRefreshAll(gs) {
   let n = 0;
+  const wk = weekKey(gs);
   for (const tile of gs.map.outerTiles) {
     if (!shopKindOfContent(tile.contentId)) continue;
     const shop = getShop(gs, tile.idx);
     if (!shop) continue;
     shop.stock = generateStock(shop.kind, Math.random, { exclude: collectUniqueHeld(gs, tile.idx) });
     shop.refreshUsed = 0;
+    // C-6：同步 weekKey，避免 getShop 的跨周检查在本周首次打开时再刷新一次（双重刷新）
+    shop.weekKey = wk;
     n += 1;
   }
   if (n) devLog.info('[Shop] 周一刷新了', n, '家商店');
   return n;
 }
 
-/** 受祝福：下一次进入时首次刷新免费 */
+/** 受祝福：店内受祝福本次进入即生效；店外受祝福下次进入时生效 */
 export function grantFreeRefresh(gs, tileIdx) {
   const shop = getShop(gs, tileIdx);
   if (!shop) return { ok: false };
-  shop.freeRefreshPending = (shop.freeRefreshPending || 0) + 1;
+  if (gs.player?.x === tileIdx) {
+    shop.freeRefreshReady = (shop.freeRefreshReady || 0) + 1;
+  } else {
+    shop.freeRefreshPending = (shop.freeRefreshPending || 0) + 1;
+  }
   return { ok: true };
 }
 

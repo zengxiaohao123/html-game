@@ -137,13 +137,19 @@ export function onItemGained(gs, itemId) {
         break;
       }
       case 'collectible_farm_guide': {
+        // C-15（ITM-COL-006「获得 3 个随机设施」）：抽到占位/野生种子时补抽，保证 3 个设施
+        let granted = 0;
         for (let i = 0; i < 3; i++) {
-          const [hit] = drawFromPool('POOL-01', 1);
-          if (hit?.id && hit.id !== 'facility_wild_seed') {
-            InventorySystem.addItem(gs, hit.id, 1);
+          for (let attempt = 0; attempt < 8; attempt++) {
+            const [hit] = drawFromPool('POOL-01', 1);
+            if (hit?.id && !hit.placeholder && hit.id !== 'facility_wild_seed') {
+              InventorySystem.addItem(gs, hit.id, 1);
+              granted += 1;
+              break;
+            }
           }
         }
-        EventBus.emit(GE.TOAST_SHOW, { text: '📘 《农业指南》：获得 3 个随机设施', duration: 2200 });
+        EventBus.emit(GE.TOAST_SHOW, { text: `📘 《农业指南》：获得 ${granted} 个随机设施`, duration: 2200 });
         break;
       }
       case 'collectible_sad_pumpkin': {

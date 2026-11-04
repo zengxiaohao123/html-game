@@ -33,6 +33,40 @@ function ensureVehicleState(gs) {
   }
 }
 
+/**
+ * B-21（物品库行 356：载具最短实际路径为「经过」）：
+ * 外圈环顺序（顺时针：顶行 → 右列 → 底行 → 左列），用于 'any' 模式算最短环路径
+ */
+function buildRingOrder(gs) {
+  const n = gs.map.size;
+  const seq = [];
+  for (let x = 0; x < n; x++) seq.push(outerXYToIdx(n, x, 0));           // 顶行 左→右
+  for (let y = 1; y < n; y++) seq.push(outerXYToIdx(n, n - 1, y));       // 右列 上→下
+  for (let x = n - 2; x >= 0; x--) seq.push(outerXYToIdx(n, x, n - 1));  // 底行 右→左
+  for (let y = n - 2; y >= 1; y--) seq.push(outerXYToIdx(n, 0, y));      // 左列 下→上
+  return seq.filter(i => i !== null && i !== undefined);
+}
+
+/** 'any' 模式：沿外圈环两弧取短的一条路径（不含起点，含终点） */
+function shortestRingPath(gs, fromIdx, toIdx) {
+  const ring = buildRingOrder(gs);
+  const a = ring.indexOf(fromIdx);
+  const b = ring.indexOf(toIdx);
+  if (a < 0 || b < 0 || ring.length < 2) return [toIdx];
+  const n = ring.length;
+  const fwd = [];
+  for (let i = (a + 1) % n; ; i = (i + 1) % n) {
+    fwd.push(ring[i]);
+    if (i === b) break;
+  }
+  const bwd = [];
+  for (let i = (a - 1 + n) % n; ; i = (i - 1 + n) % n) {
+    bwd.push(ring[i]);
+    if (i === b) break;
+  }
+  return fwd.length <= bwd.length ? fwd : bwd;
+}
+
 /** 两格外圈格的曼哈顿距离（可穿越栅栏/虚空，只看坐标差） */
 function manhattan(gs, a, b) {
   const pa = Distance.outerIdxToXY(gs.map.size, a);
@@ -232,14 +266,33 @@ export function tryMove(gs, opts = {}) {
       return { ok: false, reason: 'notSameRowCol' };
     }
     targetIdx = opts.targetIdx;
-    // 简化：路径 = [targetIdx]（1 格视为直达）
-    path = [targetIdx];
+    // B-21：同行/列最短实际路径视为「经过」—— 补齐中间格（栅栏中心 null 跳过）
+    {
+      const { x: fx, y: fy } = Distance.outerIdxToXY(gs.map.size, fromIdx);
+      const { x: tx, y: ty } = Distance.outerIdxToXY(gs.map.size, targetIdx);
+      if (fx === tx) {
+        const step = ty > fy ? 1 : -1;
+        for (let y = fy + step; ; y += step) {
+          const idx = outerXYToIdx(gs.map.size, fx, y);
+          if (idx !== null) path.push(idx);
+          if (y === ty) break;
+        }
+      } else {
+        const step = tx > fx ? 1 : -1;
+        for (let x = fx + step; ; x += step) {
+          const idx = outerXYToIdx(gs.map.size, x, fy);
+          if (idx !== null) path.push(idx);
+          if (x === tx) break;
+        }
+      }
+    }
   } else if (def.movePattern === 'any') {
     // 任意格（巧遇 / 图腾 / 号角 / 飞毯 / 购物车 / 大巴 / 飞剑 —— 落点再由 landFilter 约束）
     if (opts.targetIdx == null) return { ok: false, reason: 'needTarget' };
     if (opts.targetIdx === fromIdx) return { ok: false, reason: 'sameTile' };
     targetIdx = opts.targetIdx;
-    path = [targetIdx];
+    // B-21（心想事成：移动到任意地块，最短路径视为「经过」）—— 外圈环两弧取短
+    path = shortestRingPath(gs, fromIdx, targetIdx);
   } else if (def.movePattern === 'range') {
     // 曼哈顿距离 ≤ maxRange 的任意格（马匹 / 重弹簧 / 拓荒者）
     if (opts.targetIdx == null) return { ok: false, reason: 'needTarget' };

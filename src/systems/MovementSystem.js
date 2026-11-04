@@ -109,9 +109,11 @@ export function move(gs, direction) {
   for (const idx of path) {
     HookDispatcher.fire('onPass', { gs, tileIdx: idx });
     SkillSystem.triggerSkillByHook('onPass', { gs, tileIdx: idx });
+  }
 
-    // 粘液 debuff：进入该格时 hp -5、stamina -1，然后移除
-    const tile = gs.map.outerTiles[idx];
+  // 2b. 粘液 debuff：仅最终停留格结算（§15「进入该格时」；冰面滑行经过的中间格不触发）
+  {
+    const tile = gs.map.outerTiles[finalIdx];
     if (tile && Array.isArray(tile.states)) {
       const slimeIdx = tile.states.findIndex((s) => s.type === 'slime');
       if (slimeIdx >= 0) {

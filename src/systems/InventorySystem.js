@@ -40,23 +40,34 @@ export function countItem(gs, itemId, bag = 'items') {
  * @param {number} qty
  * @returns {number} 实际添加数量
  */
+// §9 / §14.3：每格叠加上限 999，超出另开一格（背包容量无限，§16.15）
+export const STACK_MAX = 999;
+
 export function addItem(gs, itemId, qty, extra = {}) {
   if (!itemId || qty <= 0) return 0;
   const list = gs.inventory.items;
   // 带 value 的物品（如郁金香）不能合并到同一 itemId 的堆里 —— 分堆存 value
   const useValue = extra?.value !== undefined;
-  let targetIdx = -1;
-  if (!useValue) {
-    targetIdx = list.findIndex(i => i.itemId === itemId && i.value === undefined);
-  } else {
-    targetIdx = list.findIndex(i => i.itemId === itemId && i.value === extra.value);
+  const matchValue = useValue ? extra.value : undefined;
+  const matches = list.filter(i =>
+    i.itemId === itemId && (useValue ? i.value === matchValue : i.value === undefined));
+  // B-19：先填满已有堆（至 999），剩余按 999 另开新格
+  let left = qty;
+  for (const e of matches) {
+    if (left <= 0) break;
+    const space = STACK_MAX - e.qty;
+    if (space > 0) {
+      const put = Math.min(space, left);
+      e.qty += put;
+      left -= put;
+    }
   }
-  if (targetIdx >= 0) {
-    list[targetIdx].qty += qty;
-  } else {
-    const entry = { itemId, qty };
-    if (useValue) entry.value = extra.value;
+  while (left > 0) {
+    const put = Math.min(STACK_MAX, left);
+    const entry = { itemId, qty: put };
+    if (useValue) entry.value = matchValue;
     list.push(entry);
+    left -= put;
   }
   EventBus.emit(GE.ITEM_GAINED, { itemId, qty });
   EventBus.emit(GE.INVENTORY_CHANGE, { type: 'add', bag: 'items', itemId, qty });

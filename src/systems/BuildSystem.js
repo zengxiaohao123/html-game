@@ -140,7 +140,10 @@ export function placeContent(gs, tileIdx, contentId) {
       EventBus.emit(GE.TOAST_SHOW, { text: `🏪 今日已放置过 ${ITEMS[contentId]?.name || contentId}`, duration: 2000 });
       return { ok: false, reason: 'dailyLimit' };
     }
-    if (countOnField(gs, contentId) >= limit.onField) {
+    // C-9：替换同类内容时，被替换的目标格本身不应计入（净数量不变，不应误拒）
+    const onFieldExceptTarget = gs.map.outerTiles.filter(
+      (t, i) => t.contentId === contentId && i !== tileIdx).length;
+    if (onFieldExceptTarget >= limit.onField) {
       EventBus.emit(GE.TOAST_SHOW, { text: `🏪 场上最多 ${limit.onField} 个 ${ITEMS[contentId]?.name || contentId}`, duration: 2000 });
       return { ok: false, reason: 'fieldLimit' };
     }

@@ -57,7 +57,7 @@ const DESCRIPTIONS = {
   resource_event:     '🎲 进入时触发随机事件（每日限 1 次）。',
   resource_reward:    '🎁 进入时获得随机奖励（每日限 1 次）。',
   resource_hunt:      '🏹 进入时捕捉小动物（每日限 1 次）。',
-  resource_shop:      '🛒 进入时打开商店（每日限 1 次）。',
+  resource_shop:      '🛒 【进入】可进入商店。每日限放置 1 个，场上最多同时存在 2 个。',
   resource_bus:       '🚌 行动力 +1、获得轮子。',
   item_wheat:         '最基础的农作物，可以喂鸡，也可以卖金币。',
   item_rice_straw:    '稻田产出的稻草。',
@@ -269,6 +269,18 @@ export class InventoryPanel {
           setTimeout(() => this.hide(), 0);
         });
         slot.addEventListener('dragend', () => { window.__invDrag = false; });
+      } else {
+        // L-06 / §16.15：产物、工具等不可放置物品"不触发拖拽并给出弹窗提示"——
+        //   让浏览器发起 drag 手势以便在 dragstart 拦截，随即 preventDefault 取消拖拽并提示。
+        slot.setAttribute('draggable', 'true');
+        slot.addEventListener('dragstart', (e) => {
+          e.preventDefault();
+          const def = ITEMS[entry.itemId];
+          EventBus.emit(GE.TOAST_SHOW, {
+            text: `❌ ${def?.name || entry.itemId} 不可放置到地块`,
+            duration: 2000,
+          });
+        });
       }
 
       slot.addEventListener('click', (e) => {

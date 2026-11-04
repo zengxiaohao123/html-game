@@ -369,7 +369,8 @@ export function applyBuff({ buffId, target, duration, params = {}, creatureId, p
     devLog.warn('[CombatSystem.applyBuff] unknown buff id:', buffId);
     return null;
   }
-  const actualDur = duration != null ? duration : def.duration;
+  // C-8（设计文档 line 307）：状态持续时间上限 99（新建与合并刷新共用）
+  const actualDur = Math.min(99, duration != null ? duration : def.duration);
 
   let targetBuffs;
   if (target && typeof target === 'object' && Array.isArray(target.activeBuffs)) {

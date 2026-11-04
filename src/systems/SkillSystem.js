@@ -42,9 +42,9 @@ function getCreaturesInFence(gs) {
   return list;
 }
 
-function findLegalTarget(gs, skill, tileIdx) {
+function findLegalTargets(gs, skill, tileIdx) {
   const allCreatures = getCreaturesInFence(gs);
-  if (allCreatures.length === 0) return null;
+  if (allCreatures.length === 0) return [];
 
   let pool = allCreatures;
   if (skill.targetCategory === 'danger_extreme') {
@@ -57,14 +57,25 @@ function findLegalTarget(gs, skill, tileIdx) {
   } else if (skill.targetCategory === 'friendly_danger_extreme') {
     pool = allCreatures;
   }
-  if (pool.length === 0) return null;
+  if (pool.length === 0) return [];
 
   // §12.3：目标 = 技能所在地块到敌人位置最近的合法单位。
   // 外圈格用网格 (x, y)；栅栏内生物 (row, col) 对应网格坐标 (col+1, row+1)，曼哈顿距离判最近。
   const { x: sx, y: sy } = Distance.outerIdxToXY(gs.map.size, tileIdx);
   const dist = (c) => Math.abs(sx - (c.col + 1)) + Math.abs(sy - (c.row + 1));
   pool.sort((a, b) => dist(a) - dist(b));
-  return pool[0];
+
+  // B-9：targetCount 多目标（SKL-A-002 拼命 2 个最近 / SKL-A-011 风止 2 个随机）
+  const count = Math.max(1, skill.targetCount || 1);
+  if ((skill.targetSelection || 'nearest') === 'random') {
+    const src = pool.slice();
+    const out = [];
+    while (out.length < count && src.length > 0) {
+      out.push(src.splice(Math.floor(Math.random() * src.length), 1)[0]);
+    }
+    return out;
+  }
+  return pool.slice(0, count);
 }
 
 /**
@@ -99,12 +110,12 @@ export function triggerSkillByHook(hookType, params) {
   // 连携技不走普通 hook 触发（它们是实时窗口按键触发的）
   if (skillDef.isLinkSkill) return;
 
-  // 找目标（§12.3：最近合法单位）
-  const target = findLegalTarget(gs, skillDef, tileIdx);
-  if (!target) return;
+  // 找目标（§12.3：最近合法单位；B-9：targetCount 多目标）
+  const targets = findLegalTargets(gs, skillDef, tileIdx);
+  if (targets.length === 0) return;
 
   // 触发！
-  fireOneSkill(gs, skillDef, target, cdKey, hookType, tileIdx);
+  fireOneSkill(gs, skillDef, targets, cdKey, hookType, tileIdx);
   HookDispatcher.fire('onUseSkill', { gs });
 }
 
@@ -161,9 +172,11 @@ function collectCreaturesInFenceTiles(gs, fenceTiles) {
   return out;
 }
 
-function fireOneSkill(gs, skill, target, cdKey, hookName = 'onEnter', tileIdx = null) {
+function fireOneSkill(gs, skill, targets, cdKey, hookName = 'onEnter', tileIdx = null) {
   const roleDef = CHARACTERS[skill.roleId];
-  devLog.info('[SkillSystem] fire', skill.name, '→', target.kind, '(hp', target.hp, '/', target.maxHp, ')');
+  const target = Array.isArray(targets) ? targets[0] : targets; // 主目标（日志/范围中心/连携上下文）
+  const targetList = Array.isArray(targets) ? targets : [targets];
+  devLog.info('[SkillSystem] fire', skill.name, '→', target.kind, '(hp', target.hp, '/', target.maxHp, ') x', targetList.length);
   EventBus.emit(GE.SKILL_TRIGGERED, { skillId: skill.id, roleId: skill.roleId, targetKind: target.kind });
 
   const eff = skill.extraEffect;
@@ -226,27 +239,36 @@ function fireOneSkill(gs, skill, target, cdKey, hookName = 'onEnter', tileIdx = 
       : skill;
 
     const hits = skill.hits || 1;
-    for (let h = 0; h < hits; h++) {
-      const result = CombatSystem.calculateDamage({
-        atk: gs.player.atk,
-        skill: effSkill,
-        defender: target,
-        element: skill.element,
-        realDamage: !!skill.realDamage,
-        player: gs.player,
-        gs,
-        roleId: skill.roleId,
-        attackerRoleId: skill.roleId,
-      });
-      if (result.immune) break;
-      if (target.hp <= 0) break;
+
+    // B-9：逐目标结算（单体技能 targetList.length === 1）
+    for (const t of targetList) {
+      if (t.hp <= 0) continue;
+      for (let h = 0; h < hits; h++) {
+        const result = CombatSystem.calculateDamage({
+          atk: gs.player.atk,
+          skill: effSkill,
+          defender: t,
+          element: skill.element,
+          realDamage: !!skill.realDamage,
+          player: gs.player,
+          gs,
+          roleId: skill.roleId,
+          attackerRoleId: skill.roleId,
+        });
+        if (result.immune) break;
+        if (t.hp <= 0) break;
+      }
+
+      // 目标类额外效果（如 apply_buff：风止的虚弱对每个目标施加）
+      applySkillExtraEffects(gs, skill, t, hookName, 'perTarget');
+
+      if (t.hp <= 0) {
+        defeatCreature(gs, t);
+      }
     }
 
-    applySkillExtraEffects(gs, skill, target, hookName);
-
-    if (target.hp <= 0) {
-      defeatCreature(gs, target);
-    }
+    // 自身类额外效果（每次触发仅一次，如拼命的 self_hp_drain）
+    applySkillExtraEffects(gs, skill, target, hookName, 'self');
   }
 
   // 设置 cooldown（按技能卡独立）
@@ -265,20 +287,36 @@ function fireOneSkill(gs, skill, target, cdKey, hookName = 'onEnter', tileIdx = 
   }
 }
 
-function applySkillExtraEffects(gs, skill, target, hookName = 'onEnter') {
+/**
+ * @param {string} phase 'all'（兼容旧调用）| 'perTarget'（目标类，逐目标）| 'self'（自身类，每次触发一次）
+ */
+function applySkillExtraEffects(gs, skill, target, hookName = 'onEnter', phase = 'all') {
   const eff = skill.extraEffect;
   if (!eff) return;
+  const isSelfPhase = phase === 'all' || phase === 'self';
+  const isTargetPhase = phase === 'all' || phase === 'perTarget';
 
   switch (eff.type) {
     case 'self_hp_drain': {
+      if (!isSelfPhase) break;
       const loss = Math.max(1, Math.floor(gs.player.hp * eff.percent));
       gs.player.hp -= loss;
       if (gs.player.hp < 0) gs.player.hp = 0;
       EventBus.emit(GE.HP_CHANGE, { newValue: gs.player.hp, delta: -loss, source: skill.id });
       devLog.info('[SkillSystem]', skill.name, 'self drain', loss, '→ hp', gs.player.hp);
+      // C-14（SKL-A-002「可致死」+ §5.4）：自损致死立即结算 —— 先查涅槃，未获救走归 0 惩罚
+      if (gs.player.hp <= 0) {
+        const saved = TalentSystem.onHPDeath(gs, { roleId: 'xiayang' });
+        if (saved) {
+          EventBus.emit(GE.TOAST_SHOW, { text: '🔥 涅槃触发！致命伤害被免疫', duration: 2000 });
+        } else {
+          CombatSystem.applyDeathPenalty(gs, gs.player);
+        }
+      }
       break;
     }
     case 'apply_buff': {
+      if (!isTargetPhase) break;
       // 引燃（SKL-A-006）：【进入时】施加燃烧；【受祝福时】随机 1 名燃烧中的敌人燃烧剩余回合翻倍
       if (eff.enterOnly && hookName !== 'onEnter') {
         if (eff.onBlessedDoubleBurn && hookName === 'onBlessed') {
@@ -286,7 +324,7 @@ function applySkillExtraEffects(gs, skill, target, hookName = 'onEnter') {
           if (burned.length > 0) {
             const pick = burned[Math.floor(Math.random() * burned.length)];
             const burn = pick.activeBuffs.find(b => b.id === 'burn');
-            burn.remainingTurns = (burn.remainingTurns || 0) * 2;
+            burn.remainingTurns = Math.min(99, (burn.remainingTurns || 0) * 2); // C-8：状态上限 99
             EventBus.emit(GE.TOAST_SHOW, { text: `🟧 引燃【受祝福】：${pick.name || pick.kind} 的燃烧剩余回合翻倍（${burn.remainingTurns}）`, duration: 1800 });
             devLog.info('[SkillSystem] 引燃【受祝福】燃烧翻倍 →', pick.kind, burn.remainingTurns);
           }
@@ -302,6 +340,7 @@ function applySkillExtraEffects(gs, skill, target, hookName = 'onEnter') {
       break;
     }
     case 'self_regen_and_buff': {
+      if (!isSelfPhase) break;
       // 鼓舞（SKL-A-004）：【经过时】【受祝福时】回复 20% 攻击力生命；【进入时】【受祝福时】本日攻击力 +15（可叠加）
       if (hookName === 'onPass' || hookName === 'onBlessed') {
         const amount = Math.max(1, Math.round(gs.player.atk * (eff.regenPercentOfAtk || 0.2)));
@@ -319,6 +358,7 @@ function applySkillExtraEffects(gs, skill, target, hookName = 'onEnter') {
       break;
     }
     case 'self_crit_buff': {
+      if (!isSelfPhase) break;
       // 屏息瞄准（SKL-A-010）：陆悠悠下一次攻击暴击率 +100%，不可叠加（CombatSystem 消费）
       if (!gs.team) gs.team = {};
       gs.team.luyouyouNextCritBonus = eff.critRateBonus || 1.0;

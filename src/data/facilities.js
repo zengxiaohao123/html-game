@@ -21,8 +21,9 @@ import { InventorySystem } from '../systems/InventorySystem.js';
 import { VehicleSystem } from '../systems/VehicleSystem.js';
 import { Distance } from '../core/Distance.js';
 import { CreatureSystem } from '../systems/CreatureSystem.js';
+import { CombatSystem } from '../systems/CombatSystem.js';
 import { Random } from '../core/Random.js';
-import { CREATURES, SLIME_KINDS } from './creatures.js';
+import { CREATURES, SLIME_KINDS, getCreatureDef } from './creatures.js';
 import { SKILLS } from './characters.js';
 import { normalizeTerrain } from './terrains.js';
 import { ITEMS, POOLS } from './items.js';
@@ -38,6 +39,7 @@ import {
 import { HealSystem } from '../systems/HealSystem.js';
 import { ShopSystem } from '../systems/ShopSystem.js';
 import { StaminaSystem } from '../systems/StaminaSystem.js';
+import { syncPumpkin, hasGrimoire, hasConnectedRice } from '../systems/PassiveItemSystem.js';
 
 // ── 小工具：判断是否为"我的设施"格 ──
 const isMine = (gs, tileIdx, id) => gs.map.outerTiles[tileIdx]?.contentId === id;
@@ -227,6 +229,14 @@ const FacilityRice = {
     // onDailyStart
     HookDispatcher.register('onDailyStart', ({ gs }) => {
       // §13.2：友善超载惩罚「友善类收益归 0」明确排除小麦/水稻 —— 水稻产出不受惩罚影响
+      // B-20：庆丰收翻倍必须按"当日"相连状态即时求值 —— PassiveItemSystem 的 onDailyStart
+      //   hook 注册晚于设施（main.js 顺序），只读 gs.flags.riceDouble 会拿到昨天的值。
+      if (!gs.flags) gs.flags = {};
+      if (hasGrimoire(gs, 'grimoire_harvest_cereal')) {
+        gs.flags.riceDouble = hasConnectedRice(gs, 3);
+      } else {
+        gs.flags.riceDouble = false;
+      }
       const tiles = gs.map.outerTiles.filter(t => t.contentId === this.id);
       let totalBase = 0;
       let totalBonusFromBless = 0;
@@ -310,6 +320,8 @@ const FacilityPotato = {
         state.potatoStored = Math.min(POTATO_MAX_STORED, (state.potatoStored || 0) + add);
         devLog.info('[potato] tile', t.idx, 'stored →', state.potatoStored);
       }
+      // A-12：田间储存变化 → 同步悲恸南瓜加成
+      syncPumpkin(gs);
     }, this);
 
     // onEnter 自动取走已删除 —— 收获土豆改为 InfoPanel 手动滑动条触发（§16.4）
@@ -327,6 +339,7 @@ const FacilityPotato = {
       state.potatoStored = Math.min(POTATO_MAX_STORED, (state.potatoStored || 0) + 5);
       EventBus.emit(GE.TOAST_SHOW, { text: `✨ 祝福储存 +5 土豆（现 ${state.potatoStored}/${POTATO_MAX_STORED}）`, duration: 2000 });
       EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+      syncPumpkin(gs); // A-12
     }, this);
   },
 };
@@ -399,6 +412,7 @@ const FacilityStrawberry = {
       const state = tile.contentState || (tile.contentState = {});
       state.strawberryStored = Math.min(STRAWBERRY_MAX, (state.strawberryStored || 0) + 1);
       EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+      syncPumpkin(gs); // A-12
     }, this);
 
     // onEnter 自动取走已删除 —— 满时手动取走改为 InfoPanel 按钮触发（§16.4）
@@ -419,6 +433,7 @@ const FacilityStrawberry = {
       const actuallyAdded = state.strawberryStored - before;
       EventBus.emit(GE.TOAST_SHOW, { text: `✨ 祝福储存 +${actuallyAdded} 草莓（上限 ${STRAWBERRY_MAX}）`, duration: 2000 });
       EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+      syncPumpkin(gs); // A-12
     }, this);
   },
 };
@@ -456,6 +471,7 @@ const FacilityPea = {
         devLog.info('[pea] tile', t.idx, '+1 pea (turn', gs.turn, '), now', state.peaStored);
         EventBus.emit(GE.TILE_UPDATED, { tileIdx: t.idx });
       }
+      syncPumpkin(gs); // A-12
     }, this);
 
     // onEveryNTurn：占位（豌豆架每 2 回合限 1 次，但我们用 turn 差值判断，此处不必实现）
@@ -480,6 +496,7 @@ const FacilityPea = {
         state.peaStored = 0;
         EventBus.emit(GE.TOAST_SHOW, { text: `✨ 祝福自动收获 +${stored} 豌豆`, duration: 2000 });
         EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+        syncPumpkin(gs); // A-12：取走（储存减少）也要同步
       }
     }, this);
   },
@@ -643,10 +660,21 @@ const FacilityCorn = {
       }
     }, this);
 
-    // onBlessed：获得随机 1 个生物（待开发：生物池未定义，效果接入前不给玩家提示）
+    // onBlessed：获得随机 1 个生物（物品库 FAC-011 / OUT-14：按随机生物池 1 = POOL-02，
+    //   抽中类型后等概率随机；池内为 小鸡/母鸡/史莱姆，史莱姆再随机元素变体）
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
-      devLog.info('[corn] onBlessed TODO: spawn random creature (60% friendly / 40% danger)');
+      const hits = drawFromPool('POOL-02', 1);
+      const picked = hits[0];
+      if (!picked || !picked.id) return;
+      const kind = picked.id === 'slime' ? Random.pick(SLIME_KINDS) : picked.id;
+      const creature = CreatureSystem.spawnCreature(gs, kind, { facilityId: this.id, sourceTileIdx: tileIdx });
+      if (creature) {
+        EventBus.emit(GE.TOAST_SHOW, { text: `🌽 玉米田受祝福 → ${CREATURES[kind].emoji} ${CREATURES[kind].name} 出现`, duration: 2000 });
+      } else {
+        EventBus.emit(GE.TOAST_SHOW, { text: '🌽 玉米田受祝福 → 围栏已满，无法生成生物', duration: 2000 });
+      }
+      devLog.info('[corn] onBlessed spawn', kind);
     }, this);
   },
 };
@@ -666,7 +694,20 @@ const FacilityCabbage = {
   description: '【每一日开始时】获得卷心菜 ×2，然后消耗背包里的一个卷心菜，将其投向最近的敌人，造成 20 点草元素伤害\n【受祝福时】对所有敌人分别投掷一个卷心菜（不消耗背包中的卷心菜）',
 
   register() {
-    // onDailyStart：先获得 ×2 卷心菜进背包，再消耗 1 个自动投最近敌人
+    // A-8 / L-07：投掷实装（物品库 FAC-012 / OUT-15）
+    //   每日开始：+2 卷心菜 → 消耗背包 1 个投向最近敌人（20 草元素伤害）；背包无卷心菜不投
+    //   【受祝福时】：下次每日开始对所有敌人分别投掷一个（不消耗背包）
+    //   注意：blessed 状态在 DaySystem.startNewDay 第 3 步就被清除（早于第 6 步 onDailyStart），
+    //   所以祝福标记必须落在 contentState 上，不能依赖 states 里的 blessed。
+    const throwCabbage = (gs, fromTileIdx, target) => {
+      CombatSystem.applyElementalDamageToCreature(gs, target, 20, 'grass', { source: 'facility_cabbage' });
+      EventBus.emit(GE.TOAST_SHOW, {
+        text: `🥬 卷心菜投向 ${getCreatureDef(target.kind)?.name || '敌人'} → 20 草元素伤害`,
+        duration: 1600,
+      });
+      devLog.info('[cabbage] throw →', target.kind, 'from tile', fromTileIdx);
+    };
+
     HookDispatcher.register('onDailyStart', ({ gs }) => {
       const tiles = gs.map.outerTiles.filter(t => t.contentId === this.id);
       for (const t of tiles) {
@@ -678,28 +719,42 @@ const FacilityCabbage = {
         InventorySystem.addItem(gs, 'item_cabbage', 2);
         EventBus.emit(GE.TOAST_SHOW, { text: `🥬 每日 +2 卷心菜`, duration: 1500 });
 
-        // 2) 然后消耗 1 个卷心菜投向最近敌人，造成 20 点草元素伤害
-        //    背包里没卷心菜则跳过（注意上面刚 +2 了所以一定有，但祝福效果不消耗所以不影响）
-        const hasBless = t.states?.some(s => s.type === 'blessed');
-        if (!hasBless) {
-          // 非祝福：消耗 1 个，投最近敌人（投掷伤害待开发，接入前不给玩家提示）
-          // TODO: 真正的 CombatSystem.performDamage(gs, nearestEnemy, 20, 'grass')
-          const inv = gs.player?.inventory || {};
-          if (inv.item_cabbage && inv.item_cabbage > 0) {
-            InventorySystem.addItem(gs, 'item_cabbage', -1);
-            devLog.info('[cabbage] 投掷 TODO: 20 草元素伤害');
+        const enemies = gs.creatures.filter(c => c.category !== 'friendly' && c.hp > 0);
+        const blessedThrow = !!t.contentState?.cabbageAllThrowNext;
+        if (blessedThrow) {
+          // 祝福：对所有敌人分别投掷一个，不消耗背包
+          t.contentState.cabbageAllThrowNext = false;
+          if (enemies.length === 0) {
+            EventBus.emit(GE.TOAST_SHOW, { text: '🥬 祝福投掷：当前没有敌人', duration: 1600 });
+          } else {
+            for (const c of enemies) throwCabbage(gs, t.idx, c);
           }
-        } else {
-          // 祝福：对所有敌人分别投掷一个卷心菜，不消耗背包（待开发）
-          devLog.info('[cabbage] 祝福投掷 TODO: 对所有敌人各投 1 个');
+          continue;
         }
+
+        // 2) 非祝福：背包里有卷心菜才投（OUT-15：没有则不投）
+        if (InventorySystem.countItem(gs, 'item_cabbage') < 1) continue;
+        if (enemies.length === 0) continue; // 没有敌人就不消耗
+        // 最近敌人：以本块位置为基准（外圈 idx → xy；生物在 (col+1, row+1)）
+        const txy = Distance.outerIdxToXY(gs.map.size, t.idx);
+        let nearest = null;
+        let bestD = Infinity;
+        for (const c of enemies) {
+          const d = Math.hypot(c.fenceCol + 1 - txy.x, c.fenceRow + 1 - txy.y);
+          if (d < bestD) { bestD = d; nearest = c; }
+        }
+        if (!nearest) continue;
+        InventorySystem.removeItem(gs, 'item_cabbage', 1);
+        throwCabbage(gs, t.idx, nearest);
       }
     }, this);
 
-    // onBlessed：立即获得 2 个卷心菜（祝福额外产出，与 onDailyStart 不重复）
+    // onBlessed：标记下次每日开始时对全体敌人投掷（不消耗背包）
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
-      // 祝福效果由 onDailyStart 内的 hasBless 分支处理（判断当前 tile 是否 blessed）
+      const t = gs.map.outerTiles[tileIdx];
+      t.contentState = t.contentState || {};
+      t.contentState.cabbageAllThrowNext = true;
       EventBus.emit(GE.TOAST_SHOW, { text: `✨ 卷心菜田受祝福 → 下次每日开始时对全体敌人投掷`, duration: 2200 });
     }, this);
   },

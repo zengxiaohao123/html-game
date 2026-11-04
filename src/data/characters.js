@@ -101,11 +101,13 @@ export const SKILLS = {
     cooldown: 2,
     isLinkSkill: false,
     targetCategory: 'danger_extreme',
+    targetCount: 2,               // SKL-A-002：对 2 个敌人
+    targetSelection: 'nearest',   // 取最近的 2 名
     extraEffect: {
       type: 'self_hp_drain',
       percent: 0.08,   // 8% 生命流失，可致死（设计文档：流失 8% 生命值）
     },
-    description: '【进入时】【受祝福时】对敌人造成 160% 攻击力物理伤害；流失 8% 生命值（可致死）',
+    description: '【进入时】【受祝福时】对 2 个敌人造成 160% 攻击力物理伤害；流失 8% 生命值（可致死）',
   },
   skill_yumo_pioneer: {
     id: 'skill_yumo_pioneer',
@@ -203,13 +205,15 @@ export const SKILLS = {
     cooldown: 4,
     isLinkSkill: false,
     targetCategory: 'danger_extreme',
+    targetCount: 2,              // SKL-A-011：对 2 个随机敌人
+    targetSelection: 'random',   // 不放回随机 2 名
     extraEffect: {
       type: 'apply_buff',
       buffId: 'weakened',
       duration: 1,
       strength: 0.25,   // 25% 虚弱
     },
-    description: '【进入时】【受祝福时】对随机敌人造成 80% 攻击力物理伤害，施加持续 1 回合 25%【虚弱】',
+    description: '【进入时】【受祝福时】对 2 个随机敌人造成 80% 攻击力物理伤害，施加持续 1 回合 25%【虚弱】',
   },
 
   // ──────────────────────── 夏阳剩余主动技能 ────────────────────────

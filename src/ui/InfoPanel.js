@@ -25,6 +25,7 @@ import { CHARACTERS } from '../data/characters.js';
 import { VEHICLES } from '../data/vehicles.js';
 import { VehicleSystem } from '../systems/VehicleSystem.js';
 import { getCreatureDef } from '../data/creatures.js';
+import { syncPumpkin } from '../systems/PassiveItemSystem.js';
 import { POTIONS } from '../data/potions.js';
 import { getBuff } from '../data/buffs.js';
 import { createEl, qs, iconEl } from './dom.js';
@@ -349,154 +350,153 @@ export class InfoPanel {
     }
 
     // 设施类地块 —— 功能选项区（§16.4：区分"身处该格"vs"随时可点"）
-    if (contentId && contentId.startsWith('facility_')) {
+    // L-04：只有"存在额外功能选项"的设施才渲染功能区；无选项设施（麦田/水稻/玉米/卷心菜/
+    //   家园/帐篷等）不再渲染空的"功能选项"标题与占位文案。
+    const FACILITIES_WITH_OPTIONS = new Set([
+      'facility_potato', 'facility_strawberry', 'facility_pea',
+      'facility_tulip', 'facility_dandelion', 'facility_ghost_grass',
+      'facility_henhouse', 'facility_slimehouse',
+    ]);
+    if (contentId && FACILITIES_WITH_OPTIONS.has(contentId)) {
       const tileIdx = this.currentTileIdx;
       const onTile = gs.player.x === tile.idx; // 玩家是否身处该格
+      // L-04：功能选项区仅在「身处该格」或「该设施存在随时可用的选项」时渲染。
+      //   郁金香/蒲公英/幽怜草（随时采摘）、鸡舍/史莱姆屋（随时开关门）属于后者；
+      //   土豆/草莓/豌豆只有身处该格才有可操作选项 → 不在该格时整块不显示。
+      const REMOTE_OPTION_FACILITIES = new Set([
+        'facility_tulip', 'facility_dandelion', 'facility_ghost_grass',
+        'facility_henhouse', 'facility_slimehouse',
+      ]);
+      const showSection = onTile || REMOTE_OPTION_FACILITIES.has(contentId);
 
-      createEl('div', { style: { marginTop: '12px', textAlign: 'center' }, parent: this.bodyWrap });
-      createEl('div', {
-        style: {
-          fontSize: '13px', fontWeight: '700', color: '#8a6a3a',
-          borderTop: '2px dashed #b8a888', paddingTop: '8px', marginBottom: '6px',
-        },
-        text: onTile ? '⚡ 功能选项（你在该格）' : '⚡ 功能选项（未在该格）',
-        parent: this.bodyWrap,
-      });
+      if (showSection) {
+        createEl('div', { style: { marginTop: '12px', textAlign: 'center' }, parent: this.bodyWrap });
+        createEl('div', {
+          style: {
+            fontSize: '13px', fontWeight: '700', color: '#8a6a3a',
+            borderTop: '2px dashed #b8a888', paddingTop: '8px', marginBottom: '6px',
+          },
+          text: onTile ? '⚡ 功能选项（你在该格）' : '⚡ 功能选项',
+          parent: this.bodyWrap,
+        });
+      }
 
       // 每个设施的功能选项
       switch (contentId) {
         case 'facility_potato': {
-          // 🥔 土豆田：onTile 时显示滑动条收获
+          // 🥔 土豆田：onTile 时显示滑动条收获（L-04：不在该格时整块不渲染）
+          if (!onTile) break;
           const stored = tile.contentState?.potatoStored ?? 0;
-          if (onTile) {
-            createEl('div', {
-              style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
-              text: `🥔 已储存 ${stored} / 30`,
-              parent: this.bodyWrap,
-            });
-            const range = this._mkHarvestSlider(this.bodyWrap, stored);
-            const qtyLabel = createEl('div', {
-              style: { fontSize: '13px', color: '#5a4a3a', textAlign: 'center', margin: '4px 0' },
-              text: `选择收获数量：${stored}`,
-              parent: this.bodyWrap,
-            });
-            range.addEventListener('input', () => {
-              qtyLabel.textContent = `选择收获数量：${range.value}`;
-            });
-            createEl('button', {
-              class: 'action-btn',
-              style: { width: '100%', fontSize: '13px', background: '#fff0c0' },
-              text: '🥔 确认收获',
-              disabled: stored <= 0,
-              parent: this.bodyWrap,
-              onclick: () => {
-                const qty = parseInt(range.value, 10) || 0;
-                if (qty <= 0) return;
-                const curTile = gs.map.outerTiles[tileIdx];
-                const cs = curTile.contentState || (curTile.contentState = {});
-                const actually = Math.min(qty, cs.potatoStored || 0);
-                InventorySystem.addItem(gs, 'item_potato', actually);
-                cs.potatoStored = (cs.potatoStored || 0) - actually;
-                EventBus.emit(GE.INVENTORY_CHANGE);
-                EventBus.emit(GE.TILE_UPDATED, { tileIdx });
-                EventBus.emit(GE.TOAST_SHOW, { text: `🥔 收获 +${actually} 土豆`, duration: 1800 });
-                this._renderBody();
-              },
-            });
-          } else {
-            createEl('div', {
-              style: { fontSize: '12px', color: '#aaa', textAlign: 'center', margin: '6px 0' },
-              text: `（走到该格可收获 🥔 ${stored}/30）`,
-              parent: this.bodyWrap,
-            });
-          }
+          createEl('div', {
+            style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
+            text: `🥔 已储存 ${stored} / 30`,
+            parent: this.bodyWrap,
+          });
+          const range = this._mkHarvestSlider(this.bodyWrap, stored);
+          const qtyLabel = createEl('div', {
+            style: { fontSize: '13px', color: '#5a4a3a', textAlign: 'center', margin: '4px 0' },
+            text: `选择收获数量：${stored}`,
+            parent: this.bodyWrap,
+          });
+          range.addEventListener('input', () => {
+            qtyLabel.textContent = `选择收获数量：${range.value}`;
+          });
+          createEl('button', {
+            class: 'action-btn',
+            style: { width: '100%', fontSize: '13px', background: '#fff0c0' },
+            text: '🥔 确认收获',
+            disabled: stored <= 0,
+            parent: this.bodyWrap,
+            onclick: () => {
+              const qty = parseInt(range.value, 10) || 0;
+              if (qty <= 0) return;
+              const curTile = gs.map.outerTiles[tileIdx];
+              const cs = curTile.contentState || (curTile.contentState = {});
+              const actually = Math.min(qty, cs.potatoStored || 0);
+              InventorySystem.addItem(gs, 'item_potato', actually);
+              cs.potatoStored = (cs.potatoStored || 0) - actually;
+              syncPumpkin(gs); // A-12：取走储存 → 同步悲恸南瓜
+              EventBus.emit(GE.INVENTORY_CHANGE);
+              EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+              EventBus.emit(GE.TOAST_SHOW, { text: `🥔 收获 +${actually} 土豆`, duration: 1800 });
+              this._renderBody();
+            },
+          });
           break;
         }
 
         case 'facility_strawberry': {
-          // 🍓 草莓田：onTile + 满时出现"取走草莓"按钮
+          // 🍓 草莓田：onTile + 满时出现"取走草莓"按钮（L-04：不在该格时整块不渲染）
+          if (!onTile) break;
           const stored = tile.contentState?.strawberryStored ?? 0;
           const full = stored >= 5;
-          if (onTile) {
-            createEl('div', {
-              style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
-              text: `🍓 已储存 ${stored} / 5${full ? '（已满！）' : ''}`,
-              parent: this.bodyWrap,
-            });
-            createEl('button', {
-              class: 'action-btn',
-              style: { width: '100%', fontSize: '13px', background: '#ffcce0' },
-              text: '🍓 取走草莓',
-              disabled: !full,
-              parent: this.bodyWrap,
-              onclick: () => {
-                const curTile = gs.map.outerTiles[tileIdx];
-                const cs = curTile.contentState || (curTile.contentState = {});
-                const qty = cs.strawberryStored || 0;
-                if (qty <= 0) return;
-                InventorySystem.addItem(gs, 'item_strawberry', qty);
-                cs.strawberryStored = 0;
-                EventBus.emit(GE.INVENTORY_CHANGE);
-                EventBus.emit(GE.TILE_UPDATED, { tileIdx });
-                EventBus.emit(GE.TOAST_SHOW, { text: `🍓 收获 +${qty} 草莓`, duration: 1800 });
-                this._renderBody();
-              },
-            });
-          } else {
-            createEl('div', {
-              style: { fontSize: '12px', color: '#aaa', textAlign: 'center', margin: '6px 0' },
-              text: `（走到该格可取走 🍓 满时按钮出现 ${stored}/5）`,
-              parent: this.bodyWrap,
-            });
-          }
+          createEl('div', {
+            style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
+            text: `🍓 已储存 ${stored} / 5${full ? '（已满！）' : ''}`,
+            parent: this.bodyWrap,
+          });
+          createEl('button', {
+            class: 'action-btn',
+            style: { width: '100%', fontSize: '13px', background: '#ffcce0' },
+            text: '🍓 取走草莓',
+            disabled: !full,
+            parent: this.bodyWrap,
+            onclick: () => {
+              const curTile = gs.map.outerTiles[tileIdx];
+              const cs = curTile.contentState || (curTile.contentState = {});
+              const qty = cs.strawberryStored || 0;
+              if (qty <= 0) return;
+              InventorySystem.addItem(gs, 'item_strawberry', qty);
+              cs.strawberryStored = 0;
+              syncPumpkin(gs); // A-12
+              EventBus.emit(GE.INVENTORY_CHANGE);
+              EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+              EventBus.emit(GE.TOAST_SHOW, { text: `🍓 收获 +${qty} 草莓`, duration: 1800 });
+              this._renderBody();
+            },
+          });
           break;
         }
 
         case 'facility_pea': {
-          // 🫛 豌豆架：onTile 时显示滑动条收获
+          // 🫛 豌豆架：onTile 时显示滑动条收获（L-04：不在该格时整块不渲染）
+          if (!onTile) break;
           const stored = tile.contentState?.peaStored ?? 0;
-          if (onTile) {
-            createEl('div', {
-              style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
-              text: `🫛 已储存 ${stored} / 10`,
-              parent: this.bodyWrap,
-            });
-            const range = this._mkHarvestSlider(this.bodyWrap, stored);
-            const qtyLabel = createEl('div', {
-              style: { fontSize: '13px', color: '#5a4a3a', textAlign: 'center', margin: '4px 0' },
-              text: `选择收获数量：${stored}`,
-              parent: this.bodyWrap,
-            });
-            range.addEventListener('input', () => {
-              qtyLabel.textContent = `选择收获数量：${range.value}`;
-            });
-            createEl('button', {
-              class: 'action-btn',
-              style: { width: '100%', fontSize: '13px', background: '#d0f0d0' },
-              text: '🫛 确认收获',
-              disabled: stored <= 0,
-              parent: this.bodyWrap,
-              onclick: () => {
-                const qty = parseInt(range.value, 10) || 0;
-                if (qty <= 0) return;
-                const curTile = gs.map.outerTiles[tileIdx];
-                const cs = curTile.contentState || (curTile.contentState = {});
-                const actually = Math.min(qty, cs.peaStored || 0);
-                InventorySystem.addItem(gs, 'item_pea', actually);
-                cs.peaStored = (cs.peaStored || 0) - actually;
-                EventBus.emit(GE.INVENTORY_CHANGE);
-                EventBus.emit(GE.TILE_UPDATED, { tileIdx });
-                EventBus.emit(GE.TOAST_SHOW, { text: `🫛 收获 +${actually} 豌豆`, duration: 1800 });
-                this._renderBody();
-              },
-            });
-          } else {
-            createEl('div', {
-              style: { fontSize: '12px', color: '#aaa', textAlign: 'center', margin: '6px 0' },
-              text: `（走到该格可收获 🫛 ${stored}/10）`,
-              parent: this.bodyWrap,
-            });
-          }
+          createEl('div', {
+            style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
+            text: `🫛 已储存 ${stored} / 10`,
+            parent: this.bodyWrap,
+          });
+          const range = this._mkHarvestSlider(this.bodyWrap, stored);
+          const qtyLabel = createEl('div', {
+            style: { fontSize: '13px', color: '#5a4a3a', textAlign: 'center', margin: '4px 0' },
+            text: `选择收获数量：${stored}`,
+            parent: this.bodyWrap,
+          });
+          range.addEventListener('input', () => {
+            qtyLabel.textContent = `选择收获数量：${range.value}`;
+          });
+          createEl('button', {
+            class: 'action-btn',
+            style: { width: '100%', fontSize: '13px', background: '#d0f0d0' },
+            text: '🫛 确认收获',
+            disabled: stored <= 0,
+            parent: this.bodyWrap,
+            onclick: () => {
+              const qty = parseInt(range.value, 10) || 0;
+              if (qty <= 0) return;
+              const curTile = gs.map.outerTiles[tileIdx];
+              const cs = curTile.contentState || (curTile.contentState = {});
+              const actually = Math.min(qty, cs.peaStored || 0);
+              InventorySystem.addItem(gs, 'item_pea', actually);
+              cs.peaStored = (cs.peaStored || 0) - actually;
+              syncPumpkin(gs); // A-12
+              EventBus.emit(GE.INVENTORY_CHANGE);
+              EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+              EventBus.emit(GE.TOAST_SHOW, { text: `🫛 收获 +${actually} 豌豆`, duration: 1800 });
+              this._renderBody();
+            },
+          });
           break;
         }
 
@@ -760,12 +760,8 @@ export class InfoPanel {
         }
 
         default: {
-          // 其他设施（home/tent/wheat/rice/corn/cabbage）：暂不渲染额外按钮
-          createEl('div', {
-            style: { fontSize: '11px', color: '#b0a090', textAlign: 'center', margin: '4px 0' },
-            text: '（暂无额外功能选项）',
-            parent: this.bodyWrap,
-          });
+          // L-04：无功能选项的设施不渲染占位（区块整体已在上方按白名单过滤）
+          break;
         }
       }
 
@@ -892,21 +888,39 @@ export class InfoPanel {
       }
 
       if (contentId === 'resource_shop') {
-        createEl('button', {
-          class: 'action-btn',
-          style: { width: '100%', fontSize: '14px' },
-          text: '🏪 进入商店',
-          parent: this.bodyWrap,
-          onclick: () => EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'shop', tileIdx: tile.idx }),
-        });
+        // L-04 / §11.1：入口仅限踩在【商店】地块上，其他位置不可进入
+        if (gs.player.x === tile.idx) {
+          createEl('button', {
+            class: 'action-btn',
+            style: { width: '100%', fontSize: '14px' },
+            text: '🏪 进入商店',
+            parent: this.bodyWrap,
+            onclick: () => EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'shop', tileIdx: tile.idx }),
+          });
+        } else {
+          createEl('div', {
+            style: { fontSize: '11px', color: '#b0a090', textAlign: 'center', margin: '4px 0' },
+            text: '（需踩在该格才能进入商店）',
+            parent: this.bodyWrap,
+          });
+        }
       } else if (contentId === 'resource_magic_shop') {
-        createEl('button', {
-          class: 'action-btn',
-          style: { width: '100%', fontSize: '14px' },
-          text: '🔮 进入魔法商店',
-          parent: this.bodyWrap,
-          onclick: () => EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'magicShop', tileIdx: tile.idx }),
-        });
+        // §11.2：魔法商店同样仅能踩格进入
+        if (gs.player.x === tile.idx) {
+          createEl('button', {
+            class: 'action-btn',
+            style: { width: '100%', fontSize: '14px' },
+            text: '🔮 进入魔法商店',
+            parent: this.bodyWrap,
+            onclick: () => EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'magicShop', tileIdx: tile.idx }),
+          });
+        } else {
+          createEl('div', {
+            style: { fontSize: '11px', color: '#b0a090', textAlign: 'center', margin: '4px 0' },
+            text: '（需踩在该格才能进入魔法商店）',
+            parent: this.bodyWrap,
+          });
+        }
       } else if (contentId.startsWith('skill_')) {
         // Phase 4 —— 技能卡地块：显示技能详情 + 手动触发
         const skillObj = SkillSystem.getSkillById?.(contentId) || SKILLS[contentId];
@@ -1041,9 +1055,11 @@ export class InfoPanel {
       if (hasVehicle) {
         const cur = gs.vehicle.current;
         const def = VEHICLES[cur.vehicleId];
+        // 无限次载具（如【奇遇】）显示 ∞ 而不是 "Infinity"
+        const usageText = Number.isFinite(cur.usageLeft) ? `剩余 ${cur.usageLeft} 次` : '不限次数';
         createEl('div', {
           style: { marginTop: '4px', fontSize: '11px', color: '#8a6a3a', textAlign: 'center', fontStyle: 'italic' },
-          text: `当前装备：${def?.emoji || ''} ${def?.name || cur.vehicleId} · 剩余 ${cur.usageLeft} 次`,
+          text: `当前载具：${def?.emoji || ''} ${def?.name || cur.vehicleId} · ${usageText}`,
           parent: this.bodyWrap,
         });
       }

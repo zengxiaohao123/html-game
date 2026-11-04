@@ -544,5 +544,304 @@ console.log('\n═══ 26. 开局：金币 0 / 初始包无未知物品（§5.
     '初始包不含未知物品 skill_heart_force');
 }
 
+// ═══ 第 13 批 波 3：系统一般项与剩余轻微项验证 ═══
+const { ITEMS } = await import('../src/data/items.js');
+const { VehicleSystem } = await import('../src/systems/VehicleSystem.js');
+
+const mkEnemy = (id, row, col, hp = 1000) => ({
+  id, kind: 'slime_grass', name: '草史莱姆', category: 'danger',
+  hp, maxHp: hp, activeBuffs: [], row, col, growth: 0, mood: 0,
+});
+
+console.log('\n═══ 27. 粘液 debuff 仅最终停留格结算（C-4 / §15） ═══');
+{
+  const g = createInitialState();
+  // 移除枯木新枝（初始包含藏：移动后回血会干扰断言）
+  g.inventory.items = g.inventory.items.filter((e) => e.itemId !== 'collectible_deadwood');
+  // 左列滑行（3×3 外圈 8 格）：6((0,2)) → 7((0,1)) 冰 → 0((0,0)) 停
+  g.map.outerTiles[7].contentId = null;
+  g.map.outerTiles[0].contentId = null;
+  g.map.outerTiles[7].terrain = 'terrain_ice';
+  g.map.outerTiles[7].states = [{ type: 'slime' }];
+  g.player.x = 6;
+  g.player.stamina = 8;
+  const hp0 = g.player.hp;
+  const dest = move(g, 'up');
+  check(dest === 0, `冰面滑行停在最终格 0（实际 ${dest}）`);
+  check(g.map.outerTiles[7].states.some((s) => s.type === 'slime'), 'C-4：滑行经过的中间格粘液不被消耗');
+  check(g.player.hp === hp0, 'C-4：中间格粘液不造成伤害');
+  // 粘液在最终停留格 → 结算
+  g.map.outerTiles[7].states = [];
+  g.map.outerTiles[0].states = [{ type: 'slime' }];
+  g.player.x = 6;
+  const hp1 = g.player.hp;
+  const st1 = g.player.stamina;
+  const dest2 = move(g, 'up');
+  check(dest2 === 0, `第二次滑行仍停在最终格 0（实际 ${dest2}）`);
+  check(!g.map.outerTiles[0].states.some((s) => s.type === 'slime'), 'C-4：最终停留格粘液被消耗');
+  check(g.player.hp === hp1 - 5 && g.player.stamina === st1 - 2,
+    `C-4：最终格结算 hp -5 / stamina -1（含移动消耗，hp ${hp1} → ${g.player.hp}）`);
+}
+
+console.log('\n═══ 28. 拼命 2 目标 + 自损致死、风止 2 随机（B-9 / C-14） ═══');
+{
+  const g = createInitialState();
+  check(SKILLS.skill_yumo_desperate.targetCount === 2 && SKILLS.skill_luyouyou_wind_stop.targetCount === 2,
+    'B-9：拼命 / 风止配置 targetCount = 2');
+  g.map.fence = [
+    { row: 0, col: 0, creatures: ['t1'] },
+    { row: 0, col: 1, creatures: ['t2'] },
+  ];
+  const t1 = mkEnemy('t1', 0, 0);
+  const t2 = mkEnemy('t2', 0, 1);
+  g.creatures = [t1, t2];
+  g.map.outerTiles[1].contentId = 'skill_yumo_desperate';
+  g.skillCooldowns = {};
+  const hp0 = g.player.hp;
+  SkillSystem.triggerSkillByHook('onEnter', { gs: g, tileIdx: 1 });
+  check(t1.hp < 1000 && t2.hp < 1000, 'B-9：拼命对 2 个敌人造成伤害');
+  check(g.player.hp < hp0, '拼命自损 8% 生效');
+  // C-14：自损致死 → 涅槃冷却中 → 立即结算 §5.4 惩罚
+  const g2 = createInitialState();
+  g2.map.fence = [{ row: 0, col: 0, creatures: [] }];
+  ensureSlime(g2);
+  g2.map.outerTiles[0].contentId = 'skill_yumo_desperate';
+  g2.skillCooldowns = {};
+  g2.team.xiayangRebornCooldownDay = g2.day + 999; // 涅槃冷却中
+  g2.player.hp = 1; // 自损 max(1, floor(1*8%)) = 1 → hp 0
+  g2.player.gold = 100;
+  g2.player.stamina = 5;
+  SkillSystem.triggerSkillByHook('onEnter', { gs: g2, tileIdx: 0 });
+  check(g2.player.hp === 1 && g2.player.stamina === 0 && g2.player.gold === 90,
+    `C-14：拼命自损致死立即结算死亡惩罚（hp ${g2.player.hp} / stamina ${g2.player.stamina} / gold ${g2.player.gold}）`);
+  // 风止：恰好 2 个随机目标，各挂虚弱
+  const g3 = createInitialState();
+  g3.map.fence = [
+    { row: 0, col: 0, creatures: ['w1'] },
+    { row: 0, col: 1, creatures: ['w2'] },
+    { row: 1, col: 0, creatures: ['w3'] },
+  ];
+  const w1 = mkEnemy('w1', 0, 0);
+  const w2 = mkEnemy('w2', 0, 1);
+  const w3 = mkEnemy('w3', 1, 0);
+  g3.creatures = [w1, w2, w3];
+  g3.map.outerTiles[0].contentId = 'skill_luyouyou_wind_stop';
+  g3.skillCooldowns = {};
+  SkillSystem.triggerSkillByHook('onEnter', { gs: g3, tileIdx: 0 });
+  const damaged = [w1, w2, w3].filter((c) => c.hp < 1000);
+  check(damaged.length === 2, `B-9：风止恰好命中 2 个随机敌人（实际 ${damaged.length}）`);
+  check(damaged.every((c) => c.activeBuffs.some((b) => b.id === 'weakened')), '风止对每个目标施加 25% 虚弱');
+}
+
+console.log('\n═══ 29. 弱点突破真实暴击、炽燃不额外挂燃烧（C-1 / C-3） ═══');
+{
+  const g = createInitialState();
+  const origRandom = Math.random;
+  // C-1：弱点突破 —— 暴击率 +100% 走真实判定（bonus 被 CombatSystem 消费）
+  const t = mkEnemy('wp', 0, 0);
+  t.activeBuffs.push({ id: 'charging', remainingTurns: 1, params: {} });
+  g.creatures = [t];
+  g.map.fence = [{ row: 0, col: 0, creatures: ['wp'] }];
+  Math.random = () => 0.5; // 不闪避（≥0.05）、基础不暴（≥0.1），+100% 后 1.1 > 0.5 必暴
+  LinkSkillSystem.resolveLinkSkill(g, SKILLS.skill_link_luyouyou_weak_point, {});
+  Math.random = origRandom;
+  check(g.team.luyouyouNextCritBonus === 0, 'C-1：暴击加成置位后被真实暴击判定消费');
+  const weak = t.activeBuffs.find((b) => b.id === 'weakened');
+  check(!!weak && weak.remainingTurns === 3, '弱点突破施加 3 回合 25% 虚弱');
+  check(t.hp < 1000, '弱点突破伤害正常结算');
+  // C-3：炽燃 —— 只伤害，不再额外施加/刷新燃烧
+  const b1 = mkEnemy('sc', 0, 0);
+  b1.activeBuffs.push({ id: 'burn', remainingTurns: 4, params: {} });
+  g.creatures = [b1];
+  g.map.fence = [{ row: 0, col: 0, creatures: ['sc'] }];
+  Math.random = () => 0.5;
+  LinkSkillSystem.resolveLinkSkill(g, SKILLS.skill_link_xiayang_scorch, {});
+  Math.random = origRandom;
+  const burns = b1.activeBuffs.filter((b) => b.id === 'burn');
+  check(burns.length === 1 && burns[0].remainingTurns === 4, 'C-3：炽燃不再额外施加/刷新燃烧');
+  check(b1.hp < 1000, '炽燃伤害正常结算');
+}
+
+console.log('\n═══ 30. 焚灭半径语义：tier1 同格 / tier2 含对角（C-2） ═══');
+{
+  const g = createInitialState();
+  const a = mkEnemy('a', 0, 0); // 中心
+  const b = mkEnemy('b', 0, 1); // 相邻
+  const c = mkEnemy('c', 1, 1); // 对角
+  const d = mkEnemy('d', 2, 0); // 距离 2
+  g.creatures = [a, b, c, d];
+  g.map.fence = [
+    { row: 0, col: 0, creatures: ['a'] },
+    { row: 0, col: 1, creatures: ['b'] },
+    { row: 1, col: 1, creatures: ['c'] },
+    { row: 2, col: 0, creatures: ['d'] },
+  ];
+  const origRandom = Math.random;
+  Math.random = () => 0.5;
+  g.team.xiayangSkillCount = 3;
+  LinkSkillSystem.resolveLinkSkill(g, SKILLS.skill_link_xiayang_annihilate, { tier: 1, targetCreatureId: 'a' });
+  check(a.hp < 1000 && b.hp === 1000 && c.hp === 1000 && d.hp === 1000,
+    'C-2：焚灭 tier1 半径 0.4 仅命中中心同格');
+  check(g.team.xiayangSkillCount === 0, '焚灭 tier1 消耗 3 层计数');
+  [a, b, c, d].forEach((x) => { x.hp = 1000; });
+  g.team.xiayangSkillCount = 7;
+  LinkSkillSystem.resolveLinkSkill(g, SKILLS.skill_link_xiayang_annihilate, { tier: 2, targetCreatureId: 'a' });
+  Math.random = origRandom;
+  check(a.hp < 1000 && b.hp < 1000 && c.hp < 1000 && d.hp === 1000,
+    'C-2：焚灭 tier2 半径 1.5 命中同格+相邻+对角（距离 2 不中）');
+}
+
+console.log('\n═══ 31. 追猎弹射候选限当前目标同围栏格（C-2） ═══');
+{
+  const g = createInitialState();
+  const a = mkEnemy('a', 0, 0);
+  const b = mkEnemy('b', 0, 0);
+  const c = mkEnemy('c', 0, 1);
+  g.creatures = [a, b, c];
+  g.map.fence = [
+    { row: 0, col: 0, creatures: ['a', 'b'] },
+    { row: 0, col: 1, creatures: ['c'] },
+  ];
+  const origRandom = Math.random;
+  Math.random = () => 0.5;
+  LinkSkillSystem.resolveLinkSkill(g, SKILLS.skill_link_luyouyou_hunt, { targetCreatureId: 'a' });
+  Math.random = origRandom;
+  check(c.hp === 1000, 'C-2：追猎弹射不命中其他围栏格的生物');
+  check(a.hp < 1000 || b.hp < 1000, '追猎对同格候选造成伤害');
+}
+
+console.log('\n═══ 32. 风暴眼直线碰撞、第 4 元素即时入队（C-2 / C-10） ═══');
+{
+  const g = createInitialState();
+  const a = mkEnemy('a', 0, 0); // 网格 (1,1)：在玩家 (1,0) → (1,1) 直线上
+  g.creatures = [a];
+  g.map.fence = [{ row: 0, col: 0, creatures: ['a'] }];
+  g.player.x = 1; // (1,0)
+  g.team.dailyElementDamages = ['fire', 'water', 'grass', 'wind'];
+  const origRandom = Math.random;
+  Math.random = () => 0.5;
+  LinkSkillSystem.resolveLinkSkill(g, SKILLS.skill_link_luyouyou_storm_eye, {});
+  Math.random = origRandom;
+  check(a.hp < 1000, 'C-2：风暴眼对直线经过（线段距 ≤ 0.5）的敌人造成伤害');
+  check(g.team.dailyElementDamages.length === 0, '风暴眼结算后清空元素累计');
+  // C-10：第 4 种元素经伤害路径记录（CombatSystem → ELEMENT_DAMAGE_APPLIED → onElementDamage，
+  // 不经过 onSkillFired）→ 风暴眼立即入队
+  const g2 = createInitialState();
+  g2.map.fence = [{ row: 0, col: 0, creatures: [] }];
+  const t2 = ensureSlime(g2);
+  g2.team.dailyElementDamages = ['fire', 'water', 'grass'];
+  const origR2 = Math.random;
+  Math.random = () => 0.5;
+  CombatSystem.calculateDamage({ atk: 10, defender: t2, element: 'ice', player: g2.player, gs: g2, roleId: 'xiayang', attackerRoleId: 'xiayang' });
+  Math.random = origR2;
+  check(g2.team.dailyElementDamages.length === 4, '伤害路径记录第 4 种元素');
+  // 模拟 GameDirector 的 ELEMENT_DAMAGE_APPLIED 订阅转发
+  LinkSkillSystem.onElementDamage(g2, { element: 'ice', byRoleId: 'xiayang', target: t2 });
+  check((g2.linkSkillQueue || []).some((e) => e.skillId === 'skill_link_luyouyou_storm_eye'),
+    'C-10：第 4 元素非技能触发记录 → 风暴眼立即入队');
+}
+
+console.log('\n═══ 33. 何以为我元素加成仅对已记录元素（B-17） ═══');
+{
+  const g = createInitialState();
+  // 何以为我是余默的天赋，默认编队 roles=['yumo'] 已生效
+  const t = { kind: 'slime_grass', category: 'danger', hp: 1000, maxHp: 1000, activeBuffs: [] };
+  const origRandom = Math.random;
+  Math.random = () => 0.5;
+  const r1 = CombatSystem.calculateDamage({ atk: 10, defender: t, element: 'fire', player: g.player, gs: g, roleId: 'yumo' });
+  check(r1.finalDamage === 10, `B-17：新元素首次命中无加成（finalDamage = ${r1.finalDamage}）`);
+  const r2 = CombatSystem.calculateDamage({ atk: 10, defender: t, element: 'fire', player: g.player, gs: g, roleId: 'yumo' });
+  Math.random = origRandom;
+  check(r2.finalDamage === 12, `B-17：已记录元素伤害 +20%（finalDamage = ${r2.finalDamage}）`);
+}
+
+console.log('\n═══ 34. 好奇心额外奖励 = 掉落再发一份、额外金币 = 售卖合计（B-18） ═══');
+{
+  const g = createInitialState();
+  g.team.groups[0].roles = ['xiayang']; // 好奇心是夏漾的天赋（按编队 roles 生效）
+  const meat0 = InventorySystem.countItem(g, 'item_raw_meat');
+  const gold0 = g.player.gold;
+  const origRandom = Math.random;
+  Math.random = () => 0.1; // 30% 与 50% 均触发
+  TalentSystem.onCreatureDefeated(g, { kind: 'chick', category: 'danger' });
+  Math.random = origRandom;
+  check(InventorySystem.countItem(g, 'item_raw_meat') === meat0 + 1,
+    'B-18：30% 额外奖励 = 该生物掉落再发一份（小鸡 → 生肉 ×1）');
+  const meatValue = ITEMS.item_raw_meat?.value ?? 0;
+  check(g.player.gold === gold0 + meatValue, `B-18：50% 额外金币 = 掉落物售卖价值合计（+${meatValue}）`);
+}
+
+console.log('\n═══ 35. 涅槃攻击加成可追踪：99 天到期回收（B-15） ═══');
+{
+  const g = createInitialState();
+  g.team.groups[0].roles = ['xiayang']; // 涅槃按编队 roles 生效
+  g.player.hp = 0;
+  const atk0 = g.player.atk;
+  const saved = TalentSystem.onHPDeath(g, { roleId: 'xiayang' });
+  const expectBonus = Math.floor(atk0 * 1.25) - atk0;
+  check(saved && g.player.atk === atk0 + expectBonus, `涅槃：攻击力 +25%（${atk0} → ${g.player.atk}）`);
+  check(g.team.rebornAtkBonus?.amount === expectBonus && g.team.rebornAtkBonus?.days === 99,
+    'B-15：加成的数值与 99 天持续期被记录');
+  g.team.rebornAtkBonus.days = 1; // 明天到期
+  const atk1 = g.player.atk;
+  DaySystem.startNewDay(g);
+  check(g.player.atk === Math.max(1, atk1 - expectBonus), `B-15：到期回收加成（atk ${atk1} → ${g.player.atk}）`);
+  check(g.team.rebornAtkBonus.days === 0 && g.team.rebornAtkBonus.amount === 0, 'B-15：回收后记录归零');
+}
+
+console.log('\n═══ 36. 状态持续时间上限 99（C-8） ═══');
+{
+  const target = { kind: 'slime_grass', hp: 100, maxHp: 100, activeBuffs: [] };
+  CombatSystem.applyBuff({ buffId: 'burn', target, duration: 150 });
+  const b = target.activeBuffs.find((x) => x.id === 'burn');
+  check(b.remainingTurns === 99, `C-8：新建状态时长钳制 99（实际 ${b.remainingTurns}）`);
+  CombatSystem.applyBuff({ buffId: 'burn', target, duration: 200 });
+  check(b.remainingTurns === 99, `C-8：刷新合并也钳制 99（实际 ${b.remainingTurns}）`);
+}
+
+console.log('\n═══ 37. 载具最短实际路径视为经过（B-21） ═══');
+{
+  // any 模式（心想事成，3×3 外圈 8 格）：6((0,2)) → 0((0,0)) 最短弧经过 7
+  const g = createInitialState();
+  VehicleSystem.gainVehicle(g, 'vehicle_chance');
+  VehicleSystem.attachVehicle(g, 'vehicle_chance');
+  g.map.outerTiles[0].contentId = null;
+  const sTile = g.map.outerTiles[7];
+  sTile.contentId = 'facility_strawberry';
+  sTile.contentState = {};
+  sTile.dailyFlags = {};
+  g.player.x = 6;
+  g.player.stamina = 8;
+  const r = VehicleSystem.tryMove(g, { vehicleId: 'vehicle_chance', targetIdx: 0 });
+  check(r.ok, `心想事成移动成功（${r.reason || 'ok'}）`);
+  check(g.player.x === 0, '落点为目标格');
+  check((sTile.contentState.strawberryStored || 0) === 1, 'B-21：any 模式最短路径中间格触发 onPass');
+  // line 模式（扫帚）：6((0,2)) → 4((2,2)) 同行，中间格 5((1,2))
+  const g2 = createInitialState();
+  VehicleSystem.gainVehicle(g2, 'vehicle_broom');
+  VehicleSystem.attachVehicle(g2, 'vehicle_broom');
+  g2.map.outerTiles[4].contentId = null;
+  const mTile = g2.map.outerTiles[5];
+  mTile.contentId = 'facility_strawberry';
+  mTile.contentState = {};
+  mTile.dailyFlags = {};
+  g2.player.x = 6;
+  g2.player.stamina = 8;
+  const r2 = VehicleSystem.tryMove(g2, { vehicleId: 'vehicle_broom', targetIdx: 4 });
+  check(r2.ok, `扫帚移动成功（${r2.reason || 'ok'}）`);
+  check((mTile.contentState.strawberryStored || 0) === 1, 'B-21：line 模式中间格触发 onPass');
+}
+
+console.log('\n═══ 38. 农耕手册保证抽到 3 个设施（C-15） ═══');
+{
+  const g = createInitialState();
+  g.inventory.items = [];
+  PassiveItemSystem.onItemGained(g, 'collectible_farm_guide');
+  const facilityCount = g.inventory.items
+    .filter((e) => e.itemId.startsWith('facility_') && e.itemId !== 'facility_wild_seed')
+    .reduce((s, e) => s + e.qty, 0);
+  check(facilityCount === 3, `C-15：农耕手册恰好发放 3 个设施（实际 ${facilityCount}）`);
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} smoke 结果：${pass} 通过 / ${fail} 失败（共 ${pass + fail}）`);
 process.exit(fail > 0 ? 1 : 0);

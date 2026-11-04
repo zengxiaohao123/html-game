@@ -13,6 +13,7 @@
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
+import { HookDispatcher } from '../core/HookDispatcher.js';
 import { devLog } from '../core/Logger.js';
 import { Random } from '../core/Random.js';
 import { getCreatureDef, SLIME_KINDS } from '../data/creatures.js';
@@ -84,6 +85,8 @@ export function spawnCreature(gs, kind, opts = {}) {
   empty.creatures.push(creature.id);
 
   // 更新容量计数（超出也允许生成，warn 由 dailyTick 报）
+  // A-7：【当生物增加时】词条（玉米田 FAC-011）—— 任何来源的生成都算"生物增加"
+  HookDispatcher.fire('onCreatureAdded', { gs, creature });
   EventBus.emit(GE.CREATURE_SPAWNED, { creature });
   EventBus.emit(GE.CAPACITY_CHANGE, { category: def.category, newCount: countByCategory(gs, def.category) });
   EventBus.emit(GE.TOAST_SHOW, { text: `${def.emoji} 生成 ${def.name}`, duration: 1500 });
@@ -333,10 +336,14 @@ export function dailyTick(gs) {
   }
 
   // ── 3) 史莱姆粘液喷吐（完整实装：5% / 超载 15%） ──
-  const dangerOverloaded = !!(gs.capacity?.dangerOverloaded);
+  // B-12：物品库 BIO-003「危险生物超容量时改为 15%」—— 条件是"当前数量超容量"本身，
+  //   而不是惩罚激活标志（dangerOverloaded 要等警告期 2 天后才为 true）。
+  const fenceTilesForCap = (gs.map.fence && gs.map.fence.length) || 1;
+  const dangerCapNow = 4 + Math.max(0, fenceTilesForCap - 1);
+  const dangerOverCapacity = countByCategory(gs, 'danger') > dangerCapNow;
   const slimeCount = gs.creatures.filter(c => c.category === 'danger' && c.hp > 0).length;
   for (let i = 0; i < slimeCount; i++) {
-    const chance = dangerOverloaded ? 0.15 : 0.05;
+    const chance = dangerOverCapacity ? 0.15 : 0.05;
     if (Random.chance(chance)) {
       // 选随机 outerTile（合法外圈格）
       const candidates = outerTiles.filter(t => t.idx !== gs.player.x); // 不往玩家当前格喷

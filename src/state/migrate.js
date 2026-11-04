@@ -3,7 +3,7 @@
 // 算法：拿一份全新的 createInitialState() 作为模板，
 //       对 loadedGs 做深合并——缺失字段从模板取默认值。
 //       只补缺失字段，不覆盖已有值（玩家存档里的数据不能被清空）。
-//       递归补全 plain object，数组保持原样不动。
+//       递归补全 plain object；数组保留原元素，但对元素内的对象逐个补全缺失字段（C-7）。
 
 import { createInitialState } from './gameState.js';
 import { devLog } from '../core/Logger.js';
@@ -51,8 +51,24 @@ function deepMergeDefaults(target, source, path = '') {
     // target 有这个 key → 如果两边都是 plain object，递归补全
     if (isPlainObject(target[key]) && isPlainObject(source[key])) {
       filled.push(...deepMergeDefaults(target[key], source[key], childPath));
+    } else if (Array.isArray(target[key]) && Array.isArray(source[key]) && source[key].length > 0) {
+      // C-7：数组不再"原样保留"——对数组内的对象元素逐个补全缺失字段
+      //   （老存档 tile 缺 dailyFlags/states 等字段时设施钩子会抛错）。
+      //   模板元素优先取同下标；模板数组更短时用其最后一个对象元素作为 schema
+      //   （outerTiles 等齐构数组：模板 8 格、存档可能 20 格）。
+      const srcArr = source[key];
+      let fallbackEl = null;
+      for (let j = srcArr.length - 1; j >= 0; j--) {
+        if (isPlainObject(srcArr[j])) { fallbackEl = srcArr[j]; break; }
+      }
+      for (let i = 0; i < target[key].length; i++) {
+        const tEl = target[key][i];
+        if (!isPlainObject(tEl)) continue;
+        const sEl = isPlainObject(srcArr[i]) ? srcArr[i] : fallbackEl;
+        if (sEl) filled.push(...deepMergeDefaults(tEl, sEl, `${childPath}[${i}]`));
+      }
     }
-    // 数组、原始值、类型不匹配：一律不覆盖
+    // 原始值、类型不匹配：一律不覆盖
   }
 
   return filled;

@@ -663,8 +663,18 @@ head_('第 9 批：商店剩余预览 / 背包拖拽放置 / 粘液中文名');
     && el.getAttribute('draggable') === 'true' && (el.title || '').includes(facDef.name));
   assert(facSlots.length === 1, '地块内容类（设施）格可拖拽');
   const wheatSlot = findAll(invRoot, (el) => (el.title || '').startsWith(ITEMS['item_wheat'].name + ' ×'));
-  assert(wheatSlot.length >= 1 && wheatSlot.every((el) => el.getAttribute('draggable') !== 'true'),
-    '产物类物品格不触发拖拽（无 draggable）');
+  assert(wheatSlot.length >= 1, '产物类物品格存在');
+  // L-06 / §16.15：试图拖拽不可放置物品 → 拖拽被取消（preventDefault，不触发拖拽）并弹窗提示
+  {
+    let cancelled = false;
+    const toastsL06 = [];
+    const onToastL06 = (p) => toastsL06.push(String(p.text || ''));
+    EventBus.on(GE.TOAST_SHOW, onToastL06);
+    wheatSlot[0].dispatchEvent({ type: 'dragstart', preventDefault() { cancelled = true; } });
+    EventBus.off(GE.TOAST_SHOW, onToastL06);
+    assert(cancelled, 'L-06：产物类物品拖拽被取消（不触发拖拽）');
+    assert(toastsL06.some((t) => t.includes('不可放置')), 'L-06：试图拖拽不可放置物品弹窗提示');
+  }
 
   // dragstart：背包自动关闭 + 全局拖拽标记
   const dt = {};

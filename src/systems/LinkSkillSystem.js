@@ -12,6 +12,7 @@ import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { getSkill, getSkillsByRole, CHARACTERS } from '../data/characters.js';
+import { Distance } from '../core/Distance.js';
 import { CombatSystem } from './CombatSystem.js';
 import { TalentSystem } from './TalentSystem.js';
 import { InventorySystem } from './InventorySystem.js';
@@ -86,15 +87,16 @@ export function onSkillFired(gs, { roleId, skillId, skill, target }) {
     const annihilate = getSkill('skill_link_xiayang_annihilate');
     if (annihilate) {
       // 二段 7 优先（到了 7 就先入二段，到了 3 先入一段）
+      // C-2：context 带上触发目标，结算时以其所在围栏格为范围中心
       if (count >= 7) {
         tryEnqueue(gs, 'skill_link_xiayang_annihilate', {
           roleId: 'xiayang',
-          context: { tier: 2 },
+          context: { tier: 2, targetCreatureId: target ? target.id : null },
         });
       } else if (count >= 3) {
         tryEnqueue(gs, 'skill_link_xiayang_annihilate', {
           roleId: 'xiayang',
-          context: { tier: 1 },
+          context: { tier: 1, targetCreatureId: target ? target.id : null },
         });
       }
     }
@@ -110,11 +112,8 @@ export function onSkillFired(gs, { roleId, skillId, skill, target }) {
     });
   }
 
-  // ── 风暴眼：累计 4 种及以上元素 ──
-  const dailyEl = gs.team?.dailyElementDamages || [];
-  if (dailyEl.length >= 4) {
-    tryEnqueue(gs, 'skill_link_luyouyou_storm_eye', { roleId: 'luyouyou' });
-  }
+  // ── 风暴眼：累计 4 种及以上元素（C-10：与 onElementDamage 共用检查） ──
+  checkStormEyeReady(gs);
 }
 
 /**
@@ -136,6 +135,54 @@ export function onElementDamage(gs, { element, byRoleId, target }) {
       roleId: 'yumo',
       context: { element },
     });
+  }
+
+  // C-10：第 4 种元素由连携/天赋记录时（不经过 onSkillFired）也立即检查风暴眼入队
+  checkStormEyeReady(gs);
+}
+
+// ── C-2 范围语义辅助 ──
+
+/** 找到包含指定生物的围栏格 */
+function findFenceTileOfCreature(gs, creatureId) {
+  for (const t of gs.map.fence) {
+    if ((t.creatures || []).includes(creatureId)) return t;
+  }
+  return null;
+}
+
+/** 收集若干围栏格内的全部存活生物（去重） */
+function collectCreaturesInTiles(gs, tiles) {
+  const seen = new Set();
+  const out = [];
+  for (const t of tiles) {
+    for (const cid of (t.creatures || [])) {
+      if (seen.has(cid)) continue;
+      const c = gs.creatures.find(cc => cc.id === cid);
+      if (c && c.hp > 0) { seen.add(cid); out.push(c); }
+    }
+  }
+  return out;
+}
+
+/** 点 (px,py) 到线段 (ax,ay)-(bx,by) 的距离 */
+function pointSegDist(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return Math.hypot(px - ax, py - ay);
+  let t = ((px - ax) * dx + (py - ay) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+/**
+ * C-10：风暴眼入队检查 —— onSkillFired 与 onElementDamage 共用
+ * （第 4 种元素无论由谁记录，都应立即入队）
+ */
+function checkStormEyeReady(gs) {
+  const dailyEl = gs.team?.dailyElementDamages || [];
+  if (dailyEl.length >= 4) {
+    tryEnqueue(gs, 'skill_link_luyouyou_storm_eye', { roleId: 'luyouyou' });
   }
 }
 
@@ -231,13 +278,12 @@ function resolveLinkSkill(gs, skill, ctx) {
     }
 
     case 'skill_link_xiayang_scorch': {
-      // 炽燃：对 burn 的至多 3 名敌人 70% 火伤 + 挂额外燃烧层；无则 1 名
+      // 炽燃（SKL-L-004）：对 burn 的至多 3 名敌人 70% 火伤；无则 1 名
+      // C-3：文档无「额外施加燃烧」效果，移除原 applyBuff burn 1
       const burned = allCreatures.filter(c => isTargetBurned(c));
       const targets = burned.length > 0 ? burned.slice(0, 3) : (allCreatures.length > 0 ? [allCreatures[0]] : []);
       for (const t of targets) {
         dealLinkSkillDamage(gs, skill, t, 'xiayang');
-        // 额外挂一个燃烧层（持续 1 回合 —— 已有的话刷新）
-        CombatSystem.applyBuff({ buffId: 'burn', target: t, duration: 1 });
       }
       break;
     }
@@ -254,11 +300,18 @@ function resolveLinkSkill(gs, skill, ctx) {
       gs.team.xiayangSkillCount = Math.max(0, currentCount - tierCost);
       devLog.info('[LinkSkill] 焚灭 tier', tier, 'consume', tierCost, 'remaining', gs.team.xiayangSkillCount);
 
-      // 范围伤害：简化为对所有 creature 造成伤害（用 multiplier）
-      for (const c of allCreatures) {
+      // C-2（SKL-L-002）：以触发目标所在围栏格为中心，欧氏距离 ≤ radius 的围栏格内生物吃伤害
+      // 半径 0.4 → 仅同格（相邻格中心距 = 1）；半径 1.5 → 含对角（√2 ≈ 1.414）
+      const centerTile = findFenceTileOfCreature(gs, ctx.targetCreatureId)
+        || (allCreatures.length > 0 ? findFenceTileOfCreature(gs, allCreatures[0].id) : null);
+      if (!centerTile) break;
+      const nearTiles = gs.map.fence.filter(t =>
+        Math.hypot(t.row - centerTile.row, t.col - centerTile.col) <= radius);
+      const targets = collectCreaturesInTiles(gs, nearTiles);
+      for (const c of targets) {
         dealLinkSkillDamage(gs, { ...skill, damageMultiplier: multiplier }, c, 'xiayang');
       }
-      // radius 只是视觉，伤害简化按所有目标算
+      devLog.info('[LinkSkill] 焚灭 tier', tier, '半径', radius, '命中格', nearTiles.length, '目标', targets.length);
       break;
     }
 
@@ -266,17 +319,19 @@ function resolveLinkSkill(gs, skill, ctx) {
       // 弱点击破：敌人蓄力时 70% 物理 + 3 回合虚弱 25% + 本次暴击率 +100%
       const target = allCreatures.find(c => isTargetCharging(c)) || (allCreatures.length > 0 ? allCreatures[0] : null);
       if (target) {
-        // 本次暴击率 +100%：简化 —— 强制暴击（伤害 × 1.5）
-        const critResult = CombatSystem.calculateDamage({
+        // C-1（SKL-L-004）：本次暴击率 +100% 走真实暴击判定（CombatSystem 消费该字段），
+        // 不再用伤害 ×1.5 捷径 —— 可正常触发 onCrit（比翼 / 风息元素转换联动）
+        if (!gs.team) gs.team = {};
+        gs.team.luyouyouNextCritBonus = Math.max(gs.team.luyouyouNextCritBonus || 0, 1.0);
+        CombatSystem.calculateDamage({
           atk: gs.player.atk,
-          skill: { ...skill, damageMultiplier: skill.damageMultiplier * 1.5 },
+          skill,
           defender: target,
           element: 'physical',
           player: gs.player,
           gs,
           roleId: 'luyouyou',
           attackerRoleId: 'luyouyou',
-          _weakPointForceCrit: true,
         });
         CombatSystem.applyBuff({ buffId: 'weakened', target, duration: 3, params: { strength: 0.25 } });
       }
@@ -284,11 +339,18 @@ function resolveLinkSkill(gs, skill, ctx) {
     }
 
     case 'skill_link_luyouyou_storm_eye': {
-      // 风暴眼：锁定随机 1 名敌人，直线行进对所有碰撞敌人 80% 风伤 + 清空计数
+      // 风暴眼（SKL-L-007）：锁定随机 1 名敌人，龙卷风从玩家位置沿直线飞向该敌人，
+      // C-2：对线段经过（格子中心到线段距离 ≤ 0.5）的所有敌人 80% 风伤 + 清空计数
       if (allCreatures.length > 0) {
         const lockTarget = allCreatures[Math.floor(Math.random() * allCreatures.length)];
+        const start = Distance.outerIdxToXY(gs.map.size, gs.player.x);
+        const tx = lockTarget.col + 1, ty = lockTarget.row + 1;
         for (const c of allCreatures) {
-          dealLinkSkillDamage(gs, skill, c, 'luyouyou', { overrideElement: 'wind' });
+          const cx = c.col + 1, cy = c.row + 1;
+          const d = start ? pointSegDist(cx, cy, start.x, start.y, tx, ty) : 0;
+          if (d <= 0.5) {
+            dealLinkSkillDamage(gs, skill, c, 'luyouyou', { overrideElement: 'wind' });
+          }
         }
       }
       // 清空元素累计
@@ -305,9 +367,12 @@ function resolveLinkSkill(gs, skill, ctx) {
       let cur = lastTarget;
       for (let i = 0; i < 3; i++) {
         dealLinkSkillDamage(gs, skill, cur, 'luyouyou', { overrideMultiplier: skill.damageMultiplier });
-        // 随机弹射到半径 0.3 内 —— 简化：在 allCreatures 里随机一个（含自身）
-        if (allCreatures.length > 0) {
-          cur = allCreatures[Math.floor(Math.random() * allCreatures.length)];
+        // C-2（SKL-L-006）：每次弹射以当前目标为中心半径 0.3 格内（含自身）随机 1 名敌人
+        // —— 围栏格中心距最小为 1，半径 0.3 内候选即当前目标同围栏格的存活生物
+        const curTile = findFenceTileOfCreature(gs, cur.id);
+        const candidates = curTile ? collectCreaturesInTiles(gs, [curTile]) : [];
+        if (candidates.length > 0) {
+          cur = candidates[Math.floor(Math.random() * candidates.length)];
         }
       }
       // 清空计数
@@ -466,6 +531,7 @@ export const LinkSkillSystem = {
   // 结算
   fireLinkSkill,
   fireCurrentQueueTop,
+  resolveLinkSkill,
   // 队列 API
   enqueue: enqueueLinkSkill,
   pop: popLinkSkill,
