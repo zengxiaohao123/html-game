@@ -25,6 +25,7 @@ export const CREATURES = {
     growthMax: 100,   // 成长值满 → 变鸡
     mood: 0,
     moveEverySec: 2,  // 每 2 秒换方向走 1 格
+    drops: [{ itemId: 'item_raw_meat', qty: 1 }], // BIO-001 击败掉落：生肉 ×1
   },
   chicken: {
     kind: 'chicken',
@@ -40,6 +41,7 @@ export const CREATURES = {
     growthMax: 0,
     mood: 0,
     moveEverySec: 2,
+    drops: [{ itemId: 'item_raw_meat', qty: 3 }], // BIO-002 击败掉落：生肉 ×3
   },
 
   // ── 危险：史莱姆 7 元素变体 ──
@@ -57,6 +59,7 @@ export const CREATURES = {
     growthMax: 0,
     mood: 0,
     moveEverySec: 2,
+    drops: [{ itemId: 'item_slime_gel', qty: 1 }], // BIO-003 击败掉落：史莱姆凝胶 ×1
   },
   slime_water: {
     kind: 'slime_water',
@@ -72,6 +75,7 @@ export const CREATURES = {
     growthMax: 0,
     mood: 0,
     moveEverySec: 2,
+    drops: [{ itemId: 'item_slime_gel', qty: 1 }], // BIO-003 击败掉落：史莱姆凝胶 ×1
   },
   slime_thunder: {
     kind: 'slime_thunder',
@@ -87,6 +91,7 @@ export const CREATURES = {
     growthMax: 0,
     mood: 0,
     moveEverySec: 2,
+    drops: [{ itemId: 'item_slime_gel', qty: 1 }], // BIO-003 击败掉落：史莱姆凝胶 ×1
   },
   slime_ice: {
     kind: 'slime_ice',
@@ -102,6 +107,7 @@ export const CREATURES = {
     growthMax: 0,
     mood: 0,
     moveEverySec: 2,
+    drops: [{ itemId: 'item_slime_gel', qty: 1 }], // BIO-003 击败掉落：史莱姆凝胶 ×1
   },
   slime_grass: {
     kind: 'slime_grass',
@@ -117,6 +123,7 @@ export const CREATURES = {
     growthMax: 0,
     mood: 0,
     moveEverySec: 2,
+    drops: [{ itemId: 'item_slime_gel', qty: 1 }], // BIO-003 击败掉落：史莱姆凝胶 ×1
   },
   slime_wind: {
     kind: 'slime_wind',
@@ -132,6 +139,7 @@ export const CREATURES = {
     growthMax: 0,
     mood: 0,
     moveEverySec: 2,
+    drops: [{ itemId: 'item_slime_gel', qty: 1 }], // BIO-003 击败掉落：史莱姆凝胶 ×1
   },
   slime_rock: {
     kind: 'slime_rock',
@@ -147,6 +155,7 @@ export const CREATURES = {
     growthMax: 0,
     mood: 0,
     moveEverySec: 2,
+    drops: [{ itemId: 'item_slime_gel', qty: 1 }], // BIO-003 击败掉落：史莱姆凝胶 ×1
   },
 };
 

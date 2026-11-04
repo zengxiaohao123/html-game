@@ -14,6 +14,8 @@ import { devLog } from '../core/Logger.js';
 import { getSkill, getSkillsByRole, CHARACTERS } from '../data/characters.js';
 import { CombatSystem } from './CombatSystem.js';
 import { TalentSystem } from './TalentSystem.js';
+import { InventorySystem } from './InventorySystem.js';
+import { CreatureSystem } from './CreatureSystem.js';
 
 const WINDOW_MS = 3000; // 3 秒实时窗口
 
@@ -34,8 +36,8 @@ function tryEnqueue(gs, skillId, opts = {}) {
     return null;
   }
 
-  // 冷却检查
-  if (gs.linkSkillCooldowns && gs.linkSkillCooldowns[skillId] > gs.turn) {
+  // 冷却检查（B-11：剩余回合数语义，§12.7 冷却以回合计、跨天不清零）
+  if (gs.linkSkillCooldowns && gs.linkSkillCooldowns[skillId] > 0) {
     return null;
   }
 
@@ -177,9 +179,9 @@ export function fireLinkSkill(gs, skillId) {
   const ctx = entry.context || {};
   const result = resolveLinkSkill(gs, skill, ctx);
 
-  // 冷却：按 gs.turn 存下次可用回合
+  // 冷却：剩余回合数（TurnSystem.advanceTurn 每回合 -1；跨天不清零 —— §12.7）
   if (!gs.linkSkillCooldowns) gs.linkSkillCooldowns = {};
-  gs.linkSkillCooldowns[skillId] = gs.turn + (skill.cooldown || 0);
+  gs.linkSkillCooldowns[skillId] = skill.cooldown || 0;
 
   devLog.info('[LinkSkillSystem] 结算', skill.name, '→', result);
   return { ok: true, result };
@@ -305,6 +307,19 @@ function resolveLinkSkill(gs, skill, ctx) {
       }
       break;
     }
+
+    case 'skill_link_shift': {
+      // 移形（SKL-L-008）：对 1 名敌人 50% 物理伤害；本日内每经过 1 格倍率 +5%（按结算时的今日累计移动距离）
+      const target = allCreatures.length > 0 ? allCreatures[0] : null;
+      if (target) {
+        const eff = skill.extraEffect || {};
+        const dist = gs.team?.dailyDistanceMoved || 0;
+        const multiplier = (eff.base ?? skill.damageMultiplier) + (eff.perTile ?? 0.05) * dist;
+        devLog.info('[LinkSkill] 移形 今日移动', dist, '格 → 倍率', multiplier.toFixed(2));
+        dealLinkSkillDamage(gs, { ...skill, damageMultiplier: multiplier }, target, null);
+      }
+      break;
+    }
   }
 }
 
@@ -331,6 +346,7 @@ function dealLinkSkillDamage(gs, skill, target, attackerRoleId, opts = {}) {
       t.creatures = (t.creatures || []).filter(cid => cid !== target.id);
     }
     gs.creatures = gs.creatures.filter(c => c.id !== target.id);
+    CreatureSystem.grantKillDrops(gs, target); // 击杀掉落（物品库 BIO drops）
     TalentSystem.onCreatureDefeated(gs, target);
   }
   return dmg;
@@ -389,7 +405,32 @@ export function resetAll(gs) {
   if (!gs) return;
   if (Array.isArray(gs.linkSkillQueue)) gs.linkSkillQueue.length = 0;
   gs.lastTurnLinkSkill = 0;
-  gs.linkSkillCooldowns = {}; // 冷却清空（新一天重算）
+  // B-11：§12.7 冷却均以回合计、跨天不清零 —— 跨天只清队列，不清冷却
+  // （冷却由 TurnSystem.advanceTurn → advanceCooldowns 每回合递减）
+}
+
+/**
+ * B-11：连携技冷却每回合递减（由 TurnSystem.advanceTurn 调用）
+ */
+export function advanceCooldowns(gs) {
+  if (!gs || !gs.linkSkillCooldowns) return;
+  for (const k of Object.keys(gs.linkSkillCooldowns)) {
+    gs.linkSkillCooldowns[k] -= 1;
+    if (gs.linkSkillCooldowns[k] <= 0) delete gs.linkSkillCooldowns[k];
+  }
+}
+
+/**
+ * A-6：载具移动后触发移形（SKL-L-008）入队 —— 由 GameDirector 的载具移动订阅调用。
+ * 仅当已通过技能石习得（背包持有 skill_link_shift）时生效。
+ */
+export function onVehicleMoved(gs, { distance = 1 } = {}) {
+  if (!gs) return;
+  if (!gs.team) gs.team = {};
+  gs.team.dailyDistanceMoved = (gs.team.dailyDistanceMoved || 0) + Math.max(1, distance);
+  const learned = InventorySystem.countItem(gs, 'skill_link_shift') >= 1;
+  if (!learned) return;
+  tryEnqueue(gs, 'skill_link_shift', { roleId: null, context: { distance } });
 }
 
 export const LinkSkillSystem = {
@@ -406,4 +447,6 @@ export const LinkSkillSystem = {
   pruneExpired,
   checkReady,
   resetAll,
+  advanceCooldowns,
+  onVehicleMoved,
 };

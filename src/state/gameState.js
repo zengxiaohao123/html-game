@@ -121,6 +121,15 @@ export function createInitialState() {
       twinBuffNextAtkCritRateBonus: 0,      // 比翼天赋
       twinBuffActiveDays: 0,                // 比翼天赋
       xiayangRebornCooldownDay: 0,          // 涅槃天赋
+      // ── 每日结算字段（DaySystem 跨天重置） ──
+      dailyBlessCount: 0,                   // §12.2 momo 每日首次祈福计数
+      dailyQingfengAtkBonus: 0,             // §12.8 晴风攻击加成层数
+      qingfengAtkApplied: 0,                // B-1：本日晴风累计 atk 增量（跨天回滚）
+      dailyInspireAtkApplied: 0,            // A-3 鼓舞：本日累计 atk 增量（跨天回滚）
+      allWishesActive: false,               // 众愿：本日内火伤 +20% / 其余 -10%
+      dailyDistanceMoved: 0,                // 移形：今日累计移动距离
+      yumoNextElementOverride: null,        // 汲取：余默下一次攻击元素改写
+      luyouyouNextCritBonus: 0,             // 屏息瞄准：陆悠悠下一次攻击暴击率加成
     },
 
     // ── 祝福 ──
@@ -150,6 +159,7 @@ export function createInitialState() {
     // ── 冷却记录（Phase 4） ──
     skillCooldowns: {},         // SkillSystem 用
     linkSkillCooldowns: {},     // LinkSkillSystem 用
+    itemCooldowns: {},          // UseItemSystem 用（剩余回合数，TurnSystem 每回合递减）
 
     // ── 选中 / UI 状态 ──
     uiState: {

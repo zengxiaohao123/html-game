@@ -74,8 +74,8 @@ export const STARTER_ITEMS = [
   ['collectible_deadwood', 1],
 ];
 
-/** 初始金币（开发期给足，便于测试商店刷新 4/8/12） */
-export const STARTER_GOLD = 50;
+/** 初始金币（§5.3：金币初始为 0） */
+export const STARTER_GOLD = 0;
 
 /**
  * 生成初始背包条目

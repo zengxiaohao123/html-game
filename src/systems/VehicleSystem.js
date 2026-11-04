@@ -207,7 +207,6 @@ export function tryMove(gs, opts = {}) {
 
     // 沿方向扫最远的合法外圈格（中间 null/栅栏都穿越）
     let finalIdx = null;
-    let path = [];
     for (let step = 1; step <= maxRange; step++) {
       cx += dx; cy += dy;
       const idx = outerXYToIdx(gs.map.size, cx, cy);
@@ -313,7 +312,10 @@ export function tryMove(gs, opts = {}) {
   HookDispatcher.fire('onEnter', { gs, tileIdx: targetIdx });
   SkillSystem.triggerSkillByHook?.('onEnter', { gs, tileIdx: targetIdx });
 
-  EventBus.emit(GE.MOVE, { fromIdx, toIdx: targetIdx, byVehicle: true });
+  // B-2：载具移动距离（起点到落点实际经过的合法格数）随 MOVE 事件广播，
+  //      供 GameDirector 推进回合 / 【移动后】hook / 移形累计使用
+  const distance = Math.max(1, (path || []).filter(i => i != null).length);
+  EventBus.emit(GE.MOVE, { fromIdx, toIdx: targetIdx, byVehicle: true, distance, path });
   EventBus.emit(GE.TILE_UPDATED, { tileIdx: fromIdx });
   EventBus.emit(GE.TILE_UPDATED, { tileIdx: targetIdx });
 

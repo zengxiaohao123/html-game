@@ -143,6 +143,9 @@ export function move(gs, direction) {
 
   // 6. 【移动后】：走完整段路径后触发一次（距离 = 本次经过的格数）
   const distance = path.length;
+  // 移形（SKL-L-008）：累计本日移动距离（本日内每经过 1 格倍率 +5%）
+  if (!gs.team) gs.team = {};
+  gs.team.dailyDistanceMoved = (gs.team.dailyDistanceMoved || 0) + distance;
   HookDispatcher.fire('onMoveEnd', { gs, distance, fromIdx, toIdx: finalIdx });
   TalentSystem.onMoveEnd(gs);
 

@@ -79,9 +79,10 @@ export function canUse(gs, itemId) {
   const def = POTIONS[itemId];
   if (!def) return { ok: false, reason: 'unknown' };
   const cd = def.useEffect?.cooldownTurns || 0;
-  const ready = gs.itemCooldowns[itemId] ?? 0;
-  if (cd > 0 && gs.turn < ready) {
-    return { ok: false, reason: 'cooldown', left: ready - gs.turn };
+  // B-10：冷却以「剩余回合数」存储（§14 冷却以回合计）—— 跨天 gs.turn 归零也不会提前结束
+  const left = gs.itemCooldowns[itemId] ?? 0;
+  if (cd > 0 && left > 0) {
+    return { ok: false, reason: 'cooldown', left };
   }
   if (InventorySystem.countItem(gs, itemId) < 1) return { ok: false, reason: 'noItem' };
   return { ok: true };
@@ -169,8 +170,7 @@ export function useItem(gs, itemId, opts = {}) {
         return { ok: false, reason: 'duplicate' };
       }
       tile.contentState.placedItems.push({ itemId, placedDay: gs.day });
-      consumed = true;   // 放置型：道具从背包消失但效果持续（按物品库定义，放置后道具不消失——
-                         // 这里按"占用但仍在场"处理：进入地块状态列表，背包不再持有）
+      consumed = false;  // A-11：§14.2 放置型「被放置到地块后持续生效，道具不消失」—— 放置后仍留在背包
       EventBus.emit(GE.TILE_UPDATED, { tileIdx });
       EventBus.emit(GE.TOAST_SHOW, { text: `📦 已放置 ${ITEMS[itemId]?.name || itemId}`, duration: 1600 });
       break;
@@ -186,7 +186,7 @@ export function useItem(gs, itemId, opts = {}) {
   const cd = eff.cooldownTurns || 0;
   if (cd > 0) {
     ensureCooldowns(gs);
-    gs.itemCooldowns[itemId] = gs.turn + cd;
+    gs.itemCooldowns[itemId] = cd; // B-10：剩余回合数（TurnSystem.advanceTurn 每回合 -1）
   }
 
   HookDispatcher.fire('onUseItem', { gs, itemId, tileIdx: opts.tileIdx });

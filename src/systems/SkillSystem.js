@@ -22,10 +22,13 @@ import { getSkill, getSkillsByRole, CHARACTERS, SKILLS } from '../data/character
 import { CombatSystem } from './CombatSystem.js';
 import { TalentSystem } from './TalentSystem.js';
 import { LinkSkillSystem } from './LinkSkillSystem.js';
+import { HealSystem } from './HealSystem.js';
+import { CreatureSystem } from './CreatureSystem.js';
 
 /**
- * 每技能的运行时 cooldown：tileIdx + skillId → remainingTurns
- * 改为 GS 持久化（跨回合/跨日不丢失），resetSkillCooldowns 清空
+ * 每技能的运行时 cooldown：skillId → remainingTurns
+ * §12.3：技能卡位置被移动时冷却保留 —— 冷却按技能卡（skillId）计，不绑地块。
+ * GS 持久化（跨回合不丢失），resetSkillCooldowns 清空
  */
 
 function getCreaturesInFence(gs) {
@@ -87,9 +90,11 @@ export function triggerSkillByHook(hookType, params) {
   // triggerCondition 钩子匹配（用 hooks[hookType] 字段）
   if (!skillDef.hooks || !skillDef.hooks[hookType]) return;
 
-  // cooldown 检查：按 tileIdx + skillId 独立
-  const cdKey = `skill_${skillDef.id}_${tileIdx}`;
-  if (gs.skillCooldowns[cdKey] && gs.skillCooldowns[cdKey] > 0) return;
+  // cooldown 检查：按技能卡（skillId）独立 —— §12.3 技能卡位置被移动时冷却保留
+  // 例外：爆炸狂欢（SKL-A-008）【受祝福时】即使冷却中也触发并刷新冷却
+  const cdKey = `skill_${skillDef.id}`;
+  const refreshOnBless = hookType === 'onBlessed' && skillDef.extraEffect?.onBlessedRefreshCooldown;
+  if (!refreshOnBless && gs.skillCooldowns[cdKey] && gs.skillCooldowns[cdKey] > 0) return;
 
   // 连携技不走普通 hook 触发（它们是实时窗口按键触发的）
   if (skillDef.isLinkSkill) return;
@@ -99,41 +104,160 @@ export function triggerSkillByHook(hookType, params) {
   if (!target) return;
 
   // 触发！
-  fireOneSkill(gs, skillDef, target, cdKey);
+  fireOneSkill(gs, skillDef, target, cdKey, hookType, tileIdx);
   HookDispatcher.fire('onUseSkill', { gs });
 }
 
-function fireOneSkill(gs, skill, target, cdKey) {
+/**
+ * 开拓（SKL-A-003）：攻击前随机消耗 count 块有地形的地块（变为无地形），返回实际消耗数
+ */
+function consumeTerrainsForPioneer(gs, count) {
+  let consumed = 0;
+  for (let i = 0; i < count; i++) {
+    const candidates = gs.map.outerTiles.filter(t => t.terrain && t.terrain !== 'terrain_none');
+    if (candidates.length === 0) break;
+    const tile = candidates[Math.floor(Math.random() * candidates.length)];
+    tile.terrain = 'terrain_none';
+    tile.terrainAmount = 0;
+    EventBus.emit(GE.TILE_UPDATED, { tileIdx: tile.idx });
+    consumed += 1;
+  }
+  if (consumed > 0) devLog.info('[SkillSystem] 开拓 消耗地形', consumed, '块');
+  return consumed;
+}
+
+/**
+ * 合纵连横（SKL-A-012）：技能所在格延伸出的行 + 列 覆盖的栅栏格
+ * 外圈格 (sx, sy) → 栅栏行 sy-1 / 栅栏列 sx-1（栅栏 (row,col) 对应网格 (col+1, row+1)）
+ */
+function getFenceTilesInRowCol(gs, tileIdx) {
+  const { x: sx, y: sy } = Distance.outerIdxToXY(gs.map.size, tileIdx);
+  const fenceRow = sy - 1;
+  const fenceCol = sx - 1;
+  const n = gs.map.fenceRowCols || 1;
+  const out = [];
+  for (const t of gs.map.fence) {
+    const inRow = fenceRow >= 0 && fenceRow < n && t.row === fenceRow;
+    const inCol = fenceCol >= 0 && fenceCol < n && t.col === fenceCol;
+    if (inRow || inCol) out.push(t);
+  }
+  return out;
+}
+
+/** 收集若干栅栏格内的全部存活生物（去重） */
+function collectCreaturesInFenceTiles(gs, fenceTiles) {
+  const seen = new Set();
+  const out = [];
+  for (const t of fenceTiles) {
+    for (const cid of (t.creatures || [])) {
+      if (seen.has(cid)) continue;
+      const c = gs.creatures.find(cc => cc.id === cid);
+      if (c && c.hp > 0) {
+        seen.add(cid);
+        out.push(c);
+      }
+    }
+  }
+  return out;
+}
+
+function fireOneSkill(gs, skill, target, cdKey, hookName = 'onEnter', tileIdx = null) {
   const roleDef = CHARACTERS[skill.roleId];
   devLog.info('[SkillSystem] fire', skill.name, '→', target.kind, '(hp', target.hp, '/', target.maxHp, ')');
   EventBus.emit(GE.SKILL_TRIGGERED, { skillId: skill.id, roleId: skill.roleId, targetKind: target.kind });
 
-  const hits = skill.hits || 1;
-  for (let h = 0; h < hits; h++) {
-    const result = CombatSystem.calculateDamage({
-      atk: gs.player.atk,
-      skill,
-      defender: target,
-      element: skill.element,
-      realDamage: !!skill.realDamage,
-      player: gs.player,
-      gs,
-      roleId: skill.roleId,
-      attackerRoleId: skill.roleId,
-    });
-    if (result.immune) break;
+  const eff = skill.extraEffect;
+
+  // ── 特殊结算：合纵连横（行 + 列范围伤害，替代单体流程） ──
+  if (eff?.type === 'line_row_column') {
+    const tiles = typeof tileIdx === 'number' ? getFenceTilesInRowCol(gs, tileIdx) : [];
+    const targets = collectCreaturesInFenceTiles(gs, tiles)
+      .filter(c => c.category === 'danger' || c.category === 'extreme' || gs.flags?.friendlyAsEnemyToday);
+    for (const t of targets) {
+      CombatSystem.calculateDamage({
+        atk: gs.player.atk,
+        skill,
+        defender: t,
+        element: 'physical',
+        player: gs.player,
+        gs,
+        roleId: skill.roleId,
+        attackerRoleId: skill.roleId,
+      });
+      if (t.hp <= 0) defeatCreature(gs, t);
+    }
+    devLog.info('[SkillSystem] 合纵连横 命中', targets.length, '名敌人');
+  } else if (eff?.type === 'aoe_radius') {
+    // ── 特殊结算：爆炸狂欢（目标所在栅栏格半径 1 格大范围） ──
+    const nearTiles = gs.map.fence.filter(t =>
+      Math.abs(t.row - target.row) <= (eff.radius ?? 1) && Math.abs(t.col - target.col) <= (eff.radius ?? 1));
+    const targets = collectCreaturesInFenceTiles(gs, nearTiles)
+      .filter(c => c.category === 'danger' || c.category === 'extreme' || gs.flags?.friendlyAsEnemyToday);
+    for (const t of targets) {
+      CombatSystem.calculateDamage({
+        atk: gs.player.atk,
+        skill,
+        defender: t,
+        element: skill.element,
+        player: gs.player,
+        gs,
+        roleId: skill.roleId,
+        attackerRoleId: skill.roleId,
+      });
+      if (t.hp <= 0) defeatCreature(gs, t);
+    }
+    devLog.info('[SkillSystem] 爆炸狂欢 命中', targets.length, '名敌人');
+  } else {
+    // ── 伤害前生效的额外效果 ──
+    let multiplierBonus = 0;
+    if (eff?.type === 'pioneer_multiplier') {
+      // 开拓（SKL-A-003）：攻击前随机消耗地形，每消耗 1 块本次攻击倍率 +70%
+      const consumed = consumeTerrainsForPioneer(gs, eff.consumeCount || 2);
+      multiplierBonus = (eff.perConsumeMultiplier || 0.7) * consumed;
+    } else if (eff?.type === 'damage_modifier_self') {
+      // 众愿（SKL-A-007）：本日内我方火元素伤害 +20%，其余元素及物理 -10%（DaySystem 跨天重置）
+      if (!gs.team) gs.team = {};
+      gs.team.allWishesActive = true;
+      devLog.info('[SkillSystem] 众愿：本日火伤 +20% / 其余 -10% 已生效');
+    }
+
+    const effSkill = multiplierBonus > 0
+      ? { ...skill, damageMultiplier: skill.damageMultiplier + multiplierBonus }
+      : skill;
+
+    const hits = skill.hits || 1;
+    for (let h = 0; h < hits; h++) {
+      const result = CombatSystem.calculateDamage({
+        atk: gs.player.atk,
+        skill: effSkill,
+        defender: target,
+        element: skill.element,
+        realDamage: !!skill.realDamage,
+        player: gs.player,
+        gs,
+        roleId: skill.roleId,
+        attackerRoleId: skill.roleId,
+      });
+      if (result.immune) break;
+      if (target.hp <= 0) break;
+    }
+
+    applySkillExtraEffects(gs, skill, target, hookName);
+
+    if (target.hp <= 0) {
+      defeatCreature(gs, target);
+    }
   }
 
-  applySkillExtraEffects(gs, skill, target);
-
-  // 设置 cooldown（如果 skill 有 cooldown 字段，按 tile + skill 独立）
+  // 设置 cooldown（按技能卡独立）
   if (cdKey && skill.cooldown && skill.cooldown > 0) {
     gs.skillCooldowns = gs.skillCooldowns || {};
     gs.skillCooldowns[cdKey] = skill.cooldown;
   }
-
-  if (target.hp <= 0) {
-    defeatCreature(gs, target);
+  // 爆炸狂欢（SKL-A-008）：【受祝福时】立即刷新冷却
+  if (cdKey && eff?.type === 'aoe_radius' && eff.onBlessedRefreshCooldown && hookName === 'onBlessed') {
+    delete gs.skillCooldowns[cdKey];
+    devLog.info('[SkillSystem] 爆炸狂欢【受祝福时】冷却已刷新');
   }
 
   if (!skill.isLinkSkill) {
@@ -141,7 +265,7 @@ function fireOneSkill(gs, skill, target, cdKey) {
   }
 }
 
-function applySkillExtraEffects(gs, skill, target) {
+function applySkillExtraEffects(gs, skill, target, hookName = 'onEnter') {
   const eff = skill.extraEffect;
   if (!eff) return;
 
@@ -155,6 +279,20 @@ function applySkillExtraEffects(gs, skill, target) {
       break;
     }
     case 'apply_buff': {
+      // 引燃（SKL-A-006）：【进入时】施加燃烧；【受祝福时】随机 1 名燃烧中的敌人燃烧剩余回合翻倍
+      if (eff.enterOnly && hookName !== 'onEnter') {
+        if (eff.onBlessedDoubleBurn && hookName === 'onBlessed') {
+          const burned = gs.creatures.filter(c => c.hp > 0 && (c.activeBuffs || []).some(b => b.id === 'burn'));
+          if (burned.length > 0) {
+            const pick = burned[Math.floor(Math.random() * burned.length)];
+            const burn = pick.activeBuffs.find(b => b.id === 'burn');
+            burn.remainingTurns = (burn.remainingTurns || 0) * 2;
+            EventBus.emit(GE.TOAST_SHOW, { text: `🟧 引燃【受祝福】：${pick.name || pick.kind} 的燃烧剩余回合翻倍（${burn.remainingTurns}）`, duration: 1800 });
+            devLog.info('[SkillSystem] 引燃【受祝福】燃烧翻倍 →', pick.kind, burn.remainingTurns);
+          }
+        }
+        break;
+      }
       CombatSystem.applyBuff({
         buffId: eff.buffId,
         target,
@@ -163,9 +301,40 @@ function applySkillExtraEffects(gs, skill, target) {
       });
       break;
     }
-    case 'pioneer_multiplier': {
+    case 'self_regen_and_buff': {
+      // 鼓舞（SKL-A-004）：【经过时】【受祝福时】回复 20% 攻击力生命；【进入时】【受祝福时】本日攻击力 +15（可叠加）
+      if (hookName === 'onPass' || hookName === 'onBlessed') {
+        const amount = Math.max(1, Math.round(gs.player.atk * (eff.regenPercentOfAtk || 0.2)));
+        HealSystem.healPlayer(gs, amount, { source: skill.id });
+        devLog.info('[SkillSystem] 鼓舞 回复', amount);
+      }
+      if (hookName === 'onEnter' || hookName === 'onBlessed') {
+        const add = eff.atkBuffPerDay || 15;
+        gs.player.atk += add;
+        if (!gs.team) gs.team = {};
+        gs.team.dailyInspireAtkApplied = (gs.team.dailyInspireAtkApplied || 0) + add; // 跨天回滚（DaySystem）
+        EventBus.emit(GE.ATK_CHANGE, { newValue: gs.player.atk, reason: skill.id });
+        devLog.info('[SkillSystem] 鼓舞 攻击力 +', add, '→', gs.player.atk);
+      }
       break;
     }
+    case 'self_crit_buff': {
+      // 屏息瞄准（SKL-A-010）：陆悠悠下一次攻击暴击率 +100%，不可叠加（CombatSystem 消费）
+      if (!gs.team) gs.team = {};
+      gs.team.luyouyouNextCritBonus = eff.critRateBonus || 1.0;
+      devLog.info('[SkillSystem] 屏息瞄准：下次攻击暴击率 +', eff.critRateBonus || 1.0);
+      break;
+    }
+    case 'pioneer_multiplier':
+      // 已在伤害前结算（consumeTerrainsForPioneer）
+      break;
+    case 'damage_modifier_self':
+      // 已在伤害前结算（gs.team.allWishesActive）
+      break;
+    case 'aoe_radius':
+    case 'line_row_column':
+      // 特殊结算路径已处理
+      break;
   }
 }
 
@@ -178,6 +347,8 @@ function defeatCreature(gs, target) {
     t.creatures = (t.creatures || []).filter(cid => cid !== target.id);
   }
   gs.creatures = gs.creatures.filter(c => c.id !== target.id);
+
+  CreatureSystem.grantKillDrops(gs, target); // 击杀掉落（物品库 BIO drops）
 
   HookDispatcher.fire('onCreatureDefeated', { gs, creature: target });
   TalentSystem.onCreatureDefeated(gs, target);

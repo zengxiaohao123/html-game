@@ -182,11 +182,7 @@ const FacilityWheat = {
     // 再 fire onDailyStart。小麦的【受祝福时】效果由 wheat.onBlessed hook 立即触发（×3），
     // 不跨日，所以这里只需处理每日基础产出即可。
     HookDispatcher.register('onDailyStart', ({ gs }) => {
-      // Phase 3 容量惩罚：友善超载 → 友善类收益归 0
-      if (gs.capacity?.friendlyOverloaded) {
-        devLog.info('[wheat] friendly overload → skip daily produce');
-        return;
-      }
+      // §13.2：友善超载惩罚「友善类收益归 0」明确排除小麦/水稻 —— 小麦产出不受惩罚影响
       const tiles = gs.map.outerTiles.filter(t => t.contentId === this.id);
       let total = 0;
       for (const t of tiles) {
@@ -230,11 +226,7 @@ const FacilityRice = {
   register() {
     // onDailyStart
     HookDispatcher.register('onDailyStart', ({ gs }) => {
-      // Phase 3 容量惩罚：友善超载 → 友善类收益归 0
-      if (gs.capacity?.friendlyOverloaded) {
-        devLog.info('[rice] friendly overload → skip daily produce');
-        return;
-      }
+      // §13.2：友善超载惩罚「友善类收益归 0」明确排除小麦/水稻 —— 水稻产出不受惩罚影响
       const tiles = gs.map.outerTiles.filter(t => t.contentId === this.id);
       let totalBase = 0;
       let totalBonusFromBless = 0;
@@ -398,6 +390,8 @@ const FacilityStrawberry = {
   register() {
     HookDispatcher.register('onPass', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
+      // §13.2：友善超载惩罚 → 友善类收益归 0（除小麦/水稻）
+      if (gs.capacity?.friendlyOverloaded) return;
       const key = flagKey(this.id, 'onPass');
       if (gs.map.outerTiles[tileIdx].dailyFlags[key]) return;
       gs.map.outerTiles[tileIdx].dailyFlags[key] = true;
@@ -415,6 +409,8 @@ const FacilityStrawberry = {
 
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
+      // §13.2：友善超载惩罚 → 友善类收益归 0（除小麦/水稻）
+      if (gs.capacity?.friendlyOverloaded) return;
       const tile = gs.map.outerTiles[tileIdx];
       const state = tile.contentState || (tile.contentState = {});
       const rnd = Math.floor(Math.random() * 4) + 2; // 2~5
@@ -445,6 +441,8 @@ const FacilityPea = {
   register() {
     // onUseSkill：每 2 回合限 1 次（用 gs.turn - last >= 2 判断）
     HookDispatcher.register('onUseSkill', ({ gs }) => {
+      // §13.2：友善超载惩罚 → 友善类收益归 0（除小麦/水稻）
+      if (gs.capacity?.friendlyOverloaded) return;
       const tiles = gs.map.outerTiles.filter(t => t.contentId === this.id);
       for (const t of tiles) {
         const state = t.contentState || (t.contentState = {});

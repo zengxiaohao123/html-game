@@ -31,20 +31,26 @@ export function sleep(gs, isAuto = false) {
   // 0. 重置本次睡觉的「允许超上限」待结算行动力（帐篷祝福 +3 等 hook 会累加进来）
   gs.pendingSleepStaminaBonus = 0;
 
-  // 0. Agent 3：天赋 活力满满 onSleep（换日前 fire）
-  TalentSystem.onSleepStart(gs);
+  // 0.1 B-14：心力交瘁快照必须在任何睡觉增益 hook 之前捕获
+  //     （§15：debuff 期间所有睡觉增益失效 —— 皇家枕头 onSleepStart / 艾草 onSleep 同样失效）
+  const wasExhausted = gs.activeBuffs.some(b => b.id === TurnSystem.BUFF_EXHAUSTED);
+
+  // 0. Agent 3：天赋 活力满满 onSleep（换日前 fire）—— 心力交瘁时失效
+  if (!wasExhausted) {
+    TalentSystem.onSleepStart(gs);
+  } else {
+    devLog.info('[SleepSystem] 心力交瘁 → 睡觉增益 hook 全部失效（onSleepStart 跳过）');
+  }
 
   // 0.5 §5.2：推进回合的行为只有三种——移动 / 祈福 / 睡觉。睡觉推进 1 回合。
-  //     advanceTurn 内部处理心力交瘁挂/移、生物 burn tick、技能冷却递减。
+  //     advanceTurn 内部处理心力交瘁挂、生物 burn tick、技能冷却递减。
   //     此刻已在睡觉流程内，忽略返回的 forcedSleep，避免递归。
   TurnSystem.advanceTurn(gs, 0);
 
-  // 1. 捕获心力交瘁快照（必须在 startNewDay 之前：DaySystem.startNewDay 会递减 exhausted.remainingTurns
-  //    并可能将其移除；若换日后再判断，本次睡觉的心力交瘁效果会被吞掉）
-  const wasExhausted = gs.activeBuffs.some(b => b.id === TurnSystem.BUFF_EXHAUSTED);
-
-  // 2. 触发 onSleep hook
-  HookDispatcher.fire('onSleep', { gs });
+  // 2. 触发 onSleep hook —— 心力交瘁时失效（B-14：艾草 / 皇家枕头等睡觉增益不生效）
+  if (!wasExhausted) {
+    HookDispatcher.fire('onSleep', { gs });
+  }
 
   // 3. 换日
   DaySystem.startNewDay(gs);

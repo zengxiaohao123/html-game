@@ -77,6 +77,8 @@ head('P0-1 连携技按 E 触发队列头部');
   assert(gs.linkSkillQueue.length === 1 && gs.linkSkillQueue[0].skillId === 'skill_link_xiayang_scorch',
     '只消费队列头部，其余依次前移', gs.linkSkillQueue.map(e => e.skillId));
   assert(gs.team.yumoNextElementOverride === 'fire', '头部技能（汲取）效果已结算');
+  // A-5：该字段会在余默下一次攻击时被消费，清理以免影响后续用例
+  delete gs.team.yumoNextElementOverride;
   const uiSrc = readFileSync(new URL('../src/ui/LinkSkillUI.js', import.meta.url), 'utf8');
   assert(uiSrc.includes("key === 'e' || key === 'E'"), 'LinkSkillUI 按键改为 E');
   assert(uiSrc.includes('fireCurrentQueueTop') && !uiSrc.includes('_triggerIdx'), 'UI 走队列头部触发（不再有 1/2/3 数字键按索引触发）');
@@ -277,6 +279,8 @@ head('P0-10 鸡舍：投喂从鸡舍内储存扣（不动背包）');
 head('P0-10 鸡舍：放牧路径（啃草次日免消耗即已投喂）');
 {
   const chick1 = gs.creatures[0];
+  // B-6 / §13.3：鸡舍「优先消耗储存的稻草/小麦」—— 放牧路径仅在鸡舍无储存饲料时生效
+  gs.map.outerTiles[1].contentState.henhouseFeed.item_wheat = 0;
   const storeBefore = gs.map.outerTiles[1].contentState.henhouseFeed.item_wheat;
   const growthBefore = chick1.growth;
   chick1.grazedForFeed = true;

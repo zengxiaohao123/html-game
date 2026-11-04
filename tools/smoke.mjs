@@ -39,7 +39,7 @@ check(gs.map.outerTiles.length === 8, `外圈 8 格（实际 ${gs.map.outerTiles
 check(gs.map.outerTiles[6].contentId === 'facility_home', 'idx=6 为家');
 check(gs.player.x === 6, `玩家初始站在家（x=${gs.player.x}）`);
 check(gs.player.stamina === 8, `初始行动力 8（实际 ${gs.player.stamina}）`);
-check(gs.player.hp === 100 && gs.player.gold === 50, '初始 HP 100 / 金币 50');
+check(gs.player.hp === 100 && gs.player.gold === 0, `初始 HP 100 / 金币 0（§5.3 金币初始为 0，实际 ${gs.player.gold}）`);
 check(gs.day === 1, `初始第 1 天（实际 ${gs.day}）`);
 check(Array.isArray(gs.inventory.items) && gs.inventory.items.length > 0, '初始背包有物品');
 
@@ -236,6 +236,312 @@ console.log('\n═══ 11. 生命归 0 后再行动：不卡死 ═══');
   check(g.player.x !== from, '惩罚后仍可移动（透支 -1，不卡死）');
   const bl = BlessSystem.blessStart(g);
   check(bl.ok === false && bl.reason === 'stamina', '行动力 0 祈福明确拒绝（非静默）');
+}
+
+// ═══ 第 13 批 波 1：阻断 + 系统严重修复验证 ═══
+const { LinkSkillSystem } = await import('../src/systems/LinkSkillSystem.js');
+const { TalentSystem } = await import('../src/systems/TalentSystem.js');
+const { DaySystem } = await import('../src/systems/DaySystem.js');
+const { UseItemSystem } = await import('../src/systems/UseItemSystem.js');
+const { PassiveItemSystem } = await import('../src/systems/PassiveItemSystem.js');
+const { GameDirector } = await import('../src/systems/GameDirector.js');
+const { STARTER_GOLD } = await import('../src/data/starterPack.js');
+const { SKILLS } = await import('../src/data/characters.js');
+const { HookDispatcher } = await import('../src/core/HookDispatcher.js');
+
+/** 确保围栏里有一只满血危险史莱姆（被击败则重新生成） */
+function ensureSlime(g) {
+  let s = g.creatures.find((c) => c.kind === 'slime_grass' && c.hp > 0);
+  if (!s) s = CreatureSystem.spawnCreature(g, 'slime_grass', {});
+  s.hp = s.maxHp;
+  s.activeBuffs = s.activeBuffs || [];
+  return s;
+}
+
+console.log('\n═══ 12. 技能冷却按技能卡 + 开拓消耗地形（§12.3 / SKL-A-003） ═══');
+{
+  const g = createInitialState();
+  g.map.fence = [{ row: 0, col: 0, creatures: [] }];
+  const s = CreatureSystem.spawnCreature(g, 'slime_grass', {});
+  for (const idx of [1, 3, 4]) {
+    g.map.outerTiles[idx].terrain = 'terrain_grass';
+    g.map.outerTiles[idx].terrainAmount = 10;
+  }
+  g.map.outerTiles[0].contentId = 'skill_yumo_pioneer';
+  g.skillCooldowns = {};
+  SkillSystem.triggerSkillByHook('onEnter', { gs: g, tileIdx: 0 });
+  const keys = Object.keys(g.skillCooldowns);
+  check(keys.length === 1 && !/_\d+$/.test(keys[0]), `冷却键按技能卡、不含地块索引（${keys[0]}）`);
+  const terrLeft = g.map.outerTiles.filter((t) => t.terrain && t.terrain !== 'terrain_none').length;
+  check(terrLeft === 1, `开拓攻击前恰好消耗 2 块地形（3 → ${terrLeft}）`);
+  // 技能卡移到另一格：冷却保留（B-3）
+  g.map.outerTiles[5].contentId = 'skill_yumo_pioneer';
+  g.map.outerTiles[0].contentId = null;
+  s.hp = s.maxHp;
+  SkillSystem.triggerSkillByHook('onEnter', { gs: g, tileIdx: 5 });
+  check(s.hp === s.maxHp, '技能卡移动后冷却保留、不重复触发（§12.3）');
+  DaySystem.startNewDay(g);
+  check((g.skillCooldowns[keys[0]] || 0) > 0, '技能卡冷却跨天不清零（以回合计）');
+}
+
+console.log('\n═══ 13. 鼓舞 / 众愿：本日生效 + 跨天回滚（SKL-A-004 / SKL-A-007） ═══');
+{
+  const g = createInitialState();
+  g.map.fence = [{ row: 0, col: 0, creatures: [] }];
+  ensureSlime(g);
+  const atk0 = g.player.atk;
+  g.map.outerTiles[0].contentId = 'skill_xiayang_inspire_lv1';
+  SkillSystem.triggerSkillByHook('onEnter', { gs: g, tileIdx: 0 });
+  check(g.player.atk === atk0 + 15 && g.team.dailyInspireAtkApplied === 15,
+    `鼓舞【进入时】本日攻击力 +15（${atk0} → ${g.player.atk}）`);
+  ensureSlime(g);
+  g.map.outerTiles[0].contentId = 'skill_xiayang_all_wishes';
+  SkillSystem.triggerSkillByHook('onEnter', { gs: g, tileIdx: 0 });
+  check(g.team.allWishesActive === true, '众愿：本日火伤 +20% / 其余 -10% 已置位');
+  DaySystem.startNewDay(g);
+  check(Math.abs(g.player.atk - atk0) < 0.001, `鼓舞攻击加成跨天回滚（${g.player.atk} = ${atk0}）`);
+  check(g.team.allWishesActive === false, '众愿跨天清除');
+}
+
+console.log('\n═══ 14. 引燃 / 爆炸狂欢 / 屏息瞄准（SKL-A-006 / 008 / 010） ═══');
+{
+  const g = createInitialState();
+  g.map.fence = [{ row: 0, col: 0, creatures: [] }];
+  const s = ensureSlime(g);
+  // 引燃：【进入时】施加燃烧
+  g.map.outerTiles[0].contentId = 'skill_xiayang_ignite';
+  SkillSystem.triggerSkillByHook('onEnter', { gs: g, tileIdx: 0 });
+  const burnDur = SKILLS.skill_xiayang_ignite.extraEffect.duration;
+  const burn = s.activeBuffs.find((b) => b.id === 'burn');
+  check(!!burn && burn.remainingTurns === burnDur, `引燃【进入时】施加 ${burnDur} 回合燃烧（实际 ${burn?.remainingTurns}）`);
+  // 引燃：【受祝福时】燃烧剩余回合翻倍（不再施加新燃烧）
+  SkillSystem.triggerSkillByHook('onBlessed', { gs: g, tileIdx: 0 });
+  const burn2 = s.activeBuffs.find((b) => b.id === 'burn');
+  check(burn2.remainingTurns === burnDur * 2, `引燃【受祝福时】燃烧剩余回合翻倍（${burnDur} → ${burn2.remainingTurns}）`);
+  // 爆炸狂欢：冷却置位 +【受祝福时】刷新冷却
+  ensureSlime(g);
+  g.map.outerTiles[0].contentId = 'skill_xiayang_blast_carnival';
+  g.skillCooldowns = {};
+  SkillSystem.triggerSkillByHook('onEnter', { gs: g, tileIdx: 0 });
+  const blastKey = 'skill_skill_xiayang_blast_carnival';
+  check(g.skillCooldowns[blastKey] === SKILLS.skill_xiayang_blast_carnival.cooldown,
+    `爆炸狂欢进入冷却 ${SKILLS.skill_xiayang_blast_carnival.cooldown} 回合（实际 ${g.skillCooldowns[blastKey]}）`);
+  ensureSlime(g);
+  SkillSystem.triggerSkillByHook('onBlessed', { gs: g, tileIdx: 0 });
+  check(!(blastKey in g.skillCooldowns), '爆炸狂欢【受祝福时】冷却立即刷新');
+  // 屏息瞄准：陆悠悠下次暴击率 +100%
+  ensureSlime(g);
+  g.map.outerTiles[0].contentId = 'skill_luyouyou_breathe_aim';
+  SkillSystem.triggerSkillByHook('onEnter', { gs: g, tileIdx: 0 });
+  check(g.team.luyouyouNextCritBonus === 1.0, '屏息瞄准：下次攻击暴击率 +100%（不可叠加标记已置）');
+}
+
+console.log('\n═══ 15. 合纵连横 行+列范围伤害（SKL-A-012） ═══');
+{
+  const g = createInitialState();
+  g.map.fence = [{ row: 0, col: 0, creatures: [] }];
+  const s = CreatureSystem.spawnCreature(g, 'slime_grass', {});
+  g.map.outerTiles[1].contentId = 'skill_zongheng'; // 上中 → 栅栏列 0
+  const hp0 = s.hp;
+  SkillSystem.triggerSkillByHook('onEnter', { gs: g, tileIdx: 1 });
+  check(s.hp < hp0, `合纵连横对所在行+列敌人结算（${hp0} → ${s.hp}）`);
+}
+
+console.log('\n═══ 16. 生物击杀掉落（物品库 BIO-001/002/003） ═══');
+{
+  const g = createInitialState();
+  g.inventory.items = [];
+  CreatureSystem.grantKillDrops(g, { kind: 'chick' });
+  check(InventorySystem.countItem(g, 'item_raw_meat') === 1, '小鸡 → 生肉 ×1');
+  CreatureSystem.grantKillDrops(g, { kind: 'chicken' });
+  check(InventorySystem.countItem(g, 'item_raw_meat') === 4, '鸡 → 生肉 ×3（累计 4）');
+  CreatureSystem.grantKillDrops(g, { kind: 'slime_fire' });
+  check(InventorySystem.countItem(g, 'item_slime_gel') === 1, '元素史莱姆 → 史莱姆凝胶 ×1');
+}
+
+console.log('\n═══ 17. 晴风祈福攻击加成跨天回滚（§12.8 / §12.2） ═══');
+{
+  const g = createInitialState();
+  g.team.groups[0].spirit = 'qingfeng';
+  g.player.stamina = 8;
+  g.player.gold = 10;
+  const atk0 = g.player.atk;
+  BlessSystem.bless(g);
+  check(g.player.atk > atk0 && g.team.qingfengAtkApplied > 0,
+    `晴风祈福攻击力 +8%（${atk0} → ${g.player.atk}，累计增量 ${g.team.qingfengAtkApplied}）`);
+  DaySystem.startNewDay(g);
+  check(Math.abs(g.player.atk - atk0) < 0.001, `晴风加成跨天一次性回滚（${g.player.atk} = ${atk0}）`);
+  check((g.team.dailyQingfengAtkBonus || 0) === 0, '晴风层数跨天清零');
+}
+
+console.log('\n═══ 18. 载具移动推进回合 + 移形距离累计（§6.3 / SKL-L-008） ═══');
+{
+  const g = createInitialState();
+  const director = new GameDirector();
+  director.gs = g;
+  director._registerOnce(); // 注册 GE.MOVE(byVehicle) 订阅
+  InventorySystem.addItem(g, 'skill_link_shift', 1); // 已习得移形
+  const turn0 = g.turn;
+  EventBus.emit(GE.MOVE, { byVehicle: true, distance: 3, fromIdx: 6, toIdx: 2 });
+  check(g.turn === turn0 + 1, `载具移动推进 1 回合（${turn0} → ${g.turn}）`);
+  check(g.team.dailyDistanceMoved === 3, `移形今日移动距离累计 = ${g.team.dailyDistanceMoved}`);
+  check((g.linkSkillQueue || []).some((e) => e.skillId === 'skill_link_shift'), '载具移动后移形入队');
+}
+
+console.log('\n═══ 19. 友善超容量：产蛋丢弃、小麦豁免、草莓归 0（§13.2） ═══');
+{
+  const g = createInitialState();
+  g.capacity = g.capacity || {};
+  // 真实超载：5 只友善生物 > 容量 4（1 块栅栏），拖欠 1 天 → 本次结算触发惩罚
+  g.capacity.friendlyOverdue = 1;
+  g.capacity.friendlyOverloaded = true; // 产蛋（第 3 步）发生在容量重算（第 4 步）之前，需预设
+  const henTile = g.map.outerTiles.find((t) => !t.contentId);
+  henTile.contentId = 'facility_henhouse';
+  henTile.contentState = { henhouseFeed: { item_wheat: 1 }, eggStored: 0 };
+  g.creatures.push({
+    id: 'test_chicken', kind: 'chicken', name: '鸡', category: 'friendly',
+    hp: 100, maxHp: 100, sourceTileIdx: henTile.idx, growth: 0, mood: 0,
+    lastFed: false, grazedForFeed: false, activeBuffs: [], row: 0, col: 0,
+  });
+  for (let i = 0; i < 4; i++) {
+    g.creatures.push({
+      id: `test_chick_${i}`, kind: 'chick', name: '小鸡', category: 'friendly',
+      hp: 10, maxHp: 10, sourceTileIdx: null, growth: 0, mood: 0,
+      lastFed: false, grazedForFeed: false, activeBuffs: [], row: 0, col: 0,
+    });
+  }
+  CreatureSystem.dailyTick(g);
+  check(g.capacity.friendlyOverloaded === true, '超载结算成立（拖欠 ≥ 2 天）');
+  check((henTile.contentState.eggStored || 0) === 0, '超容量 → 产蛋被惩罚丢弃（友善类收益归 0）');
+  check(henTile.contentState.henhouseFeed.item_wheat === 0, '投喂流程本身不受惩罚影响（储存照常消耗）');
+  // 小麦豁免
+  const wTile = g.map.outerTiles.find((t) => !t.contentId);
+  wTile.contentId = 'facility_wheat';
+  wTile.contentState = {};
+  wTile.dailyFlags = {};
+  const w0 = InventorySystem.countItem(g, 'item_wheat');
+  HookDispatcher.fire('onDailyStart', { gs: g });
+  check(InventorySystem.countItem(g, 'item_wheat') > w0, '小麦产出不受超容量影响（§13.2 明确排除）');
+  // 草莓【经过时】归 0
+  const sTile = g.map.outerTiles.find((t) => !t.contentId);
+  sTile.contentId = 'facility_strawberry';
+  sTile.contentState = {};
+  sTile.dailyFlags = {};
+  HookDispatcher.fire('onPass', { gs: g, tileIdx: sTile.idx });
+  check((sTile.contentState.strawberryStored || 0) === 0, '草莓【经过时】收益被超容量归 0');
+  g.capacity.friendlyOverloaded = false;
+  HookDispatcher.fire('onPass', { gs: g, tileIdx: sTile.idx });
+  check((sTile.contentState.strawberryStored || 0) === 1, '惩罚解除后草莓【经过时】恢复正常');
+}
+
+console.log('\n═══ 20. 比翼双飞：加算暴击百分点、排除陆悠悠本人（§12.9） ═══');
+{
+  const g = createInitialState();
+  g.team.twinBuffNextAtkCritRateBonus = 1.0;
+  g.team.twinBuffActiveDays = 99;
+  const r1 = TalentSystem.consumeTwinBuffIfAny(g, 'luyouyou');
+  check(!r1.consumed && g.team.twinBuffNextAtkCritRateBonus === 1.0, '陆悠悠本人不消费比翼 buff');
+  const r2 = TalentSystem.consumeTwinBuffIfAny(g, 'yumo');
+  check(r2.consumed && r2.add === 1.0 && g.team.twinBuffNextAtkCritRateBonus === 0,
+    '其余队友消费比翼：暴击率 +100 百分点（加算）');
+}
+
+console.log('\n═══ 21. 连携汲取元素消费 + 屏息瞄准暴击消费（SKL-L-005 / SKL-A-010） ═══');
+{
+  const g = createInitialState();
+  const origRandom = Math.random;
+  // 汲取：余默下次攻击转为汲取元素（一次性消费）
+  const t1 = { kind: 'slime', category: 'danger', hp: 100, maxHp: 100, activeBuffs: [] };
+  g.team.yumoNextElementOverride = 'water';
+  Math.random = () => 0.99;
+  const r1 = CombatSystem.calculateDamage({ atk: 10, defender: t1, element: 'physical', player: g.player, gs: g, roleId: 'yumo' });
+  Math.random = origRandom;
+  check(r1.finalElement === 'water' && !g.team.yumoNextElementOverride, '汲取：余默攻击转为水元素且标记被消费');
+  // 屏息瞄准：陆悠悠下次攻击必暴并消费
+  const t2 = { kind: 'slime', category: 'danger', hp: 100, maxHp: 100, activeBuffs: [] };
+  g.team.luyouyouNextCritBonus = 1.0;
+  Math.random = () => 0.99;
+  const r2 = CombatSystem.calculateDamage({ atk: 10, defender: t2, element: 'physical', player: g.player, gs: g, roleId: 'luyouyou' });
+  Math.random = origRandom;
+  check(r2.isCrit === true && g.team.luyouyouNextCritBonus === 0, '屏息瞄准：本次攻击必暴且标记被消费');
+}
+
+console.log('\n═══ 22. 连携 / 道具冷却：剩余回合语义、跨天不清零（§12.7 / §14） ═══');
+{
+  const g = createInitialState();
+  g.linkSkillCooldowns = { skill_link_yumo_drain: 3 };
+  check(LinkSkillSystem.enqueue(g, { skillId: 'skill_link_yumo_drain' }) === null, '连携技冷却中入队被阻挡');
+  TurnSystem.advanceTurn(g, 0);
+  check(g.linkSkillCooldowns.skill_link_yumo_drain === 2, '连携冷却随回合推进 -1');
+  DaySystem.startNewDay(g);
+  check(g.linkSkillCooldowns.skill_link_yumo_drain === 2, '连携冷却跨天不清零（§12.7）');
+  // 道具冷却
+  InventorySystem.addItem(g, 'item_herb', 2);
+  const ru = UseItemSystem.useItem(g, 'item_herb');
+  check(ru.ok && (g.itemCooldowns.item_herb || 0) > 0, '草药使用后进入冷却（剩余回合数）');
+  const leftCd = g.itemCooldowns.item_herb;
+  check(!UseItemSystem.canUse(g, 'item_herb').ok, '冷却中的草药被 canUse 拒绝');
+  DaySystem.startNewDay(g);
+  check(g.itemCooldowns.item_herb === leftCd, '道具冷却跨天不清零（§14）');
+  TurnSystem.advanceTurn(g, 0);
+  check(g.itemCooldowns.item_herb === leftCd - 1, '回合推进递减道具冷却');
+}
+
+console.log('\n═══ 23. 放置型道具放置后不消失（§14.2） ═══');
+{
+  const g = createInitialState();
+  g.inventory.items = [];
+  InventorySystem.addItem(g, 'item_trap', 1);
+  g.map.outerTiles[0].contentState = {};
+  const r = UseItemSystem.useItem(g, 'item_trap', { tileIdx: 0 });
+  check(r.ok, '陷阱放置成功');
+  check(InventorySystem.countItem(g, 'item_trap') === 1, '放置型道具放置后仍留在背包（不消失）');
+  check(g.map.outerTiles[0].contentState.placedItems?.[0]?.itemId === 'item_trap', '陷阱已登记到地块状态');
+}
+
+console.log('\n═══ 24. 易伤同名取最高值（§15） ═══');
+{
+  const target = { kind: 'slime', hp: 100, maxHp: 100, activeBuffs: [] };
+  CombatSystem.applyBuff({ buffId: 'vulnerable', target, duration: 3, params: { strength: 0.5 } });
+  CombatSystem.applyBuff({ buffId: 'vulnerable', target, duration: 2, params: { strength: 0.3 } });
+  const b = target.activeBuffs.find((x) => x.id === 'vulnerable');
+  check(b.params.strength === 0.5, `易伤刷新不被更低强度覆盖（strength = ${b.params.strength}）`);
+  check(b.remainingTurns === 3, '易伤持续回合取较长者');
+}
+
+console.log('\n═══ 25. 心力交瘁：持续 1 日 / 睡觉移除 / 睡觉增益失效（§15 / §5.1） ═══');
+{
+  const g = createInitialState();
+  PassiveItemSystem.initPassiveItems(() => g);
+  g.player.stamina = -1;
+  TurnSystem.advanceTurn(g, 0);
+  check(g.activeBuffs.some((b) => b.id === 'exhausted'), '行动力透支挂【心力交瘁】');
+  g.player.stamina = 2;
+  TurnSystem.advanceTurn(g, 0);
+  check(g.activeBuffs.some((b) => b.id === 'exhausted'), '行动力回合内恢复不提前移除心力交瘁（持续 1 日）');
+  g.player.x = 6;
+  g.player.hp = 50;
+  InventorySystem.addItem(g, 'collectible_royal_pillow', 1);
+  SleepSystem.sleep(g);
+  check(!g.activeBuffs.some((b) => b.id === 'exhausted'), '睡觉睡醒后移除心力交瘁');
+  check(g.player.hp === 50, `心力交瘁期间睡觉增益失效（皇家枕头不回血，hp = ${g.player.hp}）`);
+  check(g.player.stamina === Math.ceil(g.player.maxStamina / 2), `心力交瘁睡觉固定回一半行动力（${g.player.stamina}）`);
+  // 对照：无心衰时枕头正常生效
+  const g2 = createInitialState();
+  g2.player.x = 6;
+  g2.player.hp = 50;
+  InventorySystem.addItem(g2, 'collectible_royal_pillow', 1);
+  SleepSystem.sleep(g2);
+  check(g2.player.hp === 65, `正常睡觉皇家枕头回 15% 生命（hp = ${g2.player.hp}）`);
+}
+
+console.log('\n═══ 26. 开局：金币 0 / 初始包无未知物品（§5.3） ═══');
+{
+  check(STARTER_GOLD === 0, 'STARTER_GOLD = 0（§5.3 金币初始为 0）');
+  const fresh = createInitialState();
+  check(fresh.player.gold === 0, `新开局金币 0（实际 ${fresh.player.gold}）`);
+  check(!fresh.inventory.items.some((e) => e.itemId === 'skill_heart_force'),
+    '初始包不含未知物品 skill_heart_force');
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} smoke 结果：${pass} 通过 / ${fail} 失败（共 ${pass + fail}）`);

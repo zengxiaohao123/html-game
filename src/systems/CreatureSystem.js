@@ -16,6 +16,7 @@ import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { Random } from '../core/Random.js';
 import { getCreatureDef, SLIME_KINDS } from '../data/creatures.js';
+import { ITEMS } from '../data/items.js';
 import { normalizeTerrain } from '../data/terrains.js';
 import { InventorySystem } from './InventorySystem.js';
 import { CombatSystem } from './CombatSystem.js';
@@ -193,6 +194,25 @@ export function feedCreature(gs, creatureId, amount = 1) {
 }
 
 /**
+ * 击杀掉落发放（物品库 05 表 BIO drops 列）：
+ *   BIO-001 小鸡 → 生肉 ×1；BIO-002 鸡 → 生肉 ×3；BIO-003 史莱姆 → 史莱姆凝胶 ×1
+ * 所有击败路径（技能 / 连携技 / 燃烧）统一调用。
+ */
+export function grantKillDrops(gs, creature) {
+  const def = getCreatureDef(creature.kind);
+  const drops = def?.drops;
+  if (!Array.isArray(drops) || drops.length === 0) return;
+  for (const d of drops) {
+    InventorySystem.addItem(gs, d.itemId, d.qty);
+    EventBus.emit(GE.TOAST_SHOW, {
+      text: `🎁 掉落：${ITEMS[d.itemId]?.name || d.itemId} ×${d.qty}`,
+      duration: 1500,
+    });
+  }
+  devLog.info('[CreatureSystem] 击杀掉落', creature.kind, drops);
+}
+
+/**
  * DaySystem.startNewDay 末尾调用
  * 职责：
  *   1) 检查所有生物饥饿/成长/心情
@@ -223,25 +243,24 @@ export function dailyTick(gs) {
       if (fedCreatures.has(c.id)) continue;
       fedCreatures.add(c.id);
 
-      // 路径 A（§13.3 放牧）：昨日在栅栏内啃过草 → 今日无需消耗即【已投喂】
-      if (c.grazedForFeed) {
-        c.grazedForFeed = false;
-        c.lastFed = true;
-        c.growth += 10 + (c.mood || 0);
-        devLog.info('[CreatureSystem] grazed → fed without store:', c.id);
-        continue;
-      }
-
-      // 路径 B（§13.3）：消耗「该鸡舍内储存」的稻草或小麦 ×1
+      // 路径 A（§13.3 优先）：优先消耗「该鸡舍内储存」的稻草或小麦 ×1
       const hasStraw = (store.item_rice_straw || 0) > 0;
       const hasWheat = (store.item_wheat || 0) > 0;
       if (hasStraw || hasWheat) {
         if (hasStraw) store.item_rice_straw -= 1;
         else store.item_wheat -= 1;
+        c.grazedForFeed = false; // 储存路径已投喂，放牧标记同步失效（仅限前一天有效）
         c.growth += 10 + (c.mood || 0);
         c.lastFed = true;
+      } else if (c.grazedForFeed) {
+        // 路径 B（§13.3）：鸡舍内没有储存饲料，且鸡前一天在栅栏内啃过草 → 无需消耗即【已投喂】
+        c.grazedForFeed = false;
+        c.lastFed = true;
+        c.growth += 10 + (c.mood || 0);
+        devLog.info('[CreatureSystem] grazed → fed without store:', c.id);
       } else {
         // 两者都不满足 → 【饥饿】：心情 -1、成长值 +5（§13.3 / 物品库 03 表 A21，2026-11-03 裁决确认）
+        c.grazedForFeed = false;
         c.growth += 5;
         c.mood = Math.max(-5, (c.mood || 0) - 1);
         EventBus.emit(GE.TOAST_SHOW, { text: `🐣 ${c.kind || '小鸡'} 没吃的，心情-1`, duration: 1200 });
@@ -269,6 +288,11 @@ export function dailyTick(gs) {
     //   路径 A 放牧啃草 / 路径 B 消耗鸡舍内储存饲料 —— 任一达成 lastFed=true。
     //   已投喂 → 产 1 蛋（心情×10% 概率优质蛋）；饥饿 → 心情 -1、不产蛋。
     if (c.kind === 'chicken') {
+      // §13.2 友善超载惩罚：友善类收益归 0（除小麦/水稻）——产蛋直接丢弃（2026-11-04 裁决：满额丢弃同口径）
+      if (gs.capacity?.friendlyOverloaded) {
+        devLog.info('[CreatureSystem] friendlyOverloaded → 产蛋被惩罚丢弃:', c.id);
+        continue;
+      }
       if (c.lastFed) {
         // OUT-11：鸡蛋储存于来源鸡舍（上限 10），玩家进入鸡舍时取走（InfoPanel 收获滑条）。
         // 2026-11-04 裁决：鸡蛋与优质蛋共享同一储存额度（合计上限 10）；额度满时产出直接丢弃
@@ -389,10 +413,10 @@ function updateCapacityAndPunish(gs) {
   const dangerCount = countByCategory(gs, 'danger');
   const extremeCount = countByCategory(gs, 'extreme');
 
-  // 友善
+  // 友善（§13.2：发生当天为第 1 天，警告期 2 天，警告期结束仍超载即惩罚 → 第 2 次结算触发）
   if (friendlyCount > cap.friendly) {
     cap.friendlyOverdue += 1;
-    if (cap.friendlyOverdue > 2) {
+    if (cap.friendlyOverdue >= 2) {
       devLog.warn('[CreatureSystem] friendly OVERLOAD punishment triggered');
       // 友善类收益归 0 —— 我们不直接改 facility 产出，而是挂 gs.capacity.friendlyOverloaded=true
       // 让 wheat/rice/strawberry/pea/henhouse 在 onDailyStart 里检查这个 flag（Phase 3 DaySystem 要改）
@@ -403,10 +427,10 @@ function updateCapacityAndPunish(gs) {
     cap.friendlyOverloaded = false;
   }
 
-  // 危险
+  // 危险（§13.2：警告期 2 天，第 2 次结算仍超载即惩罚）
   if (dangerCount > cap.danger) {
     cap.dangerOverdue += 1;
-    if (cap.dangerOverdue > 2) {
+    if (cap.dangerOverdue >= 2) {
       devLog.warn('[CreatureSystem] danger OVERLOAD punishment triggered');
       cap.dangerOverloaded = true;
       // §13.2（2026-11-04 裁决）：对每只超容量生物按「100% 基础攻击力」扣真实伤害
@@ -425,7 +449,7 @@ function updateCapacityAndPunish(gs) {
   // 极度危险（预留，Phase 3 没生成）
   if (extremeCount > cap.extreme) {
     cap.extremeOverdue += 1;
-    if (cap.extremeOverdue > 2) {
+    if (cap.extremeOverdue >= 2) {
       cap.extremeOverloaded = true;
       // §13.2（2026-11-04 裁决）：真伤部分同样按「100% 基础攻击力」口径
       const loss = overloadBaseAtkDamage(gs, 'extreme', extremeCount - cap.extreme);
@@ -501,6 +525,7 @@ export const CreatureSystem = {
   tickAllCreatures: tickAllCreaturesOnce,
   dailyTick,
   feedCreature,
+  grantKillDrops,
   depositHenhouseFeed,
   withdrawHenhouseFeed,
   startRealtimeLoop,

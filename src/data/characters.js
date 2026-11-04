@@ -122,10 +122,10 @@ export const SKILLS = {
     targetCategory: 'danger_extreme',
     extraEffect: {
       type: 'pioneer_multiplier',
-      perConsumeMultiplier: 0.7,   // 每消耗 1 块地形 +70%（Phase 3 简化：不真的消耗地形，直接按 1 块算 +70%）
-      consumeCount: 1,
+      perConsumeMultiplier: 0.7,   // 每消耗 1 块有地形的地块，本次攻击倍率 +70%（物品库 SKL-A-003）
+      consumeCount: 2,             // 攻击前随机消耗 2 块有地形的地块（变为无地形）
     },
-    description: '【进入时】【受祝福时】对敌人造成 60% 攻击力物理伤害（小范围）；若地块有资源内容则消耗额外地形提升倍率',
+    description: '【进入时】【受祝福时】对敌人造成 60% 攻击力物理伤害（小范围）。攻击前随机消耗 2 块有地形的地块（变为无地形），每消耗 1 块使本次攻击倍率 +70%',
   },
 
   // ──────────────────────── 夏阳 xiayang ────────────────────────
@@ -167,8 +167,10 @@ export const SKILLS = {
       type: 'apply_buff',
       buffId: 'burn',
       duration: 5,
+      enterOnly: true,             // 【进入时】施加燃烧（物品库 SKL-A-006）
+      onBlessedDoubleBurn: true,   // 【受祝福时】随机 1 名正处于燃烧状态的敌人，其燃烧剩余回合翻倍
     },
-    description: '【进入时】对敌人施加持续 5 回合【燃烧】',
+    description: '【进入时】对敌人施加持续 5 回合【燃烧】。【受祝福时】随机 1 名正处于【燃烧】状态的敌人，其【燃烧】剩余回合翻倍',
   },
 
   // ──────────────────────── 陆悠悠 luyouyou ────────────────────────

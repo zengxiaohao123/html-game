@@ -53,6 +53,22 @@ export class GameDirector {
       }
     });
 
+    // B-2：载具移动同样推进回合（§6.3 一切移动消耗回合），并补【移动后】hook、
+    //      移形距离累计（A-6）与强制睡觉检查 —— 与 GameDirector.move 的徒步路径对齐
+    EventBus.on(GE.MOVE, (payload) => {
+      if (!payload || !payload.byVehicle) return;
+      const gs = this.gs;
+      if (!gs) return;
+      const distance = payload.distance || 1;
+      LinkSkillSystem.onVehicleMoved(gs, { distance });
+      HookDispatcher.fire('onMoveEnd', { gs, distance, fromIdx: payload.fromIdx, toIdx: payload.toIdx });
+      TalentSystem.onMoveEnd(gs);
+      const turnResult = TurnSystem.advanceTurn(gs, 1);
+      if (turnResult.forcedSleep) {
+        SleepSystem.sleep(gs, /* isAuto = */ true);
+      }
+    });
+
     // 编队修改 → 重新 fire passive（烹饪/蹁跹等常驻天赋按 roleId guard）
     EventBus.on(GE.TEAM_CHANGE, () => {
       TalentSystem.firePassive(this.gs);
@@ -141,6 +157,7 @@ export class GameDirector {
     }, 1000);
 
     // 6. 初始背包物品（让玩家有东西可选来建造）
+    // A-13：skill_heart_force 为未知物品（物品库/设计文档均无此条目）—— 移除
     const INITIAL_ITEMS = [
       { id: 'facility_tent',       qty: 2 },
       { id: 'facility_rice',       qty: 2 },
@@ -149,7 +166,6 @@ export class GameDirector {
       { id: 'resource_shop',       qty: 1 },
       { id: 'resource_bus',        qty: 1 },
       { id: 'skill_yumo_slash',    qty: 1 },
-      { id: 'skill_heart_force',   qty: 1 },
     ];
     for (const it of INITIAL_ITEMS) {
       InventorySystem.addItem(this.gs, it.id, it.qty);

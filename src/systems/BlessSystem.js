@@ -201,6 +201,8 @@ export function blessCommit(gs, targetIdx) {
     // 保留 1 位小数，不立即取整；UI 显示时 floor
     gs.player.atk = Math.round(gs.player.atk * 1.08 * 10) / 10;
     const atkDelta = gs.player.atk - prevAtk;
+    // §12.8 晴风加成仅限本日内 —— 记录本日累计增量，DaySystem 跨天一次性回滚（B-1）
+    gs.team.qingfengAtkApplied = Math.round(((gs.team.qingfengAtkApplied || 0) + atkDelta) * 10) / 10;
     EventBus.emit(GE.ATK_CHANGE, { newValue: gs.player.atk, reason: 'bless_qingfeng' });
     if (!gs.team.dailyQingfengAtkBonus) gs.team.dailyQingfengAtkBonus = 0;
     gs.team.dailyQingfengAtkBonus += 1;

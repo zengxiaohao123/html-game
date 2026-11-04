@@ -24,6 +24,17 @@ function assert(cond, msg) {
   else { fail++; console.log('  ✗', msg); }
 }
 
+// 去随机化：stub Math.random=0.99 使 Random.pick 恒定选中候选列表最后一格（outerTiles 按 idx 升序 → idx=7）
+function blessDeterministic(gs) {
+  const origRandom = Math.random;
+  Math.random = () => 0.99;
+  try {
+    return BlessSystem.bless(gs);
+  } finally {
+    Math.random = origRandom;
+  }
+}
+
 console.log('\n════════════════ Phase 2A 冒烟测试 ════════════════\n');
 
 // 1. 新文件 import 成功（无 ReferenceError）
@@ -177,8 +188,9 @@ gs.player.gold = 10;
 gs.player.stamina = 8;
 // 清理一个 blessed tile（bus 占着），随便找一个有 content 的
 gs.map.outerTiles[7].contentId = 'facility_strawberry';
-const r = BlessSystem.bless(gs);
+const r = blessDeterministic(gs);
 assert(r.ok === true, `bless 成功: targetIdx=${r.targetIdx}`);
+assert(r.targetIdx === 7, `去随机化：固定选中最后一格 idx=7，实际 = ${r.targetIdx}`);
 // 第 11 批更新：初始队伍精灵 momo → 当日首次祈福消耗减半（§12.2）：体力 1 / 金币 0
 assert(r.staminaCost === 1 && gs.player.stamina === 8 - 1, `momo 首次减半 stamina -1 = ${gs.player.stamina}`);
 assert(r.goldCost === 0 && gs.player.gold === 10 - 0, `momo 首次减半 gold -0 = ${gs.player.gold}`);
@@ -245,9 +257,9 @@ assert(reject === false, '满 12 格后拒绝新种类');
 console.log('\n— DaySystem blessed 倒计时 —');
 gs.map.outerTiles[0].contentId = 'facility_wheat';
 gs.player.x = 6;
-BlessSystem.bless(gs);  // 会挑一个 tile
+blessDeterministic(gs);  // 固定挑一个 tile（idx=7）
 const blessedIdx = gs.map.outerTiles.findIndex(t => t.states.some(s => s.type === 'blessed'));
-assert(blessedIdx !== -1, 'blessed 已挂上');
+assert(blessedIdx === 7, `去随机化：blessed 固定在 idx=7，实际 = ${blessedIdx}`);
 gs.day = 1;
 // 手动跑 startNewDay（会 -1 天）
 DaySystem.startNewDay(gs);

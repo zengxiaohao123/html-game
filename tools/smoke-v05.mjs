@@ -297,7 +297,7 @@ assert(!IT.isValidTarget(gs, 'item_trap', 99), '越界地块不合法');
 
 head('开局测试包');
 const fresh = createInitialState();
-assert(fresh.player.gold === 50, '初始金币 50', fresh.player.gold);
+assert(fresh.player.gold === 0, '初始金币 0（§5.3 金币初始为 0）', fresh.player.gold);
 assert(fresh.inventory.items.length >= 20, '开局背包有充足测试物品', fresh.inventory.items.length);
 
 head('唯一物品跨池去重');

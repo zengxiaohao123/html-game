@@ -79,6 +79,47 @@ export function migrateGS(loadedGs) {
     devLog.info('[migrateGS] 存档 schema 已是最新，无需迁移');
   }
 
+  // ── 语义迁移（字段含义变化，不能只靠补默认值） ──
+
+  // B-3：技能冷却键从 `skill_<id>_<tileIdx>` 改为 `skill_<id>`（§12.3 技能卡移动后冷却保留）
+  if (isPlainObject(loadedGs.skillCooldowns)) {
+    const next = {};
+    for (const [k, v] of Object.entries(loadedGs.skillCooldowns)) {
+      const m = k.match(/^(skill_.+)_\d+$/);
+      const nk = m ? m[1] : k;
+      next[nk] = Math.max(next[nk] || 0, v || 0);
+    }
+    loadedGs.skillCooldowns = next;
+  }
+
+  // B-11：连携技冷却从「绝对回合号（gs.turn + n）」改为「剩余回合数」
+  if (isPlainObject(loadedGs.linkSkillCooldowns)) {
+    const t = loadedGs.turn || 0;
+    for (const k of Object.keys(loadedGs.linkSkillCooldowns)) {
+      loadedGs.linkSkillCooldowns[k] = Math.max(0, (loadedGs.linkSkillCooldowns[k] || 0) - t);
+    }
+  }
+
+  // B-10：道具冷却同样改为「剩余回合数」（旧存档存的是绝对回合号 gs.turn + cd）
+  if (isPlainObject(loadedGs.itemCooldowns)) {
+    const t = loadedGs.turn || 0;
+    for (const k of Object.keys(loadedGs.itemCooldowns)) {
+      loadedGs.itemCooldowns[k] = Math.max(0, (loadedGs.itemCooldowns[k] || 0) - t);
+    }
+  }
+
+  // B-1：晴风攻击加成仅限本日内 —— 旧存档已把加成永久乘进 atk，
+  //      按当日层数逆向回滚（每层 ÷1.08，与 BlessSystem 的 ×1.08 保留 1 位小数对应）
+  if (isPlainObject(loadedGs.team) && isPlainObject(loadedGs.player)) {
+    const bonus = loadedGs.team.dailyQingfengAtkBonus || 0;
+    if (bonus > 0 && typeof loadedGs.player.atk === 'number') {
+      let atk = loadedGs.player.atk;
+      for (let i = 0; i < bonus; i++) atk = Math.round((atk / 1.08) * 10) / 10;
+      devLog.info('[migrateGS] 晴风 atk 回滚', bonus, '层:', loadedGs.player.atk, '→', atk);
+      loadedGs.player.atk = atk;
+    }
+  }
+
   return loadedGs;
 }
 

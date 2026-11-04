@@ -413,18 +413,20 @@ export function onCraftCheck(gs, materials = []) {
 }
 
 /**
- * 计算我方角色本次攻击的暴击率加成（比翼 下次攻击 +100%）
- * CombatSystem 暴击判定前调用
- * 返回一个 { mul: number, consumed: boolean } —— consumed=true 后下次清掉
+ * 计算我方角色本次攻击的暴击率加成（比翼：下一次攻击暴击率 +100 百分点）
+ * CombatSystem 暴击判定前调用。
+ * §12.9 比翼双飞：加成对象为「其余我方角色」—— 陆悠悠本人的攻击不消费该加成。
+ * 返回 { add: number, consumed: boolean } —— add 为加算百分点（1.0 = +100 百分点），不叠乘。
  */
-export function consumeTwinBuffIfAny(gs) {
-  if (!gs.team) return { mul: 1, consumed: false };
+export function consumeTwinBuffIfAny(gs, attackerRoleId = null) {
+  if (!gs.team) return { add: 0, consumed: false };
+  if (attackerRoleId === 'luyouyou') return { add: 0, consumed: false };
   if (gs.team.twinBuffNextAtkCritRateBonus && gs.team.twinBuffNextAtkCritRateBonus > 0) {
     const bonus = gs.team.twinBuffNextAtkCritRateBonus;
     gs.team.twinBuffNextAtkCritRateBonus = 0; // 用完即清
-    return { mul: 1 + bonus, consumed: true };
+    return { add: bonus, consumed: true };
   }
-  return { mul: 1, consumed: false };
+  return { add: 0, consumed: false };
 }
 
 /**

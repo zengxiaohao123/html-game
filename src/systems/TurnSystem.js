@@ -7,6 +7,8 @@ import { devLog } from '../core/Logger.js';
 import { MIN_STAMINA } from '../utils/constants.js';
 import { CombatSystem } from './CombatSystem.js';
 import { SkillSystem } from './SkillSystem.js';
+import { LinkSkillSystem } from './LinkSkillSystem.js';
+import { CreatureSystem } from './CreatureSystem.js';
 
 /** 心力交瘁 debuff id */
 export const BUFF_EXHAUSTED = 'exhausted';
@@ -34,20 +36,18 @@ export function advanceTurn(gs, cost = 1) {
   // }
 
   // 心力交瘁检查：stamina < 0 时挂 buff
-  let hasExhausted = gs.activeBuffs.some(b => b.id === BUFF_EXHAUSTED);
+  // B-13：§15 心力交瘁「持续 1 日」—— 由 DaySystem 跨天衰减移除；
+  //       不能因 stamina 回到 >= 0 就提前移除（旧逻辑错误地在回合内移除）
+  const hasExhausted = gs.activeBuffs.some(b => b.id === BUFF_EXHAUSTED);
   if (gs.player.stamina < 0 && !hasExhausted) {
     gs.activeBuffs.push({
       id: BUFF_EXHAUSTED,
       target: 'player',
-      remainingTurns: 1, // 持续 1 天（DaySystem 衰减，SleepSystem 也会移除）
+      remainingTurns: 1, // 持续 1 天（DaySystem 衰减；SleepSystem 睡觉后也会移除）
       params: {},
     });
     EventBus.emit(GE.TOAST_SHOW, { text: '你感到心力交瘁…', duration: 2000 });
     devLog.info('[TurnSystem] 玩家获得心力交瘁 buff');
-  } else if (gs.player.stamina >= 0 && hasExhausted) {
-    // stamina 回到 0 以上时移除 buff
-    gs.activeBuffs = gs.activeBuffs.filter(b => b.id !== BUFF_EXHAUSTED);
-    devLog.info('[TurnSystem] 心力交瘁 buff 已移除');
   }
 
   // Phase 3：回合推进时 tick 所有生物身上的 buff（burn 每回合流失 3% hp 等）
@@ -62,11 +62,23 @@ export function advanceTurn(gs, cost = 1) {
       }
       gs.creatures = gs.creatures.filter(cc => cc.id !== c.id);
       EventBus.emit(GE.CREATURE_DEFEATED, { creature: c, killedBy: 'burn' });
+      CreatureSystem.grantKillDrops(gs, c); // 击杀掉落（燃烧致死同样发放）
     }
   }
 
   // Phase 3：技能 cooldown 递减
   SkillSystem.advanceSkillCooldowns(gs);
+
+  // B-10：道具冷却按剩余回合递减（§14 冷却以回合计，跨天不清零）
+  if (gs.itemCooldowns) {
+    for (const k of Object.keys(gs.itemCooldowns)) {
+      gs.itemCooldowns[k] -= 1;
+      if (gs.itemCooldowns[k] <= 0) delete gs.itemCooldowns[k];
+    }
+  }
+
+  // B-11：连携技冷却按剩余回合递减（§12.7 冷却均以回合计，跨天不清零）
+  LinkSkillSystem.advanceCooldowns(gs);
 
   // 检查是否强制睡觉（stamina <= MIN_STAMINA = -3）
   if (gs.player.stamina <= MIN_STAMINA) {

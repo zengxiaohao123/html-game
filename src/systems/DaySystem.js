@@ -114,6 +114,24 @@ export function startNewDay(gs) {
   if (gs.team) {
     gs.team.dailyBlessCount = 0;
     gs.team.dailyQingfengAtkBonus = 0;
+    // B-1：§12.8 晴风攻击加成仅限本日内 → 跨天一次性回滚累计增量（不再永久残留）
+    if (gs.team.qingfengAtkApplied && gs.player) {
+      gs.player.atk = Math.round((gs.player.atk - gs.team.qingfengAtkApplied) * 10) / 10;
+      EventBus.emit(GE.ATK_CHANGE, { newValue: gs.player.atk, reason: 'qingfeng_daily_reset' });
+      devLog.info('[DaySystem] 晴风攻击加成跨天回滚 -', gs.team.qingfengAtkApplied, '→ atk', gs.player.atk);
+      gs.team.qingfengAtkApplied = 0;
+    }
+    // A-3 鼓舞（SKL-A-004）：「本日攻击力 +15（可叠加）」仅限本日内 → 跨天回滚
+    if (gs.team.dailyInspireAtkApplied && gs.player) {
+      gs.player.atk -= gs.team.dailyInspireAtkApplied;
+      EventBus.emit(GE.ATK_CHANGE, { newValue: gs.player.atk, reason: 'skill_inspire_daily_reset' });
+      devLog.info('[DaySystem] 鼓舞攻击加成跨天回滚 -', gs.team.dailyInspireAtkApplied, '→ atk', gs.player.atk);
+      gs.team.dailyInspireAtkApplied = 0;
+    }
+    // 众愿（SKL-A-007）：「本日内」火伤 +20% / 其余 -10% 跨天清除
+    gs.team.allWishesActive = false;
+    // 移形（SKL-L-008）：今日累计移动距离跨天清零
+    gs.team.dailyDistanceMoved = 0;
     // Agent 3：焚灭计数每日清空（连携技 焚灭：【每一日开始时】清空计数）
     gs.team.xiayangSkillCount = 0;
     // §12.1：编队每日修改次数清零（每日至多改 3 次）

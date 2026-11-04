@@ -52,18 +52,28 @@ export function calculateDamage(opts) {
     devLog.info('[CombatSystem] 玩家主动攻击生物 → 解除生物停战');
   }
 
+  // ── 0.5 连携技汲取（SKL-L-005）：余默下一次攻击元素改写 ──
+  // yumoNextElementOverride 由 LinkSkillSystem.onElementDamage 写入，这里消费（一次性）
+  let effectiveElement = element;
+  if (gs && !realDamage && attackerRoleId === 'yumo' && gs.team?.yumoNextElementOverride) {
+    effectiveElement = gs.team.yumoNextElementOverride;
+    delete gs.team.yumoNextElementOverride;
+    EventBus.emit(GE.TOAST_SHOW, { text: `💧 汲取：余默本次攻击转为 ${effectiveElement} 元素`, duration: 1500 });
+    devLog.info('[CombatSystem] 汲取：余默攻击元素 →', effectiveElement);
+  }
+
   // ── 1. 元素免疫 ──
-  if (!realDamage && elementImmuneCheck(defender, element)) {
-    EventBus.emit(GE.ELEMENT_IMMUNE_HIT, { element, target: defender });
-    EventBus.emit(GE.TOAST_SHOW, { text: `🛡️ ${defender.name || defender.kind || '单位'} 免疫 ${element} 伤害`, duration: 1500 });
-    devLog.info('[CombatSystem] element immune! target=', defender.kind || defender.name, 'element=', element);
-    return { rawDamage: 0, finalDamage: 0, dodged: false, immune: true, isCrit: false, finalElement: element };
+  if (!realDamage && elementImmuneCheck(defender, effectiveElement)) {
+    EventBus.emit(GE.ELEMENT_IMMUNE_HIT, { element: effectiveElement, target: defender });
+    EventBus.emit(GE.TOAST_SHOW, { text: `🛡️ ${defender.name || defender.kind || '单位'} 免疫 ${effectiveElement} 伤害`, duration: 1500 });
+    devLog.info('[CombatSystem] element immune! target=', defender.kind || defender.name, 'element=', effectiveElement);
+    return { rawDamage: 0, finalDamage: 0, dodged: false, immune: true, isCrit: false, finalElement: effectiveElement };
   }
 
   // ── 2. 基础伤害 ──
   const effAtk = atk ?? (player ? player.atk : 0);
   const dmgMul = skill ? skill.damageMultiplier : 1;
-  let dmgElement = element || (skill ? skill.element : 'physical');
+  let dmgElement = effectiveElement || (skill ? skill.element : 'physical');
 
   let rawDamage = effAtk * dmgMul;
 
@@ -72,6 +82,12 @@ export function calculateDamage(opts) {
   // 不永久修改 gs.player.atk。
   if (gs && player && Array.isArray(gs.activeBuffs) && gs.activeBuffs.some(b => b.id === 'grumpy')) {
     rawDamage *= 1.25;
+  }
+
+  // ── 2.2 众愿（SKL-A-007）：本日内我方火元素伤害 +20%，其余元素及物理 -10% ──
+  // gs.team.allWishesActive 由 SkillSystem 在技能结算前置位，DaySystem 跨天清除
+  if (gs && !realDamage && gs.team?.allWishesActive) {
+    rawDamage *= (dmgElement === 'fire') ? 1.2 : 0.9;
   }
 
   // ── 2.5 天赋 onDamageDeal 接入 ──
@@ -134,12 +150,19 @@ export function calculateDamage(opts) {
   if (!realDamage) {
     let critRate = BASE_CRIT_RATE + talentCritRateBonus;
 
-    // 比翼：队友下次攻击 +100% 暴击率
-    if (gs) {
-      const twin = TalentSystem.consumeTwinBuffIfAny(gs);
+    // 屏息瞄准（SKL-A-010）：陆悠悠下一次攻击暴击率 +100%（一次性消费）
+    if (gs && attackerRoleId === 'luyouyou' && gs.team?.luyouyouNextCritBonus) {
+      critRate += gs.team.luyouyouNextCritBonus;
+      gs.team.luyouyouNextCritBonus = 0;
+      devLog.info('[CombatSystem] 屏息瞄准消耗 → 本次暴击率 =', (critRate * 100).toFixed(1) + '%');
+    }
+
+    // 比翼（§12.9）：陆悠悠暴击后，其余我方角色下一次攻击暴击率 +100 百分点（加算；陆悠悠本人不享受）
+    if (gs && attackerRoleId !== 'luyouyou') {
+      const twin = TalentSystem.consumeTwinBuffIfAny(gs, attackerRoleId);
       if (twin.consumed) {
-        critRate *= twin.mul;
-        devLog.info('[CombatSystem] 比翼 buff 消耗，本次暴击率 =', critRate * 100 + '%');
+        critRate += twin.add;
+        devLog.info('[CombatSystem] 比翼 buff 消耗，本次暴击率 =', (critRate * 100).toFixed(1) + '%');
       }
     }
 
@@ -360,7 +383,12 @@ export function applyBuff({ buffId, target, duration, params = {}, creatureId, p
   const existing = targetBuffs.find(b => b.id === buffId);
   if (existing) {
     existing.remainingTurns = Math.max(existing.remainingTurns || 0, actualDur);
+    const oldStrength = existing.params?.strength;
     existing.params = { ...(existing.params || {}), ...params };
+    // §15：同名效果取最高值 —— 易伤/虚弱等强度类 buff 不被更低的强度覆盖
+    if (typeof oldStrength === 'number' && typeof params?.strength === 'number') {
+      existing.params.strength = Math.max(oldStrength, params.strength);
+    }
     EventBus.emit(GE.BUFF_APPLIED, { buffId, target, refreshed: true });
     devLog.info('[CombatSystem.applyBuff] buff refreshed', buffId);
     return existing;
