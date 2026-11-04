@@ -100,6 +100,15 @@ export class InputManager {
         return;
       }
 
+      // ── 弹窗打开时 ESC 归弹窗 ──
+      // DialogBox 自己监听 ESC 关闭；若其监听先于本处执行，弹窗已关、visible 已为 false，
+      // 因此同时认 DialogBox 在事件上打的消费标记，保证与监听注册顺序无关。
+      // 否则会出现「ESC 关弹窗的同时又打开设置」的状态错乱。
+      if (KEY_TO_ACTION[key] === 'settings'
+        && (this.director?.dialogBox?.visible || e._dialogConsumedEsc)) {
+        return;
+      }
+
       if (KEY_TO_ACTION[key]) {
         e.preventDefault();
         this._dispatchAction(KEY_TO_ACTION[key]);
@@ -170,7 +179,7 @@ export class InputManager {
         break;
 
       case 'settings': {
-        // §16.9：ESC 走 GameDirector 的层级栈逻辑
+        // §16.9：ESC 走 GameDirector 的层级栈逻辑（弹窗门禁在 _handler 里统一处理）
         this.director?.handleESC?.();
         break;
       }

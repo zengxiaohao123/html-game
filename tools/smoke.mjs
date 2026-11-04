@@ -99,5 +99,144 @@ check(!gs.creatures.some((c) => c.id === slime.id), '史莱姆被击败移出场
 check(!!defeatedEvent && defeatedEvent.creature === slime, 'CREATURE_DEFEATED 事件已发出');
 EventBus.off(GE.CREATURE_DEFEATED, onDefeated);
 
+// ═══ 第 12 批：边界与异常路径自查 ═══
+const { CombatSystem } = await import('../src/systems/CombatSystem.js');
+const { TurnSystem } = await import('../src/systems/TurnSystem.js');
+const { ShopSystem } = await import('../src/systems/ShopSystem.js');
+const { BlessSystem } = await import('../src/systems/BlessSystem.js');
+const InventorySystem = await import('../src/systems/InventorySystem.js');
+const { migrateGS } = await import('../src/state/migrate.js');
+
+console.log('\n═══ 6. 读档恢复：鸡舍储存 / 商店 visited / 地块 contentState / flags ═══');
+{
+  const g = createInitialState();
+  const coopTile = g.map.outerTiles.find((t) => !t.contentId);
+  coopTile.contentId = 'facility_henhouse';
+  coopTile.contentState = { henhouseFeed: 3, eggStored: 2 };
+  const shopTile = g.map.outerTiles.find((t) => !t.contentId);
+  shopTile.contentId = 'resource_shop';
+  shopTile.contentState = { shop: { visited: true, leftAtTurn: 5, refreshUsed: 1, weekKey: 'y1m1w1', stock: [] } };
+  const tulipTile = g.map.outerTiles.find((t) => !t.contentId);
+  tulipTile.contentId = 'facility_tulip';
+  tulipTile.contentState = { tulipValue: 2 };
+  g.flags = { creatureTruce: true };
+  g.day = 9; g.player.gold = 123;
+
+  check(save(4, g) === true, 'save(4) 成功');
+  const m = migrateGS(load(4));
+  const coop2 = m.map.outerTiles.find((t) => t.contentId === 'facility_henhouse');
+  check(coop2?.contentState?.henhouseFeed === 3 && coop2?.contentState?.eggStored === 2,
+    '读档恢复鸡舍储存（饲料 3 / 存蛋 2）', coop2?.contentState);
+  const shop2 = m.map.outerTiles.find((t) => t.contentId === 'resource_shop');
+  check(shop2?.contentState?.shop?.visited === true && shop2?.contentState?.shop?.leftAtTurn === 5,
+    '读档恢复商店 visited / leftAtTurn', shop2?.contentState?.shop);
+  const tulip2 = m.map.outerTiles.find((t) => t.contentId === 'facility_tulip');
+  check(tulip2?.contentState?.tulipValue === 2, '读档恢复地块 contentState（郁金香倍率）');
+  check(m.flags?.creatureTruce === true, '读档恢复 flags（生物停战）');
+  check(m.day === 9 && m.player.gold === 123, '读档恢复天数 / 金币');
+  clearSlot(4);
+}
+
+console.log('\n═══ 7. 涅槃不误触发：玩家攻击生物时不判定玩家致死 ═══');
+{
+  const g = createInitialState();
+  g.team.groups[0].roles = ['yumo', 'xiayang']; // 夏阳在队（涅槃可用）
+  g.team.xiayangRebornCooldownDay = 0;
+  g.player.hp = 1; // 玩家低血量
+  const atkBefore = g.player.atk;
+  const target = { kind: 'slime', category: 'danger', hp: 100, maxHp: 100, activeBuffs: [] };
+  const origRandom = Math.random;
+  Math.random = () => 0.99; // 排除暴击/闪避干扰
+  const r = CombatSystem.calculateDamage({ atk: 10, defender: target, element: 'physical', player: g.player, gs: g, roleId: 'yumo' });
+  Math.random = origRandom;
+  check(r.finalDamage > 0 && target.hp === 100 - r.finalDamage,
+    `低血量攻击生物伤害正常结算（${r.finalDamage}）`, { finalDamage: r.finalDamage, hp: target.hp });
+  check(g.team.xiayangRebornCooldownDay === 0 && g.player.atk === atkBefore && g.player.hp === 1,
+    '涅槃未被误触发（无冷却 / 攻击未变 / 玩家血量未动）');
+
+  // 正向对照：玩家本人受致命伤害时涅槃照常生效
+  Math.random = () => 0.99;
+  CombatSystem.calculateDamage({ atk: 999, defender: g.player, element: 'physical', player: g.player, gs: g, roleId: 'monster' });
+  Math.random = origRandom;
+  check(g.team.xiayangRebornCooldownDay === 3 && g.player.hp === Math.floor(g.player.maxHp * 0.5),
+    '玩家受致命伤害仍触发涅槃（回 50% HP + 进 3 天冷却）', { hp: g.player.hp, cd: g.team.xiayangRebornCooldownDay });
+}
+
+console.log('\n═══ 8. 行动力为负：允许透支、-3 强制睡觉 ═══');
+{
+  const g = createInitialState();
+  g.player.stamina = 0;
+  const from = g.player.x;
+  move(g, 'up');
+  TurnSystem.advanceTurn(g, 1); // 与 GameDirector.move 相同的回合推进链路
+  check(g.player.x !== from, '行动力 0 仍可移动（允许透支）');
+  check(g.player.stamina === -1, `移动后行动力 -1（实际 ${g.player.stamina}）`);
+  check(g.activeBuffs.some((b) => b.id === 'exhausted'), '首次透支挂【心力交瘁】debuff');
+
+  g.player.stamina = -3;
+  const r = TurnSystem.advanceTurn(g, 0);
+  check(r.forcedSleep === true, '行动力 -3 → 强制睡觉信号');
+  const dayBefore = g.day;
+  sleep(g, true); // 模拟 GameDirector.move 对 forcedSleep 的处理
+  check(g.player.stamina > 0, `强制睡觉后行动力恢复（${g.player.stamina}）`);
+  check(g.day === dayBefore + 1, '强制睡觉同样推进天数');
+}
+
+console.log('\n═══ 9. 背包/储存边界：出货箱满 ═══');
+{
+  const { ITEMS } = await import('../src/data/items.js');
+  const g = createInitialState();
+  const ids = Object.keys(ITEMS);
+  g.inventory.outbox = ids.slice(0, 12).map((id) => ({ itemId: id, qty: 1 }));
+  const extraId = ids[12];
+  check(InventorySystem.addToOutbox(g, extraId, 1) === false,
+    '出货箱 12 格满 → 拒绝新物品放入');
+  check(g.inventory.outbox.length === 12, '拒绝后出货箱格数不变');
+  check(InventorySystem.addToOutbox(g, ids[0], 1) === true && g.inventory.outbox.length === 12,
+    '已有同类格合并不受满箱阻挡（格数不增）');
+  InventorySystem.addItem(g, extraId, 1);
+  const before = InventorySystem.countItem(g, extraId);
+  const mv = InventorySystem.moveItemBetween(g, 'items', 'outbox', extraId, 1);
+  check(mv === false && InventorySystem.countItem(g, extraId) === before,
+    'items→outbox 移动满箱回滚（背包数量不变）');
+}
+
+console.log('\n═══ 10. 资源耗尽：金币不足不负债 ═══');
+{
+  const g = createInitialState();
+  const st = g.map.outerTiles.find((t) => !t.contentId);
+  st.contentId = 'resource_shop';
+  st.contentState = {};
+  ShopSystem.enterShop(g, st.idx);
+  const stock = st.contentState.shop.stock;
+  const buyableIdx = stock.findIndex((s) => !s.sold);
+  g.player.gold = 0;
+  const rb = ShopSystem.buy(g, st.idx, buyableIdx);
+  check(rb.ok === false && rb.reason === 'noGold' && g.player.gold === 0, '金币 0 购买被拒（不负债）');
+  g.player.gold = 1;
+  const rr = ShopSystem.refreshShop(g, st.idx);
+  check(rr.ok === false && rr.reason === 'noGold' && g.player.gold === 1, '金币不足刷新被拒');
+  // 祈福：先用掉 momo 首次减半（否则首次金币消耗为 0），再验证金币/行动力门禁
+  g.player.gold = 0; g.player.stamina = 8; g.team.dailyBlessCount = 1;
+  const bl = BlessSystem.blessStart(g);
+  check(bl.ok === false && bl.reason === 'gold' && g.player.gold === 0, '金币不足祈福被拒（不负债）');
+  g.player.gold = 100; g.player.stamina = 0;
+  const bl2 = BlessSystem.blessStart(g);
+  check(bl2.ok === false && bl2.reason === 'stamina', '行动力不足祈福被拒');
+}
+
+console.log('\n═══ 11. 生命归 0 后再行动：不卡死 ═══');
+{
+  const g = createInitialState();
+  g.player.hp = 0; g.player.stamina = 5; g.player.gold = 100;
+  CombatSystem.applyDeathPenalty(g, g.player);
+  check(g.player.hp === 1 && g.player.stamina === 0, '惩罚后 HP=1 / 行动力=0');
+  const from = g.player.x;
+  move(g, 'up');
+  check(g.player.x !== from, '惩罚后仍可移动（透支 -1，不卡死）');
+  const bl = BlessSystem.blessStart(g);
+  check(bl.ok === false && bl.reason === 'stamina', '行动力 0 祈福明确拒绝（非静默）');
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} smoke 结果：${pass} 通过 / ${fail} 失败（共 ${pass + fail}）`);
 process.exit(fail > 0 ? 1 : 0);

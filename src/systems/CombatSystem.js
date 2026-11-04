@@ -217,7 +217,10 @@ export function calculateDamage(opts) {
   finalDamage = Math.max(0, Math.floor(finalDamage));
 
   // ── 8.5 涅槃 death immunity ──
-  if (gs && player && finalDamage >= player.hp) {
+  // 仅当受击者就是玩家本人时判定：玩家攻击生物时 player 是攻击方，
+  // 若用「对生物的最终伤害 >= 玩家当前生命」判定，会在玩家低血量时
+  // 误触发涅槃并吞掉本次攻击伤害（表现为攻击无效）。
+  if (gs && player && defender === player && finalDamage >= player.hp) {
     // 攻击者是我方角色时（skill 里 player=gs.player），检查涅槃
     // 涅槃是属于夏阳的天赋 —— 如果 player.hp 是最终会被打到 0，夏阳在不在 activeGroup？
     // 按设计：涅槃是"角色受到致命伤害时"的天赋 —— 简化：player 就是主角余默，涅槃应该是在我方角色任意一个受到致命伤害时触发？

@@ -276,6 +276,9 @@ export class MapView {
     this.root.addEventListener('dragover', (e) => { e.preventDefault(); });
     this.root.addEventListener('drop', (e) => {
       e.preventDefault();
+      // drop 必然结束拖拽：兜底复位全局拖拽标记。
+      // 若拖拽源节点在 drop 后被重建导致 dragend 不触发，标记残留会永久抑制地图平移（卡住）。
+      window.__invDrag = false;
       if (!e.dataTransfer) return;
       const contentId = e.dataTransfer.getData('text/plain');
       if (!contentId) return;

@@ -956,5 +956,77 @@ head_('第 11 批 §16.4：DialogBox 选项两段式 + 数字键等效 + 弹窗�
 }
 
 // ════════════════════════════════════════════════════════════
+head_('第 12 批：弹窗连点重入 / ESC 归弹窗 / drop 复位拖拽标记');
+{
+  const { DialogBox } = await import('../src/ui/DialogBox.js');
+  const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+  const dlg2 = new DialogBox();
+  dlg2.mount();
+  dlg2.confirmFadeMs = 30;
+  const prevDlg = director.dialogBox;
+  director.dialogBox = dlg2;
+
+  // ── 1) 连点重入：第一个弹窗确认途中被第二个 DIALOG_SHOW 覆盖 ──
+  let pickedA = null, pickedB = null;
+  EventBus.emit(GE.DIALOG_SHOW, {
+    title: '第一个',
+    options: [{ label: '甲', onSelect: () => { pickedA = '甲'; } }],
+  });
+  dlg2._optBtns[0].click();
+  dlg2._optBtns[0].click(); // 进入确认（计时器在途）
+  assert(dlg2._confirming === true, '第一个弹窗进入确认');
+  EventBus.emit(GE.DIALOG_SHOW, {
+    title: '第二个',
+    options: [{ label: '乙', onSelect: () => { pickedB = '乙'; } }],
+  });
+  assert(dlg2.visible === true && dlg2._confirming === false && dlg2.titleEl._text === '第二个',
+    '第二个弹窗覆盖第一个（确认态复位）');
+  await sleepMs(500); // 越过旧确认计时器时间窗
+  assert(dlg2.visible === true && pickedA === null,
+    '旧确认计时器被清理：不关新弹窗、不触发旧选项');
+  dlg2._optBtns[0].click();
+  dlg2._optBtns[0].click();
+  await sleepMs(500);
+  assert(dlg2.visible === false && pickedB === '乙', '新弹窗自身确认链路正常');
+
+  // ── 2) 键盘监听不叠加：show/hide 一轮后 window keydown 监听数量还原 ──
+  const kdBefore = (winListeners['keydown'] || []).length;
+  EventBus.emit(GE.DIALOG_SHOW, { title: '监听', options: [{ label: '好', onSelect: () => {} }] });
+  dlg2.hide();
+  assert((winListeners['keydown'] || []).length === kdBefore,
+    'show/hide 一轮后 keydown 监听无残留', { before: kdBefore, after: (winListeners['keydown'] || []).length });
+
+  // ── 3) 弹窗打开时 ESC 归弹窗：不叠加打开设置（镜像 main.js：先 bind 输入，后弹弹窗）──
+  inputManager.bind();
+  EventBus.emit(GE.DIALOG_SHOW, { title: 'ESC 门禁', options: [{ label: '好', onSelect: () => {} }] });
+  assert(dlg2.visible === true, '弹窗已打开');
+  const stackBefore = [...director.openPanels];
+  const settingsBefore = settingsPanel.visible;
+  window.dispatchEvent({ type: 'keydown', key: 'Escape', preventDefault() {} });
+  assert(dlg2.visible === false, 'ESC → 弹窗关闭');
+  assert(settingsPanel.visible === settingsBefore
+      && director.openPanels.join(',') === stackBefore.join(','),
+    'ESC 关弹窗不再叠加打开设置/动面板栈（状态不错乱）',
+    { settings: settingsPanel.visible, stack: director.openPanels });
+  inputManager.unbind();
+
+  // ── 4) drop 兜底复位全局拖拽标记（地图 / HotBar）──
+  window.__invDrag = true;
+  mapView.root.dispatchEvent({
+    type: 'drop', preventDefault() {},
+    dataTransfer: { getData: () => '' }, clientX: 0, clientY: 0,
+  });
+  assert(window.__invDrag === false, '地图 drop 后拖拽标记复位（平移不会被永久抑制）');
+  window.__invDrag = true;
+  hotBar.slotEls[0].dispatchEvent({
+    type: 'drop', preventDefault() {},
+    dataTransfer: { getData: () => '' },
+  });
+  assert(window.__invDrag === false, 'HotBar drop 后拖拽标记复位');
+
+  director.dialogBox = prevDlg;
+}
+
+// ════════════════════════════════════════════════════════════
 console.log(`\nsmoke-ui 结果：${pass} 通过 / ${fail} 失败（共 ${pass + fail}）`);
 process.exit(fail > 0 ? 1 : 0);

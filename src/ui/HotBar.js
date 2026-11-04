@@ -98,6 +98,8 @@ export class HotBar {
     });
     slot.addEventListener('drop', (e) => {
       e.preventDefault();
+      // drop 必然结束拖拽：兜底复位全局拖拽标记（防止源节点 dragend 未触发时标记残留）
+      window.__invDrag = false;
       const itemId = e.dataTransfer?.getData('text/plain');
       if (!itemId) return;
       // 天赋不放 HotBar

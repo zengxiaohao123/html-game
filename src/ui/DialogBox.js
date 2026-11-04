@@ -127,6 +127,15 @@ export class DialogBox {
 
   show(payload) {
     if (!payload) return;
+    // 重入防护（连点/弹窗叠开）：上一个弹窗仍在显示（含确认淡出期）时，
+    // 先清掉旧确认/淡出计时器并移除旧键盘监听，避免旧计时器把新弹窗误关、
+    // 或多次 show 叠加多个 keydown 监听导致状态错乱。
+    if (this._confirmTimer) { clearTimeout(this._confirmTimer); this._confirmTimer = null; }
+    if (this._fadeTimer) { clearTimeout(this._fadeTimer); this._fadeTimer = null; }
+    if (this._keyHandler) {
+      window.removeEventListener('keydown', this._keyHandler);
+      this._keyHandler = null;
+    }
     this.currentPayload = payload;
     const {
       title = '提示', content = '',
@@ -172,7 +181,12 @@ export class DialogBox {
 
     this._keyHandler = (e) => {
       if (!this.visible) return;
-      if ((e.key === 'Escape' || e.key === 'Esc') && escClose) { this.hide(); return; }
+      if ((e.key === 'Escape' || e.key === 'Esc') && escClose) {
+        // 标记本次 ESC 已被弹窗消费：InputManager 据此跳过面板栈逻辑（与监听顺序无关）
+        e._dialogConsumedEsc = true;
+        this.hide();
+        return;
+      }
       // §16.4：数字键 1~6 与鼠标点击等效
       const n = Number.parseInt(e.key, 10);
       if (n >= 1 && n <= this._optBtns.length) {
