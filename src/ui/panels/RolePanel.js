@@ -12,6 +12,7 @@ import { TALENTS } from '../../data/talents.js';
 import { ELEMENTS } from '../../data/elements.js';
 import { createStandardPanel } from './_panelHelper.js';
 import { createEl, iconEl } from '../dom.js';
+import { renderTraitBadges } from '../TraitBadges.js';
 import { devLog } from '../../core/Logger.js';
 
 const BOX_BG = 'rgba(255,255,255,0.55)';
@@ -171,6 +172,8 @@ export class RolePanel {
 
   // 技能展示页：上【天赋】区 + 下【技能】区
   _renderSkillsTab(c) {
+    // 角色详情：展示词条统一徽章入口
+    renderTraitBadges(this.tabBody, c.traits, { marginBottom: '6px' });
     // 上：天赋区
     const talentSec = createEl('div', {
       style: { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', border: '2px dashed #b8a888', borderRadius: '10px', padding: '8px' },
@@ -193,6 +196,7 @@ export class RolePanel {
         top.appendChild(iconEl('ui', t.id, { def: t, fallback: t.emoji, size: '18px' }));
         createEl('span', { style: { fontWeight: '800', fontSize: '14px' }, text: t.name, parent: top });
         createEl('span', { style: { fontSize: '10px', color: isPassive ? '#2a8a3a' : '#c07a20', background: isPassive ? '#e8f5e9' : '#ffe099', padding: '0 6px', borderRadius: '8px', marginLeft: 'auto', border: `1px solid ${isPassive ? '#2a8a3a' : '#c07a20'}` }, text: triggerLabel, parent: top });
+        renderTraitBadges(row, t.traits);
         createEl('div', { style: { fontSize: '12px', color: '#4a3a2a', lineHeight: '1.5', whiteSpace: 'pre-line' }, text: t.description || '', parent: row });
       });
     }
@@ -219,6 +223,7 @@ export class RolePanel {
         if (sk.isLinkSkill) {
           createEl('span', { style: { fontSize: '10px', color: '#c07a20', background: '#ffe099', padding: '0 6px', borderRadius: '8px', marginLeft: 'auto', border: '1px solid #c07a20' }, text: '连携技', parent: top });
         }
+        renderTraitBadges(row, sk.traits);
         createEl('div', { style: { fontSize: '12px', color: '#4a3a2a', lineHeight: '1.5', whiteSpace: 'pre-line' }, text: sk.description || '', parent: row });
       });
     }
@@ -226,6 +231,8 @@ export class RolePanel {
 
   // 羁绊等级页：羁绊每级效果及可获得技能 —— 数据未实装（§17 待补充），显示空态
   _renderBondTab(c) {
+    // 角色详情：展示词条统一徽章入口
+    renderTraitBadges(this.tabBody, c.traits, { marginBottom: '6px' });
     createEl('div', {
       style: {
         flex: '1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -244,6 +251,8 @@ export class RolePanel {
     const gs = this._getGS();
     const spirit = SPIRITS[c.spiritId] || null;
     const ele = ELEMENTS[c.element] || null;
+    // 精灵详情：展示词条统一徽章入口
+    renderTraitBadges(this.attrCol, spirit?.traits);
 
     const head = createEl('div', {
       style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', paddingBottom: '8px', borderBottom: '2px solid #e8a900' },

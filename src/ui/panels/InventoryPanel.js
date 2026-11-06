@@ -25,6 +25,7 @@ import { InventorySystem } from '../../systems/InventorySystem.js';
 import { OUTBOX_SLOTS } from '../../utils/constants.js';
 import { getAllRecipes } from '../../data/recipes.js';
 import { createEl, qs, iconEl } from '../dom.js';
+import { renderTraitBadges } from '../TraitBadges.js';
 
 /** 8 个 tab 定义 —— 以 task-briefs §9 为准，示意图只参考排版不参考文字 */
 // 分类以「物品库」的 tier1/tier2 为准，不再靠 id 前缀猜。
@@ -329,12 +330,8 @@ export class InventoryPanel {
       });
     }
 
-    // 显性词条：单独用徽章展示，不混入描述正文
-    const traits = ITEM?.traits || [];
-    if (traits.length) {
-      const traitRow = createEl('div', { class: 'trait-badge-row', parent: this.detailEl });
-      traits.forEach((t) => createEl('span', { class: 'trait-badge', text: t, parent: traitRow }));
-    }
+    // 显性词条：统一徽章入口，不混入描述正文
+    renderTraitBadges(this.detailEl, ITEM?.traits);
 
     // 描述（topRow 下方独立一行；white-space: pre-line 保留数据里的换行）
     createEl('div', { class: 'inv-detail-desc', text: desc, parent: this.detailEl });

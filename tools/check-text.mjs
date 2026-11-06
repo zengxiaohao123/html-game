@@ -145,6 +145,37 @@ checked++;
 const splitCount = (infoSrc.match(/\.split\('\\n'\)/g) || []).length;
 if (splitCount < 2) errors.push(`[InfoPanel 未分行] 描述未按 \\n 拆分（仅 ${splitCount} 处）`);
 
+// ── 7. 展示词条徽章：所有详情视图必须调用统一入口 renderTraitBadges ──
+// 每一项：文件、视图说明、该文件内的详情渲染点数量（少一个即漏展示）
+const DETAIL_VIEWS = [
+  ['panels/InventoryPanel.js', '背包详情', 1],
+  ['panels/CodexPanel.js', '图鉴详情', 1],
+  ['InfoPanel.js', '信息区·地块内容/生物详情', 2],
+  ['panels/RolePanel.js', '角色·天赋·技能·羁绊·精灵详情', 5],
+  ['panels/VehiclePanel.js', '载具详情', 1],
+  ['panels/ForgePanel.js', '合成产物详情', 1],
+];
+for (const [rel, label, minCalls] of DETAIL_VIEWS) {
+  const src = readFileSync(new URL(`../src/ui/${rel}`, import.meta.url), 'utf8');
+  checked++;
+  const callCount = (src.match(/renderTraitBadges\(/g) || []).length;
+  if (callCount < minCalls) {
+    errors.push(`[词条徽章缺失] ${label} 详情渲染点未全部接入统一入口（${callCount}/${minCalls}）`);
+  }
+  checked++;
+  if (!src.includes("from '../TraitBadges.js'") && !src.includes("from './TraitBadges.js'")) {
+    errors.push(`[词条徽章缺失] ${label} 未从 TraitBadges.js 导入统一入口`);
+  }
+}
+checked++;
+const badgeSrc = readFileSync(new URL('../src/ui/TraitBadges.js', import.meta.url), 'utf8');
+if (!badgeSrc.includes("export function renderTraitBadges")) errors.push('[词条徽章缺失] TraitBadges.js 未导出统一入口');
+checked++;
+for (const [rel] of DETAIL_VIEWS) {
+  const src = readFileSync(new URL(`../src/ui/${rel}`, import.meta.url), 'utf8');
+  if (/class:\s*['"]trait-badge/.test(src)) errors.push(`[词条徽章重复实现] ${rel} 自行拼了 trait-badge DOM`);
+}
+
 // ── 输出 ──
 if (errors.length) {
   console.error(`✗ 文案校验失败：${errors.length} 项\n`);

@@ -31,6 +31,7 @@ import { getBuff } from '../data/buffs.js';
 import { ITEMS } from '../data/items.js';
 import { getTerrain, normalizeTerrain } from '../data/terrains.js';
 import { createEl, qs, iconEl } from './dom.js';
+import { renderTraitBadges } from './TraitBadges.js';
 
 /** 滑入/滑出 transform（§16.4：面板用 top/bottom 双锚点固定高度，只做横向滑入滑出） */
 const SLIDE_IN_TRANSFORM = 'translate(0, 0)';
@@ -333,16 +334,8 @@ export class InfoPanel {
     titleRow.appendChild(iconNode);
     createEl('span', { text: name, parent: titleRow });
 
-    // 显性词条（【永恒】【唯一】等）：与背包/图鉴同一套徽章样式，不混入描述正文
-    const contentTraits = contentId ? (ITEMS[contentId]?.traits || []) : [];
-    if (contentTraits.length) {
-      const traitRow = createEl('div', {
-        class: 'trait-badge-row',
-        style: { marginBottom: '8px' },
-        parent: this.bodyWrap,
-      });
-      contentTraits.forEach((t) => createEl('span', { class: 'trait-badge', text: t, parent: traitRow }));
-    }
+    // 展示词条（【永恒】【唯一】等）：统一徽章入口，不混入描述正文
+    renderTraitBadges(this.bodyWrap, contentId ? ITEMS[contentId]?.traits : null, { marginBottom: '8px' });
 
     // 地形提示
     if (tile.terrain && normTerrain(tile.terrain) !== 'terrain_none') {
@@ -1495,6 +1488,9 @@ export class InfoPanel {
       text: def.name || c.kind,
       parent: top,
     });
+
+    // 生物详情：展示词条统一徽章入口（无词条时不渲染）
+    renderTraitBadges(this.bodyWrap, def.traits, { marginBottom: '8px' });
 
     // 子 tab 条
     const subTabs = [

@@ -11,6 +11,7 @@ import { SKILLS, CHARACTERS } from '../../data/characters.js';
 import { COLLECTIBLES } from '../../data/collectibles.js';
 import { createStandardPanel } from './_panelHelper.js';
 import { createEl, iconEl } from '../dom.js';
+import { renderTraitBadges } from '../TraitBadges.js';
 
 const TABS = [
   { id: 'items',        label: '📦 物品' },
@@ -219,12 +220,8 @@ export class CodexPanel {
     createEl('div', { style: { flex: '1' }, parent: header });
     createEl('div', { style: { fontSize: '18px', fontWeight: '900' }, text: entry.name, parent: header });
 
-    // 显性词条徽章（【永恒】【唯一】【水稻】【小麦】等）：独立展示，不混入描述正文
-    const traits = entry.traits || [];
-    if (traits.length) {
-      const traitRow = createEl('div', { class: 'trait-badge-row', style: { marginBottom: '6px' }, parent: this.detailEl });
-      traits.forEach((t) => createEl('span', { class: 'trait-badge', text: t, parent: traitRow }));
-    }
+    // 展示词条：统一徽章入口，独立于描述正文
+    renderTraitBadges(this.detailEl, entry.traits, { marginBottom: '6px' });
 
     // 公共字段：description（pre-line 保留换行）
     if (entry.description) {

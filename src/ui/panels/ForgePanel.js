@@ -14,6 +14,7 @@ import { ForgeSystem } from '../../systems/ForgeSystem.js';
 import { InventorySystem } from '../../systems/InventorySystem.js';
 import { createStandardPanel } from './_panelHelper.js';
 import { createEl, iconEl } from '../dom.js';
+import { renderTraitBadges } from '../TraitBadges.js';
 import { devLog } from '../../core/Logger.js';
 
 function itName(id) { return ITEMS[id]?.name || id; }
@@ -196,6 +197,8 @@ export class ForgePanel {
       const nameCol = createEl('div', { style: { display: 'flex', flexDirection: 'column', gap: '2px' }, parent: topRow });
       createEl('div', { style: { fontSize: '16px', fontWeight: '900' }, text: itName(outId), parent: nameCol });
       createEl('div', { style: { fontSize: '12px', color: '#8a5a1a', fontWeight: '700' }, text: `当前数量 ×${have}`, parent: nameCol });
+      // 合成产物详情：展示词条统一徽章入口
+      renderTraitBadges(this.detailEl, ITEMS[outId]?.traits);
       createEl('div', { style: { fontSize: '12px', color: '#8a7a66', whiteSpace: 'pre-line' }, text: ITEMS[outId]?.description || r.description || '', parent: this.detailEl });
 
       createEl('div', { style: { fontSize: '12px', fontWeight: '700', color: '#5a4a3a', marginTop: '4px' }, text: '🧾 合成所需材料', parent: this.detailEl });

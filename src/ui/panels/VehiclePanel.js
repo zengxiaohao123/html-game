@@ -10,7 +10,9 @@ import { createStandardPanel } from './_panelHelper.js';
 import { createEl, iconEl } from '../dom.js';
 import { devLog } from '../../core/Logger.js';
 import { VEHICLES } from '../../data/vehicles.js';
+import { ITEMS } from '../../data/items.js';
 import { VehicleSystem } from '../../systems/VehicleSystem.js';
+import { renderTraitBadges } from '../TraitBadges.js';
 
 export class VehiclePanel {
   constructor(director) {
@@ -88,6 +90,8 @@ export class VehiclePanel {
       const def = VEHICLES[v.current.vehicleId];
       box.appendChild(iconEl('items', v.current.vehicleId, { size: '44px', def, fallback: def?.emoji || '🚗' }));
       createEl('div', { style: { fontSize: '12px', fontWeight: '800' }, text: def?.name || v.current.vehicleId, parent: box });
+      // 载具详情：展示词条统一徽章入口（数据源为物品库同名条目）
+      renderTraitBadges(this.slotEl, ITEMS[String(def?.id || '').replace('vehicle_', 'item_')]?.traits);
       // usageLeft 从 entry.usageLeft 读（不是 VEHICLES[id].usageCount）
       createEl('div', { style: { fontSize: '11px', color: '#7a6a56' }, text: `剩余使用：${VehiclePanel._fmtUsage(v.current.usageLeft)} 次`, parent: this.slotEl });
       if (def?.description) {
