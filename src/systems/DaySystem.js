@@ -15,7 +15,6 @@ import { CreatureSystem } from './CreatureSystem.js';
 import { CombatSystem } from './CombatSystem.js';
 import { TalentSystem } from './TalentSystem.js';
 import { LinkSkillSystem } from './LinkSkillSystem.js';
-import { Storage } from '../state/storage.js';
 import { StaminaSystem } from './StaminaSystem.js';
 import { VehicleSystem } from './VehicleSystem.js';
 import { CalendarSystem } from './CalendarSystem.js';
@@ -155,8 +154,8 @@ export function startNewDay(gs) {
     ShopSystem.weeklyRefreshAll(gs);
   }
 
-  // 8.8 Agent 3：自动存档 slot 1
-  Storage.autoSave(gs);
+  // 8.8 自动存档不在换日内部采集 —— 此处行动力恢复与强制睡觉罚款尚未落定，
+  //     存下来的是睡前中间态。日初基线由 SleepSystem.sleep() 末尾统一采集（唯一采集点）。
 
   // 9. 广播 DAY_START 事件
   EventBus.emit(GE.DAY_START, { day: gs.day, calendar: gs.calendar, ...cal });

@@ -58,6 +58,10 @@ export function createInitialState() {
     // 日历（v0.5 §6.1）：开局 1 年 3 月 1 日 星期一；周 7 天 / 月 28 天 / 一年 4 个月
     calendar: { year: 1, month: 3, dayOfMonth: 1, weekday: 1 },
 
+    // ── 随机 ──
+    // 只记录主种子（日种子 = hash(masterSeed, day)）；日内已抽过的进度不入档
+    rng: { masterSeed: Math.floor(Math.random() * 0x7fffffff) },
+
     // ── 玩家 ──
     player: {
       x: HOME_IDX,          // 初始在家（左下）

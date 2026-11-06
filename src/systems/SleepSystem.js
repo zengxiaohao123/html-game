@@ -14,6 +14,8 @@ import { SLEEP_STAMINA_PENALTY_GOLD_RATIO } from '../utils/constants.js';
 import { TurnSystem } from './TurnSystem.js';
 import { TalentSystem } from './TalentSystem.js';
 import { StaminaSystem } from './StaminaSystem.js';
+import { DayBaseline } from '../state/DayBaseline.js';
+import { Storage } from '../state/storage.js';
 
 /** 金币惩罚上下限 */
 const GOLD_PENALTY_MIN = 0;
@@ -114,7 +116,14 @@ export function sleep(gs, isAuto = false) {
     }
   }
 
-  // 7. 广播 SLEEP 事件
+  // 7. 【日初基线的唯一采集点】换日 / 行动力恢复 / 可超上限额外行动力 /
+  //    心力交瘁移除 / 强制睡觉罚款全部落定之后，冻结「本日开始」状态，写 1 号位自动档。
+  //    必须在 SLEEP 事件与演出之前采集（此后才开始表现），且此处是全流程唯一采集点。
+  const baseline = DayBaseline.capture(gs);
+  DayBaseline.setCurrent(baseline);
+  Storage.autoSave(baseline);
+
+  // 8. 广播 SLEEP 事件
   EventBus.emit(GE.SLEEP, { day: gs.day, isAuto, goldPenalty });
   EventBus.emit(GE.TOAST_SHOW, { text: `🌙 晚安～第 ${gs.day} 天开始`, duration: 2000 });
 

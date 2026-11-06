@@ -11,6 +11,7 @@ import { GE } from '../core/GameEvents.js';
 import { HookDispatcher } from '../core/HookDispatcher.js';
 import { createInitialState } from '../state/gameState.js';
 import { migrateGS } from '../state/migrate.js';
+import { DayBaseline } from '../state/DayBaseline.js';
 import { devLog } from '../core/Logger.js';
 import { registerFacilities } from '../data/facilities.js';
 import { MovementSystem } from './MovementSystem.js';
@@ -31,6 +32,8 @@ export class GameDirector {
   constructor() {
     /** @type {object} 全局状态对象（单一真相源） */
     this.gs = null;
+    /** @type {object|null} 日初基线（本日开始时的冻结状态；存档只写它） */
+    this.baseline = null;
     /** 是否已启动 */
     this.started = false;
     /** Panel 栈 —— 后开的在上，ESC 先关栈顶 */
@@ -237,6 +240,11 @@ export class GameDirector {
     // 8. 标记启动完成
     this.started = true;
     resetMoveCooldown(this.gs);
+
+    // 8.5 【日初基线】新开局末尾冻结第 1 天开始基线（初始背包/家/玩家位置就绪、无任何演出）
+    this.baseline = DayBaseline.capture(this.gs);
+    DayBaseline.setCurrent(this.baseline);
+
     // 9. 栈自愈：BOOT / STATE_RESET 后只保留真正显示着的面板
     this.pruneOpenPanels('start');
     devLog.info('GameDirector 启动完成 ✓ day=', this.gs.day, 'stamina=', this.gs.player.stamina);
@@ -251,8 +259,12 @@ export class GameDirector {
       devLog.warn('[GameDirector.loadGame] loadedGs 为空');
       return false;
     }
-    migrateGS(loadedGs);  // ← 迁移：补全旧存档缺失的 Phase 4 字段
-    this.gs = loadedGs;
+    migrateGS(loadedGs);  // ← 迁移：补全旧存档缺失字段 + 旧实时档归一化为日初基线
+
+    // 载入的就是「本日开始」基线：冻结一份作为当前基线，再装回运行时（清演出/窗口/墙钟）
+    this.baseline = DayBaseline.capture(loadedGs);
+    DayBaseline.setCurrent(this.baseline);
+    this.gs = DayBaseline.install(loadedGs);
 
     // 清理旧的定时器（防止 loadGame 多次调用时 timer 累积）
     if (this._linkSkillTimer) {
@@ -345,6 +357,14 @@ export class GameDirector {
    */
   getGS() {
     return this.gs;
+  }
+
+  /**
+   * 获取日初基线（存档只写这份冻结副本，不是日内实时状态）
+   * @returns {object|null}
+   */
+  getBaseline() {
+    return DayBaseline.getCurrent() || this.baseline;
   }
 
   /**

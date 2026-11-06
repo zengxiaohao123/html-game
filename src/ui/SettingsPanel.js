@@ -7,6 +7,7 @@
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { Storage } from '../state/storage.js';
+import { DayBaseline } from '../state/DayBaseline.js';
 import { AUTOSAVE_SLOT, SLOTS_MAX } from '../utils/constants.js';
 import { createEl, qs } from './dom.js';
 import { devLog } from '../core/Logger.js';
@@ -115,14 +116,14 @@ export class SettingsPanel {
 
     this._createBtn('✖️ 关 闭', () => this.hide(), btnRow, '#c84040', true);
     this._createBtn('🏠 返回主菜单', () => {
-      const gs = this.director?.getGS?.();
-      if (gs) {
-        const ok = Storage.save(AUTOSAVE_SLOT, gs);
-        if (ok) {
-          EventBus.emit(GE.TOAST_SHOW, { text: '💾 已自动存档到 Slot 1', duration: 1500 });
-        } else {
-          EventBus.emit(GE.TOAST_SHOW, { text: '⚠️ 自动存档失败', duration: 2000 });
-        }
+      // 返回主菜单写 1 号位，同样是「本日开始」基线（不是日内实时状态）
+      const baseline = this._getBaseline();
+      if (baseline) {
+        const ok = Storage.save(AUTOSAVE_SLOT, baseline);
+        EventBus.emit(GE.TOAST_SHOW, {
+          text: ok ? '💾 以本日开始时存档' : '⚠️ 自动存档失败',
+          duration: 1600,
+        });
       }
       this.hide();
       if (typeof this.director?.mainMenu?.show === 'function') {
@@ -344,13 +345,22 @@ export class SettingsPanel {
     EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'settings' });
   }
 
+  /** 取日初基线：存档只写这份冻结副本（手动存档任何时候都能存，但内容始终是本日开始） */
+  _getBaseline() {
+    const fromDirector = this.director?.getBaseline?.();
+    if (fromDirector) return fromDirector;
+    const gs = this.director?.getGS?.();
+    return gs ? DayBaseline.capture(gs) : null;
+  }
+
   /** 存档到指定槽 */
   _handleSaveSlot(slot) {
     if (!this.director) return;
-    const gs = this.director.getGS();
-    const ok = Storage.save(slot, gs);
+    const baseline = this._getBaseline();
+    const ok = baseline ? Storage.save(slot, baseline) : false;
     if (ok) {
-      EventBus.emit(GE.TOAST_SHOW, { text: `✅ Slot ${slot} 存档成功`, duration: 1800 });
+      // 只留一句口径提示，不解释当日进度细节，也不标注日初信息
+      EventBus.emit(GE.TOAST_SHOW, { text: '💾 以本日开始时存档', duration: 1800 });
       EventBus.emit(GE.SAVE_DONE, { slot });
       this._refreshSlots();
     } else {
@@ -364,7 +374,7 @@ export class SettingsPanel {
     if (loaded) {
       const ok = this.director.loadGame(loaded);
       if (ok) {
-        EventBus.emit(GE.TOAST_SHOW, { text: `✅ Slot ${slot} 读档成功`, duration: 1800 });
+        EventBus.emit(GE.TOAST_SHOW, { text: '📂 读档将回到本日开始时', duration: 1800 });
         EventBus.emit(GE.LOAD_DONE, { slot });
         this.hide();
       } else {

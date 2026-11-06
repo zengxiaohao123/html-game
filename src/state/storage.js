@@ -3,10 +3,14 @@
 // 约定：
 //   - slot 1 = 自动存档（每日开始 + 返回主菜单触发）
 //   - slot 2~8 = 手动存档
+//   - 存档口径 = 日初基线（《空间碰撞与时序方案》§11 / 设计文档 §19）：
+//     传入的 gs 必须是 DayBaseline.capture() 产出的冻结基线，而不是日内实时状态。
+//   - payload 结构：{ slot, savedAt, schemaVersion, saveMode, meta, gs }
 //   - 所有 save 必须深克隆：JSON.parse(JSON.stringify(gs))，避免外部引用干扰
 
 import { devLog } from '../core/Logger.js';
 import { SLOTS_MAX, AUTOSAVE_SLOT, STORAGE_PREFIX } from '../utils/constants.js';
+import { SAVE_SCHEMA_VERSION, SAVE_MODE_DAY_START } from './DayBaseline.js';
 
 /**
  * 生成某槽位对应的 localStorage key
@@ -30,8 +34,9 @@ function deepClone(obj) {
 export const Storage = {
   /**
    * 存档
+   * 传日初基线（DayBaseline.capture 的产出），payload 自动带上版本号与存档模式标记。
    * @param {number} slot 槽位号 1~8
-   * @param {object} gs 全局状态对象
+   * @param {object} gs 日初基线对象
    * @returns {boolean} 是否保存成功
    */
   save(slot, gs) {
@@ -39,14 +44,24 @@ export const Storage = {
       devLog.error('Storage.save: invalid slot', slot);
       return false;
     }
+    if (!gs) {
+      devLog.error('Storage.save: 基线为空');
+      return false;
+    }
     try {
       const payload = {
         slot,
         savedAt: Date.now(),
+        schemaVersion: SAVE_SCHEMA_VERSION,
+        saveMode: SAVE_MODE_DAY_START,
+        meta: {
+          day: gs.day ?? null,
+          calendar: gs.calendar ? deepClone(gs.calendar) : null,
+        },
         gs: deepClone(gs),
       };
       localStorage.setItem(slotKey(slot), JSON.stringify(payload));
-      devLog.info('存档成功 slot', slot);
+      devLog.info('存档成功 slot', slot, '（日初基线，第', gs.day, '天）');
       return true;
     } catch (e) {
       devLog.error('Storage.save 失败:', e);
@@ -55,11 +70,33 @@ export const Storage = {
   },
 
   /**
-   * 自动存档（写 slot 1）
-   * @param {object} gs
+   * 自动存档（写 slot 1，日初基线）
+   * @param {object} baseline
    */
-  autoSave(gs) {
-    return Storage.save(AUTOSAVE_SLOT, gs);
+  autoSave(baseline) {
+    return Storage.save(AUTOSAVE_SLOT, baseline);
+  },
+
+  /**
+   * 读取完整 payload（含 schemaVersion / saveMode / meta / savedAt）
+   * @param {number} slot
+   * @returns {object|null} payload 深克隆；槽位为空或损坏返回 null
+   */
+  readPayload(slot) {
+    if (!Number.isInteger(slot) || slot < 1 || slot > SLOTS_MAX) {
+      devLog.error('Storage.readPayload: invalid slot', slot);
+      return null;
+    }
+    try {
+      const raw = localStorage.getItem(slotKey(slot));
+      if (!raw) return null;
+      const payload = JSON.parse(raw);
+      if (!payload || !payload.gs) return null;
+      return deepClone(payload);
+    } catch (e) {
+      devLog.error('Storage.readPayload 失败:', e);
+      return null;
+    }
   },
 
   /**

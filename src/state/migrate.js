@@ -77,6 +77,55 @@ function deepMergeDefaults(target, source, path = '') {
 }
 
 /**
+ * 旧实时存档 → 日初基线的一次性归一化（《空间碰撞与时序方案》§11.8 / 设计文档 §19.5）
+ *
+ * 旧档是「按下存档那一刻」的实时状态；读入时把它提升为「本日开始」的基线：
+ *   - 墙钟字段一律丢弃（生物 lastMoveTs、移动冷却、祈福锁）
+ *   - 连携窗口队列与日内累计归零
+ *   - 演出 / 界面态 / 建造态 / 结算中间量清除
+ *   - 回合号回到日初 0
+ *   - 跨日地基（HP / 成长 / 金币 / 名册 / 地块 / 背包）原样保留
+ *   - 随机只保留主种子
+ *
+ * 对已经是日初基线的存档重复执行结果不变（幂等）。
+ *
+ * @param {object} gs 载入的 GS（原地修改）
+ * @returns {object} 归一化后的 GS
+ */
+export function normalizeToDayStart(gs) {
+  if (!isPlainObject(gs)) return gs;
+
+  // 1) 墙钟
+  if (Array.isArray(gs.creatures)) {
+    for (const c of gs.creatures) {
+      if (isPlainObject(c)) delete c.lastMoveTs;
+    }
+  }
+  delete gs.blessLockUntilMs;
+
+  // 2) 连携窗口与日内累计（日初由 LinkSkillSystem.resetAll 定义）
+  gs.linkSkillQueue = [];
+  gs.linkSkillCounters = {};
+  gs.lastTurnLinkSkill = 0;
+
+  // 3) 演出 / 交互 / 结算中间量
+  gs.uiState = { selectedTileIdx: null, infoTab: 'content', activePanel: null };
+  gs.buildMode = false;
+  gs.pendingSleepStaminaBonus = 0;
+  gs.blessingQueue = [];
+
+  // 4) 回合号：新档恒为 0（旧档的「绝对回合」语义已在上方补丁中消费）
+  gs.turn = 0;
+
+  // 5) 随机：只留主种子，不存日内进度
+  if (isPlainObject(gs.rng) && 'masterSeed' in gs.rng) {
+    gs.rng = { masterSeed: gs.rng.masterSeed };
+  }
+
+  return gs;
+}
+
+/**
  * 把旧存档的 GS 迁移到当前 schema。
  * 原地修改 loadedGs（也返回它方便链式调用）。
  * @param {object} loadedGs 从 Storage.load 拿到的 GS
@@ -189,6 +238,10 @@ export function migrateGS(loadedGs) {
       if (!('targetPos' in c)) c.targetPos = null;
     }
   }
+
+  // 存档口径归一化：旧实时档一次性提升为「当天开始」基线（新档重复执行结果不变）
+  normalizeToDayStart(loadedGs);
+  devLog.info('[migrateGS] 已归一化为日初基线 turn=', loadedGs.turn);
 
   return loadedGs;
 }
