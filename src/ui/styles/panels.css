@@ -586,6 +586,9 @@
   flex-direction: column;
   gap: 3px;
   min-width: 0;
+  /* 左信息区 / 右行动区之间的虚线分隔，明确功能选项属于右区 */
+  border-left: 2px dashed #cbb893;
+  padding-left: 10px;
 }
 
 .inv-action-empty {

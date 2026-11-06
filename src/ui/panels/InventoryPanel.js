@@ -3,7 +3,7 @@
 //   ▸ 面板：非全屏占大半个屏幕，四周留一点背景可见；内容不会撑大
 //   ▸ 顶部：8 tab —— 总览/设施/资源/技能/地形/产物/道具/杂物（总览含全部，其余互斥）
 //   ▸ 左：  该分类物品图标格（无文字，iconEl 渲染 + 固定空槽渲染）
-//   ▸ 右上：详情卡（图标 + 名称 + 数量 + 单价/总价值 + 描述 + 合成材料）
+//   ▸ 右上：详情卡（图标 + 名称 + 数量 + 单价/总价值 + 描述）
 //   ▸ 右中：行动区（固定存在，点物品才激活；滑块默认 1 + min/-1/+1/max 四按钮 + 确认/取消）
 //   ▸ 右下：出货箱 2×6 共 12 格（不同物品各占一格、同物品自动叠放；固定渲染，空格也画）
 //   ▸ 交互：左键点物品（背包 or 出货箱）→ 行动区激活选数量 → 确认（背包选中=放入出货箱，出货箱选中=取回）
@@ -23,7 +23,6 @@ import { ItemTargeting } from '../../systems/ItemTargeting.js';
 import { getDef as getFacilityDef } from '../../data/facilities.js';
 import { InventorySystem } from '../../systems/InventorySystem.js';
 import { OUTBOX_SLOTS } from '../../utils/constants.js';
-import { getAllRecipes } from '../../data/recipes.js';
 import { createEl, qs, iconEl } from '../dom.js';
 import { renderTraitBadges } from '../TraitBadges.js';
 
@@ -333,29 +332,6 @@ export class InventoryPanel {
 
     // 描述（topRow 下方独立一行；white-space: pre-line 保留数据里的换行）
     createEl('div', { class: 'inv-detail-desc', text: desc, parent: this.detailEl });
-
-    // ── §16.15 右上：合成材料（能合成该物品的配方所需材料）──
-    const fromRecipes = getAllRecipes().filter(rc => rc.outputs.some(o => o.itemId === this.selectedItemId));
-    createEl('div', {
-      style: { fontSize: '11px', fontWeight: '700', color: '#5a4a3a', marginTop: '4px', flexShrink: '0' },
-      text: '🧾 合成材料',
-      parent: this.detailEl,
-    });
-    if (fromRecipes.length === 0) {
-      createEl('div', { style: { fontSize: '11px', color: '#b0a090', flexShrink: '0' }, text: '—', parent: this.detailEl });
-    } else {
-      for (const rc of fromRecipes) {
-        const row = createEl('div', {
-          style: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px', fontSize: '11px', color: '#4a3a2a', flexShrink: '0' },
-          parent: this.detailEl,
-        });
-        rc.ingredients.forEach((inp, i) => {
-          if (i > 0) createEl('span', { text: '+', parent: row });
-          row.appendChild(this._iconElFor(inp.itemId, '14px'));
-          createEl('span', { text: `${this._resolveName(inp.itemId)}×${inp.qty}`, parent: row });
-        });
-      }
-    }
   }
 
   // ─────────────────────── 右中：行动区（固定存在，点物品才激活） ───────────────────────
