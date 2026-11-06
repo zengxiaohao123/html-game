@@ -140,6 +140,7 @@ const { RolePanel } = await import('../src/ui/panels/RolePanel.js');
 const { TeamPanel } = await import('../src/ui/panels/TeamPanel.js');
 const { ForgePanel } = await import('../src/ui/panels/ForgePanel.js');
 const { ShopPanel, SHOP_GRID } = await import('../src/ui/panels/ShopPanel.js');
+const { CATEGORY_TABS } = await import('../src/ui/CategoryBar.js');
 const { VehiclePanel } = await import('../src/ui/panels/VehiclePanel.js');
 const { TaskPanel } = await import('../src/ui/panels/TaskPanel.js');
 const { CodexPanel } = await import('../src/ui/panels/CodexPanel.js');
@@ -461,7 +462,7 @@ head_('第 8 批：商店/魔法商店逐项 UI（选项齐全/正方格/留白/
   const traitBadges = findAll(shopPanel.detailEl, (el) => el.classList && el.classList.contains('trait-badge'));
   assert(traitBadges.length > 0, '详情显示展示词条徽章（trait-badge）', traitBadges.length);
 
-  // 5.1) 售卖分类栏：与背包同一套分组 + 图标 + 选中态，可筛选（§16.21）
+  // 5.1) 售卖分类栏：与背包共用 CategoryBar（同分组 / 同顺序 / 同选中态），可筛选（§16.21）
   const unsellableBackup = gs.inventory.items.filter((e) => e.itemId !== unsellableId);
   gs.inventory.items = [
     { itemId: 'item_wheat', qty: 3 },
@@ -469,16 +470,31 @@ head_('第 8 批：商店/魔法商店逐项 UI（选项齐全/正方格/留白/
   ];
   EventBus.emit(GE.INVENTORY_CHANGE, {});
   buttonsWithText(shopPanel.root, '✖')[0].click();   // 关详情弹窗
-  assert(shopPanel.catRailEl && shopPanel.catRailEl.style.display === 'flex', '售卖 tab 显示左侧分类栏');
-  assert(shopPanel.catRailEl.children.length === 8, '分类栏 8 个分组（与背包一致）', shopPanel.catRailEl.children.length);
-  assert(shopPanel.catRailEl.children[0].classList.contains('active'), '默认「总览」选中态');
-  assert(shopPanel.catRailEl.children.filter((c) => c.classList.contains('active')).length === 1,
-    '分类栏选中态唯一');
-  assert(shopPanel.catRailEl.children[5].textContent.includes('产物'), '分类含图标分组：产物');
+  assert(shopPanel.catBarEl && shopPanel.catBarEl.style.display === 'block', '售卖 tab 显示分类栏');
+  assert(shopPanel.catBarEl.children.length === 1
+    && shopPanel.catBarEl.children[0].classList.contains('tab-bar'),
+    '分类栏复用背包同一 DOM（.tab-bar）', shopPanel.catBarEl.children.length);
+  const catBtns = shopPanel.catBarBtns;
+  assert(catBtns.length === 8, '分类栏 8 个分组（与背包一致）', catBtns.length);
+  assert(catBtns.every((b) => b.classList.contains('tab-btn')),
+    '分类按钮复用背包样式（.tab-btn）');
+  const sellCatLabels = catBtns.map((b) => b._text);
+  const invCatLabels = inventoryPanel.tabBtns.map((b) => b._text);
+  assert(JSON.stringify(sellCatLabels) === JSON.stringify(CATEGORY_TABS.map((t) => t.label)),
+    '售卖分类分组/顺序与共用定义一致', sellCatLabels);
+  assert(JSON.stringify(sellCatLabels) === JSON.stringify(invCatLabels),
+    '售卖分类与背包分类逐项一致（防漂移）', { sell: sellCatLabels, inv: invCatLabels });
+  assert(catBtns[0].classList.contains('active'), '默认「总览」选中态');
+  assert(catBtns.filter((c) => c.classList.contains('active')).length === 1, '分类栏选中态唯一');
 
-  shopPanel.catRailEl.children[5].click();   // 产物
-  assert(shopPanel.catRailEl.children[5].classList.contains('active'), '点击分类 → 选中态切换');
+  catBtns[5].click();   // 产物（点击后分类栏重建，选中态取新按钮）
+  assert(shopPanel.sellCat === 5, '点击分类 → 分类索引切换', shopPanel.sellCat);
+  assert(shopPanel.catBarBtns[5].classList.contains('active'), '点击分类 → 选中态切换');
   assert(shopPanel.gridEl.children.length === 1, '产物分类仅显示 1 个可售物品格', shopPanel.gridEl.children.length);
+
+  // 5.1.1) 刷新按钮只属于购买页：售卖 tab 必须消失（不是禁用/灰化）（§16.21）
+  assert(shopPanel.refreshBtn === null, '售卖 tab 无刷新按钮节点', shopPanel.refreshBtn);
+  assert(!hasText(shopPanel.root, '刷新'), '售卖 tab 不残留「刷新」文案');
 
   // 5.2) 售卖数量：- / 输入 / + / 最大，确认才成交；购买无数量选择（§16.21）
   const goldBeforeQty = gs.player.gold;
@@ -498,7 +514,11 @@ head_('第 8 批：商店/魔法商店逐项 UI（选项齐全/正方格/留白/
   gs.inventory.items = unsellableBackup;
   EventBus.emit(GE.INVENTORY_CHANGE, {});
   shopPanel.tabBtns[0].click();   // 回购买
-  assert(shopPanel.catRailEl.style.display === 'none', '购买 tab 不显示分类栏');
+  assert(shopPanel.catBarEl.style.display === 'none', '购买 tab 不显示分类栏');
+  assert(!!shopPanel.refreshBtn && shopPanel.refreshBtn.style.display !== 'none',
+    '切回购买页 → 刷新按钮重新出现');
+  assert(shopPanel.stageEl.children[0] === shopPanel.refreshBtn,
+    '刷新按钮仍在第一行第一个商品左侧（stage 首子元素）');
 
   // 6) 层级链（2026-11-06 新规则）：面板/遮罩 ≥5000 > 信息区 100 > HUD 与容量条 80 > 地图 ≤50；
   //    功能区/快捷栏 5600 夹在面板与商店遮罩之间。打开新界面要能遮挡左上角 HUD，且 HUD 不拦截鼠标。
@@ -525,21 +545,23 @@ head_('第 8 批：商店/魔法商店逐项 UI（选项齐全/正方格/留白/
   assert(Number(settingsPanel.mask.style.zIndex) > shopMaskZ,
     '设置面板层级高于商店（二级嵌套可见）');
 
-  // 6.1) 「离开」二次确认：灰底白字 → 红底白字（不离开）→ 再点才离开；点别处取消
-  assert(shopPanel.leaveBtn.style.color === '#fff' && shopPanel.leaveBtn.style.background === '#9a9488',
-    '离开按钮初始灰底白字');
+  // 6.1) 「离开」：文字恒为「离开」，首点只把灰底变红底（不离开），再点才离开；点别处取消
+  assert(shopPanel.leaveBtn._text === '离开' && shopPanel.leaveBtn.style.color === '#fff'
+    && shopPanel.leaveBtn.style.background === '#9a9488',
+    '离开按钮初始：文字「离开」+ 灰底白字');
   shopPanel.leaveBtn.click();
-  assert(shopPanel.visible === true && shopPanel.leaveBtn._text === '确认离开？',
-    '第一次点击只变红、不离开', shopPanel.leaveBtn._text);
+  assert(shopPanel.visible === true && shopPanel.leaveBtn._text === '离开',
+    '首次点击不离开且文字不变（仍为「离开」）', shopPanel.leaveBtn._text);
   assert(shopPanel.leaveBtn.style.background.includes('ff7b7b') && shopPanel.leaveBtn.style.color === '#fff',
-    '第一次点击 → 红底白字');
+    '首次点击 → 仅底色变红，文字不动');
   shopPanel.root.dispatchEvent({ type: 'click' });
   assert(shopPanel.leaveBtn._text === '离开' && shopPanel.leaveBtn.style.background === '#9a9488',
-    '点击别处 → 取消确认、恢复灰底白字');
+    '点击别处 → 取消本次点击、恢复灰底（文字仍「离开」）');
   shopPanel.leaveBtn.click();
-  assert(shopPanel.leaveBtn._text === '确认离开？', '再次进入确认态');
+  assert(shopPanel.leaveBtn._text === '离开' && shopPanel.leaveBtn.style.background.includes('ff7b7b'),
+    '再次进入红色待确认态，文字仍「离开」');
   shopPanel.leaveBtn.click();
-  assert(shopPanel.visible === false, '第二次点击「确认离开」→ 关闭商店');
+  assert(shopPanel.visible === false, '第二次点击「离开」→ 关闭商店');
 
   // 7) 魔法商店：同布局，10 格商品 + 2 空格（§16.22）
   const magicTile = gs.map.outerTiles.find((t) => !t.contentId);

@@ -25,22 +25,9 @@ import { InventorySystem } from '../../systems/InventorySystem.js';
 import { OUTBOX_SLOTS } from '../../utils/constants.js';
 import { createEl, qs, iconEl } from '../dom.js';
 import { renderTraitBadges } from '../TraitBadges.js';
+import { CATEGORY_TABS as TABS, createCategoryBar } from '../CategoryBar.js';
 
-/** 8 个 tab 定义 —— 以 task-briefs §9 为准，示意图只参考排版不参考文字 */
-// 分类以「物品库」的 tier1/tier2 为准，不再靠 id 前缀猜。
-// 前缀法会把载具、消耗道具混进「产物」，物品库扩充后会持续失准。
-const tier2Is = (t) => (id) => ITEMS[id]?.tier2 === t;
-const tier1Is = (t) => (id) => ITEMS[id]?.tier1 === t;
-const TABS = [
-  { id: 'all',      label: '总览',  match: () => true },
-  { id: 'facility', label: '设施',  match: tier2Is('设施') },
-  { id: 'resource', label: '资源',  match: tier2Is('资源') },
-  { id: 'skill',    label: '技能',  match: tier2Is('技能') },
-  { id: 'terrain',  label: '地形',  match: tier1Is('地形') },
-  { id: 'item',     label: '产物',  match: tier1Is('产物') },
-  { id: 'consum',   label: '道具',  match: tier1Is('道具') },
-  { id: 'misc',     label: '杂物',  match: tier1Is('杂物') },
-];
+/** 8 个 tab 定义统一由 CategoryBar 提供（与商店售卖页同一份实现，禁止面板内另拼） */
 
 export class InventoryPanel {
   constructor(director) {
@@ -92,15 +79,15 @@ export class InventoryPanel {
     const rightCol = createEl('div', { class: 'inv-right', parent: body });
 
     // Tab bar —— 隶属于左侧部分（不是横跨整个面板顶部）
+    // 与商店售卖页共用同一实现（src/ui/CategoryBar.js），保证分组/顺序/选中态不漂移
     const tabBarWrap = createEl('div', { class: 'inv-left-top', parent: leftCol });
-    this.tabBar = createEl('div', { class: 'tab-bar', parent: tabBarWrap });
-    TABS.forEach((t, i) => {
-      this.tabBtns.push(createEl('button', {
-        class: ['tab-btn', i === 0 ? 'active' : ''],
-        text: t.label, attrs: { 'data-tab': i }, parent: this.tabBar,
-        onclick: () => this._switchTab(i),
-      }));
+    const tabRes = createCategoryBar({
+      parent: tabBarWrap,
+      activeIdx: 0,
+      onSelect: (i) => this._switchTab(i),
     });
+    this.tabBar = tabRes.bar;
+    this.tabBtns = tabRes.btns;
 
     // 左：tab bar 下方是背包大网格
     this.listEl = createEl('div', { class: 'inv-grid-wrap', parent: leftCol });

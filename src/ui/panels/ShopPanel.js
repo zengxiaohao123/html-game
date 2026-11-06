@@ -11,14 +11,14 @@
 //   │           │ └──┴───────────────────────────┘   │
 //   │           │                        [离开]     │
 //   └───────────┴───────────────────────────────────┘
-//   🔄刷新 按钮紧贴网格左侧，垂直对齐第一行商品。
-//   售卖 tab 在网格左侧再显示分类栏（与背包同一套分组/图标/选中态）。
+//   🔄刷新 按钮紧贴网格左侧，垂直对齐第一行商品（仅购买页渲染，售卖页不出现）。
+//   售卖 tab 顶部复用背包 .tab-bar（src/ui/CategoryBar.js 同一份实现，分组/顺序/选中态一致）。
 //   商品格：正方形 112px、间距统一 10px、网格居中不铺满；已售/魔法商店空位 = 空格。
 //   格内仅三要素：顶部小字名称 / 居中图标 / 右下角金币图标+价格（§16.21，无描述无多余文字）。
 //
 // 行为：购买每格仅 1 件、不选数量；售卖可自选数量（−/输入/+/最大）；售卖价 = 物品价值；
 //       详情展示词条徽章（与背包/图鉴共用 trait-badge）；刷新 4/8/12 每周 3 次（用完灰化）；
-//       周一自动刷新；离店本回合禁入；「离开」二次确认（灰底白字 → 红底白字 → 再点才走）；
+//       周一自动刷新；离店本回合禁入；「离开」两次点击才离店（首点仅灰底变红底，文字恒为「离开」）；
 //       ESC 先关详情弹窗、再关商店（捕获阶段拦截）。
 
 import { EventBus } from '../../core/EventBus.js';
@@ -27,6 +27,7 @@ import { createEl, qs, iconEl } from '../dom.js';
 import { devLog } from '../../core/Logger.js';
 import { ITEMS } from '../../data/items.js';
 import { renderTraitBadges } from '../TraitBadges.js';
+import { CATEGORY_TABS, createCategoryBar } from '../CategoryBar.js';
 import {
   SHOP_KINDS, getShop, enterShop, leaveShop, buy, sell,
   refreshShop, manualRefreshCost, refreshLeft, isSellable, effectivePrice,
@@ -34,18 +35,6 @@ import {
 
 /** 商品格网格常量（正方形格子 + 统一间距，冒烟用例按此核对） */
 export const SHOP_GRID = { cols: 4, cell: 112, gap: 10 };
-
-/** 售卖分类栏：与背包（InventoryPanel）同一套分组（tier1/tier2 口径） */
-const SELL_CATS = [
-  { id: 'all', label: '总览', icon: '🎒', match: () => true },
-  { id: 'facility', label: '设施', icon: '🏗️', match: (id) => ITEMS[id]?.tier2 === '设施' },
-  { id: 'resource', label: '资源', icon: '🌾', match: (id) => ITEMS[id]?.tier2 === '资源' },
-  { id: 'skill', label: '技能', icon: '✨', match: (id) => ITEMS[id]?.tier2 === '技能' },
-  { id: 'terrain', label: '地形', icon: '🗺️', match: (id) => ITEMS[id]?.tier1 === '地形' },
-  { id: 'item', label: '产物', icon: '🌱', match: (id) => ITEMS[id]?.tier1 === '产物' },
-  { id: 'consum', label: '道具', icon: '🧪', match: (id) => ITEMS[id]?.tier1 === '道具' },
-  { id: 'misc', label: '杂物', icon: '📦', match: (id) => ITEMS[id]?.tier1 === '杂物' },
-];
 
 /** 商人立绘占位（美术未接入：iconEl 预留 PNG 入口，先回退大号 emoji + 对话框） */
 const MERCHANT = {
@@ -72,7 +61,8 @@ export class ShopPanel {
     this.gridWrapEl = null;    // 滚动/居中容器（保留旧字段名，冒烟用例引用）
     this.contentEl = null;
     this.stageEl = null;       // 刷新按钮 + 商品网格
-    this.catRailEl = null;     // 售卖分类栏（仅售卖 tab 显示）
+    this.catBarEl = null;      // 售卖分类栏（仅售卖 tab 显示，与背包共用 CategoryBar）
+    this.catBarBtns = [];      // 分类按钮（顺序与背包一致）
     this.sellCat = 0;          // 售卖分类索引（默认总览）
     this.detailEl = null;
     this.refreshBtn = null;
@@ -230,17 +220,18 @@ export class ShopPanel {
     });
     this._renderHeader(right);
 
-    // 内容区：售卖 tab 左侧为分类栏；刷新按钮与商品网格放在同一行
+    // 内容区：上为售卖分类栏（仅售卖 tab，与背包同一组件） / 下为刷新按钮 + 商品网格
     this.contentEl = createEl('div', {
       style: {
         flex: '1', minWidth: '0', minHeight: '0',
-        display: 'flex', gap: '10px',
+        display: 'flex', flexDirection: 'column', gap: '10px',
       },
       parent: right,
     });
 
-    this.catRailEl = createEl('div', {
-      class: ['shop-cat-rail'],
+    // 分类栏容器：默认隐藏，售卖 tab 才渲染（刷新按钮只属于购买页，互不共存）
+    this.catBarEl = createEl('div', {
+      class: ['shop-cat-bar'],
       style: { display: 'none' },
       parent: this.contentEl,
     });
@@ -259,7 +250,9 @@ export class ShopPanel {
       style: { display: 'flex', alignItems: 'flex-start', gap: '10px', flexShrink: '0' },
       parent: this.gridWrapEl,
     });
-    this._renderRefreshBtn();
+    // 刷新按钮只属于购买页：售卖 tab 不渲染（消失，而非禁用/灰化）
+    this.refreshBtn = null;
+    if (this.tab === 'buy') this._renderRefreshBtn();
 
     // 正方形格子：固定 112px 列宽 = 行高，间距统一 10px（不随屏幕拉伸）
     this.gridEl = createEl('div', {
@@ -350,12 +343,10 @@ export class ShopPanel {
     };
   }
 
-  /** 离开按钮二次确认态（§16.21）：灰底白字 ⇄ 红底白字 */
+  /** 离开按钮二次确认态（§16.21）：文字恒为「离开」，首次点击只把灰底变红底 */
   _setLeaveArmed(on) {
     this._leaveArmed = on;
     if (!this.leaveBtn) return;
-    this.leaveBtn._text = on ? '确认离开？' : '离开';
-    this.leaveBtn.textContent = this.leaveBtn._text;
     this.leaveBtn.style.background = on
       ? 'linear-gradient(135deg,#ff7b7b,#d63b3b)'
       : '#9a9488';
@@ -418,39 +409,30 @@ export class ShopPanel {
     if (this.tab === 'buy') {
       this.gridWrapEl.style.alignItems = 'center';
       this.gridWrapEl.style.overflowY = 'visible';
-      if (this.catRailEl) this.catRailEl.style.display = 'none';
+      if (this.catBarEl) { this.catBarEl.style.display = 'none'; this.catBarEl.innerHTML = ''; }
       this._renderBuyGrid();
     } else {
       this.gridWrapEl.style.alignItems = 'flex-start';
       this.gridWrapEl.style.overflowY = 'auto';
-      if (this.catRailEl) {
-        this.catRailEl.style.display = 'flex';
-        this._renderCatRail();
+      if (this.catBarEl) {
+        this.catBarEl.style.display = 'block';
+        this._renderCatBar();
       }
       this._renderSellGrid();
     }
     this._renderHeaderState();
   }
 
-  /** 售卖分类栏：与背包左侧同一套分组 / 图标 / 选中态 */
-  _renderCatRail() {
-    if (!this.catRailEl) return;
-    this.catRailEl.innerHTML = '';
-    SELL_CATS.forEach((cat, i) => {
-      const active = i === this.sellCat;
-      const btn = createEl('button', {
-        class: ['shop-cat-btn', active ? 'active' : ''],
-        attrs: { 'data-cat': cat.id },
-        style: { width: '100%' },
-        parent: this.catRailEl,
-      });
-      createEl('span', { class: ['shop-cat-icon'], text: cat.icon, parent: btn });
-      createEl('span', { class: ['shop-cat-label'], text: cat.label, parent: btn });
-      btn.onclick = () => {
-        this.sellCat = i;
-        this._renderGrid();
-      };
+  /** 售卖分类栏：直接复用背包同一组件（同分组 / 同顺序 / 同选中态，禁止在本面板另拼一套） */
+  _renderCatBar() {
+    if (!this.catBarEl) return;
+    this.catBarEl.innerHTML = '';
+    const { btns } = createCategoryBar({
+      parent: this.catBarEl,
+      activeIdx: this.sellCat,
+      onSelect: (i) => { this.sellCat = i; this._renderGrid(); },
     });
+    this.catBarBtns = btns;
   }
 
   _cellBase(extra = {}) {
@@ -503,7 +485,7 @@ export class ShopPanel {
   }
 
   _renderSellGrid() {
-    const cat = SELL_CATS[this.sellCat] || SELL_CATS[0];
+    const cat = CATEGORY_TABS[this.sellCat] || CATEGORY_TABS[0];
     const all = (this.gs.inventory.items || []).filter((e) => e.qty > 0);
     const entries = all.filter((e) => cat.match(e.itemId));
     if (entries.length === 0) {
