@@ -368,3 +368,71 @@ export const createInitialState = () => ({
 6. **地图三属性正交**：地形 / 内容 / 状态 独立存储、独立更新、独立触发效果
 7. **元素伤害体系**：7 种元素（火水雷冰草风岩）+ 物理，每种伤害带类型字段，技能注册时声明
 8. **二次确认唯一实现**：所有需要玩家二次确认的操作（睡觉、清空存档、退出等）先弹 `DialogBox` 文字弹窗（选项「取消」+ 目标动作），在弹窗内点目标动作才进入待确认态并复用 `src/ui/ConfirmAction.js`：`arm` 变底色 + 弹窗内显示「你确定这么做？」→ `trigger` 二次同一 tick 立即执行业务 → 弹窗 1.5 秒淡出；待确认文案禁止出现在图标旁 / 屏幕角落。快捷键与按钮走同一入口。禁止各面板自写 `_armed` 标志 / 计时器。取消待确认态只有一个复位入口：`ConfirmAction.disarm` 通过 `onDisarm` 通知调用方同步复位自身状态机（禁止「只改 UI 不改内部状态」），保证 arm → 点别处/ESC 取消 → 再点仍是 arm，绝不跳过待确认直接执行。例外：商店「离开」按钮保持原有"只变底色不改文字"实现；载具页的装载 / 卸下 / 替换为单击即时生效，不弹窗、不进入二次确认。
+
+---
+
+## 七、结算去重与延迟死亡模块（EffectBatch / PendingDeathQueue）
+
+> 对应《空间碰撞与时序方案》§2.5 ② / ④、§3.2 ⑦c⑬、§3.4、§3.5。本轮只交付模块本体，**尚未接入** `SkillSystem` / `LinkSkillSystem` 的实际结算。
+
+### 7.1 EffectBatch —— 一次结算一份批次
+
+```js
+import { EffectBatch } from '../systems/EffectBatch.js';
+const batch = new EffectBatch(gs, { sourceSkillId, instanceKey, phase, deathQueue });
+batch.damage(target, multiplier, { element, hits, realDamage, key });
+batch.buff(target, buffId, { strength, duration, params });
+const summary = batch.commit();   // 按登记顺序统一应用，返回摘要
+```
+
+职责：把「技能产出意图」与「真正应用效果」分开，重复意图在批次内收敛成一次。
+
+去重口径（写死）：
+
+| 类型 | 去重键 | 取值规则 |
+|---|---|---|
+| 伤害 | `instanceKey + 伤害键 + targetId`（默认伤害键 `skill:${skillId}`） | 只应用一次，倍率取**最高**（同倍率取段数更多的 `hits`），不求和 |
+| buff/debuff | `targetId + buffId`（不含技能实例） | 只应用一次，强度取**最高**、时长取**最长**；与目标身上已有同名 buff 的合并仍由 `CombatSystem.applyBuff` 负责（同名取最高） |
+
+- `hits` 在**一次应用内部**循环，不按格数放大；
+- 不同技能实例 / 不同伤害键命中同一目标 → 各自独立结算，不互相吞伤害；
+- 应用顺序 = 意图**首次登记顺序**（与 §3.5 的稳定顺序配合：调用方先按 `tileIdx` → `instanceKey` → `targetId` 顺序登记即可）；
+- `commit()` 后批次**封存**：再登记 / 再 commit 抛错；空批次 commit 安全（`empty:true`，不调用结算函数）；
+- 目标在批次中途死亡 → 同批次内该目标后续分组跳过（`summary.skippedDead`）；登记时目标已死 → 忽略（`summary.ignoredDead`）；
+- 结算函数可注入（`resolveDamage` / `applyBuff`），默认 `CombatSystem.calculateDamage` / `CombatSystem.applyBuff`，便于 headless 断言。
+
+返回摘要结构：
+
+```js
+{ batchId, sourceSkillId, instanceKey, phase, empty,
+  damages: [{ targetId, key, multiplier, hits, appliedHits, damage, element, dodged, immune, isCrit, skipped }],
+  buffs:   [{ targetId, buffId, strength, duration, applied, refreshed, skipped }],
+  ignoredDead, skippedDead }
+```
+
+### 7.2 PendingDeathQueue —— 死亡延迟到批次末
+
+```js
+import { PendingDeathQueue } from '../systems/PendingDeathQueue.js';
+const dq = new PendingDeathQueue(gs);
+dq.markDead(target);   // 或 new EffectBatch(gs, { deathQueue: dq }) 在 commit 内自动入队
+dq.flush();            // 批次 / 回合末统一处理
+```
+
+- `markDead(target)`：只把 `hp` 夹到 0、置 `dead = true`、按实例 id 入队；**不从任何集合删除**；
+- 同一实例重复入队返回 `false`（只死一次）；已从 `gs.creatures` 移除的实例不再入队；
+- `flush()`：按实例 id 升序 → 去重 → 发 `CREATURE_DEFEATED` → 从栅栏格缓存与 `gs.creatures` 移除 → 击杀掉落 → `onCreatureDefeated` 词条 hook → 天赋回调；掉落与事件**只结算一次**（已移除实例只计入 `skipped`）；
+- 空队列 `flush()` 安全（`empty:true`）；
+- `has(id)` / `isAlive(target)` 供结算层判定「已死实例不再被结算」；
+- 依赖可注入（`grantKillDrops` / `fireDefeatedHook` / `onTalentDefeated` / `bus`），默认走真实系统。
+
+### 7.3 接入点（下一阶段，本轮不改现有结算）
+
+1. `SkillSystem.fireOneSkill`：把逐目标 `CombatSystem.calculateDamage` / `applyBuff` 改为 `batch.damage(...)` / `batch.buff(...)`，`commit()` 后取摘要；
+2. `SkillSystem.defeatCreature` / `LinkSkillSystem` 的即时删除：改为 `deathQueue.markDead(target)`；
+3. `GameDirector` 回合末（§3.2 ⑬）调用一次 `flushDeaths()`，替换现有的即时 `defeatCreature`；
+4. `TurnSystem` 的燃烧 tick 同样只 `markDead`，统一在回合末 flush。
+
+### 7.4 验收
+
+`node tools/smoke-effectbatch.mjs`：51 条断言，覆盖重复登记取最高、同一目标被两个地块命中只结算一次、`hits` 不按格放大、同名 buff 取最高强度 + 最长时长、已存在 buff 不叠加、死亡延迟到批次末、掉落只结算一次、已死目标不被二次结算、空批次安全、commit 后复用抛错。
