@@ -460,8 +460,8 @@ export class ShopPanel {
     });
 
     createEl('div', {
-      text: (ITEMS[item.id]?.description || item.description || '').replace(/\n/g, ' '),
-      style: { fontSize: '12px', lineHeight: '1.55', maxHeight: '108px', overflowY: 'auto', opacity: '0.92' },
+      text: (ITEMS[item.id]?.description || item.description || ''),
+      style: { fontSize: '12px', lineHeight: '1.55', maxHeight: '108px', overflowY: 'auto', opacity: '0.92', whiteSpace: 'pre-line' },
       parent: box,
     });
 

@@ -42,34 +42,6 @@ const TABS = [
   { id: 'misc',     label: '杂物',  match: tier1Is('杂物') },
 ];
 
-/** 简短描述字典（UI 用） */
-const DESCRIPTIONS = {
-  facility_home:      '唯一且永恒，不可被替换。经过/进入获得金币，睡觉时行动力回满。',
-  facility_tent:      '睡觉时行动力回满；受祝福可额外 +3 行动力。',
-  facility_wheat:     '最基础的农作物。每日产出小麦，草地相邻加成。',
-  facility_rice:      '每日产出稻草，草地/水面相邻有额外加成。',
-  facility_potato:    '每日自动储存土豆，在信息区用滑块手动收获。',
-  facility_tulip:     '每日价值随机波动，运气成分较重。',
-  facility_strawberry:'经过时储存草莓，积累满后一次性取走。',
-  facility_pea:       '使用技能时自动储存豌豆，积累满后取走。',
-  facility_henhouse:  '【进入时】生成 1 只小鸡（每日限 1 次）。每个鸡舍至多生成 4 只鸡。',
-  facility_slimehouse:'【每日开始时】生成 1 只史莱姆（种类随机）。',
-  resource_event:     '🎲 进入时触发随机事件（每日限 1 次）。',
-  resource_reward:    '🎁 进入时获得随机奖励（每日限 1 次）。',
-  resource_hunt:      '🏹 进入时捕捉小动物（每日限 1 次）。',
-  resource_shop:      '🛒 【进入】可进入商店。每日限放置 1 个，场上最多同时存在 2 个。',
-  resource_bus:       '🚌 行动力 +1、获得轮子。',
-  item_wheat:         '最基础的农作物，可以喂鸡，也可以卖金币。',
-  item_rice_straw:    '稻田产出的稻草。',
-  item_potato:        '土豆。',
-  item_strawberry:    '草莓。',
-  item_pea:           '豌豆。',
-  item_egg:           '鸡蛋。',
-  item_raw_meat:      '生肉。',
-  item_slime_gel:     '史莱姆凝胶。',
-  item_wheel:         '轮子。',
-};
-
 export class InventoryPanel {
   constructor(director) {
     this.director = director;
@@ -320,7 +292,7 @@ export class InventoryPanel {
         if (fd && typeof fd.value === 'number') value = fd.value;
       }
     }
-    const desc = DESCRIPTIONS[this.selectedItemId] || ITEM?.description || '（暂无描述）';
+    const desc = ITEM?.description || '（暂无描述）';
 
     // ══ 详情左半：上半行（图标左 + 价值行整体居右） + 描述 ══
     const topRow = createEl('div', { class: 'inv-detail-toprow', parent: this.detailEl });
@@ -357,7 +329,14 @@ export class InventoryPanel {
       });
     }
 
-    // 描述（topRow 下方独立一行）
+    // 显性词条：单独用徽章展示，不混入描述正文
+    const traits = ITEM?.traits || [];
+    if (traits.length) {
+      const traitRow = createEl('div', { class: 'trait-badge-row', parent: this.detailEl });
+      traits.forEach((t) => createEl('span', { class: 'trait-badge', text: t, parent: traitRow }));
+    }
+
+    // 描述（topRow 下方独立一行；white-space: pre-line 保留数据里的换行）
     createEl('div', { class: 'inv-detail-desc', text: desc, parent: this.detailEl });
 
     // ── §16.15 右上：合成材料（能合成该物品的配方所需材料）──

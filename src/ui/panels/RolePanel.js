@@ -193,7 +193,7 @@ export class RolePanel {
         top.appendChild(iconEl('ui', t.id, { def: t, fallback: t.emoji, size: '18px' }));
         createEl('span', { style: { fontWeight: '800', fontSize: '14px' }, text: t.name, parent: top });
         createEl('span', { style: { fontSize: '10px', color: isPassive ? '#2a8a3a' : '#c07a20', background: isPassive ? '#e8f5e9' : '#ffe099', padding: '0 6px', borderRadius: '8px', marginLeft: 'auto', border: `1px solid ${isPassive ? '#2a8a3a' : '#c07a20'}` }, text: triggerLabel, parent: top });
-        createEl('div', { style: { fontSize: '12px', color: '#4a3a2a', lineHeight: '1.5' }, text: t.description || '', parent: row });
+        createEl('div', { style: { fontSize: '12px', color: '#4a3a2a', lineHeight: '1.5', whiteSpace: 'pre-line' }, text: t.description || '', parent: row });
       });
     }
 
@@ -219,7 +219,7 @@ export class RolePanel {
         if (sk.isLinkSkill) {
           createEl('span', { style: { fontSize: '10px', color: '#c07a20', background: '#ffe099', padding: '0 6px', borderRadius: '8px', marginLeft: 'auto', border: '1px solid #c07a20' }, text: '连携技', parent: top });
         }
-        createEl('div', { style: { fontSize: '12px', color: '#4a3a2a', lineHeight: '1.5' }, text: sk.description || '', parent: row });
+        createEl('div', { style: { fontSize: '12px', color: '#4a3a2a', lineHeight: '1.5', whiteSpace: 'pre-line' }, text: sk.description || '', parent: row });
       });
     }
   }

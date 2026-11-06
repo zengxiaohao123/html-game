@@ -91,7 +91,7 @@ export class VehiclePanel {
       // usageLeft 从 entry.usageLeft 读（不是 VEHICLES[id].usageCount）
       createEl('div', { style: { fontSize: '11px', color: '#7a6a56' }, text: `剩余使用：${VehiclePanel._fmtUsage(v.current.usageLeft)} 次`, parent: this.slotEl });
       if (def?.description) {
-        createEl('div', { style: { fontSize: '10px', color: '#9a8a76', textAlign: 'center', padding: '0 6px' }, text: def.description, parent: this.slotEl });
+        createEl('div', { style: { fontSize: '10px', color: '#9a8a76', textAlign: 'center', padding: '0 6px', whiteSpace: 'pre-line' }, text: def.description, parent: this.slotEl });
       }
       createEl('button', {
         class: 'action-btn', text: '卸下', parent: this.slotEl,

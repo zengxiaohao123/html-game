@@ -501,10 +501,32 @@
   color: #4a3a2a;
   line-height: 1.55;
   text-align: left;
+  white-space: pre-line;
   overflow-y: auto;
 }
 .inv-detail-desc::-webkit-scrollbar { width: 4px; }
 .inv-detail-desc::-webkit-scrollbar-thumb { background: #d0b890; border-radius: 2px; }
+
+/* 显性词条徽章（【永恒】【唯一】等）：缎带质感，独立于描述正文 */
+.trait-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.trait-badge {
+  display: inline-block;
+  padding: 2px 12px 3px;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  color: #fff8e1;
+  background: linear-gradient(180deg, #ff6a3d 0%, #d92d0b 100%);
+  border: 2px solid #8a1c05;
+  border-radius: 4px 4px 10px 10px;
+  box-shadow: 0 2px 0 rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.45);
+  text-shadow: 0 1px 1px rgba(0,0,0,0.35);
+}
 
 /* ── 右半：行动（slider + 数量 + 按钮） ── */
 .inv-right-top-right {

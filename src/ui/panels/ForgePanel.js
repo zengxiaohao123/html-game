@@ -196,7 +196,7 @@ export class ForgePanel {
       const nameCol = createEl('div', { style: { display: 'flex', flexDirection: 'column', gap: '2px' }, parent: topRow });
       createEl('div', { style: { fontSize: '16px', fontWeight: '900' }, text: itName(outId), parent: nameCol });
       createEl('div', { style: { fontSize: '12px', color: '#8a5a1a', fontWeight: '700' }, text: `当前数量 ×${have}`, parent: nameCol });
-      createEl('div', { style: { fontSize: '12px', color: '#8a7a66' }, text: ITEMS[outId]?.description || r.description || '', parent: this.detailEl });
+      createEl('div', { style: { fontSize: '12px', color: '#8a7a66', whiteSpace: 'pre-line' }, text: ITEMS[outId]?.description || r.description || '', parent: this.detailEl });
 
       createEl('div', { style: { fontSize: '12px', fontWeight: '700', color: '#5a4a3a', marginTop: '4px' }, text: '🧾 合成所需材料', parent: this.detailEl });
       r.ingredients.forEach((inp) => {
