@@ -6,8 +6,9 @@
 //   │  │ 竖 │  ⚔ 10
 //   │  │ 框 │  ◆◆◆◆◆◆◆◆ 5/8
 //   │  └──余默┘
-//   │  ╭── 木牌：第 3 天 5月12日 周一 │ 🪙 128 ──╮   ← 第二段（第一段下方一点）
-//   │  ╰──────────────────────────────────────╯
+//   │  ╭── 主牌：第 3 天 ─╮                        ← 第二段（木框 + 米黄内衬，只放天数）
+//   │   ┆（木钉） （木钉）┆
+//   │  ╰── 🪙 1673 ──────╯                        ← 金币胶囊副牌，悬挂在主牌下方
 //   │  (📋)                                          ← 第三段（再往下一点，独立一块）
 //   └──────────────────────────────────────────────────────────────┘
 //
@@ -58,7 +59,6 @@ export class TopBar {
     this.extremeText = null;
 
     this.dayText = null;
-    this.calText = null;
     this.goldText = null;
     this.nameText = null;
 
@@ -174,23 +174,29 @@ export class TopBar {
   }
 
   // ════════════════════════════════════════════════════════════
-  // 第二段：天数 + 金币（星露谷风格木牌，形状不规整；天数在左、金币在右）
+  // 第二段：双牌结构（§16.7）
+  //   主牌 = 木框 + 米黄内衬 + 大号天数（本作无时间/星期/天气，只保留天数）
+  //   副牌 = 主牌下方两根小木钉悬挂的独立胶囊金币铭牌（金币徽章在左、大号数字在右）
   // ════════════════════════════════════════════════════════════
   _buildSign() {
     const sign = createEl('div', { class: ['hud-sign'], parent: this.left });
 
-    // 左：天数 + 日历
-    const dayCol = createEl('div', { class: ['hud-sign-col', 'hud-sign-day-col'], parent: sign });
-    this.dayText = createEl('div', { class: ['hud-sign-day'], text: '', parent: dayCol });
-    this.calText = createEl('div', { class: ['hud-sign-cal'], text: '', parent: dayCol });
+    // 主牌：天数
+    const main = createEl('div', { class: ['hud-sign-main'], parent: sign });
+    const inner = createEl('div', { class: ['hud-sign-inner'], parent: main });
+    this.dayText = createEl('div', { class: ['hud-sign-day'], text: '', attrs: { title: '第几天' }, parent: inner });
 
-    createEl('div', { class: ['hud-sign-div'], parent: sign });
+    // 两根小木钉（连接主牌与金币副牌）
+    const pegs = createEl('div', { class: ['hud-sign-pegs'], parent: sign });
+    createEl('div', { class: ['hud-sign-peg'], parent: pegs });
+    createEl('div', { class: ['hud-sign-peg'], parent: pegs });
 
-    // 右：金币（图标保持放大）
-    const goldCol = createEl('div', { class: ['hud-sign-col', 'hud-sign-gold-col'], parent: sign });
-    const goldRow = createEl('div', { class: ['hud-sign-gold-row'], parent: goldCol });
-    goldRow.appendChild(iconEl('ui', 'gold', { size: '54px', cls: 'hud-gold-icon', fallback: Assets.ui.gold }));
-    this.goldText = createEl('span', { class: ['hud-sign-gold'], text: '', attrs: { title: '金币' }, parent: goldRow });
+    // 副牌：金币胶囊铭牌（徽章在左、数字在右，宽度随位数自动变宽）
+    const coin = createEl('div', { class: ['hud-sign-coin'], parent: sign });
+    createEl('div', { class: ['hud-sign-coin-inner'], parent: coin });
+    const coinRow = createEl('div', { class: ['hud-sign-coin-row'], parent: coin });
+    coinRow.appendChild(iconEl('ui', 'gold', { size: '34px', cls: 'hud-gold-icon', fallback: Assets.ui.gold }));
+    this.goldText = createEl('span', { class: ['hud-sign-gold'], text: '', attrs: { title: '金币' }, parent: coinRow });
   }
 
   // ════════════════════════════════════════════════════════════
@@ -251,14 +257,12 @@ export class TopBar {
     applyOverload(this.dangerText,   dangerNow,   c.danger);
     applyOverload(this.extremeText,  extremeNow,  c.extreme);
 
-    if (this.dayText)  this.dayText.textContent  = `第 ${this.gs.day} 天`;
-    if (this.calText) {
-      this.calText.textContent = this.gs.calendar
-        ? `${this.gs.calendar.month}月${this.gs.calendar.dayOfMonth}日 周${'一二三四五六日'[this.gs.calendar.weekday - 1] || ''}`
-        : '';
-      this.calText.title = this.gs.calendar
-        ? `${this.gs.calendar.year} 年 ${this.gs.calendar.month} 月 ${this.gs.calendar.dayOfMonth} 日`
-        : '';
+    if (this.dayText) {
+      this.dayText.textContent = `第 ${this.gs.day} 天`;
+      // 日历（年月日/星期）只作 tooltip，不在主牌上占位（§16.7：本作无时间、无星期/天气）
+      this.dayText.title = this.gs.calendar
+        ? `${this.gs.calendar.year} 年 ${this.gs.calendar.month} 月 ${this.gs.calendar.dayOfMonth} 日 周${'一二三四五六日'[this.gs.calendar.weekday - 1] || ''}`
+        : '第几天';
     }
     if (this.goldText) this.goldText.textContent = `${p.gold}`;
 

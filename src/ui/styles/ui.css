@@ -188,7 +188,7 @@ body.build-mode .map-container {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 8px;
+  gap: 7px;
   pointer-events: none;
   transform: scale(var(--hud-scale, 1));
   transform-origin: top left;
@@ -467,87 +467,134 @@ body.build-mode .map-container {
     0 2.5px 0 #241A12, 0 5px 6px rgba(0, 0, 0, 0.32);
 }
 
-/* ── 第二段：星露谷风格木牌（天数在左、金币在右；形状不规整 + 木纹 + 木节 + 双钉）── */
+/* ── 第二段：双牌结构（主牌「天数」+ 木钉悬挂的胶囊「金币」副牌）──
+ * 参照星露谷时间/金币 UI 的排版语言，但只保留天数与金币（本作无时间、无星期/天气）：
+ *   · 主牌：橙色木质外框（渐变 + 深棕粗描边 + 内里高光）+ 米黄内衬板 + 大号天数
+ *   · 副牌：主牌下方两根小木钉悬挂，独立胶囊铭牌（米黄内衬 + 金币徽章 + 大号暗红数字）
+ * 全部为 CSS/DOM 自绘，天数与金币是实时文本节点，不贴参考图。 */
 .hud-sign {
   position: relative;
-  width: 264px;
-  height: 68px;
+  width: 140px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 6px 16px;
-  border: 3px solid #241A12;
-  border-radius: 13px 22px 10px 19px / 19px 12px 22px 14px;
-  background:
-    radial-gradient(circle at 8px 9px, #FFE6B4 0 1.6px, #3A2A18 2.2px 3.4px, transparent 4px),
-    radial-gradient(circle at 234px 54px, #FFE6B4 0 1.6px, #3A2A18 2.2px 3.4px, transparent 4px),
-    radial-gradient(ellipse at 30% 42%, rgba(0, 0, 0, 0.16) 0 7px, transparent 9px),
-    radial-gradient(ellipse at 74% 68%, rgba(0, 0, 0, 0.13) 0 5px, transparent 7px),
-    repeating-linear-gradient(92deg, rgba(0, 0, 0, 0.1) 0 2px, rgba(255, 255, 255, 0.035) 2px 5px, transparent 5px 11px),
-    linear-gradient(180deg, #B07B3F 0%, #8A5A2B 45%, #6B4423 100%);
-  box-shadow:
-    0 0 0 4px #FFF8E6,
-    0 6px 0 rgba(36, 26, 18, 0.16),
-    0 12px 16px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
   transform: rotate(-1.2deg);
 }
-/* 手画两遍线的错位感 */
-.hud-sign::before {
-  content: '';
+
+/* 主牌：橙色木质外框 + 米黄内衬 + 大号天数 */
+.hud-sign-main {
+  position: relative;
+  width: 140px;
+  height: 36px;
+  box-sizing: border-box;
+  border: 3px solid #5E2D08;
+  border-radius: 7px 10px 6px 9px / 9px 6px 10px 7px;
+  background:
+    repeating-linear-gradient(92deg, rgba(90, 40, 10, 0.1) 0 2px, rgba(255, 220, 160, 0.06) 2px 4px, transparent 4px 9px),
+    linear-gradient(180deg, #EFA14C 0%, #DA7C2A 44%, #B85E16 100%);
+  box-shadow:
+    0 0 0 2px #FFE7B0,
+    0 3px 0 rgba(58, 30, 8, 0.24),
+    0 6px 9px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 236, 190, 0.65);
+}
+/* 米黄内衬板：内缩一圈 + 细棕描边 + 顶部内阴影 */
+.hud-sign-inner {
   position: absolute;
-  inset: 5px;
-  border: 1.5px solid rgba(255, 240, 210, 0.22);
-  border-radius: 9px 17px 7px 14px;
-  pointer-events: none;
-}
-.hud-sign::after {
-  content: '';
-  position: absolute;
-  left: 8px; right: 8px; top: 2px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 240, 210, 0.35), transparent);
-  pointer-events: none;
-}
-.hud-sign-col { display: flex; flex-direction: column; justify-content: center; }
-/* 天数在左：占据剩余宽度；金币在右：固定宽度并右对齐（图标保持放大） */
-.hud-sign-day-col { flex: 1; gap: 1px; padding-left: 4px; }
-.hud-sign-gold-col { width: 96px; align-items: flex-end; }
-.hud-sign-gold-row { display: flex; align-items: center; justify-content: flex-end; gap: 0; }
-.hud-gold-icon {
-  margin: 0 -7px 0 -6px; /* 金币图 PNG 自带透明留白，内缩让金币和数字更紧凑 */
-  filter: drop-shadow(0 2px 0 rgba(36, 26, 18, 0.35)) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.25));
-}
-.hud-sign-gold {
-  font-family: "Arial Black", "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif;
-  font-size: 26px;
-  font-weight: 900;
-  line-height: 1;
-  color: #FFE9A8;
-  text-shadow:
-    -1.5px 0 0 #3A2510, 1.5px 0 0 #3A2510, 0 -1.5px 0 #3A2510, 0 1.5px 0 #3A2510,
-    0 3px 0 #3A2510, 0 5px 6px rgba(0, 0, 0, 0.35);
-  letter-spacing: 0.5px;
-}
-.hud-sign-div {
-  width: 2px;
-  height: 42px;
-  flex-shrink: 0;
-  background: repeating-linear-gradient(180deg, rgba(255, 240, 210, 0.45) 0 4px, transparent 4px 9px);
-  border-radius: 2px;
+  inset: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid #C08636;
+  border-radius: 4px 7px 3px 6px / 6px 3px 7px 4px;
+  background: linear-gradient(180deg, #FBEBC0 0%, #F3DCA6 55%, #E9CD92 100%);
+  box-shadow:
+    inset 0 2px 3px rgba(120, 70, 20, 0.18),
+    inset 0 -1px 0 rgba(255, 248, 220, 0.7);
 }
 .hud-sign-day {
-  font-size: 16px;
+  font-size: 19px;
   font-weight: 900;
-  color: #FFF8E6;
-  line-height: 1.15;
-  text-shadow: 0 1px 0 #2A1A0C, 0 2px 3px rgba(0, 0, 0, 0.4);
+  line-height: 1;
+  color: #4A2A10;
+  letter-spacing: 2px;
+  text-shadow: 0 1px 0 #FFF4D6, 0 2px 1px rgba(90, 50, 15, 0.22);
 }
-.hud-sign-cal {
-  font-size: 10.5px;
-  font-weight: 700;
-  color: #F4DCB2;
-  line-height: 1.2;
-  text-shadow: 0 1px 0 rgba(42, 26, 12, 0.7);
+.hud-sign-cal { display: none; }
+
+/* 两根小木钉：连接主牌与金币副牌 */
+.hud-sign-pegs {
+  position: relative;
+  width: 140px;
+  height: 4px;
+  flex-shrink: 0;
+}
+.hud-sign-peg {
+  position: absolute;
+  top: -4px;
+  width: 7px;
+  height: 12px;
+  border: 1.5px solid #4E2606;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #8A4B12 0%, #F2B467 38%, #C9731F 72%, #7A3F0E 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 236, 190, 0.6), 0 1px 2px rgba(40, 20, 5, 0.35);
+}
+.hud-sign-peg:first-child { left: 34px; }
+.hud-sign-peg:last-child  { right: 34px; }
+
+/* 金币副牌：独立胶囊铭牌（宽度略窄于主牌，随数字位数自动变宽） */
+.hud-sign-coin {
+  position: relative;
+  min-width: 116px;
+  height: 33px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid #6E370C;
+  border-radius: 17px;
+  background:
+    repeating-linear-gradient(92deg, rgba(90, 40, 10, 0.1) 0 2px, rgba(255, 220, 160, 0.06) 2px 4px, transparent 4px 9px),
+    linear-gradient(180deg, #F0A04A 0%, #DA7E2A 44%, #B85F17 100%);
+  box-shadow:
+    0 0 0 2px #FFE7B0,
+    0 3px 0 rgba(58, 30, 8, 0.22),
+    0 6px 8px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 236, 190, 0.6);
+}
+.hud-sign-coin-inner {
+  position: absolute;
+  inset: 3px;
+  border: 1.5px solid #C08636;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #FBEBC0 0%, #F3DCA6 60%, #E9CD92 100%);
+  box-shadow: inset 0 2px 3px rgba(120, 70, 20, 0.18);
+}
+.hud-sign-coin-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+}
+.hud-gold-icon {
+  flex-shrink: 0;
+  margin: 0 -8px 0 -10px; /* 金币图 PNG 自带透明留白，内缩让徽章与数字更紧凑 */
+  filter: drop-shadow(0 1px 0 rgba(58, 30, 8, 0.4)) drop-shadow(0 2px 3px rgba(0, 0, 0, 0.25));
+}
+/* 大号暗红数字 + 浅色高光（可实时更新） */
+.hud-sign-gold {
+  font-family: "Arial Black", "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif;
+  font-size: 23px;
+  font-weight: 900;
+  line-height: 1;
+  color: #8E2A12;
+  letter-spacing: 0;
+  white-space: nowrap;
+  text-shadow: 0 1px 0 #FFDCA8, 0 2px 0 rgba(80, 24, 6, 0.32);
 }
 
 /* ── 第三段：任务块（独立一块，圆木片造型）── */
