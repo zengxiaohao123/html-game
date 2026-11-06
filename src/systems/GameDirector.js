@@ -16,7 +16,7 @@ import { registerFacilities } from '../data/facilities.js';
 import { MovementSystem } from './MovementSystem.js';
 import { TurnSystem } from './TurnSystem.js';
 import { SleepSystem } from './SleepSystem.js';
-import { exitBuildMode } from './BuildSystem.js';
+import { exitBuildMode, autoRemoveSkillsOutsideTeam } from './BuildSystem.js';
 import { CreatureSystem } from './CreatureSystem.js';
 import { SkillSystem } from './SkillSystem.js';
 import { InventorySystem } from './InventorySystem.js';
@@ -119,6 +119,8 @@ export class GameDirector {
 
     // 编队修改 → 重新 fire passive（烹饪/蹁跹等常驻天赋按 roleId guard）
     EventBus.on(GE.TEAM_CHANGE, () => {
+      // 裁定 3：角色离队 → 其已放置技能自动拆除回背包，再重算常驻天赋
+      autoRemoveSkillsOutsideTeam(this.gs);
       TalentSystem.firePassive(this.gs);
     });
 

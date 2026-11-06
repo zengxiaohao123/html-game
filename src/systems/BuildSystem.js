@@ -19,7 +19,9 @@ import { GE } from '../core/GameEvents.js';
 import { HookDispatcher } from '../core/HookDispatcher.js';
 import { ITEMS } from '../data/items.js';
 import { TERRAINS } from '../data/terrains.js';
+import { SKILLS } from '../data/characters.js';
 import { InventorySystem } from './InventorySystem.js';
+import { LinkSkillSystem, getActiveGroupRoles } from './LinkSkillSystem.js';
 import { devLog } from '../core/Logger.js';
 
 /** 家（facility_home）拥有【永恒】词条，不可替换 */
@@ -118,6 +120,16 @@ export function placeContent(gs, tileIdx, contentId) {
     return { ok: false, reason: 'unknownType' };
   }
 
+  // 编队校验（§12.1 L253）：只有编队内角色的技能可放置
+  if (contentId.startsWith('skill_')) {
+    const def = SKILLS[contentId];
+    if (def?.roleId && !getActiveGroupRoles(gs).includes(def.roleId)) {
+      EventBus.emit(GE.TOAST_SHOW, { text: `🚫 ${def.name} 的角色不在编队内，无法放置`, duration: 2000 });
+      devLog.info('[Build] refuse skill placement: role not in team', contentId, def.roleId);
+      return { ok: false, reason: 'roleNotInTeam' };
+    }
+  }
+
   // 库存检查
   if (InventorySystem.countItem(gs, contentId) < 1) {
     EventBus.emit(GE.TOAST_SHOW, { text: `🛠️ 背包里没有 ${ITEMS[contentId]?.name || contentId}`, duration: 1800 });
@@ -152,6 +164,7 @@ export function placeContent(gs, tileIdx, contentId) {
   // ── 旧内容处理（v0.5：只有技能回背包，其余一律消失）──
   if (oldContentId) {
     if (oldContentId.startsWith('skill_')) {
+      LinkSkillSystem.onSkillCardRemoved(gs, tileIdx, oldContentId);
       InventorySystem.addItem(gs, oldContentId, 1);
       devLog.info('[Build] skill card returned to inventory:', oldContentId);
     } else {
@@ -177,6 +190,11 @@ export function placeContent(gs, tileIdx, contentId) {
   if (limit) {
     if (!gs.buildDailyPlaced) gs.buildDailyPlaced = {};
     gs.buildDailyPlaced[contentId] = (gs.buildDailyPlaced[contentId] || 0) + 1;
+  }
+
+  // 连携技实例生命周期：放置即从 0 起算计数 / 清冷却 / 作废该实例旧窗口
+  if (contentId.startsWith('skill_')) {
+    LinkSkillSystem.onSkillCardPlaced(gs, tileIdx, contentId);
   }
 
   EventBus.emit(GE.TILE_UPDATED, { tileIdx, newContentId: contentId, oldContentId });
@@ -206,6 +224,7 @@ export function clearContent(gs, tileIdx) {
   tile.contentState = {};
 
   if (removedId.startsWith('skill_')) {
+    LinkSkillSystem.onSkillCardRemoved(gs, tileIdx, removedId);
     InventorySystem.addItem(gs, removedId, 1);
     EventBus.emit(GE.TOAST_SHOW, { text: `🛠️ 拆除技能卡 ${ITEMS[removedId]?.name || removedId} → 回背包`, duration: 1500 });
     devLog.info('[Build] skill card returned to inventory on clear:', removedId);
@@ -216,10 +235,41 @@ export function clearContent(gs, tileIdx) {
   return { ok: true };
 }
 
+/**
+ * 编队变更（§12.1 L253 / 用户裁定 3）：角色已不在编队 → 其已放置技能自动拆除回背包。
+ * 通用技能（roleId 为 null，如移形）不受编队限制。
+ * @returns {number} 自动拆除的技能卡数量
+ */
+export function autoRemoveSkillsOutsideTeam(gs) {
+  const tiles = gs?.map?.outerTiles;
+  if (!Array.isArray(tiles)) return 0;
+  const roles = getActiveGroupRoles(gs);
+  let removed = 0;
+  tiles.forEach((tile, tileIdx) => {
+    const contentId = tile.contentId;
+    if (!contentId || !contentId.startsWith('skill_')) return;
+    const def = SKILLS[contentId];
+    if (!def?.roleId || roles.includes(def.roleId)) return;
+    tile.contentId = null;
+    tile.contentState = {};
+    LinkSkillSystem.onSkillCardRemoved(gs, tileIdx, contentId);
+    InventorySystem.addItem(gs, contentId, 1);
+    removed++;
+    EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+    EventBus.emit(GE.INVENTORY_CHANGE, { type: 'clear', tileIdx, contentId });
+    devLog.info('[Build] 角色离队 → 自动拆除技能卡', contentId, 'tile', tileIdx);
+  });
+  if (removed > 0) {
+    EventBus.emit(GE.TOAST_SHOW, { text: `🛠️ 角色离队：${removed} 张技能卡已自动拆除 → 回背包`, duration: 1600 });
+  }
+  return removed;
+}
+
 export const BuildSystem = {
   enterBuildMode,
   exitBuildMode,
   placeContent,
   placeTerrain,
   clearContent,
+  autoRemoveSkillsOutsideTeam,
 };

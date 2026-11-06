@@ -947,17 +947,31 @@ export class InfoPanel {
             text: `${skillObj.emoji} ${skillObj.name}\n${skillObj.description || ''}`,
             parent: this.bodyWrap,
           });
-          createEl('button', {
-            class: 'action-btn',
-            style: { width: '100%', fontSize: '14px', background: '#ffe099' },
-            text: '⚡ 使用技能卡',
-            parent: this.bodyWrap,
-            onclick: () => {
-              const tileIdx = this.currentTileIdx;
-              EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
-              SkillSystem.triggerSkillAtTile(gs, tileIdx);
-            },
-          });
+          if (skillObj.isLinkSkill) {
+            // 连携技不走地块手动触发（§12.5：条件达成后弹实时窗口，按 E 使用）
+            createEl('div', {
+              style: {
+                width: '100%', padding: '8px 10px', boxSizing: 'border-box',
+                fontSize: '12px', color: '#3a2e20', textAlign: 'center',
+                background: 'rgba(232, 169, 0, 0.12)', border: '1px dashed #e8a900',
+                borderRadius: '6px',
+              },
+              text: '⚡ 连携技：放置后满足解锁条件时，于实时窗口按 E 使用',
+              parent: this.bodyWrap,
+            });
+          } else {
+            createEl('button', {
+              class: 'action-btn',
+              style: { width: '100%', fontSize: '14px', background: '#ffe099' },
+              text: '⚡ 使用技能卡',
+              parent: this.bodyWrap,
+              onclick: () => {
+                const tileIdx = this.currentTileIdx;
+                EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+                SkillSystem.triggerSkillAtTile(gs, tileIdx);
+              },
+            });
+          }
         }
       }
       // 其他 resource_ 前缀（如未来的新资源点）— 词条自动触发，无额外功能选项

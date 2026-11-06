@@ -1252,8 +1252,18 @@ head_('第 13 批 波 2：UI 修复验证（门控 / 信息区 / 商店 / 建造
   // ── M-09：连携排队不计时（§12.5 窗口自成为队首起算） ──
   gs.linkSkillQueue = [];
   gs.linkSkillCooldowns = gs.linkSkillCooldowns || {};
-  LinkSkillSystem.enqueue(gs, { skillId: 'skill_link_yumo_drain' });
-  LinkSkillSystem.enqueue(gs, { skillId: 'skill_link_luyouyou_rise_wind' });
+  // 裁定 5：连携技必须放置才可入队（用格 2/3，测后还原）
+  const savedRolesM9 = (gs.team.groups[0].roles || []).slice();
+  gs.team.groups[0].roles = ['yumo', 'luyouyou'];
+  const tA = gs.map.outerTiles[2], tB = gs.map.outerTiles[3];
+  const savedA = { id: tA.contentId, st: tA.contentState };
+  const savedB = { id: tB.contentId, st: tB.contentState };
+  tA.contentId = 'skill_link_yumo_drain';
+  LinkSkillSystem.onSkillCardPlaced(gs, 2, 'skill_link_yumo_drain');
+  tB.contentId = 'skill_link_luyouyou_rise_wind';
+  LinkSkillSystem.onSkillCardPlaced(gs, 3, 'skill_link_luyouyou_rise_wind');
+  LinkSkillSystem.enqueue(gs, { tileIdx: 2, skillId: 'skill_link_yumo_drain' });
+  LinkSkillSystem.enqueue(gs, { tileIdx: 3, skillId: 'skill_link_luyouyou_rise_wind' });
   const qe1 = gs.linkSkillQueue[0];
   const qe2 = gs.linkSkillQueue[1];
   assert(qe1 && qe1.expireAtMs > Date.now(), 'M-09：队首开始 3 秒窗口');
@@ -1265,6 +1275,14 @@ head_('第 13 批 波 2：UI 修复验证（门控 / 信息区 / 商店 / 建造
     && gs.linkSkillQueue[0].expireAtMs > Date.now(),
     'M-09：队首过期后新队首开始计时');
   gs.linkSkillQueue = [];
+  // 还原地块与编队（避免影响后续用例）
+  tA.contentId = savedA.id; tA.contentState = savedA.st;
+  tB.contentId = savedB.id; tB.contentState = savedB.st;
+  delete gs.linkSkillCounters['2|skill_link_yumo_drain'];
+  delete gs.linkSkillCounters['3|skill_link_luyouyou_rise_wind'];
+  delete gs.linkSkillCooldowns['2|skill_link_yumo_drain'];
+  delete gs.linkSkillCooldowns['3|skill_link_luyouyou_rise_wind'];
+  gs.team.groups[0].roles = savedRolesM9;
 
   // ── M-10：出货箱显示条目实际价值（郁金香随机价） ──
   const outboxBackup = gs.inventory.outbox;

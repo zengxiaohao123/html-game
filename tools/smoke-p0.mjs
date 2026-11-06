@@ -68,9 +68,16 @@ head('P0-3 跨年 year+1');
 
 head('P0-1 连携技按 E 触发队列头部');
 {
+  // 裁定 5：连携技必须放置在外圈地块上才有效（队列条目按放置实例 key 标识）
+  const savedRoles = (gs.team.groups[0].roles || []).slice();
+  gs.team.groups[0].roles = ['yumo', 'xiayang', 'luyouyou'];
+  gs.map.outerTiles[0].contentId = 'skill_link_yumo_drain';
+  LinkSkillSystem.onSkillCardPlaced(gs, 0, 'skill_link_yumo_drain');
+  gs.map.outerTiles[1].contentId = 'skill_link_xiayang_scorch';
+  LinkSkillSystem.onSkillCardPlaced(gs, 1, 'skill_link_xiayang_scorch');
   gs.linkSkillQueue = [
-    { skillId: 'skill_link_yumo_drain', roleId: 'yumo', expireAtMs: Date.now() + 3000, context: { element: 'fire' } },
-    { skillId: 'skill_link_xiayang_scorch', roleId: 'xiayang', expireAtMs: Date.now() + 3000, context: {} },
+    { key: '0|skill_link_yumo_drain', skillId: 'skill_link_yumo_drain', tileIdx: 0, roleId: 'yumo', expireAtMs: Date.now() + 3000, context: { element: 'fire' } },
+    { key: '1|skill_link_xiayang_scorch', skillId: 'skill_link_xiayang_scorch', tileIdx: 1, roleId: 'xiayang', expireAtMs: Date.now() + 3000, context: {} },
   ];
   const r = LinkSkillSystem.fireCurrentQueueTop(gs);
   assert(!!r && r.ok === true, 'fireCurrentQueueTop 结算成功', r);
@@ -82,6 +89,7 @@ head('P0-1 连携技按 E 触发队列头部');
   const uiSrc = readFileSync(new URL('../src/ui/LinkSkillUI.js', import.meta.url), 'utf8');
   assert(uiSrc.includes("key === 'e' || key === 'E'"), 'LinkSkillUI 按键改为 E');
   assert(uiSrc.includes('fireCurrentQueueTop') && !uiSrc.includes('_triggerIdx'), 'UI 走队列头部触发（不再有 1/2/3 数字键按索引触发）');
+  gs.team.groups[0].roles = savedRoles;
 }
 
 head('P0-2 祈福推进回合');

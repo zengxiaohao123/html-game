@@ -116,8 +116,7 @@ export function createInitialState() {
       ],
       dailyModifyCount: 0,
       // Phase 4 天赋/连携技相关字段
-      dailyElementDamages: [],              // 风暴眼连携技
-      huntAttackCount: 0,                   // 追猎连携技
+      dailyElementDamages: [],              // 何以为我天赋（本日元素种类）
       twinBuffNextAtkCritRateBonus: 0,      // 比翼天赋
       twinBuffActiveDays: 0,                // 比翼天赋
       xiayangRebornCooldownDay: 0,          // 涅槃天赋
@@ -141,6 +140,8 @@ export function createInitialState() {
 
     // ── 连携技 ──
     linkSkillQueue: [],
+    // 连携技实例计数（按放置实例 `tileIdx|skillId` 独立：count / elements）
+    linkSkillCounters: {},
     lastTurnLinkSkill: 0,
 
     // ── 每日限次计数器 ──
@@ -158,7 +159,7 @@ export function createInitialState() {
 
     // ── 冷却记录（Phase 4） ──
     skillCooldowns: {},         // SkillSystem 用
-    linkSkillCooldowns: {},     // LinkSkillSystem 用
+    linkSkillCooldowns: {},     // LinkSkillSystem 用（键为放置实例 `tileIdx|skillId`）
     itemCooldowns: {},          // UseItemSystem 用（剩余回合数，TurnSystem 每回合递减）
 
     // ── 选中 / UI 状态 ──

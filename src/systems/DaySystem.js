@@ -133,8 +133,6 @@ export function startNewDay(gs) {
     gs.team.allWishesActive = false;
     // 移形（SKL-L-008）：今日累计移动距离跨天清零
     gs.team.dailyDistanceMoved = 0;
-    // Agent 3：焚灭计数每日清空（连携技 焚灭：【每一日开始时】清空计数）
-    gs.team.xiayangSkillCount = 0;
     // §12.1：编队每日修改次数清零（每日至多改 3 次）
     gs.team.dailyModifyCount = 0;
   }

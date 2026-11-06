@@ -116,6 +116,31 @@ export function migrateGS(loadedGs) {
     }
   }
 
+  // 连携技实例化：旧键 `skill_link_*` → 按当前放置地块生成实例键 `tileIdx|skillId`
+  if (isPlainObject(loadedGs.linkSkillCooldowns)) {
+    const tiles = loadedGs.map?.outerTiles || [];
+    const next = {};
+    for (const [k, v] of Object.entries(loadedGs.linkSkillCooldowns)) {
+      if (k.includes('|')) { next[k] = v; continue; }
+      tiles.forEach((tile, i) => {
+        if (tile?.contentId === k) next[`${i}|${k}`] = Math.max(next[`${i}|${k}`] || 0, v || 0);
+      });
+    }
+    loadedGs.linkSkillCooldowns = next;
+  }
+
+  // 连携技旧队列条目只有 skillId → 映射到当前放置实例；未放置的条目直接丢弃（不应有窗口）
+  if (Array.isArray(loadedGs.linkSkillQueue)) {
+    const tiles = loadedGs.map?.outerTiles || [];
+    loadedGs.linkSkillQueue = loadedGs.linkSkillQueue.map((e) => {
+      if (!e || e.key) return e;
+      const idxs = [];
+      tiles.forEach((tile, i) => { if (tile?.contentId === e.skillId) idxs.push(i); });
+      if (idxs.length === 0) return null;
+      return { ...e, key: `${idxs[0]}|${e.skillId}`, tileIdx: idxs[0] };
+    }).filter(Boolean);
+  }
+
   // B-10：道具冷却同样改为「剩余回合数」（旧存档存的是绝对回合号 gs.turn + cd）
   if (isPlainObject(loadedGs.itemCooldowns)) {
     const t = loadedGs.turn || 0;

@@ -380,12 +380,19 @@ console.log('\n═══ 18. 载具移动推进回合 + 移形距离累计（§6
   const director = new GameDirector();
   director.gs = g;
   director._registerOnce(); // 注册 GE.MOVE(byVehicle) 订阅
-  InventorySystem.addItem(g, 'skill_link_shift', 1); // 已习得移形
+  InventorySystem.addItem(g, 'skill_link_shift', 1); // 已习得移形（背包持有 ≠ 生效）
+  // 裁定 5：必须放置才生效 —— 未放置时载具移动不入队
+  EventBus.emit(GE.MOVE, { byVehicle: true, distance: 1, fromIdx: 6, toIdx: 2 });
+  check((g.linkSkillQueue || []).length === 0, '移形未放置 → 背包持有不触发（裁定 5）');
+  // 放到外圈格后才生效
+  g.map.outerTiles[0].contentId = 'skill_link_shift';
+  LinkSkillSystem.onSkillCardPlaced(g, 0, 'skill_link_shift');
   const turn0 = g.turn;
   EventBus.emit(GE.MOVE, { byVehicle: true, distance: 3, fromIdx: 6, toIdx: 2 });
   check(g.turn === turn0 + 1, `载具移动推进 1 回合（${turn0} → ${g.turn}）`);
-  check(g.team.dailyDistanceMoved === 3, `移形今日移动距离累计 = ${g.team.dailyDistanceMoved}`);
-  check((g.linkSkillQueue || []).some((e) => e.skillId === 'skill_link_shift'), '载具移动后移形入队');
+  check(g.team.dailyDistanceMoved === 4, `移形今日移动距离累计 = ${g.team.dailyDistanceMoved}`);
+  check((g.linkSkillQueue || []).some((e) => e.skillId === 'skill_link_shift' && e.key === '0|skill_link_shift'),
+    '载具移动后移形（已放置实例）入队');
 }
 
 console.log('\n═══ 19. 友善超容量：产蛋丢弃、小麦豁免、草莓归 0（§13.2） ═══');
@@ -469,12 +476,16 @@ console.log('\n═══ 21. 连携汲取元素消费 + 屏息瞄准暴击消费
 console.log('\n═══ 22. 连携 / 道具冷却：剩余回合语义、跨天不清零（§12.7 / §14） ═══');
 {
   const g = createInitialState();
-  g.linkSkillCooldowns = { skill_link_yumo_drain: 3 };
-  check(LinkSkillSystem.enqueue(g, { skillId: 'skill_link_yumo_drain' }) === null, '连携技冷却中入队被阻挡');
+  // 连携技实例化：冷却按放置实例 `tileIdx|skillId`
+  g.map.outerTiles[0].contentId = 'skill_link_yumo_drain';
+  LinkSkillSystem.onSkillCardPlaced(g, 0, 'skill_link_yumo_drain');
+  const key = '0|skill_link_yumo_drain';
+  g.linkSkillCooldowns = { [key]: 3 };
+  check(LinkSkillSystem.enqueue(g, { tileIdx: 0, skillId: 'skill_link_yumo_drain' }) === null, '连携技冷却中入队被阻挡');
   TurnSystem.advanceTurn(g, 0);
-  check(g.linkSkillCooldowns.skill_link_yumo_drain === 2, '连携冷却随回合推进 -1');
+  check(g.linkSkillCooldowns[key] === 2, '连携冷却随回合推进 -1');
   DaySystem.startNewDay(g);
-  check(g.linkSkillCooldowns.skill_link_yumo_drain === 2, '连携冷却跨天不清零（§12.7）');
+  check(g.linkSkillCooldowns[key] === 2, '连携冷却跨天不清零（§12.7）');
   // 道具冷却
   InventorySystem.addItem(g, 'item_herb', 2);
   const ru = UseItemSystem.useItem(g, 'item_herb');
@@ -678,14 +689,18 @@ console.log('\n═══ 30. 焚灭半径语义：tier1 同格 / tier2 含对角
   ];
   const origRandom = Math.random;
   Math.random = () => 0.5;
-  g.team.xiayangSkillCount = 3;
-  LinkSkillSystem.resolveLinkSkill(g, SKILLS.skill_link_xiayang_annihilate, { tier: 1, targetCreatureId: 'a' });
+  g.team.groups[0].roles = ['yumo', 'xiayang', 'luyouyou'];
+  g.map.outerTiles[0].contentId = 'skill_link_xiayang_annihilate';
+  LinkSkillSystem.onSkillCardPlaced(g, 0, 'skill_link_xiayang_annihilate');
+  const annKey = '0|skill_link_xiayang_annihilate';
+  g.linkSkillCounters[annKey].count = 3;
+  LinkSkillSystem.resolveLinkSkill(g, SKILLS.skill_link_xiayang_annihilate, { tier: 1, targetCreatureId: 'a', instanceKey: annKey });
   check(a.hp < 1000 && b.hp === 1000 && c.hp === 1000 && d.hp === 1000,
     'C-2：焚灭 tier1 半径 0.4 仅命中中心同格');
-  check(g.team.xiayangSkillCount === 0, '焚灭 tier1 消耗 3 层计数');
+  check(g.linkSkillCounters[annKey].count === 0, '焚灭 tier1 消耗该实例 3 层计数');
   [a, b, c, d].forEach((x) => { x.hp = 1000; });
-  g.team.xiayangSkillCount = 7;
-  LinkSkillSystem.resolveLinkSkill(g, SKILLS.skill_link_xiayang_annihilate, { tier: 2, targetCreatureId: 'a' });
+  g.linkSkillCounters[annKey].count = 7;
+  LinkSkillSystem.resolveLinkSkill(g, SKILLS.skill_link_xiayang_annihilate, { tier: 2, targetCreatureId: 'a', instanceKey: annKey });
   Math.random = origRandom;
   check(a.hp < 1000 && b.hp < 1000 && c.hp < 1000 && d.hp === 1000,
     'C-2：焚灭 tier2 半径 1.5 命中同格+相邻+对角（距离 2 不中）');
@@ -717,19 +732,27 @@ console.log('\n═══ 32. 风暴眼直线碰撞、第 4 元素即时入队（
   g.creatures = [a];
   g.map.fence = [{ row: 0, col: 0, creatures: ['a'] }];
   g.player.x = 1; // (1,0)
-  g.team.dailyElementDamages = ['fire', 'water', 'grass', 'wind'];
+  g.team.groups[0].roles = ['yumo', 'luyouyou'];
+  g.map.outerTiles[0].contentId = 'skill_link_luyouyou_storm_eye';
+  LinkSkillSystem.onSkillCardPlaced(g, 0, 'skill_link_luyouyou_storm_eye');
+  const seKey = '0|skill_link_luyouyou_storm_eye';
+  g.linkSkillCounters[seKey].elements = ['fire', 'water', 'grass', 'wind'];
   const origRandom = Math.random;
   Math.random = () => 0.5;
-  LinkSkillSystem.resolveLinkSkill(g, SKILLS.skill_link_luyouyou_storm_eye, {});
+  LinkSkillSystem.resolveLinkSkill(g, SKILLS.skill_link_luyouyou_storm_eye, { instanceKey: seKey });
   Math.random = origRandom;
   check(a.hp < 1000, 'C-2：风暴眼对直线经过（线段距 ≤ 0.5）的敌人造成伤害');
-  check(g.team.dailyElementDamages.length === 0, '风暴眼结算后清空元素累计');
+  check(g.linkSkillCounters[seKey].elements.length === 0, '风暴眼结算后清空该实例的元素累计');
   // C-10：第 4 种元素经伤害路径记录（CombatSystem → ELEMENT_DAMAGE_APPLIED → onElementDamage，
   // 不经过 onSkillFired）→ 风暴眼立即入队
   const g2 = createInitialState();
+  g2.team.groups[0].roles = ['yumo', 'luyouyou'];
+  g2.map.outerTiles[0].contentId = 'skill_link_luyouyou_storm_eye';
+  LinkSkillSystem.onSkillCardPlaced(g2, 0, 'skill_link_luyouyou_storm_eye');
+  g2.linkSkillCounters['0|skill_link_luyouyou_storm_eye'].elements = ['fire', 'water', 'grass'];
+  g2.team.dailyElementDamages = ['fire', 'water', 'grass']; // 天赋「何以为我」的独立每日列表
   g2.map.fence = [{ row: 0, col: 0, creatures: [] }];
   const t2 = ensureSlime(g2);
-  g2.team.dailyElementDamages = ['fire', 'water', 'grass'];
   const origR2 = Math.random;
   Math.random = () => 0.5;
   CombatSystem.calculateDamage({ atk: 10, defender: t2, element: 'ice', player: g2.player, gs: g2, roleId: 'xiayang', attackerRoleId: 'xiayang' });
@@ -737,8 +760,8 @@ console.log('\n═══ 32. 风暴眼直线碰撞、第 4 元素即时入队（
   check(g2.team.dailyElementDamages.length === 4, '伤害路径记录第 4 种元素');
   // 模拟 GameDirector 的 ELEMENT_DAMAGE_APPLIED 订阅转发
   LinkSkillSystem.onElementDamage(g2, { element: 'ice', byRoleId: 'xiayang', target: t2 });
-  check((g2.linkSkillQueue || []).some((e) => e.skillId === 'skill_link_luyouyou_storm_eye'),
-    'C-10：第 4 元素非技能触发记录 → 风暴眼立即入队');
+  check((g2.linkSkillQueue || []).some((e) => e.key === '0|skill_link_luyouyou_storm_eye'),
+    'C-10：第 4 元素非技能触发记录 → 风暴眼实例立即入队');
 }
 
 console.log('\n═══ 33. 何以为我元素加成仅对已记录元素（B-17） ═══');
@@ -851,6 +874,176 @@ console.log('\n═══ 38. 农耕手册保证抽到 3 个设施（C-15） ═�
     .filter((e) => e.itemId.startsWith('facility_') && e.itemId !== 'facility_wild_seed')
     .reduce((s, e) => s + e.qty, 0);
   check(facilityCount === 3, `C-15：农耕手册恰好发放 3 个设施（实际 ${facilityCount}）`);
+}
+
+console.log('\n═══ 39. 连携技实例化：必须放置 / 同名独立 / 拆除作废 / 离队回背包（§12.1 / §12.5） ═══');
+{
+  const { BuildSystem } = await import('../src/systems/BuildSystem.js');
+  const ALL_ROLES = ['yumo', 'xiayang', 'luyouyou'];
+  const placeSkill = (g, idx, skillId) => {
+    g.map.outerTiles[idx].contentId = skillId;
+    LinkSkillSystem.onSkillCardPlaced(g, idx, skillId);
+  };
+  const TRIGGERS = {
+    skill_link_yumo_drain: (g) => LinkSkillSystem.onElementDamage(g, { element: 'fire', byRoleId: 'xiayang', target: null }),
+    skill_link_xiayang_scorch: (g) => {
+      g.creatures = [{ id: 'burn1', hp: 10, maxHp: 10, activeBuffs: [{ id: 'burn' }] }];
+      LinkSkillSystem.periodicConditionScan(g);
+    },
+    skill_link_xiayang_annihilate: (g) => {
+      for (let i = 0; i < 3; i++) LinkSkillSystem.onSkillFired(g, { roleId: 'xiayang', skillId: 'skill_xiayang_x', target: null });
+    },
+    skill_link_luyouyou_weak_point: (g) => {
+      g.creatures = [{ id: 'charge1', hp: 10, maxHp: 10, activeBuffs: [{ id: 'charge' }] }];
+      LinkSkillSystem.periodicConditionScan(g);
+    },
+    skill_link_luyouyou_storm_eye: (g) => {
+      for (const el of ['fire', 'water', 'grass', 'ice']) {
+        LinkSkillSystem.onElementDamage(g, { element: el, byRoleId: 'yumo', target: null });
+      }
+    },
+    skill_link_luyouyou_hunt: (g) => {
+      for (let i = 0; i < 3; i++) LinkSkillSystem.onSkillFired(g, { roleId: 'yumo', skillId: 'skill_x', target: null });
+    },
+    skill_link_luyouyou_rise_wind: (g) => LinkSkillSystem.onElementDamage(g, { element: 'fire', byRoleId: 'yumo', target: null }),
+    skill_link_shift: (g) => LinkSkillSystem.onVehicleMoved(g, { distance: 1 }),
+  };
+
+  // 1) 未放置：条件达成但队列为空（7 个 + 移形各一条）
+  for (const [skillId, fire] of Object.entries(TRIGGERS)) {
+    const g = createInitialState();
+    g.team.groups[0].roles = ALL_ROLES.slice();
+    fire(g);
+    check((g.linkSkillQueue || []).length === 0, `未放置 → ${skillId} 不入队`);
+  }
+
+  // 2) 已放置：条件达成 → 入队（放置格任意外圈都成立；玩家不在该格）
+  for (const [skillId, fire] of Object.entries(TRIGGERS)) {
+    const g = createInitialState();
+    g.team.groups[0].roles = ALL_ROLES.slice();
+    placeSkill(g, 2, skillId);
+    g.player.x = 6;
+    fire(g);
+    check((g.linkSkillQueue || []).some((e) => e.key === `2|${skillId}`), `已放置 → ${skillId} 入队（格 2，玩家在 6）`);
+  }
+
+  // 3) 解锁条件未达成 → 不入队
+  {
+    const g = createInitialState();
+    g.team.groups[0].roles = ALL_ROLES.slice();
+    placeSkill(g, 1, 'skill_link_xiayang_scorch');
+    g.creatures = [{ id: 'plain', hp: 10, maxHp: 10, activeBuffs: [] }];
+    LinkSkillSystem.periodicConditionScan(g);
+    check(g.linkSkillQueue.length === 0, '已放置但未燃烧 → 炽燃不入队');
+    placeSkill(g, 3, 'skill_link_yumo_drain');
+    LinkSkillSystem.onSkillFired(g, { roleId: 'yumo', skillId: 'skill_xiayang_x', target: null });
+    check(g.linkSkillQueue.length === 0, '已放置但无元素伤害 → 汲取不入队');
+  }
+
+  // 4) 两份同名：独立队列条目 / 独立冷却 / 独立计数
+  {
+    const g = createInitialState();
+    g.team.groups[0].roles = ALL_ROLES.slice();
+    placeSkill(g, 0, 'skill_link_xiayang_scorch');
+    placeSkill(g, 5, 'skill_link_xiayang_scorch');
+    g.creatures = [{ id: 'burn2', hp: 10, maxHp: 10, activeBuffs: [{ id: 'burn' }] }];
+    LinkSkillSystem.periodicConditionScan(g);
+    const keys = g.linkSkillQueue.map((e) => e.key);
+    check(keys.length === 2 && keys[0] === '0|skill_link_xiayang_scorch' && keys[1] === '5|skill_link_xiayang_scorch',
+      `同名两份 → 两条独立队列条目（${keys.join(' / ')}）`);
+    const r1 = LinkSkillSystem.fireLinkSkill(g, '0|skill_link_xiayang_scorch');
+    check(r1.ok && g.linkSkillCooldowns['0|skill_link_xiayang_scorch'] > 0
+      && !g.linkSkillCooldowns['5|skill_link_xiayang_scorch'],
+      '同名两份 → 冷却只记在触发的那份实例');
+    check(g.linkSkillQueue.length === 1 && g.linkSkillQueue[0].key === '5|skill_link_xiayang_scorch',
+      '同名两份 → 另一份窗口仍在队列');
+  }
+  {
+    const g = createInitialState();
+    g.team.groups[0].roles = ALL_ROLES.slice();
+    placeSkill(g, 0, 'skill_link_xiayang_annihilate');
+    placeSkill(g, 4, 'skill_link_xiayang_annihilate');
+    for (let i = 0; i < 3; i++) LinkSkillSystem.onSkillFired(g, { roleId: 'xiayang', skillId: 'skill_x', target: null });
+    check(g.linkSkillCounters['0|skill_link_xiayang_annihilate'].count === 3
+      && g.linkSkillCounters['4|skill_link_xiayang_annihilate'].count === 3,
+      '同名两份焚灭 → 计数各自独立累计到 3');
+    check(g.linkSkillQueue.length === 2, '同名两份焚灭 → 各自入队');
+    LinkSkillSystem.fireLinkSkill(g, '0|skill_link_xiayang_annihilate');
+    check(g.linkSkillCounters['0|skill_link_xiayang_annihilate'].count === 0
+      && g.linkSkillCounters['4|skill_link_xiayang_annihilate'].count === 3,
+      '焚灭结算只消耗该实例计数，另一份不受影响');
+  }
+
+  // 5) 拆除 → 计数清零、后续不入队、窗口作废
+  {
+    const g = createInitialState();
+    g.team.groups[0].roles = ALL_ROLES.slice();
+    g.buildMode = true;
+    g.inventory.items = [];
+    placeSkill(g, 0, 'skill_link_xiayang_annihilate');
+    for (let i = 0; i < 3; i++) LinkSkillSystem.onSkillFired(g, { roleId: 'xiayang', skillId: 'skill_x', target: null });
+    check(g.linkSkillQueue.length === 1 && g.linkSkillCounters['0|skill_link_xiayang_annihilate'].count === 3,
+      '拆除前：焚灭已入队、计数 3');
+    const rc = BuildSystem.clearContent(g, 0);
+    check(rc.ok && g.map.outerTiles[0].contentId === null, '拆除成功（地块清空）');
+    check(g.linkSkillQueue.length === 0 && !g.linkSkillCounters['0|skill_link_xiayang_annihilate'],
+      '拆除 → 该实例计数清零、已入队窗口作废');
+    for (let i = 0; i < 3; i++) LinkSkillSystem.onSkillFired(g, { roleId: 'xiayang', skillId: 'skill_x', target: null });
+    check(g.linkSkillQueue.length === 0, '拆除后条件再次达成也不入队');
+  }
+
+  // 6) 入队后 3 秒内拆卡 → 按 E 不结算
+  {
+    const g = createInitialState();
+    g.team.groups[0].roles = ALL_ROLES.slice();
+    g.buildMode = true;
+    g.inventory.items = [];
+    placeSkill(g, 0, 'skill_link_yumo_drain');
+    LinkSkillSystem.onElementDamage(g, { element: 'fire', byRoleId: 'xiayang', target: null });
+    check(g.linkSkillQueue.length === 1, '汲取已入队');
+    BuildSystem.clearContent(g, 0);
+    check(g.linkSkillQueue.length === 0, '拆卡 → 队列条目立即清除');
+    // 模拟「队列未清理的残留窗口」：强行塞回条目再按 E
+    g.linkSkillQueue = [{ key: '0|skill_link_yumo_drain', skillId: 'skill_link_yumo_drain', tileIdx: 0, context: { element: 'fire' }, expireAtMs: Date.now() + 3000 }];
+    const r = LinkSkillSystem.fireCurrentQueueTop(g);
+    check(!r.ok && r.message === 'unplaced' && g.linkSkillQueue.length === 0 && !g.team.yumoNextElementOverride,
+      '拆卡后 3 秒内按 E → 不结算（窗口作废）');
+  }
+
+  // 7) 角色离队 → 已放置技能自动回背包；不在编队不可放置
+  {
+    const g = createInitialState();
+    g.team.groups[0].roles = ['yumo', 'xiayang'];
+    placeSkill(g, 0, 'skill_link_xiayang_scorch');
+    g.team.groups[0].roles = ['yumo'];
+    const removed = BuildSystem.autoRemoveSkillsOutsideTeam(g);
+    check(removed === 1 && g.map.outerTiles[0].contentId === null, '角色离队 → 该角色技能自动拆除');
+    check(InventorySystem.countItem(g, 'skill_link_xiayang_scorch') === 1, '自动拆除 → 技能卡回到背包');
+
+    const g2 = createInitialState();
+    g2.team.groups[0].roles = ['yumo'];
+    g2.inventory.items = [];
+    InventorySystem.addItem(g2, 'skill_link_xiayang_scorch', 1);
+    const rp = BuildSystem.placeContent(g2, 3, 'skill_link_xiayang_scorch');
+    check(!rp.ok && rp.reason === 'roleNotInTeam', '角色不在编队 → 背包中的该技能无法放置');
+    check(InventorySystem.countItem(g2, 'skill_link_xiayang_scorch') === 1, '拒绝放置后技能卡仍在背包');
+  }
+
+  // 8) 未放置时计数不累计；放置后从 0 起算（不会立刻弹窗）
+  {
+    const g = createInitialState();
+    g.team.groups[0].roles = ALL_ROLES.slice();
+    for (let i = 0; i < 5; i++) LinkSkillSystem.onSkillFired(g, { roleId: 'xiayang', skillId: 'skill_x', target: null });
+    check(g.linkSkillQueue.length === 0, '未放置 → 夏阳技能不累计焚灭计数（队列空）');
+    placeSkill(g, 0, 'skill_link_xiayang_annihilate');
+    check(g.linkSkillCounters['0|skill_link_xiayang_annihilate'].count === 0,
+      '放置瞬间焚灭计数从 0 起算（不追溯历史）');
+    check(g.linkSkillQueue.length === 0, '放置瞬间不弹窗');
+    LinkSkillSystem.onSkillFired(g, { roleId: 'xiayang', skillId: 'skill_x', target: null });
+    check(g.linkSkillCounters['0|skill_link_xiayang_annihilate'].count === 1
+      && g.linkSkillQueue.length === 0,
+      '放置后第 1 次才计数（1/3，不弹窗）');
+  }
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} smoke 结果：${pass} 通过 / ${fail} 失败（共 ${pass + fail}）`);
