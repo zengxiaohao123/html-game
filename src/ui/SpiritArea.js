@@ -18,7 +18,8 @@ export class SpiritArea {
       style: {
         position: 'absolute',
         left: '15px',
-        top: '250px',
+        // §16.7：左上角三段式 HUD 下方（随 --hud-scale 等比下移，避免大屏压住任务块）
+        top: 'calc(306px * var(--hud-scale, 1))',
         padding: '6px 8px',
         borderRadius: '12px',
         border: '3px solid #e8c547',

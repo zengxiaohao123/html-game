@@ -1,206 +1,239 @@
 // src/ui/TopBar.js
-// 顶部状态栏（v5 —— 第 8 批提质感：单块奶油底板 + 统一胶囊层级，对照设计文档 §16.7）
+// 顶部 UI 区（设计文档 §16.7，2026-11-06 修订版）：左上角三段式 + 生物容量顶部居中
 //
-// 布局（左上角一整块 HUD 底板，内部三行流式排版，不再用魔法数字绝对定位）：
-//   ┌────────────────────────────────────────┐
-//   │ ❤ 12/20   ⚔ 8   ⚡ 5/10                │  row1 角色三维（小胶囊）
-//   │ ● 友善 1/4   ● 危险 0/2   ● 极度 0/1   │  row2 容量（彩点+标签+数值，超载红闪）
-//   │ 📅 第 3 天 5月12日 周一   🪙 128        │  row3 日历 + 金币（金色重点胶囊）
-//   └────────────────────────────────────────┘
-//   [📋]  任务入口（底板下方独立方钮，§16.17）
+//   ┌─ 左上半透明 HUD 根（pointer-events:none，整屏覆盖，不拦截地图）──────────┐
+//   │  ┌───────────┐  ⚔ 10                      ← 第一段：立绘 + 攻击 + 生命 + 行动力
+//   │  │  立绘框    │  ♥ 100 ▮▮▮▮▮▮▮
+//   │  └─────┬─────┘  ◆◆◆◆◆◆◆◆ 5/8
+//   │       余默
+//   │  ╭── 木牌：🪙 128 │ 第 3 天 5月12日 周一 ──╮   ← 第二段（第一段下方一点）
+//   │  ╰──────────────────────────────────────╯
+//   │  (📋)                                          ← 第三段（再往下一点，独立一块）
+//   └──────────────────────────────────────────────────────────────┘
 //
-// 质感手法（不引入美术素材）：统一高度/圆角/描边语言、tabular-nums 数字对齐、
-//   层级靠字重与色彩（标签弱、数值强）、底板半透明奶油 + 细描边 + 轻投影。
+//  · 三段不共用底板、不在同一行（§16.7）。
+//  · 生物容量移到屏幕顶部居中（§16.7），超载变红缓慢闪烁规则保留。
+//  · 基准 1280×720，其它分辨率按 --hud-scale 等比缩放（transform，等比不挤压）。
+//  · 木牌 / 菱形水晶 / 分段血条 / 头像框属于「UI 组件绘制」：CSS 描边 + 纹理 + 光影，
+//    不是美术素材占位；后续换正式 PNG 时只替换背景层、布局数值不动。
+//  · 全区域不做持续呼吸 / 浮动动画（用户既有约束）；只有容量超载红闪保留。
+//
 // z-index 5600：高于商店遮罩（5500），保证 §16.21「商店内顶部 UI 仍可见、可点」。
-//
-// 重要约定：所有 emoji / 图标 不采用呼吸或浮动的 idle 动画效果（用户要求）
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { Assets } from '../core/Assets.js';
+import { CHARACTERS } from '../data/characters.js';
 import { createEl, qs, iconEl } from './dom.js';
 
-/** 统一小胶囊（row1 / row2 / 日历）：等高、圆角、细描边 */
-function chipStyle() {
-  return {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '5px',
-    height: '26px',
-    padding: '0 10px',
-    borderRadius: '999px',
-    background: 'rgba(255,255,255,0.8)',
-    border: '1.5px solid #b8a888',
-    fontSize: '13px',
-    fontWeight: '800',
-    color: '#4a3a2a',
-    fontVariantNumeric: 'tabular-nums',
-    whiteSpace: 'nowrap',
-  };
-}
+/** 血条分段数（§16.7 分段、倾斜、红→绿均匀渐变） */
+const HP_SEGMENTS = 7;
 
-/** 容量彩点 */
-function dot(color) {
-  return {
-    width: '8px', height: '8px', borderRadius: '50%',
-    background: color, flexShrink: '0',
-    boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.25)',
-  };
-}
+/** 基准分辨率（其它分辨率按此等比缩放） */
+const BASE_W = 1280;
+const BASE_H = 720;
+const SCALE_MIN = 0.8;
+const SCALE_MAX = 1.5;
 
 export class TopBar {
   constructor() {
-    this.root = null;
-    this.taskIconEl = null;   // 任务区独立图标（不在 FuncBar，按 §16.17）
+    this.root = null;          // 整屏 HUD 根（z-index 5600）
+    this.left = null;          // 左上角三段容器
+    this.taskIconEl = null;    // 任务块（独立一块，§16.7 / §16.17）
 
-    this.hpText = null;
     this.atkText = null;
+    this.hpText = null;        // 红心内数字
+    this.hpLabel = null;       // 红心（title = 当前/最大）
+    this.hpSegs = [];          // 分段血条填充层
+    this.stamGems = [];
+    this.stamWrap = null;
     this.staminaText = null;
+
     this.friendlyText = null;
     this.dangerText = null;
     this.extremeText = null;
+
     this.dayText = null;
     this.calText = null;
     this.goldText = null;
+    this.nameText = null;
 
     this.gs = null;
+    this._onResize = null;
   }
 
   mount(gs, parent = qs('#app')) {
     this.gs = gs;
+    this._applyScale();
+    this._bindResize();
 
+    // 整屏根：不拦截鼠标，可点元素各自 pointer-events:auto
     this.root = createEl('div', {
       class: ['top-bar'],
       style: {
-        position: 'absolute', top: '12px', left: '12px',
-        display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px',
+        position: 'absolute', inset: '0',
         pointerEvents: 'none', zIndex: 5600,
         fontFamily: '"LXGW WenKai TC", "Microsoft YaHei", sans-serif',
       },
       parent,
     });
 
-    // ── HUD 底板：一块奶油半透明圆角板收纳三行信息 ──
-    const plate = createEl('div', {
-      class: ['top-bar-plate'],
-      style: {
-        pointerEvents: 'auto',
-        display: 'flex', flexDirection: 'column', gap: '6px',
-        padding: '8px 10px',
-        background: 'rgba(255,251,240,0.9)',
-        border: '2px solid #3a3a3a',
-        borderRadius: '14px',
-        boxShadow: '0 3px 10px rgba(0,0,0,0.22)',
-      },
-      parent: this.root,
-    });
+    // ── 生物容量：屏幕顶部居中（§16.7，超载红闪）──
+    const center = createEl('div', { class: ['hud-center'], parent: this.root });
+    const centerInner = createEl('div', { class: ['hud-center-inner'], parent: center });
+    const capBar = createEl('div', { class: ['hud-capacity'], parent: centerInner });
+    this.friendlyText = this._buildCapItem(capBar, '#4fae3f', '友善');
+    createEl('div', { class: ['hud-cap-div'], parent: capBar });
+    this.dangerText   = this._buildCapItem(capBar, '#e67e22', '危险');
+    createEl('div', { class: ['hud-cap-div'], parent: capBar });
+    this.extremeText  = this._buildCapItem(capBar, '#c0392b', '极度');
 
-    // row1 —— 角色三维：图标 + 数值
-    const row1 = createEl('div', { style: { display: 'flex', gap: '6px' }, parent: plate });
-    this._buildChip(row1, Assets.ui.hp, 'hp');
-    this._buildChip(row1, Assets.ui.atk, 'atk');
-    this._buildChip(row1, '⚡', 'stamina');
+    // ── 左上角三段 ──
+    this.left = createEl('div', { class: ['hud-left'], parent: this.root });
 
-    // row2 —— 容量条目（彩点 + 标签 + 数值；超载数值红字缓慢闪烁 §16.7）
-    const row2 = createEl('div', { style: { display: 'flex', gap: '6px' }, parent: plate });
-    this.friendlyText = this._buildCapChip(row2, '#4fae3f', '友善');
-    this.dangerText   = this._buildCapChip(row2, '#e67e22', '危险');
-    this.extremeText  = this._buildCapChip(row2, '#c0392b', '极度');
-
-    // row3 —— 日历胶囊 + 金币重点胶囊
-    const row3 = createEl('div', { style: { display: 'flex', gap: '6px', alignItems: 'center' }, parent: plate });
-    const dayChip = createEl('div', { style: chipStyle(), parent: row3 });
-    dayChip.appendChild(iconEl('ui', 'day', { size: '15px', fallback: '📅' }));
-    this.dayText = createEl('span', { style: { fontSize: '13px', fontWeight: '800' }, text: '', parent: dayChip });
-    // v0.5 §16.7：日历精确到「某年某月某日 星期X」，由 CalendarSystem 提供
-    this.calText = createEl('span', {
-      style: { fontSize: '11px', fontWeight: '700', color: '#8a7a63' },
-      text: '', parent: dayChip,
-    });
-
-    // 金币胶囊：§16.7 重点美化 —— 金色渐变 + 内高光 + 大号数字
-    const goldChip = createEl('div', {
-      style: {
-        display: 'flex', alignItems: 'center', gap: '6px',
-        height: '30px', padding: '0 12px',
-        borderRadius: '999px',
-        background: 'linear-gradient(135deg, #fff8d0 0%, #ffe070 40%, #e8a520 100%)',
-        border: '2px solid #a06010',
-        boxShadow: '0 2px 6px rgba(120,70,10,0.35), inset 0 1px 0 rgba(255,255,255,0.55)',
-        fontVariantNumeric: 'tabular-nums',
-      },
-      parent: row3,
-    });
-    goldChip.appendChild(iconEl('ui', 'gold', { size: '17px', fallback: Assets.ui.gold }));
-    this.goldText = createEl('span', {
-      style: { fontWeight: '900', fontSize: '16px', color: '#704010' },
-      text: '', parent: goldChip,
-    });
-
-    // 任务区独立图标（§16.17：顶部左侧 UI 下方、屏幕左侧）
-    this.taskIconEl = createEl('div', {
-      class: ['task-entry'],
-      style: {
-        pointerEvents: 'auto',
-        width: '42px', height: '42px',
-        background: 'rgba(255,251,240,0.9)',
-        border: '2px solid #3a3a3a',
-        borderRadius: '12px',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: '24px', lineHeight: '1',
-        boxShadow: '0 3px 10px rgba(0,0,0,0.22)',
-        cursor: 'pointer',
-      },
-      parent: this.root,
-    });
-    this.taskIconEl.appendChild(iconEl('ui', 'task', { size: '24px', fallback: '📋' }));
-    this.taskIconEl.title = '任务（J 切换）';
-    this.taskIconEl.addEventListener('click', () => {
-      EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'task' });
-      EventBus.emit(GE.TASK_OPEN, {});
-    });
+    this._buildHeroGroup();
+    this._buildSign();
+    this._buildTask();
 
     this._renderAll();
     this._subscribeEvents();
     return this.root;
   }
 
-  /** row1 小胶囊：图标 + 数值 */
-  _buildChip(parent, emoji, kind) {
-    const chip = createEl('div', { class: ['ui-pill'], style: chipStyle(), parent });
-    chip.appendChild(iconEl('ui', kind, { size: '15px', fallback: emoji }));
-    const textSpan = createEl('span', { text: '', style: { lineHeight: '1' }, parent: chip });
-    if (kind === 'hp')      this.hpText = textSpan;
-    else if (kind === 'atk')     this.atkText = textSpan;
-    else if (kind === 'stamina') this.staminaText = textSpan;
-    return chip;
-  }
+  // ════════════════════════════════════════════════════════════
+  // 第一段：立绘 + 攻击力 + 生命值 + 行动力（§16.7）
+  // ════════════════════════════════════════════════════════════
+  _buildHeroGroup() {
+    const hero = createEl('div', { class: ['hud-hero-group'], parent: this.left });
 
-  /** row2 容量胶囊：彩点 + 弱标签 + 强数值（数值 span 承担超载红闪） */
-  _buildCapChip(parent, color, label) {
-    const chip = createEl('div', { style: chipStyle(), parent });
-    createEl('span', { style: dot(color), parent: chip });
-    createEl('span', {
-      text: label,
-      style: { fontSize: '11px', fontWeight: '700', color: '#8a7a63' },
-      parent: chip,
+    // 斜切手绘头像框（UI 组件绘制：奶白贴纸边 + 近黑粗描边 + 不规则圆角 + 轻旋）
+    const portrait = createEl('div', {
+      class: ['hud-portrait'],
+      attrs: { title: '当前出战角色' },
+      parent: hero,
     });
-    return createEl('span', { text: '', style: { lineHeight: '1' }, parent: chip });
+    const win = createEl('div', { class: ['hud-portrait-window'], parent: portrait });
+    // 立绘占位：主角小人模型（= assets/images/characters/hero.png），后续换正式立绘只改这张图
+    createEl('img', {
+      class: ['hud-portrait-img'],
+      attrs: { src: Assets.getIcon('ui', 'player') || 'assets/images/characters/hero.png', alt: '' },
+      parent: win,
+    });
+    // 姓名牌（压框右下，强化手绘错落感）
+    this.nameText = createEl('div', {
+      class: ['hud-nameplate'],
+      text: '余默',
+      parent: hero,
+    });
+
+    // 右侧三行
+    const stats = createEl('div', { class: ['hud-stats'], parent: hero });
+
+    // 1) 攻击力：武器图标（用户明确允许此处用 ⚔️ 作图标）+ 数值
+    const atkRow = createEl('div', { class: ['hud-atk'], parent: stats });
+    createEl('span', { class: ['hud-atk-icon'], text: '⚔️', attrs: { title: '攻击力' }, parent: atkRow });
+    this.atkText = createEl('span', { class: ['hud-num'], text: '', attrs: { title: '攻击力' }, parent: atkRow });
+
+    // 2) 生命值：红心 + 倾斜分段血条（短段红 → 均匀渐变 → 长段绿）
+    const hpRow = createEl('div', { class: ['hud-hp'], parent: stats });
+    this.hpLabel = createEl('div', { class: ['hud-heart'], attrs: { title: '生命值' }, parent: hpRow });
+    createEl('div', { class: ['hud-heart-core'], parent: this.hpLabel });
+    createEl('span', { class: ['hud-heart-shine'], parent: this.hpLabel });
+    this.hpText = createEl('span', { class: ['hud-heart-num'], text: '', parent: this.hpLabel });
+
+    const bar = createEl('div', { class: ['hud-hpbar'], attrs: { title: '生命值' }, parent: hpRow });
+    this.hpSegs = [];
+    for (let i = 0; i < HP_SEGMENTS; i++) {
+      const seg = createEl('div', { class: ['hud-hpbar-seg'], parent: bar });
+      // 颜色自左向右从红(4°) 均匀过渡到绿(92°)；幂次让"红段短、绿段长"
+      const hue = 4 + 88 * Math.pow(i / (HP_SEGMENTS - 1), 1.6);
+      const fill = createEl('div', {
+        class: ['hud-hpbar-fill'],
+        style: {
+          background: `linear-gradient(180deg, hsl(${hue}, 86%, 63%), hsl(${hue}, 82%, 47%) 58%, hsl(${hue}, 78%, 38%))`,
+        },
+        parent: seg,
+      });
+      this.hpSegs.push(fill);
+    }
+
+    // 3) 行动力：菱形水晶 × 上限数（8 颗）+ 数值
+    const stamRow = createEl('div', { class: ['hud-stam'], parent: stats });
+    this.stamWrap = createEl('div', { class: ['hud-stam-gems'], attrs: { title: '行动力' }, parent: stamRow });
+    this.staminaText = createEl('span', { class: ['hud-num', 'hud-stam-num'], text: '', attrs: { title: '行动力' }, parent: stamRow });
+
+    this._renderStaminaGems();
   }
 
+  // ════════════════════════════════════════════════════════════
+  // 第二段：天数 + 金币（星露谷风格木牌，形状不规整）
+  // ════════════════════════════════════════════════════════════
+  _buildSign() {
+    const sign = createEl('div', { class: ['hud-sign'], parent: this.left });
+
+    const goldCol = createEl('div', { class: ['hud-sign-col', 'hud-sign-gold-col'], parent: sign });
+    const goldRow = createEl('div', { class: ['hud-sign-gold-row'], parent: goldCol });
+    goldRow.appendChild(iconEl('ui', 'gold', { size: '22px', fallback: Assets.ui.gold }));
+    this.goldText = createEl('span', { class: ['hud-sign-gold'], text: '', attrs: { title: '金币' }, parent: goldRow });
+
+    createEl('div', { class: ['hud-sign-div'], parent: sign });
+
+    const dayCol = createEl('div', { class: ['hud-sign-col', 'hud-sign-day-col'], parent: sign });
+    this.dayText = createEl('div', { class: ['hud-sign-day'], text: '', parent: dayCol });
+    this.calText = createEl('div', { class: ['hud-sign-cal'], text: '', parent: dayCol });
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // 第三段：任务图标（独立一块，不与前两段共用底板）
+  // ════════════════════════════════════════════════════════════
+  _buildTask() {
+    this.taskIconEl = createEl('div', {
+      class: ['hud-task'],
+      attrs: { title: '任务（J 切换）' },
+      onclick: () => {
+        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'task' });
+        EventBus.emit(GE.TASK_OPEN, {});
+      },
+      parent: this.left,
+    });
+    this.taskIconEl.appendChild(iconEl('ui', 'task', { size: '34px', fallback: '📋' }));
+  }
+
+  /** 容量条目：彩点 + 弱标签 + 强数值（数值 span 承担超载红闪） */
+  _buildCapItem(parent, color, label) {
+    const item = createEl('div', { class: ['hud-cap-item'], parent });
+    createEl('span', { class: ['hud-cap-dot'], style: { background: color }, parent: item });
+    createEl('span', { class: ['hud-cap-label'], text: label, parent: item });
+    return createEl('span', { class: ['hud-cap-num'], text: '', parent: item });
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // 渲染
+  // ════════════════════════════════════════════════════════════
   _renderAll() {
     if (!this.gs) return;
     const p = this.gs.player;
     const c = this.gs.capacity;
     const creatures = this.gs.creatures || [];
 
-    const friendlyNow = creatures.filter(c => c.kind && c.kind.includes('chick')).length;
-    const dangerNow   = creatures.filter(c => c.kind && c.kind.includes('slime')).length;
+    const friendlyNow = creatures.filter(x => x.kind && x.kind.includes('chick')).length;
+    const dangerNow   = creatures.filter(x => x.kind && x.kind.includes('slime')).length;
     const extremeNow  = 0;
 
-    if (this.hpText)      this.hpText.textContent      = `${p.hp}/${p.maxHp}`;
-    if (this.atkText)     this.atkText.textContent     = `${Math.floor(p.atk)}`;
-    if (this.staminaText) this.staminaText.textContent = `${p.stamina}/${p.maxStamina}`;
+    if (this.atkText) this.atkText.textContent = `${Math.floor(p.atk)}`;
+
+    // 生命：红心内数字 + 分段血条填充比例
+    if (this.hpText) this.hpText.textContent = `${p.hp}`;
+    if (this.hpLabel) {
+      this.hpLabel.title = `生命值 ${p.hp}/${p.maxHp}`;
+      if (this.hpText) this.hpText.title = `生命值 ${p.hp}/${p.maxHp}`;
+    }
+    this._renderHpBar(p.hp, p.maxHp);
+
+    // 行动力：菱形水晶 + 数值（负数保留负号）
+    this._renderStaminaGems();
+    this._renderStaminaColors(p.stamina, p.maxStamina);
+
     if (this.friendlyText) this.friendlyText.textContent = `${friendlyNow}/${c.friendly}`;
     if (this.dangerText)   this.dangerText.textContent   = `${dangerNow}/${c.danger}`;
     if (this.extremeText)  this.extremeText.textContent  = `${extremeNow}/${c.extreme}`;
@@ -219,6 +252,79 @@ export class TopBar {
         : '';
     }
     if (this.goldText) this.goldText.textContent = `${p.gold}`;
+
+    if (this.nameText) {
+      const g = this.gs.team?.groups?.[this.gs.team?.activeGroup ?? 0];
+      const roleId = g?.roles?.[0];
+      this.nameText.textContent = (roleId && CHARACTERS[roleId]?.name) || '余默';
+    }
+  }
+
+  /** 分段血条：每段按比例点亮，短段红 → 均匀渐变 → 长段绿 */
+  _renderHpBar(hp, maxHp) {
+    if (!this.hpSegs.length) return;
+    const r = maxHp > 0 ? Math.max(0, Math.min(1, hp / maxHp)) : 0;
+    const segFill = r * HP_SEGMENTS;
+    this.hpSegs.forEach((fill, i) => {
+      const lit = Math.max(0, Math.min(1, segFill - i));
+      fill.style.width = `${lit * 100}%`;
+    });
+  }
+
+  /** 菱形水晶数量 = 行动力上限（上限 8 → 8 颗；上限变化时重建） */
+  _renderStaminaGems() {
+    if (!this.stamWrap || !this.gs) return;
+    const n = Math.max(1, Math.floor(this.gs.player.maxStamina ?? 8));
+    if (this.stamGems.length !== n) {
+      while (this.stamWrap.firstChild) this.stamWrap.removeChild(this.stamWrap.firstChild);
+      this.stamGems = [];
+      for (let i = 0; i < n; i++) {
+        this.stamGems.push(createEl('span', { class: ['hud-gem'], parent: this.stamWrap }));
+      }
+    }
+    if (this.staminaText) this.staminaText.textContent = `${this.gs.player.stamina}/${n}`;
+  }
+
+  /**
+   * 行动力颜色规则（§16.7）：
+   *  · 非负：从左往右可用蓝，已消耗从右往左依次白
+   *  · 负数：最左侧 -stamina 颗由白变红（从左往右），其余白
+   */
+  _renderStaminaColors(stamina, maxStamina) {
+    if (!this.stamGems.length) return;
+    const n = this.stamGems.length;
+    const s = Math.floor(stamina);
+    for (let i = 0; i < n; i++) {
+      let state = 'white';
+      if (s >= 0) {
+        if (i < Math.min(s, n)) state = 'blue';
+      } else {
+        state = i < Math.min(-s, n) ? 'red' : 'white';
+      }
+      const gem = this.stamGems[i];
+      gem.classList.toggle('hud-gem--blue', state === 'blue');
+      gem.classList.toggle('hud-gem--white', state === 'white');
+      gem.classList.toggle('hud-gem--red', state === 'red');
+    }
+    if (this.staminaText) this.staminaText.textContent = `${s}/${Math.floor(maxStamina ?? n)}`;
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // 等比缩放（基准 1280×720）
+  // ════════════════════════════════════════════════════════════
+  _applyScale() {
+    if (typeof window === 'undefined') return;
+    const w = window.innerWidth || BASE_W;
+    const h = window.innerHeight || BASE_H;
+    const s = Math.max(SCALE_MIN, Math.min(SCALE_MAX, Math.min(w / BASE_W, h / BASE_H)));
+    const root = document.documentElement;
+    if (root?.style?.setProperty) root.style.setProperty('--hud-scale', String(s));
+  }
+
+  _bindResize() {
+    if (typeof window === 'undefined' || !window.addEventListener) return;
+    this._onResize = () => this._applyScale();
+    window.addEventListener('resize', this._onResize);
   }
 
   _subscribeEvents() {
@@ -236,14 +342,15 @@ export class TopBar {
     EventBus.on(GE.CREATURE_DEFEATED, () => this._renderAll());
     EventBus.on(GE.GOLD_CHANGE,       () => this._renderAll());
     EventBus.on(GE.TURN_ADVANCE,      () => this._renderAll());
+    EventBus.on(GE.TEAM_CHANGE,       () => this._renderAll());
   }
 }
 
+/** §16.7 容量超载：数值变红 + 缓慢闪烁（class 定义在 ui.css） */
 function applyOverload(el, now, cap) {
   if (!el) return;
   const over = now > cap;
   el.style.color = over ? '#c0392b' : '#4a3a2a';
-  // §16.7 超载时变红缓慢闪烁（class 定义在 ui.css）
   el.classList.toggle('overload-blink', over);
 }
 

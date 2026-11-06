@@ -30,9 +30,9 @@ import { POTIONS } from '../data/potions.js';
 import { getBuff } from '../data/buffs.js';
 import { createEl, qs, iconEl } from './dom.js';
 
-/** 滑入/滑出 transform（面板 top:52% + translateY(-50%) 垂直居中，横向位移做滑入滑出） */
-const SLIDE_IN_TRANSFORM = 'translate(0, -50%)';
-const SLIDE_OUT_TRANSFORM = 'translate(calc(100% + 60px), -50%)';
+/** 滑入/滑出 transform（§16.4：面板用 top/bottom 双锚点固定高度，只做横向滑入滑出） */
+const SLIDE_IN_TRANSFORM = 'translate(0, 0)';
+const SLIDE_OUT_TRANSFORM = 'translate(calc(100% + 60px), 0)';
 
 const TERRAIN_DESCRIPTIONS = {
   terrain_none:      '无地形：可在此放置设施 / 资源 / 技能',
@@ -82,15 +82,18 @@ export class InfoPanel {
   }
 
   mount(parent = qs('#app')) {
-    // 外层：初始 transform 滑出屏幕右侧；宽度约 1/4 屏宽，垂直居中于屏幕中右侧
+    // 外层：初始 transform 滑出屏幕右侧；
+    // §16.4 — 屏幕右侧、中部偏上；top/bottom 双锚点 ⇒ 外部尺寸固定（不随内容变化），
+    // 内容过多时只有内部 body 滚动；切 tab / 进详情页不改变外框尺寸与位置。
     this.root = createEl('div', {
       class: ['info-panel'],
       style: {
         position: 'absolute',
-        right: '20px',
-        top: '52%',
-        width: 'clamp(280px, 25vw, 400px)',
-        maxHeight: 'calc(100vh - 240px)',
+        right: '18px',
+        top: '76px',
+        bottom: '100px',
+        width: 'clamp(320px, 25vw, 440px)',
+        boxSizing: 'border-box',
         backgroundColor: 'rgba(255, 255, 255, 0.92)',
         borderRadius: '16px',
         border: '3px solid #3a3a3a',
@@ -119,9 +122,9 @@ export class InfoPanel {
       parent: this.root,
     });
 
-    // body 容器（内容过多时允许上下滚动）
+    // body 容器：唯一可滚动区（min-height:0 保证 flex 子项可被压缩，不外撑面板）
     this.bodyWrap = createEl('div', {
-      style: { flex: '1', overflowY: 'auto', minHeight: '60px' },
+      style: { flex: '1 1 auto', minHeight: '0', overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' },
       parent: this.root,
     });
 

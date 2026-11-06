@@ -168,6 +168,419 @@ body.build-mode .map-container {
   animation: overload-blink 1.6s ease-in-out infinite;
 }
 
+/* ════════════════════════════════════════════════════════════
+ * §16.7 顶部 UI 区（2026-11-06 修订）：左上角三段式 + 容量顶部居中
+ *
+ * 全部为「UI 组件绘制」：木牌 / 菱形水晶 / 分段血条 / 头像框用 CSS 的描边、
+ * 纹理、渐变光影与不规则圆角画成，不是美术素材占位；后续换正式 PNG 时
+ * 只替换对应元素的背景层，布局数值不动。
+ * 手绘语言：奶白贴纸边(#FFF8E6) + 近黑粗描边(#241A12) + 硬偏移投影 + ±3° 轻旋。
+ * ════════════════════════════════════════════════════════════ */
+
+/* 整屏 HUD 根：不拦截鼠标，可点元素单独 pointer-events:auto */
+.top-bar { position: absolute; inset: 0; pointer-events: none; }
+
+/* ── 左上角三段容器（基准 1280×720，等比缩放）── */
+.hud-left {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  pointer-events: none;
+  transform: scale(var(--hud-scale, 1));
+  transform-origin: top left;
+}
+
+/* 第一段：立绘 + 攻击 + 生命 + 行动力 */
+.hud-hero-group { position: relative; width: 332px; height: 134px; }
+
+/* 斜切手绘头像框（组件绘制：双层描边 + 四角不同圆度 + 轻旋） */
+.hud-portrait {
+  position: absolute;
+  left: 0; top: 0;
+  width: 118px; height: 118px;
+  padding: 5px;
+  background: linear-gradient(160deg, #FFFDF4 0%, #FFF1D2 100%);
+  border: 3px solid #241A12;
+  border-radius: 19px 27px 15px 23px / 23px 16px 26px 18px;
+  box-shadow:
+    0 0 0 5px #FFF8E6,
+    0 5px 0 rgba(36, 26, 18, 0.16),
+    0 10px 18px rgba(0, 0, 0, 0.28);
+  transform: rotate(-3.5deg);
+}
+.hud-portrait::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.6), inset 0 -5px 8px rgba(120, 90, 40, 0.2);
+  pointer-events: none;
+}
+/* 内窗斜切裁切（人物只被切到四角极小边缘） */
+.hud-portrait-window {
+  position: relative;
+  width: 100%; height: 100%;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: radial-gradient(ellipse at 50% 26%, #FFF7DF 0%, #F3DDA4 68%, #DFC086 100%);
+  border-radius: 14px 20px 10px 17px;
+  clip-path: polygon(1.5% 0, 100% 3%, 97.5% 100%, 0 96%);
+}
+.hud-portrait-img {
+  width: 100%;
+  height: 96%;
+  object-fit: contain;
+  object-position: bottom center;
+  filter: drop-shadow(0 2px 0 rgba(36, 26, 18, 0.35));
+}
+
+/* 姓名牌（压框右下，深棕小牌 + 白字黑边） */
+.hud-nameplate {
+  position: absolute;
+  left: 50px; top: 108px;
+  padding: 1px 8px 2px;
+  background: linear-gradient(180deg, #5E3E24 0%, #3E2814 100%);
+  color: #FFF8E6;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  border: 2px solid #241A12;
+  border-radius: 7px 11px 6px 9px;
+  box-shadow: 0 0 0 3px rgba(255, 248, 230, 0.92), 0 3px 0 rgba(36, 26, 18, 0.2);
+  text-shadow: 0 1px 0 #241A12;
+  transform: rotate(2deg);
+}
+
+/* 右侧三行 */
+.hud-stats {
+  position: absolute;
+  left: 132px; top: 2px;
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+/* 手写粗体白字黑边数字（黑边用多重 text-shadow 叠出，避免 -webkit-text-stroke 吞掉白色填充） */
+.hud-num {
+  font-family: "Arial Black", "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif;
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1;
+  color: #FFFDF6;
+  text-shadow:
+    -2px 0 0 #241A12, 2px 0 0 #241A12, 0 -2px 0 #241A12, 0 2px 0 #241A12,
+    -1.5px -1.5px 0 #241A12, 1.5px -1.5px 0 #241A12, -1.5px 1.5px 0 #241A12, 1.5px 1.5px 0 #241A12,
+    0 4px 0 #241A12, 0 7px 7px rgba(0, 0, 0, 0.32);
+  letter-spacing: 0.5px;
+}
+
+/* 1) 攻击力行 */
+.hud-atk {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  transform: rotate(-1deg);
+}
+.hud-atk-icon {
+  font-size: 24px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 0 #241A12) drop-shadow(0 3px 3px rgba(0, 0, 0, 0.35));
+}
+
+/* 2) 生命值行：红心 + 倾斜分段血条（红心压住血条左端，形成"元素压边"） */
+.hud-hp {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  transform: rotate(-1.2deg);
+}
+
+/* 红心（组件绘制：两瓣圆角块合心 + 外描边 + 高光） */
+.hud-heart {
+  position: relative;
+  z-index: 2;
+  margin-right: -7px;
+  width: 36px;
+  height: 33px;
+  flex-shrink: 0;
+  filter:
+    drop-shadow(1px 0 0 #241A12) drop-shadow(-1px 0 0 #241A12)
+    drop-shadow(0 1px 0 #241A12) drop-shadow(0 -1px 0 #241A12)
+    drop-shadow(0 3px 2px rgba(0, 0, 0, 0.35));
+}
+.hud-heart-core::before,
+.hud-heart-core::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  width: 17px;
+  height: 27px;
+  background: linear-gradient(180deg, #FF7E63 0%, #E8402A 45%, #CE2A12 100%);
+  border-radius: 17px 17px 3px 3px;
+}
+.hud-heart-core::before {
+  left: 18px;
+  transform: rotate(-45deg);
+  transform-origin: 0 100%;
+}
+.hud-heart-core::after {
+  left: 1px;
+  transform: rotate(45deg);
+  transform-origin: 100% 100%;
+}
+/* 左上高光（手绘塑料感） */
+.hud-heart-shine {
+  position: absolute;
+  left: 9px; top: 7px;
+  width: 8px; height: 5px;
+  background: rgba(255, 255, 255, 0.68);
+  border-radius: 50%;
+  transform: rotate(-28deg);
+  pointer-events: none;
+}
+.hud-heart-num {
+  position: absolute;
+  left: 0; right: 0; top: 8px;
+  text-align: center;
+  font-family: "Arial Black", "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  color: #FFFDF6;
+  text-shadow: 0 1px 0 #241A12, 0 0 2px #241A12, 1px 0 0 #241A12, -1px 0 0 #241A12;
+  letter-spacing: -0.3px;
+}
+
+/* 分段血条：深色底槽 + 7 段（颜色由 JS 按位置红→绿） */
+.hud-hpbar {
+  flex: 1;
+  height: 22px;
+  display: flex;
+  gap: 2px;
+  padding: 2px 2px 2px 8px;
+  background: #37281C;
+  border: 2.5px solid #241A12;
+  border-radius: 7px 10px 6px 8px;
+  box-shadow:
+    0 0 0 2.5px #FFF8E6,
+    inset 0 3px 4px rgba(0, 0, 0, 0.55),
+    0 3px 0 rgba(36, 26, 18, 0.18);
+  transform: rotate(-1.5deg);
+}
+.hud-hpbar-seg {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  border-radius: 3px 4px 3px 4px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.52), rgba(0, 0, 0, 0.72));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+.hud-hpbar-fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 0%;
+  border-radius: 3px;
+  box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.28), inset 0 2px 2px rgba(255, 255, 255, 0.55);
+  transition: width 0.25s ease-out;
+}
+
+/* 3) 行动力行：菱形水晶 + 数值 */
+.hud-stam {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transform: rotate(-1deg);
+}
+.hud-stam-gems { display: flex; align-items: center; gap: 4px; }
+.hud-gem {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  border: 2px solid #241A12;
+  border-radius: 3px;
+  transform: rotate(45deg);
+  background: linear-gradient(135deg, #B6F2FF 0%, #39B6E0 45%, #12628A 100%);
+  box-shadow:
+    0 0 0 1.5px #FFF8E6,
+    inset 0 0 0 1px rgba(255, 255, 255, 0.5),
+    0 2px 2px rgba(0, 0, 0, 0.3);
+}
+.hud-gem--blue { /* 可用 */ }
+.hud-gem--white {
+  background: linear-gradient(135deg, #FFFFFF 0%, #EFE9DA 50%, #C9C0AC 100%);
+  border-color: #3E3226;
+}
+.hud-gem--red {
+  background: linear-gradient(135deg, #FFB4A0 0%, #FF5B3D 45%, #A81B08 100%);
+  border-color: #4A140A;
+  box-shadow:
+    0 0 0 1.5px #FFF8E6,
+    inset 0 0 0 1px rgba(255, 255, 255, 0.45),
+    0 0 6px rgba(255, 82, 58, 0.55),
+    0 2px 2px rgba(0, 0, 0, 0.3);
+}
+.hud-stam-num {
+  font-size: 17px;
+  text-shadow:
+    -1.5px 0 0 #241A12, 1.5px 0 0 #241A12, 0 -1.5px 0 #241A12, 0 1.5px 0 #241A12,
+    0 2.5px 0 #241A12, 0 5px 6px rgba(0, 0, 0, 0.32);
+}
+
+/* ── 第二段：星露谷风格木牌（形状不规整：四角不同圆度 + 木纹 + 木节 + 双钉）── */
+.hud-sign {
+  position: relative;
+  width: 244px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  border: 3px solid #241A12;
+  border-radius: 13px 22px 10px 19px / 19px 12px 22px 14px;
+  background:
+    radial-gradient(circle at 8px 9px, #FFE6B4 0 1.6px, #3A2A18 2.2px 3.4px, transparent 4px),
+    radial-gradient(circle at 234px 54px, #FFE6B4 0 1.6px, #3A2A18 2.2px 3.4px, transparent 4px),
+    radial-gradient(ellipse at 30% 42%, rgba(0, 0, 0, 0.16) 0 7px, transparent 9px),
+    radial-gradient(ellipse at 74% 68%, rgba(0, 0, 0, 0.13) 0 5px, transparent 7px),
+    repeating-linear-gradient(92deg, rgba(0, 0, 0, 0.1) 0 2px, rgba(255, 255, 255, 0.035) 2px 5px, transparent 5px 11px),
+    linear-gradient(180deg, #B07B3F 0%, #8A5A2B 45%, #6B4423 100%);
+  box-shadow:
+    0 0 0 4px #FFF8E6,
+    0 6px 0 rgba(36, 26, 18, 0.16),
+    0 12px 16px rgba(0, 0, 0, 0.28);
+  transform: rotate(-1.2deg);
+}
+/* 手画两遍线的错位感 */
+.hud-sign::before {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border: 1.5px solid rgba(255, 240, 210, 0.22);
+  border-radius: 9px 17px 7px 14px;
+  pointer-events: none;
+}
+.hud-sign::after {
+  content: '';
+  position: absolute;
+  left: 8px; right: 8px; top: 2px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 240, 210, 0.35), transparent);
+  pointer-events: none;
+}
+.hud-sign-col { display: flex; flex-direction: column; justify-content: center; }
+.hud-sign-gold-col { width: 96px; }
+.hud-sign-gold-row { display: flex; align-items: center; gap: 5px; }
+.hud-sign-gold {
+  font-family: "Arial Black", "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif;
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1;
+  color: #FFE9A8;
+  text-shadow:
+    -1.5px 0 0 #3A2510, 1.5px 0 0 #3A2510, 0 -1.5px 0 #3A2510, 0 1.5px 0 #3A2510,
+    0 3px 0 #3A2510, 0 5px 6px rgba(0, 0, 0, 0.35);
+  letter-spacing: 0.5px;
+}
+.hud-sign-div {
+  width: 2px;
+  height: 38px;
+  flex-shrink: 0;
+  background: repeating-linear-gradient(180deg, rgba(255, 240, 210, 0.45) 0 4px, transparent 4px 9px);
+  border-radius: 2px;
+}
+.hud-sign-day-col { flex: 1; gap: 1px; padding-left: 2px; }
+.hud-sign-day {
+  font-size: 15px;
+  font-weight: 900;
+  color: #FFF8E6;
+  line-height: 1.15;
+  text-shadow: 0 1px 0 #2A1A0C, 0 2px 3px rgba(0, 0, 0, 0.4);
+}
+.hud-sign-cal {
+  font-size: 10px;
+  font-weight: 700;
+  color: #F4DCB2;
+  line-height: 1.2;
+  text-shadow: 0 1px 0 rgba(42, 26, 12, 0.7);
+}
+
+/* ── 第三段：任务块（独立一块，圆木片造型）── */
+.hud-task {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  pointer-events: auto;
+  border: 3px solid #241A12;
+  border-radius: 46% 54% 48% 52% / 52% 47% 53% 48%;
+  background:
+    radial-gradient(circle at 34% 26%, rgba(255, 230, 180, 0.35) 0 6px, transparent 9px),
+    linear-gradient(180deg, #B07B3F 0%, #7A4E24 70%, #5E3A1A 100%);
+  box-shadow:
+    0 0 0 4px #FFF8E6,
+    0 5px 0 rgba(36, 26, 18, 0.16),
+    0 10px 14px rgba(0, 0, 0, 0.26);
+  transform: rotate(2deg);
+  transition: transform 0.12s ease-out;
+}
+.hud-task:hover { transform: rotate(2deg) translateY(-2px); }
+
+/* ── 生物容量：屏幕顶部居中（纸胶带条，超载红闪由 .overload-blink 控制）── */
+.hud-center {
+  position: absolute;
+  top: 6px;
+  left: 0; right: 0;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.hud-center-inner {
+  transform: scale(var(--hud-scale, 1));
+  transform-origin: top center;
+}
+.hud-capacity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 14px;
+  pointer-events: auto;
+  background: linear-gradient(180deg, rgba(255, 251, 240, 0.97) 0%, rgba(248, 232, 196, 0.97) 100%);
+  border: 3px solid #241A12;
+  border-radius: 12px 18px 10px 16px / 16px 11px 18px 12px;
+  box-shadow:
+    0 0 0 4px rgba(255, 248, 230, 0.95),
+    0 5px 0 rgba(36, 26, 18, 0.14),
+    0 10px 16px rgba(0, 0, 0, 0.22);
+  transform: rotate(-0.8deg);
+}
+.hud-cap-item { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.hud-cap-dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3), 0 0 0 1.5px #FFF8E6;
+}
+.hud-cap-label { font-size: 11px; font-weight: 800; color: #7A6A52; }
+.hud-cap-num { font-size: 14px; font-weight: 900; color: #4a3a2a; font-variant-numeric: tabular-nums; }
+.hud-cap-div {
+  width: 2px; height: 18px;
+  background: rgba(120, 100, 70, 0.35);
+  border-radius: 2px;
+  transform: rotate(6deg);
+}
+
 /* ── 第 11 批 §16.4：选项二次确认——再点已选项时闪烁 + 淡金底 ── */
 @keyframes dialog-opt-flash {
   0%, 100% { opacity: 1; }
