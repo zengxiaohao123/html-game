@@ -37,10 +37,10 @@ import { SleepSystem } from './SleepSystem.js';
 export const BLESS_STAMINA_COST = 2;
 export const BLESS_GOLD_COST = 1;
 
-const TILE_SIZE = 80;
-
 /**
  * 第一步：祈福开始（扣消耗 + 选目标 + emit BLESS_START）
+ * candidates[].x/y 为「逻辑坐标」的地块中心（1 格 = 1 单位），
+ * 由 UI（BlessAnimation）按当前每格像素换算，禁止在逻辑层写死像素。
  * @returns {{ ok: boolean, targetIdx: number|null, candidates: Array<{idx:number,x:number,y:number,contentId:string|null}>, reason?:string, staminaCost?:number, goldCost?:number }}
  */
 export function blessStart(gs) {
@@ -111,8 +111,9 @@ export function blessStart(gs) {
       const { x, y } = Distance.outerIdxToXY(gs.map.size, t.idx);
       return {
         idx: t.idx,
-        x: x * TILE_SIZE + TILE_SIZE / 2,
-        y: y * TILE_SIZE + TILE_SIZE / 2,
+        // 逻辑坐标（格中心）；像素换算由 UI 层按当前每格像素完成（外圈可扩展）
+        x: x + 0.5,
+        y: y + 0.5,
         contentId: t.contentId,
       };
     });

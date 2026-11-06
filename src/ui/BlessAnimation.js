@@ -8,8 +8,9 @@
 //   - 动画结束 → 调 BlessSystem.blessCommit(gs, targetIdx)
 //   - 移除 overlay
 //
-// 注意：overlay 用 position:fixed，坐标 = 候选 tile 在 MapView 容器内的像素 + MapView 容器自身 left/top
-// BlessSystem.blessStart 给出的 candidates[].x/y 已经是 tile 中心相对 map-container 的像素
+// 注意：overlay 用 position:fixed，坐标 = 候选 tile 的逻辑中心 × 当前每格像素 + MapView 容器自身 left/top
+// BlessSystem.blessStart 给出的 candidates[].x/y 是逻辑坐标（格中心，1 格 = 1 单位），
+// 像素换算在本 UI 层完成（外圈边长可扩展，禁止写死 80px）
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
@@ -55,12 +56,14 @@ export class BlessAnimation {
       return;
     }
 
-    // candidates 是 BlessSystem.blessStart 按 idx 升序排好的外圈 8 格
-    // 顺时针 = candidates 数组 index 递增：0→1→2→...→7→0→1...
+    // candidates 是 BlessSystem.blessStart 按 idx 升序排好的外圈格（x/y 为逻辑格中心）
+    // 顺时针 = candidates 数组 index 递增：0→1→2→…→N→0→1...
+    // 逻辑坐标 → 像素：每格像素 = 容器实时宽度 / 外圈边长（自动兼容扩图与 §16.3 缩放）
+    const tilePx = mapRect.width / Math.max(1, gs.map.size);
     const absPositions = candidates.map(c => ({
       ...c,
-      absX: mapRect.left + c.x,
-      absY: mapRect.top + c.y,
+      absX: mapRect.left + c.x * tilePx,
+      absY: mapRect.top + c.y * tilePx,
     }));
 
     const TOTAL_STEPS = absPositions.length * 2 + 1; // 两圈 + 最后停 target
@@ -153,11 +156,13 @@ export class BlessAnimation {
   _buildCandidateDots(candidates) {
     const mapRect = this._getMapRect();
     if (!mapRect) return;
+    const gs = this._getGS();
+    const tilePx = mapRect.width / Math.max(1, gs?.map?.size || 3);
 
     this.candidateDots = [];
     for (const c of candidates) {
-      const x = mapRect.left + c.x;
-      const y = mapRect.top + c.y;
+      const x = mapRect.left + c.x * tilePx;
+      const y = mapRect.top + c.y * tilePx;
 
       const dot = document.createElement('div');
       dot.style.cssText = [

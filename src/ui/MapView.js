@@ -15,19 +15,24 @@ import { BuildSystem } from '../systems/BuildSystem.js';
 import { ItemTargeting } from '../systems/ItemTargeting.js';
 import { SKILLS } from '../data/characters.js';
 import { getCreatureDef } from '../data/creatures.js';
+import * as Geometry from '../core/Geometry.js';
 import { createEl, qs, iconEl } from './dom.js';
 
-const TILE_SIZE = 80;
-const MAP_SIZE = 3;
-const MAP_PX = TILE_SIZE * MAP_SIZE;
+// 地图区留白（像素）：外圈边长可扩展时，由可用区域反算每格像素，避免扩图后错位/挤压。
+// 3×3 在常规窗口下反算结果仍是上限 80px，与改造前完全一致。
+const MAP_H_MARGIN = 32;
+const MAP_V_MARGIN = 110;
+const BASE_TILE_PX = 80; // 图标随格缩放的基准（仅影响大图缩放时的内容尺寸）
 
 export class MapView {
   constructor() {
     this.root = null;
     this.playerEl = null;
+    this.fenceEl = null;
     this.tileEls = new Map();
     this.gs = null;
     this.buildMode = false;
+    this.tileSize = BASE_TILE_PX;
     // §16.3 视角缩放/拖拽平移（纯视觉，不影响数值；点击命中仍走 tile 自身事件）
     this._scale = 1;
     this._panX = 0;
@@ -36,14 +41,20 @@ export class MapView {
     this._dragMoved = false;
   }
 
+  get _tileRatio() {
+    return this.tileSize / BASE_TILE_PX;
+  }
+
   mount(gs, parent = qs('#app')) {
     this.gs = gs;
+    this.tileSize = this._computeTileSize(gs, parent);
+    const mapPx = gs.map.size * this.tileSize;
 
     this.root = createEl('div', {
       class: ['map-container'],
       style: {
-        width: `${MAP_PX}px`,
-        height: `${MAP_PX}px`,
+        width: `${mapPx}px`,
+        height: `${mapPx}px`,
         position: 'relative',
         margin: '0 auto',
         flexShrink: '0',
@@ -61,6 +72,42 @@ export class MapView {
     this._bindViewControls();
     this._subscribeEvents();
     return this.root;
+  }
+
+  /** 从可用区域反算每格像素（外圈边长 size 变化 → 自动重算，栅栏偏移随尺寸联动） */
+  _computeTileSize(gs, parent) {
+    const parentW = parent && typeof parent.clientWidth === 'number' && parent.clientWidth > 0
+      ? parent.clientWidth : 0;
+    const parentH = parent && typeof parent.clientHeight === 'number' && parent.clientHeight > 0
+      ? parent.clientHeight : 0;
+    const vw = (typeof window !== 'undefined' && window.innerWidth) || 0;
+    const vh = (typeof window !== 'undefined' && window.innerHeight) || 0;
+    const availW = (parentW || vw || 960) - MAP_H_MARGIN * 2;
+    const availH = (parentH || vh || 640) - MAP_V_MARGIN * 2;
+    return Geometry.computeTilePx({ availW, availH, size: gs.map.size });
+  }
+
+  /** 地图尺寸变化（新游戏/读档）时重算像素并重绘整张图 */
+  _relayout(gs) {
+    if (!this.root) return;
+    this.tileSize = this._computeTileSize(gs, this.root.parentNode);
+    const mapPx = gs.map.size * this.tileSize;
+    this.root.style.width = `${mapPx}px`;
+    this.root.style.height = `${mapPx}px`;
+    this.renderAllTiles(gs);
+    this.renderFence(gs);
+    this.renderPlayer(gs);
+  }
+
+  /** 逻辑矩形 → 像素矩形（UI 层唯一的坐标换算出口，反向换算只在 drop 命中处） */
+  _pxRect(rect) {
+    const ts = this.tileSize;
+    return {
+      left: rect.x0 * ts,
+      top: rect.y0 * ts,
+      width: (rect.x1 - rect.x0) * ts,
+      height: (rect.y1 - rect.y0) * ts,
+    };
   }
 
   /** §16.3 滚轮缩放（0.5~2.5，以中心缩放）+ 鼠标按住拖拽平移；只改视觉 transform */
@@ -126,17 +173,20 @@ export class MapView {
   }
 
   _renderOneTile(tile, gs) {
-    const { x, y } = Distance.outerIdxToXY(gs.map.size, tile.idx);
+    // 几何层给出逻辑 AABB；UI 只做逻辑坐标 → 像素换算（外圈边长可扩展，不再写死 3×3/80px）
+    const rect = Geometry.tileRect(gs, Geometry.outerTileRef(tile.idx));
+    const box = this._pxRect(rect);
+    const ratio = this._tileRatio;
 
     const tileEl = createEl('div', {
       class: ['map-tile', `tile-idx-${tile.idx}`],
       attrs: { 'data-idx': tile.idx },
       style: {
         position: 'absolute',
-        left: `${x * TILE_SIZE}px`,
-        top: `${y * TILE_SIZE}px`,
-        width: `${TILE_SIZE}px`,
-        height: `${TILE_SIZE}px`,
+        left: `${box.left}px`,
+        top: `${box.top}px`,
+        width: `${box.width}px`,
+        height: `${box.height}px`,
         boxSizing: 'border-box',
         border: '3px solid #3a3a3a',
         borderRadius: '10px',
@@ -144,7 +194,7 @@ export class MapView {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: '36px',
+        fontSize: `${Math.round(36 * ratio)}px`,
         cursor: 'pointer',
         transition: 'all 0.15s ease-out',
         userSelect: 'none',
@@ -154,7 +204,7 @@ export class MapView {
 
     if (tile.terrain && normalizeTerrain(tile.terrain) !== 'terrain_none') {
       tileEl.appendChild(iconEl('terrains', normalizeTerrain(tile.terrain), {
-        size: '16px',
+        size: `${Math.round(16 * ratio)}px`,
         fallback: Assets.getEmoji('terrains', tile.terrain),
         cls: 'tile-terrain',
         style: { position: 'absolute', bottom: '2px', right: '4px', opacity: '0.6' },
@@ -180,7 +230,7 @@ export class MapView {
       tileEl.appendChild(iconEl(group, tile.contentId, {
         def,
         fallback,
-        size: '40px',
+        size: `${Math.round(40 * ratio)}px`,
         cls: 'tile-content',
         style: {
           position: 'relative',
@@ -189,7 +239,7 @@ export class MapView {
       }));
     } else {
       tileEl.appendChild(iconEl('terrains', 'terrain_none', {
-        size: '32px',
+        size: `${Math.round(32 * ratio)}px`,
         fallback: Assets.terrains.none,
         cls: 'tile-empty',
         style: { opacity: '0.3' },
@@ -289,9 +339,11 @@ export class MapView {
       const gs = this.gs;
       if (!gs) return;
       const rect = this.root.getBoundingClientRect();
-      // §16.3 缩放下 getBoundingClientRect 已被 scale 放大，需除回 _scale 换算回格子坐标
-      const x = Math.floor((e.clientX - rect.left) / (TILE_SIZE * this._scale));
-      const y = Math.floor((e.clientY - rect.top) / (TILE_SIZE * this._scale));
+      // §16.3 缩放下 getBoundingClientRect 已被 scale 放大，需除回 _scale 换算回格子坐标；
+      // 每格像素来自本次布局反算（不再固定 80px）
+      const tilePx = this.tileSize * this._scale;
+      const x = Math.floor((e.clientX - rect.left) / tilePx);
+      const y = Math.floor((e.clientY - rect.top) / tilePx);
       const tileIdx = Distance.outerXYToIdx(gs.map.size, x, y);
       if (tileIdx === null || tileIdx === undefined) {
         EventBus.emit(GE.TOAST_SHOW, { text: '🛠️ 只能放在外圈地块上', duration: 2000 });
@@ -313,26 +365,32 @@ export class MapView {
 
   renderFence(gs) {
     if (!this.root) return;
-    const fenceRowCols = gs.map.fenceRowCols;
-    const fenceTileSize = TILE_SIZE;
-    const fencePx = fenceTileSize * fenceRowCols;
-    const fenceOffset = (MAP_PX - fencePx) / 2;
+    const rowCols = gs.map.fenceRowCols;
+    const ts = this.tileSize;
+    const ratio = this._tileRatio;
 
-    const fenceEl = createEl('div', {
+    // 栅栏原点恒为网格 (1,1)；外圈变大时栅栏内区域 = (size-2)×(size-2) 同步变大，
+    // 位置与尺寸全部由几何层给出，不再用「容器 240px - 栅栏 80px」的写死居中算法。
+    const fRect = Geometry.fenceRect(gs);
+    const box = this._pxRect(fRect);
+
+    if (this.fenceEl) this.fenceEl.remove();
+    this.fenceEl = createEl('div', {
       class: ['map-fence'],
       id: 'fence-container',
       style: {
         position: 'absolute',
-        left: `${fenceOffset}px`,
-        top: `${fenceOffset}px`,
-        width: `${fencePx}px`,
-        height: `${fencePx}px`,
+        left: `${box.left}px`,
+        top: `${box.top}px`,
+        width: `${box.width}px`,
+        height: `${box.height}px`,
         border: '4px dashed #5a5a5a',
         borderRadius: '8px',
         backgroundColor: 'rgba(220, 220, 220, 0.4)',
       },
       parent: this.root,
     });
+    const fenceEl = this.fenceEl;
 
     // terrain → emoji 映射
     const TERRAIN_EMOJI = {
@@ -350,10 +408,15 @@ export class MapView {
       wheat: '🌾',
     };
 
-    for (let r = 0; r < fenceRowCols; r++) {
-      for (let c = 0; c < fenceRowCols; c++) {
-        const fenceIdx = r * fenceRowCols + c;
+    for (let r = 0; r < rowCols; r++) {
+      for (let c = 0; c < rowCols; c++) {
+        const fenceIdx = r * rowCols + c;
         const cell = gs.map.fence[fenceIdx];
+        // 栅栏格相对栅栏容器的偏移 = 逻辑坐标差 × 每格像素（原点恒 (1,1)，扩图不错位）
+        const logicalCell = Geometry.fenceTileRect(r, c);
+        const cellRect = this._pxRect(logicalCell);
+        const cellLeft = (logicalCell.x0 - fRect.x0) * ts;
+        const cellTop = (logicalCell.y0 - fRect.y0) * ts;
         const tileEl = createEl('div', {
           class: ['fence-tile'],
           'data-fence-row': r,
@@ -361,10 +424,10 @@ export class MapView {
           'data-fence-idx': fenceIdx,
           style: {
             position: 'absolute',
-            left: `${c * fenceTileSize}px`,
-            top: `${r * fenceTileSize}px`,
-            width: `${fenceTileSize}px`,
-            height: `${fenceTileSize}px`,
+            left: `${cellLeft}px`,
+            top: `${cellTop}px`,
+            width: `${cellRect.width}px`,
+            height: `${cellRect.height}px`,
             boxSizing: 'border-box',
             border: '1px dashed rgba(100,100,100,0.25)',
             cursor: 'pointer',
@@ -377,7 +440,7 @@ export class MapView {
           const emoji = TERRAIN_EMOJI[cell.terrain];
           if (emoji) {
             tileEl.appendChild(iconEl('terrains', normalizeTerrain(cell.terrain), {
-              size: '26px',
+              size: `${Math.round(26 * ratio)}px`,
               fallback: emoji,
               style: {
                 position: 'absolute', left: '50%', top: '50%',
@@ -406,7 +469,7 @@ export class MapView {
             const def = getCreatureDef?.(c.kind);
             wrap.appendChild(iconEl('creatures', c.kind, {
               def,
-              size: '14px',
+              size: `${Math.round(14 * ratio)}px`,
               fallback: def?.emoji || '🐾',
             }));
           }
@@ -425,12 +488,14 @@ export class MapView {
     if (!this.root) return;
     if (this.playerEl) this.playerEl.remove();
 
-    const { x, y } = Distance.outerIdxToXY(gs.map.size, gs.player.x);
-    const centerX = x * TILE_SIZE + TILE_SIZE / 2;
-    const centerY = y * TILE_SIZE + TILE_SIZE / 2;
+    // 玩家格中心同样由几何层给出，UI 只乘每格像素
+    const center = Geometry.tileCenter(gs, Geometry.outerTileRef(gs.player.x));
+    const centerX = center.x * this.tileSize;
+    const centerY = center.y * this.tileSize;
+    const ratio = this._tileRatio;
 
     this.playerEl = iconEl('ui', 'player', {
-      size: '42px',
+      size: `${Math.round(42 * ratio)}px`,
       fallback: Assets.ui.player,
       cls: 'player-avatar',
       style: {
@@ -494,16 +559,14 @@ export class MapView {
     EventBus.on(GE.BOOT, ({ gs }) => {
       if (!gs) return;
       this.gs = gs;
-      this.renderAllTiles(gs);
-      this.renderPlayer(gs);
+      this._relayout(gs);
     });
 
-    // STATE_RESET（兼容其他来源）
+    // STATE_RESET（兼容其他来源；读档后地图边长可能不同 → 重算像素与栅栏）
     EventBus.on(GE.STATE_RESET, ({ gs }) => {
       if (!gs) return;
       this.gs = gs;
-      this.renderAllTiles(gs);
-      this.renderPlayer(gs);
+      this._relayout(gs);
     });
 
     // 道具指向模式：高亮合法地块、其余变暗

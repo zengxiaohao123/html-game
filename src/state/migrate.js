@@ -7,6 +7,8 @@
 
 import { createInitialState } from './gameState.js';
 import { devLog } from '../core/Logger.js';
+import { getCreatureDef } from '../data/creatures.js';
+import { DEFAULT_CREATURE_RADIUS, FENCE_ORIGIN_X, FENCE_ORIGIN_Y } from '../core/Geometry.js';
 
 /**
  * 判断一个值是否是 plain object（非数组、非 null）
@@ -158,6 +160,33 @@ export function migrateGS(loadedGs) {
       for (let i = 0; i < bonus; i++) atk = Math.round((atk / 1.08) * 10) / 10;
       devLog.info('[migrateGS] 晴风 atk 回滚', bonus, '层:', loadedGs.player.atk, '→', atk);
       loadedGs.player.atk = atk;
+    }
+  }
+
+  // 空间几何（设计文档 §2.4）：旧存档生物补连续坐标/半径/朝向等字段。
+  // 只补字段、不改存档策略；旧生物没有 pos 时按主格中心回填，保证几何查询可用。
+  if (Array.isArray(loadedGs.creatures)) {
+    for (const c of loadedGs.creatures) {
+      if (!isPlainObject(c)) continue;
+      const def = getCreatureDef(c.kind);
+      if (typeof c.radius !== 'number' || c.radius <= 0) {
+        c.radius = (def && def.radius) || DEFAULT_CREATURE_RADIUS;
+      }
+      if (typeof c.speedPerTile !== 'number' || c.speedPerTile <= 0) {
+        c.speedPerTile = (def && def.speedPerTile) || 0.25;
+      }
+      if (!isPlainObject(c.pos) || !Number.isFinite(c.pos.x) || !Number.isFinite(c.pos.y)) {
+        const row = typeof c.row === 'number' ? c.row : 0;
+        const col = typeof c.col === 'number' ? c.col : 0;
+        c.pos = { x: FENCE_ORIGIN_X + col + 0.5, y: FENCE_ORIGIN_Y + row + 0.5 };
+      }
+      if (!isPlainObject(c.renderPos) || !Number.isFinite(c.renderPos.x) || !Number.isFinite(c.renderPos.y)) {
+        c.renderPos = { x: c.pos.x, y: c.pos.y };
+      }
+      if (!isPlainObject(c.dir) || !Number.isFinite(c.dir.x) || !Number.isFinite(c.dir.y)) {
+        c.dir = { x: 1, y: 0 };
+      }
+      if (!('targetPos' in c)) c.targetPos = null;
     }
   }
 

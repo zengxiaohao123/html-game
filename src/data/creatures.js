@@ -31,7 +31,11 @@ export const CREATURES = {
     elementImmune: null,
     growthMax: 100,   // 成长值满 → 变鸡
     mood: 0,
-    moveEverySec: 2,  // 每 2 秒换方向走 1 格
+    // 空间几何（设计文档 §2.2）：半径 0.167 = 1 格可排 6 只小鸡（3×2，直径 1/3）
+    radius: 1 / 6,
+    // 连续移动预留（当前阶段仍走 moveEverySec 的 2 秒跳格）：格/秒，3~6 秒走 1 格
+    speedPerTile: 0.3,
+    moveEverySec: 2,  // 每 2 秒换方向走 1 格（临时，后续替换为连续移动）
     drops: [{ itemId: 'item_raw_meat', qty: 1 }], // BIO-001 击败掉落：生肉 ×1
   },
   chicken: {
@@ -48,6 +52,9 @@ export const CREATURES = {
     elementImmune: null,
     growthMax: 0,
     mood: 0,
+    // 空间几何（设计文档 §2.2）：半径 0.25 = 1 格可排 4 只鸡（2×2）
+    radius: 0.25,
+    speedPerTile: 0.24, // 格/秒（约 4.2 秒走 1 格）
     moveEverySec: 2,
     drops: [{ itemId: 'item_raw_meat', qty: 3 }], // BIO-002 击败掉落：生肉 ×3
   },
@@ -67,6 +74,9 @@ export const CREATURES = {
     elementImmune: 'fire',
     growthMax: 0,
     mood: 0,
+    // 空间几何（设计文档 §2.2）：半径 0.25（无逐种依据，统一按 0.25，待定）
+    radius: 0.25,
+    speedPerTile: 0.2, // 格/秒（5 秒走 1 格）
     moveEverySec: 2,
     drops: [{ itemId: 'item_slime_gel', qty: 1 }], // BIO-003 击败掉落：史莱姆凝胶 ×1
   },
@@ -84,6 +94,9 @@ export const CREATURES = {
     elementImmune: 'water',
     growthMax: 0,
     mood: 0,
+    // 空间几何（设计文档 §2.2）：半径 0.25（无逐种依据，统一按 0.25，待定）
+    radius: 0.25,
+    speedPerTile: 0.2, // 格/秒（5 秒走 1 格）
     moveEverySec: 2,
     drops: [{ itemId: 'item_slime_gel', qty: 1 }], // BIO-003 击败掉落：史莱姆凝胶 ×1
   },
@@ -101,6 +114,9 @@ export const CREATURES = {
     elementImmune: 'thunder',
     growthMax: 0,
     mood: 0,
+    // 空间几何（设计文档 §2.2）：半径 0.25（无逐种依据，统一按 0.25，待定）
+    radius: 0.25,
+    speedPerTile: 0.2, // 格/秒（5 秒走 1 格）
     moveEverySec: 2,
     drops: [{ itemId: 'item_slime_gel', qty: 1 }], // BIO-003 击败掉落：史莱姆凝胶 ×1
   },
@@ -118,6 +134,9 @@ export const CREATURES = {
     elementImmune: 'ice',
     growthMax: 0,
     mood: 0,
+    // 空间几何（设计文档 §2.2）：半径 0.25（无逐种依据，统一按 0.25，待定）
+    radius: 0.25,
+    speedPerTile: 0.2, // 格/秒（5 秒走 1 格）
     moveEverySec: 2,
     drops: [{ itemId: 'item_slime_gel', qty: 1 }], // BIO-003 击败掉落：史莱姆凝胶 ×1
   },
@@ -135,6 +154,9 @@ export const CREATURES = {
     elementImmune: 'grass',
     growthMax: 0,
     mood: 0,
+    // 空间几何（设计文档 §2.2）：半径 0.25（无逐种依据，统一按 0.25，待定）
+    radius: 0.25,
+    speedPerTile: 0.2, // 格/秒（5 秒走 1 格）
     moveEverySec: 2,
     drops: [{ itemId: 'item_slime_gel', qty: 1 }], // BIO-003 击败掉落：史莱姆凝胶 ×1
   },
@@ -152,6 +174,9 @@ export const CREATURES = {
     elementImmune: 'wind',
     growthMax: 0,
     mood: 0,
+    // 空间几何（设计文档 §2.2）：半径 0.25（无逐种依据，统一按 0.25，待定）
+    radius: 0.25,
+    speedPerTile: 0.2, // 格/秒（5 秒走 1 格）
     moveEverySec: 2,
     drops: [{ itemId: 'item_slime_gel', qty: 1 }], // BIO-003 击败掉落：史莱姆凝胶 ×1
   },
@@ -169,6 +194,9 @@ export const CREATURES = {
     elementImmune: 'rock',
     growthMax: 0,
     mood: 0,
+    // 空间几何（设计文档 §2.2）：半径 0.25（无逐种依据，统一按 0.25，待定）
+    radius: 0.25,
+    speedPerTile: 0.2, // 格/秒（5 秒走 1 格）
     moveEverySec: 2,
     drops: [{ itemId: 'item_slime_gel', qty: 1 }], // BIO-003 击败掉落：史莱姆凝胶 ×1
   },

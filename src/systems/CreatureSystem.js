@@ -21,6 +21,7 @@ import { ITEMS } from '../data/items.js';
 import { normalizeTerrain } from '../data/terrains.js';
 import { InventorySystem } from './InventorySystem.js';
 import { CombatSystem } from './CombatSystem.js';
+import { DEFAULT_CREATURE_RADIUS, fenceTileRect } from '../core/Geometry.js';
 
 // ── 生物计数器（每次 spawn 都给唯一 id） ──
 let _nextCreatureId = 1;
@@ -40,7 +41,7 @@ let _tickRafId = null;
  * @param {object} [opts]
  * @param {string} [opts.facilityId] 来源设施（facility_henhouse / facility_slimehouse），用于每日心情 +1
  * @param {number} [opts.sourceTileIdx] 来源设施所在外圈格 idx（鸡舍按实例计数/投喂归属用）
- * @returns {object|null} 新生物对象；无空位或 kind 未知 → null
+ * @returns {object|null} 新生物对象；栅栏不存在或 kind 未知 → null
  */
 export function spawnCreature(gs, kind, opts = {}) {
   const def = getCreatureDef(kind);
@@ -49,20 +50,35 @@ export function spawnCreature(gs, kind, opts = {}) {
     return null;
   }
 
-  // 找 fence 空位
-  const empty = findEmptyFenceTile(gs);
-  if (!empty) {
-    devLog.warn('[CreatureSystem.spawnCreature] fence is full, cannot spawn', kind);
-    EventBus.emit(GE.TOAST_SHOW, { text: '⚠️ 栅栏已满，无法生成生物', duration: 2000 });
+  // 只要求落点在栅栏域内合法，不再要求整格为空（允许完全重叠）；容量仍按分类软上限统计
+  const tile = pickFenceSpawnTile(gs);
+  if (!tile) {
+    devLog.warn('[CreatureSystem.spawnCreature] no fence tile, cannot spawn', kind);
+    EventBus.emit(GE.TOAST_SHOW, { text: '⚠️ 栅栏不存在，无法生成生物', duration: 2000 });
     return null;
   }
+
+  const radius = typeof def.radius === 'number' && def.radius > 0 ? def.radius : DEFAULT_CREATURE_RADIUS;
+  const rect = fenceTileRect(tile.row, tile.col);
+  const pos = randomPointInRect(rect, radius);
+  const dir = randomDirection();
 
   // 构造实例
   const creature = {
     id: 'creature_' + (_nextCreatureId++),
     kind: def.kind,
-    row: empty.row,
-    col: empty.col,
+    // primary 格：兼容既有栅格逻辑与 fence[].creatures 缓存（几何归属见 Geometry.creatureTileRefs）
+    row: tile.row,
+    col: tile.col,
+    // 连续坐标（判定权威位置）与半径（格）
+    pos,
+    radius,
+    // 连续移动预留（本阶段仍走 2 秒跳格）：朝向单位向量、格/秒、闲逛目标点
+    dir,
+    speedPerTile: typeof def.speedPerTile === 'number' ? def.speedPerTile : 0.25,
+    targetPos: null,
+    // 渲染插值位置：表现层可随帧更新，结算冻结只冻结 pos，不影响这里
+    renderPos: { x: pos.x, y: pos.y },
     hp: def.hp,
     maxHp: def.hp,
     atk: def.atk,
@@ -81,8 +97,8 @@ export function spawnCreature(gs, kind, opts = {}) {
 
   // 加入 gs
   gs.creatures.push(creature);
-  empty.creatures = empty.creatures || [];
-  empty.creatures.push(creature.id);
+  tile.creatures = tile.creatures || [];
+  tile.creatures.push(creature.id);
 
   // 更新容量计数（超出也允许生成，warn 由 dailyTick 报）
   // A-7：【当生物增加时】词条（玉米田 FAC-011）—— 任何来源的生成都算"生物增加"
@@ -94,11 +110,33 @@ export function spawnCreature(gs, kind, opts = {}) {
   return creature;
 }
 
-function findEmptyFenceTile(gs) {
-  const fence = gs.map.fence;
-  const candidates = fence.filter(t => !t.creatures || t.creatures.length === 0);
-  if (candidates.length === 0) return null;
-  return Random.pick(candidates);
+/**
+ * 选落点格：任意一个合法栅栏格（不要求为空，允许完全重叠）。
+ * 扩图后栅栏内 (size-2)×(size-2) 同步变大，候选格随之变多。
+ */
+function pickFenceSpawnTile(gs) {
+  const fence = gs.map?.fence || [];
+  if (fence.length === 0) return null;
+  return Random.pick(fence);
+}
+
+/** 在格内取一个圆不越出该格的合法中心点（半径以格计，连续坐标） */
+function randomPointInRect(rect, radius) {
+  const inset = Math.min(Math.max(0, radius), 0.5);
+  const x0 = rect.x0 + inset;
+  const x1 = rect.x1 - inset;
+  const y0 = rect.y0 + inset;
+  const y1 = rect.y1 - inset;
+  return {
+    x: x0 + Math.random() * Math.max(0, x1 - x0),
+    y: y0 + Math.random() * Math.max(0, y1 - y0),
+  };
+}
+
+/** 任意方向的单位向量（自由闲逛，非四方向） */
+function randomDirection() {
+  const a = Math.random() * Math.PI * 2;
+  return { x: Math.cos(a), y: Math.sin(a) };
 }
 
 function countByCategory(gs, category) {
@@ -141,6 +179,12 @@ function tickAllCreaturesOnce(gs) {
     // 应用新位置
     c.row = nr;
     c.col = nc;
+    // 临时跳格阶段：逻辑位置与渲染位置一起落到新格中心；后续连续移动时
+    // pos 由逻辑推进、renderPos 由表现层插值，二者分离（结算冻结只冻结 pos）
+    const center = { x: nc + 1.5, y: nr + 1.5 };
+    c.pos = { x: center.x, y: center.y };
+    c.renderPos = { x: center.x, y: center.y };
+    c.dir = { x: dc, y: dr };
     newTile.creatures = newTile.creatures || [];
     newTile.creatures.push(c.id);
     c.lastMoveTs = Date.now();
@@ -382,6 +426,12 @@ function growUpChick(gs, chick) {
   chick.element = null;
   chick.elementImmune = null;
   chick.emoji = '🐔';
+  // 形体变大：半径/速度同步切到成鸡定义（空间几何 §2.2）
+  const adultDef = getCreatureDef('chicken');
+  if (adultDef) {
+    chick.radius = adultDef.radius;
+    chick.speedPerTile = adultDef.speedPerTile;
+  }
 }
 
 /**

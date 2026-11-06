@@ -21,6 +21,7 @@ src/
 │   ├── Logger.js             # devLog.info/warn/error
 │   ├── Random.js             # 随机数工具（含 seed 可选）
 │   ├── Distance.js           # 距离/邻居/路径计算
+│   ├── Geometry.js           # 空间几何层（1 格 = 1 单位；地块/生物圆/碰撞查询/几何快照）
 │   └── Assets.js             # 资源路径表 + emoji 占位表
 ├── state/                    # 全局状态（单一真相源）
 │   ├── gameState.js          # GS 对象定义 + createInitialState()
@@ -49,7 +50,7 @@ src/
 │   └── BuildSystem.js        # 建造模式 + 放置/替换地块内容
 ├── ui/                       # UI 渲染层（订阅 EventBus，更新 DOM）
 │   ├── UIController.js       # UI 总控（模式切换 + 页面管理）
-│   ├── MapView.js            # 地图区渲染（外圈 8 格 + 中心栅栏）
+│   ├── MapView.js            # 地图区渲染（外圈边长可配置；地块像素由可用区域反算）
 │   ├── TopBar.js             # 顶部状态栏（生命/攻击/行动力/金币/容量）
 │   ├── FuncBar.js            # 功能区（8 图标，从右往左）
 │   ├── InfoPanel.js          # 信息区（右侧滑入，动态 tab：地块内容/状态/单位/祈福；按钮固定在滚动区外）
@@ -189,6 +190,43 @@ export const GE = {
 };
 ```
 
+### 2.4 Geometry（空间几何层 + 碰撞查询）
+
+```js
+// src/core/Geometry.js —— 纯函数，无状态；1 格 = 1 单位，地图左上角为原点 (0,0)
+// 地块引用 ref：{ kind:'outer', idx } | { kind:'fence', row, col }
+
+// —— 地块几何 ——
+tileCenter(gs, ref)            // 地块中心点 {x,y}；外圈 (x+0.5,y+0.5)，栅栏 (col+1.5,row+1.5)
+tileRect(gs, ref)              // 地块 AABB {x0,y0,x1,y1}（正方形，含外圈与栅栏）
+fenceTileRect(row, col)        // 栅栏格 AABB（栅栏原点恒 (1,1)，无需 gs）
+fenceRect(gs)                  // 整个栅栏区域 AABB
+outerTileRef(idx) / fenceTileRef(row,col) / fenceTileIndex(gs,row,col)
+allOuterTileRefs(gs) / allFenceTileRefs(gs)
+computeTilePx({availW, availH, size})   // UI 由可用区域反算每格像素（3×3 常规窗口仍 80px）
+
+// —— 生物圆 ——
+creatureRadius(creatureOrKind) // 实例 radius → 生物定义 radius → 0.25（待定兜底）
+creatureCircle(creature)       // 逻辑圆 {x,y,r}，读 c.pos（判定权威位置）
+creatureRenderCircle(creature) // 显示圆，读 c.renderPos（插值位置，不参与判定）
+creatureTileRefs(gs, creature) // 该圆当前压到的全部栅栏格（可跨多格）
+
+// —— 碰撞查询（默认只返回存活生物，按实例 id 去重，不看外圈域） ——
+circleIntersectsRect(cx, cy, r, rect)   // 圆×AABB 最近点法，相切算重叠
+circleCenterDistance(a, b)              // 圆心直线距离（禁止格距）
+creaturesInTileRect(gs, tileIdx)        // 单格；tileIdx 可为栅栏 ref 或栅栏线性索引
+creaturesInTiles(gs, tileIdxs)          // 多格并集；跨格生物只返回一次（按实例去重）
+nearestCreatureTo(gs, point, opts?)     // 默认 = 最近的存活敌人（中心点距离）
+snapshotGeometry(gs)                    // 冻结逻辑圆位置/半径的快照（见下）
+```
+
+**几何口径（权威）**：
+
+1. **地图外圈边长可配置**：初始 3×3，后续道具可扩长/扩宽。外圈边长 `size` 变化时，栅栏内区域 = `(size-2)×(size-2)` 同步变大，但**栅栏原点恒为网格 (1,1)**；`outerTiles` 长度 = `4*(size-1)`。禁止把 3×3 / 8 格 / 240px 写死。地块像素由可用区域 `computeTilePx()` 反算，扩图不挤压、不错位。逻辑层（如 `BlessSystem`）只输出逻辑坐标，像素换算只发生在 UI（`MapView` / `BlessAnimation`）。
+2. **生物只属于栅栏域**：圆贴边压到外圈框不算位于外圈地块（外圈单位页只显示角色）。`fence[].creatures` 只是「主格」兼容缓存，**几何归属以 `pos` + `radius` 计算**；允许一格多只、允许完全重叠，生成不再要求整格为空（容量仍按分类软上限统计）。
+3. **逻辑位置 vs 渲染位置**：`pos` 是判定权威位置；`renderPos` 是表现层插值位置。结算冻结（主动技能/回合结算）只冻结 `pos`（用 `snapshotGeometry()` 捕获），渲染层继续按 `renderPos` 插值，画面不停。连续移动阶段（后续）逻辑推进 `pos`、表现层写 `renderPos`。
+4. **默认索敌（全项目统一）**：任何未明确写索敌对象的技能，一律选**最近的敌人**（圆心到圆心直线距离），即 `nearestCreatureTo(gs, point)` 默认语义（`enemiesOnly: true` + 存活判定）。
+
 ---
 
 ## 三、全局状态 schema（GS 对象）
@@ -217,12 +255,10 @@ export const createInitialState = () => ({
   
   // === 地图 ===
   map: {
-    size: 3,                   // 3×3 初始；扩图后变 4
-    outerTiles: [],            // 外圈格数组，长度 4*(size-1)
-                               // 每格: { idx, x, y, terrain, terrainAmount, contentId, states: [], dailyFlags: {} }
-    fence: [],                 // 栅栏内网格，size-2 行 × size-2 列
-                               // 每格: { row, col, terrain, terrainAmount, creatures: [], items: [] }
-    fenceRowCols: 1,           // 初始 1×1 栅栏，扩图后 2×2
+    size: 3,                   // 外圈边长（初始 3；道具可扩长/扩宽 → size 增大）
+    outerTiles: [],            // 外圈格数组，长度 4*(size-1)；每格 { idx, terrain, terrainAmount, contentId, states: [], dailyFlags: {} }
+    fence: [],                 // 栅栏内网格，fenceRowCols × fenceRowCols；每格 { row, col, terrain, terrainAmount, creatures: [], items: [] }
+    fenceRowCols: 1,           // = size - 2（栅栏内随外圈同步扩大；原点恒为网格 (1,1)）
   },
   
   // === 容量 ===
@@ -236,7 +272,14 @@ export const createInitialState = () => ({
   },
   
   // === 生物 ===
-  creatures: [],               // 所有生物对象: { id, kind, row, col, hp, atk, growth, mood, stage, element }
+  creatures: [],               // 生物实例：{ id, kind, row, col, hp, atk, growth, mood, stage, element,
+                               //   radius,                            // 圆半径（格），小鸡 1/6 / 鸡·史莱姆 0.25
+                               //   pos: {x, y},                       // 连续逻辑坐标（判定权威；可任意小数）
+                               //   renderPos: {x, y},                 // 渲染插值位置（表现层写，不参与判定）
+                               //   dir: {x, y},                       // 朝向单位向量（任意方向）
+                               //   speedPerTile,                      // 格/秒，区间 0.167~0.333（3~6 秒/格）
+                               //   targetPos: null }                  // 闲逛目标点（预留）
+                               // row/col 仅为主格兼容缓存；几何归属以 pos+radius 计算
   
   // === 背包 ===
   inventory: {
