@@ -8,7 +8,7 @@
 //
 // 容量 & 超载惩罚（§13.2，2026-11-04 裁决）：
 //   友善超载 → 2 天后 友善类收益归 0（wheat/rice/strawberry/pea/henhouse 产蛋）
-//   危险 / 极度危险超载 → 2 天后 每日开始 对每只超容量生物
+//   危险 / 高危超载 → 2 天后 每日开始 对每只超容量生物
 //     按「该生物 100% 基础攻击力」扣真实伤害（基础攻击力 = 面板显示数值，不受临时强化影响）
 
 import { EventBus } from '../core/EventBus.js';
@@ -221,7 +221,7 @@ export function grantKillDrops(gs, creature) {
  *   1) 检查所有生物饥饿/成长/心情
  *   2) 小鸡→鸡 成长
  *   3) 鸡产蛋
- *   4) 容量超载警告期 & 惩罚（极度危险 → 拆地块）
+ *   4) 容量超载警告期 & 惩罚（高危 → 拆地块）
  *   5) 史莱姆粘液喷吐 5%（超载 15%）→ 完整实装
  *   6) 完整投喂（§13.3）：按鸡舍实例归属，优先放牧标记，其次消耗该鸡舍内储存的
  *      item_rice_straw/item_wheat（tile.contentState.henhouseFeed），growth +(10+心情) 或饥饿
@@ -406,7 +406,7 @@ function overloadBaseAtkDamage(gs, category, excess) {
 function updateCapacityAndPunish(gs) {
   const cap = gs.capacity || (gs.capacity = {});
   // P1-2 容量扩格加成（§13.1 / 物品库 05 表头）：栅栏每多 1 格空间 → 友善 +1、危险 +1。
-  //   初始栅栏 1 格（§2「初始 3×3：中心 1 格栅栏」），基础容量 友善 4 / 危险 4 / 极度危险 0。
+  //   初始栅栏 1 格（§2「初始 3×3：中心 1 格栅栏」），基础容量 友善 4 / 危险 4 / 高危 0。
   const fenceTiles = (gs.map.fence && gs.map.fence.length) || 1;
   const extra = Math.max(0, fenceTiles - 1);
   cap.friendly = 4 + extra;
@@ -453,7 +453,7 @@ function updateCapacityAndPunish(gs) {
     cap.dangerOverloaded = false;
   }
 
-  // 极度危险（预留，Phase 3 没生成）
+  // 高危（预留，Phase 3 没生成）
   if (extremeCount > cap.extreme) {
     cap.extremeOverdue += 1;
     if (cap.extremeOverdue >= 2) {
@@ -462,7 +462,7 @@ function updateCapacityAndPunish(gs) {
       const loss = overloadBaseAtkDamage(gs, 'extreme', extremeCount - cap.extreme);
       if (loss > 0) CombatSystem.applyTrueDamageToPlayer(gs, gs.player, loss, { reason: 'extreme_overload' });
 
-      // ── Agent 3：极度危险超载 → 拆 2 个地块内容（除了永恒设施 facility_home） ──
+      // ── Agent 3：高危超载 → 拆 2 个地块内容（除了永恒设施 facility_home） ──
       const nonHomeTiles = (gs.map.outerTiles || []).filter(
         t => t.contentId && t.contentId !== 'facility_home'
       );
@@ -473,7 +473,7 @@ function updateCapacityAndPunish(gs) {
         const lost = pick.contentId;
         pick.contentId = null;
         EventBus.emit(GE.TILE_UPDATED, { tileIdx: pick.idx });
-        EventBus.emit(GE.TOAST_SHOW, { text: `💥 极度危险超载！拆毁 ${lost}${loss > 0 ? `，并扣 ${loss} ❤️ 真伤` : ''}`, duration: 2500 });
+        EventBus.emit(GE.TOAST_SHOW, { text: `💥 高危超载！拆毁 ${lost}${loss > 0 ? `，并扣 ${loss} ❤️ 真伤` : ''}`, duration: 2500 });
         devLog.info('[CreatureSystem] extreme overload → demolish tile', pick.idx, 'content', lost);
       }
     }

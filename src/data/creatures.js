@@ -6,7 +6,7 @@
  * 生物分类（capacity 类型）：
  *   friendly —— 友善，小鸡/鸡
  *   danger   —— 危险，史莱姆
- *   extreme  —— 极度危险（Phase 3 先不生成，预留）
+ *   extreme  —— 高危（Phase 3 先不生成，预留）
  */
 
 

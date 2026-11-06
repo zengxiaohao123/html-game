@@ -74,12 +74,12 @@ export const TALENTS = {
     triggerCondition: 'onCreatureDefeated',
     effectType: 'extra_reward',
     effectParams: {
-      targets: ['danger', 'extreme'],   // 危险生物与极度危险生物
+      targets: ['danger', 'extreme'],   // 危险生物与高危生物
       extraRewardChance: 0.3,           // 30% 概率额外获得 1 次奖励
       extraGoldChance: 0.5,             // 50% 概率额外获得金币 ×1
       independentRoll: true,            // 两个概率独立判定，可同时触发
     },
-    description: '【天赋】危险生物与极度危险生物被击败时，30% 概率额外获得 1 次奖励，50% 概率额外获得金币 ×1',
+    description: '【天赋】危险生物与高危生物被击败时，30% 概率额外获得 1 次奖励，50% 概率额外获得金币 ×1',
     note: '两个概率独立判定，可同时触发。',
   },
 

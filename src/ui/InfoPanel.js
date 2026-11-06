@@ -53,7 +53,7 @@ const STATE_META = {
 };
 
 /** 生物分类显示名 */
-const CATEGORY_NAMES = { friendly: '友善', danger: '危险', extreme: '极度危险' };
+const CATEGORY_NAMES = { friendly: '友善', danger: '危险', extreme: '高危' };
 
 export class InfoPanel {
   constructor() {

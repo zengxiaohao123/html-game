@@ -634,7 +634,7 @@ const FacilitySlimehouse = {
 // 11. FacilityCorn  🌽  —— 玉米田地
 // §10.11
 // 【生物增加时】获得玉米 ×1
-// 【受祝福时】获得随机 1 个生物（60% 友善 / 40% 危险 / 0% 极度危险）
+// 【受祝福时】获得随机 1 个生物（60% 友善 / 40% 危险 / 0% 高危）
 // 注意：onCreatureAdded hook 由 CreatureSystem 在 spawnCreature 时 fire（Agent 3 实现）
 // ════════════════════════════════════════════════════════════════
 const FacilityCorn = {
@@ -645,7 +645,7 @@ const FacilityCorn = {
   description: ITEMS.facility_corn.description,
 
   register() {
-    // onCreatureAdded：任何生物（友善/危险/极度危险）增加时，每块玉米田 +1 玉米
+    // onCreatureAdded：任何生物（友善/危险/高危）增加时，每块玉米田 +1 玉米
     HookDispatcher.register('onCreatureAdded', ({ gs }) => {
       const tiles = gs.map.outerTiles.filter(t => t.contentId === this.id);
       if (tiles.length === 0) return;

@@ -90,7 +90,7 @@ export class TopBar {
     createEl('div', { class: ['hud-cap-div'], parent: capBar });
     this.dangerText   = this._buildCapItem(capBar, '#e67e22', '危险');
     createEl('div', { class: ['hud-cap-div'], parent: capBar });
-    this.extremeText  = this._buildCapItem(capBar, '#c0392b', '极度');
+    this.extremeText  = this._buildCapItem(capBar, '#c0392b', '高危');
 
     // ── 左上角三段 ──
     this.left = createEl('div', { class: ['hud-left'], parent: this.root });
