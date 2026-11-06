@@ -196,6 +196,11 @@ function consumeUsage(gs) {
   return true;
 }
 
+/** 合法外圈格索引（0 ~ 4*(size-1)-1）：越界/负数索引一律不能当地块用 */
+function isOuterTileIdx(gs, idx) {
+  return Number.isInteger(idx) && idx >= 0 && idx < gs.map.outerTiles.length;
+}
+
 /**
  * 判断两格是否同行或同列（外圈环形地图用 Distance.outerIdxToXY）
  */
@@ -226,6 +231,10 @@ export function tryMove(gs, opts = {}) {
   if (!def) return { ok: false, reason: 'unknown' };
 
   const fromIdx = gs.player.x;
+  // 目标索引必须在合法外圈范围内，避免越界/负索引被 outerIdxToXY 包裹成别的格子
+  if (opts.targetIdx != null && !isOuterTileIdx(gs, opts.targetIdx)) {
+    return { ok: false, reason: 'badTarget' };
+  }
   let targetIdx = null;
   let path = [];
 
@@ -394,6 +403,7 @@ export function canVehicleReach(gs, targetIdx) {
   if (!def) return { ok: false, reason: 'unknown' };
 
   const fromIdx = gs.player.x;
+  if (!isOuterTileIdx(gs, targetIdx)) return { ok: false, reason: 'badTarget' };
   if (targetIdx === fromIdx) return { ok: false, reason: 'sameTile' };
 
   if (def.movePattern === 'directional') {

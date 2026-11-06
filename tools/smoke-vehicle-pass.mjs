@@ -152,6 +152,19 @@ head('载具撞墙未移动');
   assert(gs.vehicle.current.usageLeft === usageBefore, '未消耗载具次数');
 }
 
+// ── 5b. 非法目标索引（越界/负数）不得被当成地块 ──
+head('非法目标索引');
+{
+  for (const bad of [99, -1]) {
+    const gs = fresh();
+    equip(gs, 'vehicle_horse'); // range 无 landFilter，最容易被幽灵索引蒙混过关
+    const r = VehicleSystem.tryMove(gs, { targetIdx: bad });
+    assert(!r.ok && r.reason === 'badTarget', `targetIdx=${bad} 被拒绝`, r);
+    assert(gs.player.x === 0, `targetIdx=${bad} 未移动位置`, gs.player.x);
+    assert(fired.length === 0, `targetIdx=${bad} 未触发任何钩子`, fired);
+  }
+}
+
 // ── 6. 扫帚（line）：中间格 + 终点 ──
 head('扫帚（line）中间格与终点');
 {
