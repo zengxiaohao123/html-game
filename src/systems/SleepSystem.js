@@ -52,13 +52,15 @@ export function sleep(gs, isAuto = false) {
     HookDispatcher.fire('onSleep', { gs });
   }
 
-  // 3. 换日
+  // 3. 换日（DaySystem.startNewDay 内部第 0.1 步：先把超上限部分清除，再回到上限内）
   DaySystem.startNewDay(gs);
 
-  // 4. 行动力结算（2026-11-03 裁决的统一结算顺序，见 StaminaSystem.js）：
-  //    第一步：结算不允许超出上限的回复（心力交瘁固定回一半 / 家、帐篷回满 / 其他回一半）
-  //    第二步：结算允许超出上限的额外增加（帐篷受祝福 +3，onSleep hook 已累加到
-  //            gs.pendingSleepStaminaBonus）——必须在「回满」之后结算且可超上限。
+  // 4. 行动力结算（2026-11-06 确认的三步顺序）：
+  //    ① 换日先清超额（已在 startNewDay 第 0.1 步完成，当前值此时已夹到上限）；
+  //    ② 结算不允许超出上限的回复（心力交瘁固定回一半 / 家、帐篷回满 / 其他回一半）；
+  //    ③ 结算允许超出上限的额外增加（帐篷受祝福 +3，onSleep hook 已累加到
+  //       gs.pendingSleepStaminaBonus）——必须在「回满」之后结算且可超上限。
+  //    验算：cap=8、当前 10、额外 +3 → 10-2（清超额） + 0（已满，基础恢复无空间） + 3 = 11。
   const currentTile = gs.map.outerTiles[gs.player.x];
   const atHome = currentTile && (currentTile.contentId === 'facility_home' || currentTile.contentId === 'facility_tent');
 

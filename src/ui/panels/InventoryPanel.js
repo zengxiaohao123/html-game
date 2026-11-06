@@ -65,9 +65,11 @@ export class InventoryPanel {
 
   // ─────────────────────── 构建 DOM（固定布局，内容不会撑大） ───────────────────────
   mount(parent = qs('body')) {
-    // 全屏遮罩（黑色半透明，盖除了 TopBar 外的所有东西）
+    // 全屏遮罩（黑色半透明）：层级 6000，高于左上角 HUD / 容量条（80）与商店（5500）；
+    // 低于设置（6200）/ 连接技能（6500）/ 剧情对话框（9000）。
     this.mask = createEl('div', {
       class: ['panel-mask', 'inventory-mask'],
+      style: { zIndex: 6000 },
       parent,
       onclick: (e) => { if (e.target === this.mask) this.hide(); },
     });

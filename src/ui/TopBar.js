@@ -2,10 +2,10 @@
 // 顶部 UI 区（设计文档 §16.7，2026-11-06 修订版）：左上角三段式 + 生物容量顶部居中
 //
 //   ┌─ 左上半透明 HUD 根（pointer-events:none，整屏覆盖，不拦截地图）──────────┐
-//   │  ┌───────────┐  ⚔ 10                      ← 第一段：立绘 + 攻击 + 生命 + 行动力
-//   │  │  立绘框    │  ♥ 100 ▮▮▮▮▮▮▮
-//   │  └─────┬─────┘  ◆◆◆◆◆◆◆◆ 5/8
-//   │       余默
+//   │  ┌─────────────┐  ♥ 100 ▮▮▮▮▮▮▮          ← 第一段：立绘 + 生命 + 攻击 + 行动力
+//   │  │   立绘框     │  ⚔ 10
+//   │  └───────┬─────┘  ◆◆◆◆◆◆◆◆ 5/8
+//   │          余默
 //   │  ╭── 木牌：🪙 128 │ 第 3 天 5月12日 周一 ──╮   ← 第二段（第一段下方一点）
 //   │  ╰──────────────────────────────────────╯
 //   │  (📋)                                          ← 第三段（再往下一点，独立一块）
@@ -18,13 +18,17 @@
 //    不是美术素材占位；后续换正式 PNG 时只替换背景层、布局数值不动。
 //  · 全区域不做持续呼吸 / 浮动动画（用户既有约束）；只有容量超载红闪保留。
 //
-// z-index 5600：高于商店遮罩（5500），保证 §16.21「商店内顶部 UI 仍可见、可点」。
+// z-index 80：层级顺序 = 面板(5000+) > HUD(80) > 地图(≤50)。
+// 任何新打开的面板（背包 / 商店 / 角色 / 编队 / 合成 / 载具 / 图鉴 / 信息区）都会遮挡
+// 左上角 HUD 与顶部容量条；HUD 仍在地图元素之上，任务块/容量条照常可点。
+// （右上功能区、底部快捷栏是独立层，仍按 §16.21 在商店内可见，≥5500。）
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { Assets } from '../core/Assets.js';
 import { CHARACTERS } from '../data/characters.js';
 import { createEl, qs, iconEl } from './dom.js';
+import { renderStamina } from './staminaGems.js';
 
 /** 血条分段数（§16.7 分段、倾斜、红→绿均匀渐变） */
 const HP_SEGMENTS = 7;
@@ -37,7 +41,7 @@ const SCALE_MAX = 1.5;
 
 export class TopBar {
   constructor() {
-    this.root = null;          // 整屏 HUD 根（z-index 5600）
+    this.root = null;          // 整屏 HUD 根（z-index 80，低于所有面板）
     this.left = null;          // 左上角三段容器
     this.taskIconEl = null;    // 任务块（独立一块，§16.7 / §16.17）
 
@@ -72,7 +76,7 @@ export class TopBar {
       class: ['top-bar'],
       style: {
         position: 'absolute', inset: '0',
-        pointerEvents: 'none', zIndex: 5600,
+        pointerEvents: 'none', zIndex: 80,
         fontFamily: '"LXGW WenKai TC", "Microsoft YaHei", sans-serif',
       },
       parent,
@@ -101,40 +105,37 @@ export class TopBar {
   }
 
   // ════════════════════════════════════════════════════════════
-  // 第一段：立绘 + 攻击力 + 生命值 + 行动力（§16.7）
+  // 第一段：立绘 + 生命值 + 攻击力 + 行动力（§16.7）
   // ════════════════════════════════════════════════════════════
   _buildHeroGroup() {
     const hero = createEl('div', { class: ['hud-hero-group'], parent: this.left });
 
-    // 斜切手绘头像框（UI 组件绘制：奶白贴纸边 + 近黑粗描边 + 不规则圆角 + 轻旋）
+    // 细边横向矩形头像框（2026-11-06 修订）：
+    //   · 框体是独立背景层（z-index 0），立绘绘制在它之上（z-index 2）→ 人物可出血、压住边框
+    //   · 双层描边：近黑粗描边 + 奶白内线，四角圆度不一致，整体轻旋
     const portrait = createEl('div', {
       class: ['hud-portrait'],
       attrs: { title: '当前出战角色' },
       parent: hero,
     });
-    const win = createEl('div', { class: ['hud-portrait-window'], parent: portrait });
+    createEl('div', { class: ['hud-portrait-frame'], parent: portrait });
     // 立绘占位：主角小人模型（= assets/images/characters/hero.png），后续换正式立绘只改这张图
     createEl('img', {
       class: ['hud-portrait-img'],
       attrs: { src: Assets.getIcon('ui', 'player') || 'assets/images/characters/hero.png', alt: '' },
-      parent: win,
+      parent: portrait,
     });
-    // 姓名牌（压框右下，强化手绘错落感）
+    // 姓名牌：右边缘与立绘框右边缘对齐，字号加大
     this.nameText = createEl('div', {
       class: ['hud-nameplate'],
       text: '余默',
-      parent: hero,
+      parent: portrait,
     });
 
-    // 右侧三行
+    // 右侧三行（2026-11-06 修订：生命在上、攻击在下）
     const stats = createEl('div', { class: ['hud-stats'], parent: hero });
 
-    // 1) 攻击力：武器图标（用户明确允许此处用 ⚔️ 作图标）+ 数值
-    const atkRow = createEl('div', { class: ['hud-atk'], parent: stats });
-    createEl('span', { class: ['hud-atk-icon'], text: '⚔️', attrs: { title: '攻击力' }, parent: atkRow });
-    this.atkText = createEl('span', { class: ['hud-num'], text: '', attrs: { title: '攻击力' }, parent: atkRow });
-
-    // 2) 生命值：红心 + 倾斜分段血条（短段红 → 均匀渐变 → 长段绿）
+    // 1) 生命值：红心 + 倾斜分段血条（短段红 → 均匀渐变 → 长段绿）
     const hpRow = createEl('div', { class: ['hud-hp'], parent: stats });
     this.hpLabel = createEl('div', { class: ['hud-heart'], attrs: { title: '生命值' }, parent: hpRow });
     createEl('div', { class: ['hud-heart-core'], parent: this.hpLabel });
@@ -151,11 +152,17 @@ export class TopBar {
         class: ['hud-hpbar-fill'],
         style: {
           background: `linear-gradient(180deg, hsl(${hue}, 86%, 63%), hsl(${hue}, 82%, 47%) 58%, hsl(${hue}, 78%, 38%))`,
+          transitionDelay: `${i * 32}ms`,
         },
         parent: seg,
       });
       this.hpSegs.push(fill);
     }
+
+    // 2) 攻击力：武器图标（用户明确允许此处用 ⚔️ 作图标）+ 数值（字号略小）
+    const atkRow = createEl('div', { class: ['hud-atk'], parent: stats });
+    createEl('span', { class: ['hud-atk-icon'], text: '⚔️', attrs: { title: '攻击力' }, parent: atkRow });
+    this.atkText = createEl('span', { class: ['hud-num', 'hud-atk-num'], text: '', attrs: { title: '攻击力' }, parent: atkRow });
 
     // 3) 行动力：菱形水晶 × 上限数（8 颗）+ 数值
     const stamRow = createEl('div', { class: ['hud-stam'], parent: stats });
@@ -166,14 +173,14 @@ export class TopBar {
   }
 
   // ════════════════════════════════════════════════════════════
-  // 第二段：天数 + 金币（星露谷风格木牌，形状不规整）
+  // 第二段：金币 + 天数（星露谷风格木牌，形状不规整；金币在左、天数在右）
   // ════════════════════════════════════════════════════════════
   _buildSign() {
     const sign = createEl('div', { class: ['hud-sign'], parent: this.left });
 
     const goldCol = createEl('div', { class: ['hud-sign-col', 'hud-sign-gold-col'], parent: sign });
     const goldRow = createEl('div', { class: ['hud-sign-gold-row'], parent: goldCol });
-    goldRow.appendChild(iconEl('ui', 'gold', { size: '22px', fallback: Assets.ui.gold }));
+    goldRow.appendChild(iconEl('ui', 'gold', { size: '54px', cls: 'hud-gold-icon', fallback: Assets.ui.gold }));
     this.goldText = createEl('span', { class: ['hud-sign-gold'], text: '', attrs: { title: '金币' }, parent: goldRow });
 
     createEl('div', { class: ['hud-sign-div'], parent: sign });
@@ -230,9 +237,8 @@ export class TopBar {
     }
     this._renderHpBar(p.hp, p.maxHp);
 
-    // 行动力：菱形水晶 + 数值（负数保留负号）
+    // 行动力：大/小菱形水晶（纯函数 renderStamina 计算展示形态）+ 数值（负数保留负号）
     this._renderStaminaGems();
-    this._renderStaminaColors(p.stamina, p.maxStamina);
 
     if (this.friendlyText) this.friendlyText.textContent = `${friendlyNow}/${c.friendly}`;
     if (this.dangerText)   this.dangerText.textContent   = `${dangerNow}/${c.danger}`;
@@ -271,42 +277,29 @@ export class TopBar {
     });
   }
 
-  /** 菱形水晶数量 = 行动力上限（上限 8 → 8 颗；上限变化时重建） */
+  /**
+   * 行动力水晶展示（§5.1 / §16.7）：
+   *   · 纯函数 renderStamina(cap, current) 给出大/小 + 蓝/黄/白/红的完整视图模型
+   *   · 大蓝 → 大黄 → 小蓝 → 小黄 → 白 的顺序渲染；负数为 红 → 白
+   *   · 每次按数值重算 DOM（黄色小水晶被消耗即消失，不保留白位）
+   */
   _renderStaminaGems() {
     if (!this.stamWrap || !this.gs) return;
-    const n = Math.max(1, Math.floor(this.gs.player.maxStamina ?? 8));
-    if (this.stamGems.length !== n) {
-      while (this.stamWrap.firstChild) this.stamWrap.removeChild(this.stamWrap.firstChild);
-      this.stamGems = [];
-      for (let i = 0; i < n; i++) {
-        this.stamGems.push(createEl('span', { class: ['hud-gem'], parent: this.stamWrap }));
-      }
-    }
-    if (this.staminaText) this.staminaText.textContent = `${this.gs.player.stamina}/${n}`;
-  }
+    const cap = Math.max(0, Math.floor(this.gs.player.maxStamina ?? 8));
+    const current = Math.floor(this.gs.player.stamina ?? 0);
+    const view = renderStamina(cap, current);
 
-  /**
-   * 行动力颜色规则（§16.7）：
-   *  · 非负：从左往右可用蓝，已消耗从右往左依次白
-   *  · 负数：最左侧 -stamina 颗由白变红（从左往右），其余白
-   */
-  _renderStaminaColors(stamina, maxStamina) {
-    if (!this.stamGems.length) return;
-    const n = this.stamGems.length;
-    const s = Math.floor(stamina);
-    for (let i = 0; i < n; i++) {
-      let state = 'white';
-      if (s >= 0) {
-        if (i < Math.min(s, n)) state = 'blue';
-      } else {
-        state = i < Math.min(-s, n) ? 'red' : 'white';
-      }
-      const gem = this.stamGems[i];
-      gem.classList.toggle('hud-gem--blue', state === 'blue');
-      gem.classList.toggle('hud-gem--white', state === 'white');
-      gem.classList.toggle('hud-gem--red', state === 'red');
+    while (this.stamWrap.firstChild) this.stamWrap.removeChild(this.stamWrap.firstChild);
+    this.stamGems = view.gems.map((g) => createEl('span', {
+      class: ['hud-gem', `hud-gem--${g.color}`, ...(g.size === 'big' ? ['hud-gem--big'] : [])],
+      parent: this.stamWrap,
+    }));
+
+    if (this.staminaText) {
+      this.staminaText.textContent = `${current}/${cap}`;
+      this.staminaText.title = `行动力 ${current}/${cap}`;
     }
-    if (this.staminaText) this.staminaText.textContent = `${s}/${Math.floor(maxStamina ?? n)}`;
+    this.stamWrap.title = `行动力 ${current}/${cap}`;
   }
 
   // ════════════════════════════════════════════════════════════

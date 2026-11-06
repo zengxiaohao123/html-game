@@ -183,7 +183,7 @@ body.build-mode .map-container {
 /* ── 左上角三段容器（基准 1280×720，等比缩放）── */
 .hud-left {
   position: absolute;
-  top: 12px;
+  top: calc(14px * var(--hud-scale));
   left: 16px;
   display: flex;
   flex-direction: column;
@@ -194,78 +194,76 @@ body.build-mode .map-container {
   transform-origin: top left;
 }
 
-/* 第一段：立绘 + 攻击 + 生命 + 行动力 */
-.hud-hero-group { position: relative; width: 332px; height: 134px; }
+/* 第一段：立绘 + 生命 + 攻击 + 行动力 */
+.hud-hero-group { position: relative; width: 396px; height: 140px; }
 
-/* 斜切手绘头像框（组件绘制：双层描边 + 四角不同圆度 + 轻旋） */
+/* 细边横向矩形头像框（2026-11-06 修订）：
+ * 框体是独立背景层（z-index 0）；立绘绘制在框体之上（z-index 2），可出血、压住边框。
+ * 双层描边：近黑粗描边 + 奶白内线；四角圆度不一致 + 整体轻旋，保留手绘不规整感。 */
 .hud-portrait {
   position: absolute;
-  left: 0; top: 0;
-  width: 118px; height: 118px;
-  padding: 5px;
-  background: linear-gradient(160deg, #FFFDF4 0%, #FFF1D2 100%);
-  border: 3px solid #241A12;
-  border-radius: 19px 27px 15px 23px / 23px 16px 26px 18px;
-  box-shadow:
-    0 0 0 5px #FFF8E6,
-    0 5px 0 rgba(36, 26, 18, 0.16),
-    0 10px 18px rgba(0, 0, 0, 0.28);
-  transform: rotate(-3.5deg);
+  left: 4px; top: 14px;
+  width: 154px; height: 104px;
+  transform: rotate(-3deg);
+  transform-origin: top left;
 }
-.hud-portrait::after {
-  content: '';
+.hud-portrait-frame {
   position: absolute;
   inset: 0;
-  border-radius: inherit;
-  box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.6), inset 0 -5px 8px rgba(120, 90, 40, 0.2);
-  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(ellipse at 50% 30%, #FFF9E8 0%, #F4DFA9 68%, #E2C288 100%);
+  border: 2.5px solid #241A12;
+  border-radius: 11px 16px 9px 14px / 14px 10px 16px 11px;
+  box-shadow:
+    0 0 0 2px #FFF8E6,
+    inset 0 0 0 2px rgba(255, 248, 230, 0.9),
+    0 4px 0 rgba(36, 26, 18, 0.14),
+    0 9px 14px rgba(0, 0, 0, 0.24);
 }
-/* 内窗斜切裁切（人物只被切到四角极小边缘） */
-.hud-portrait-window {
-  position: relative;
-  width: 100%; height: 100%;
-  overflow: hidden;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  background: radial-gradient(ellipse at 50% 26%, #FFF7DF 0%, #F3DDA4 68%, #DFC086 100%);
-  border-radius: 14px 20px 10px 17px;
-  clip-path: polygon(1.5% 0, 100% 3%, 97.5% 100%, 0 96%);
-}
+/* 立绘：放大 + 出血（超出框体，不被框体裁剪，层级高于边框） */
 .hud-portrait-img {
-  width: 100%;
-  height: 96%;
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  z-index: 2;
+  height: 146px;
+  width: auto;
+  max-width: none;
+  transform: translateX(-46%);
   object-fit: contain;
-  object-position: bottom center;
-  filter: drop-shadow(0 2px 0 rgba(36, 26, 18, 0.35));
+  pointer-events: none;
+  filter: drop-shadow(0 2px 0 rgba(36, 26, 18, 0.35)) drop-shadow(0 5px 6px rgba(0, 0, 0, 0.28));
 }
 
-/* 姓名牌（压框右下，深棕小牌 + 白字黑边） */
+/* 姓名牌（字号加大；右边缘与立绘框右边缘对齐） */
 .hud-nameplate {
   position: absolute;
-  left: 50px; top: 108px;
-  padding: 1px 8px 2px;
+  right: 0;
+  top: 86px;
+  z-index: 3;
+  padding: 2px 10px 3px;
   background: linear-gradient(180deg, #5E3E24 0%, #3E2814 100%);
   color: #FFF8E6;
-  font-size: 12px;
+  font-size: 17px;
   font-weight: 900;
+  line-height: 1.1;
   letter-spacing: 1px;
   white-space: nowrap;
   border: 2px solid #241A12;
-  border-radius: 7px 11px 6px 9px;
-  box-shadow: 0 0 0 3px rgba(255, 248, 230, 0.92), 0 3px 0 rgba(36, 26, 18, 0.2);
+  border-radius: 7px 10px 6px 9px;
+  box-shadow: 0 0 0 2px rgba(255, 248, 230, 0.92), 0 3px 0 rgba(36, 26, 18, 0.22);
   text-shadow: 0 1px 0 #241A12;
-  transform: rotate(2deg);
+  transform: rotate(1deg);
 }
 
-/* 右侧三行 */
+/* 右侧三行（上：红心 + 血条　中：攻击力　下：行动力） */
 .hud-stats {
   position: absolute;
-  left: 132px; top: 2px;
-  width: 200px;
+  left: 170px; top: 14px;
+  width: 224px;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 5px;
 }
 
 /* 手写粗体白字黑边数字（黑边用多重 text-shadow 叠出，避免 -webkit-text-stroke 吞掉白色填充） */
@@ -282,21 +280,23 @@ body.build-mode .map-container {
   letter-spacing: 0.5px;
 }
 
-/* 1) 攻击力行 */
+/* 攻击力行（第二行：⚔️ + 数值，字号略小于生命数字） */
 .hud-atk {
   display: flex;
   align-items: center;
-  gap: 5px;
-  height: 30px;
+  gap: 6px;
+  height: 26px;
+  padding-left: 6px;
   transform: rotate(-1deg);
 }
 .hud-atk-icon {
-  font-size: 24px;
+  font-size: 22px;
   line-height: 1;
   filter: drop-shadow(0 2px 0 #241A12) drop-shadow(0 3px 3px rgba(0, 0, 0, 0.35));
 }
+.hud-atk-num { font-size: 22px; }
 
-/* 2) 生命值行：红心 + 倾斜分段血条（红心压住血条左端，形成"元素压边"） */
+/* 生命值行（第一行）：红心 + 倾斜分段血条（红心压住血条左端，形成"元素压边"） */
 .hud-hp {
   display: flex;
   align-items: center;
@@ -360,29 +360,30 @@ body.build-mode .map-container {
   letter-spacing: -0.3px;
 }
 
-/* 分段血条：深色底槽 + 7 段（颜色由 JS 按位置红→绿） */
+/* 分段血条（照参考图）：粗黑描边 + 深色底槽 + 7 段（颜色由 JS 按位置红→绿），整体倾斜 */
 .hud-hpbar {
   flex: 1;
-  height: 22px;
+  height: 24px;
   display: flex;
   gap: 2px;
-  padding: 2px 2px 2px 8px;
-  background: #37281C;
-  border: 2.5px solid #241A12;
-  border-radius: 7px 10px 6px 8px;
+  padding: 2.5px 3px 2.5px 8px;
+  background: #2E2116;
+  border: 3px solid #1F1710;
+  border-radius: 9px 12px 8px 11px / 11px 8px 13px 9px;
   box-shadow:
-    0 0 0 2.5px #FFF8E6,
-    inset 0 3px 4px rgba(0, 0, 0, 0.55),
-    0 3px 0 rgba(36, 26, 18, 0.18);
-  transform: rotate(-1.5deg);
+    inset 0 3px 4px rgba(0, 0, 0, 0.65),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08),
+    0 3px 0 rgba(36, 26, 18, 0.18),
+    0 5px 8px rgba(0, 0, 0, 0.18);
+  transform: rotate(-2.2deg);
 }
 .hud-hpbar-seg {
   position: relative;
   flex: 1;
   overflow: hidden;
   border-radius: 3px 4px 3px 4px;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.52), rgba(0, 0, 0, 0.72));
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.5);
+  background: linear-gradient(180deg, #201710 0%, #3A2A1C 100%);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55);
 }
 .hud-hpbar-fill {
   position: absolute;
@@ -390,20 +391,20 @@ body.build-mode .map-container {
   width: 0%;
   border-radius: 3px;
   box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.28), inset 0 2px 2px rgba(255, 255, 255, 0.55);
-  transition: width 0.25s ease-out;
+  transition: width 0.22s ease-out;
 }
 
-/* 3) 行动力行：菱形水晶 + 数值 */
+/* 3) 行动力行：大/小菱形水晶（蓝→黄；负数红→白）+ 数值 */
 .hud-stam {
   display: flex;
   align-items: center;
   gap: 6px;
   transform: rotate(-1deg);
 }
-.hud-stam-gems { display: flex; align-items: center; gap: 4px; }
+.hud-stam-gems { display: flex; align-items: center; gap: 3px; min-height: 24px; }
 .hud-gem {
-  width: 15px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
   border: 2px solid #241A12;
   border-radius: 3px;
@@ -415,6 +416,15 @@ body.build-mode .map-container {
     0 2px 2px rgba(0, 0, 0, 0.3);
 }
 .hud-gem--blue { /* 可用 */ }
+.hud-gem--yellow {
+  background: linear-gradient(135deg, #FFF7B0 0%, #FFD943 45%, #B47C08 100%);
+  border-color: #4A2E00;
+  box-shadow:
+    0 0 0 1.5px #FFF8E6,
+    inset 0 0 0 1px rgba(255, 255, 255, 0.55),
+    0 0 6px rgba(255, 210, 60, 0.55),
+    0 2px 2px rgba(0, 0, 0, 0.3);
+}
 .hud-gem--white {
   background: linear-gradient(135deg, #FFFFFF 0%, #EFE9DA 50%, #C9C0AC 100%);
   border-color: #3E3226;
@@ -428,6 +438,27 @@ body.build-mode .map-container {
     0 0 6px rgba(255, 82, 58, 0.55),
     0 2px 2px rgba(0, 0, 0, 0.3);
 }
+/* 大水晶：一个图标代表 10 点（剩余 >10 才出现），明显大于小水晶 */
+.hud-gem--big {
+  width: 23px;
+  height: 23px;
+  border-width: 2.5px;
+  border-radius: 4px;
+  box-shadow:
+    0 0 0 2px #FFF8E6,
+    inset 0 0 0 1.5px rgba(255, 255, 255, 0.6),
+    inset 0 -4px 6px rgba(0, 0, 0, 0.22),
+    0 0 8px rgba(255, 255, 255, 0.35),
+    0 3px 3px rgba(0, 0, 0, 0.32);
+}
+.hud-gem--big.hud-gem--yellow {
+  box-shadow:
+    0 0 0 2px #FFF8E6,
+    inset 0 0 0 1.5px rgba(255, 255, 255, 0.6),
+    inset 0 -4px 6px rgba(90, 60, 0, 0.3),
+    0 0 10px rgba(255, 206, 50, 0.7),
+    0 3px 3px rgba(0, 0, 0, 0.32);
+}
 .hud-stam-num {
   font-size: 17px;
   text-shadow:
@@ -435,15 +466,15 @@ body.build-mode .map-container {
     0 2.5px 0 #241A12, 0 5px 6px rgba(0, 0, 0, 0.32);
 }
 
-/* ── 第二段：星露谷风格木牌（形状不规整：四角不同圆度 + 木纹 + 木节 + 双钉）── */
+/* ── 第二段：星露谷风格木牌（金币在左、天数在右；形状不规整 + 木纹 + 木节 + 双钉）── */
 .hud-sign {
   position: relative;
-  width: 244px;
-  height: 64px;
+  width: 264px;
+  height: 68px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 14px;
+  gap: 12px;
+  padding: 6px 16px;
   border: 3px solid #241A12;
   border-radius: 13px 22px 10px 19px / 19px 12px 22px 14px;
   background:
@@ -477,11 +508,15 @@ body.build-mode .map-container {
   pointer-events: none;
 }
 .hud-sign-col { display: flex; flex-direction: column; justify-content: center; }
-.hud-sign-gold-col { width: 96px; }
-.hud-sign-gold-row { display: flex; align-items: center; gap: 5px; }
+.hud-sign-gold-col { width: 104px; }
+.hud-sign-gold-row { display: flex; align-items: center; gap: 0; }
+.hud-gold-icon {
+  margin: 0 -7px 0 -6px; /* 金币图 PNG 自带透明留白，内缩让金币和数字更紧凑 */
+  filter: drop-shadow(0 2px 0 rgba(36, 26, 18, 0.35)) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.25));
+}
 .hud-sign-gold {
   font-family: "Arial Black", "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif;
-  font-size: 20px;
+  font-size: 26px;
   font-weight: 900;
   line-height: 1;
   color: #FFE9A8;
@@ -492,21 +527,21 @@ body.build-mode .map-container {
 }
 .hud-sign-div {
   width: 2px;
-  height: 38px;
+  height: 42px;
   flex-shrink: 0;
   background: repeating-linear-gradient(180deg, rgba(255, 240, 210, 0.45) 0 4px, transparent 4px 9px);
   border-radius: 2px;
 }
 .hud-sign-day-col { flex: 1; gap: 1px; padding-left: 2px; }
 .hud-sign-day {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 900;
   color: #FFF8E6;
   line-height: 1.15;
   text-shadow: 0 1px 0 #2A1A0C, 0 2px 3px rgba(0, 0, 0, 0.4);
 }
 .hud-sign-cal {
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
   color: #F4DCB2;
   line-height: 1.2;
