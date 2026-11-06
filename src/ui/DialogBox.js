@@ -27,6 +27,10 @@ import { createEl, qs } from './dom.js';
 import * as ConfirmAction from './ConfirmAction.js';
 import { CONFIRM_TEXT, CONFIRM_FADE_MS } from './ConfirmAction.js';
 
+// 全局只有一个 DialogBox（main.js 单例）；多实例（冒烟测试会反复 new）时，
+// 只让最后挂载的实例响应 DIALOG_SHOW，避免多个实例抢同一事件、互相 disarm。
+let _activeDialog = null;
+
 export class DialogBox {
   constructor() {
     this.mask = null;
@@ -42,10 +46,15 @@ export class DialogBox {
     this._selectedIdx = -1;
     this._confirming = false;
     this._hintEl = null;
+    // 「点别处取消」的 pointerdown 只负责取消待确认，随后同一次手势的 click
+    // 不得顺手把弹窗关掉；用该标记吞掉这一次 mask click
+    this._suppressBackdropClose = false;
+    this._offDisarm = null;
     this.confirmFadeMs = CONFIRM_FADE_MS; // 冒烟测试可覆写以加速（文档口径 1.5 秒）
   }
 
   mount(parent = qs('body')) {
+    _activeDialog = this;
     // 遮罩 —— §16.4 选项在信息区：透明遮罩（不压暗主界面），仅承接「点击别处」语义
     // zIndex 必须高于 PanelHelper 的 6000，取 9000
     this.mask = createEl('div', {
@@ -121,11 +130,25 @@ export class DialogBox {
     });
 
     EventBus.on(GE.DIALOG_SHOW, (p = {}) => this.show(p));
+    // 取消待确认态的唯一复位入口：ConfirmAction 的任何 disarm（点别处 / ESC / disarmAll）
+    // 都会通知到这里，_selectedIdx 必须同步归零；否则下次点击会命中「已选中」分支而跳过 arm。
+    this._offDisarm = ConfirmAction.onDisarm((btn) => {
+      if (!this._optBtns.includes(btn)) return; // 其它面板 / 其它弹窗实例的按钮
+      this._selectedIdx = -1;
+      if (this._hintEl) this._hintEl.style.display = 'none';
+      if (this.visible) this._suppressBackdropClose = true;
+    });
     this.mask.style.display = 'none';
   }
 
   show(payload) {
     if (!payload) return;
+    if (this !== _activeDialog) {
+      // 非当前活动实例不抢同一事件；若它还留在屏幕上（旧实例），一并收起，
+      // 避免残留的选项按钮 / 快捷键监听干扰当前弹窗的状态机
+      if (this.visible) this.hide();
+      return;
+    }
     // 重入防护（连点/弹窗叠开）：上一个弹窗的待确认态 / 淡出计时器必须先清掉，
     // 避免旧计时器把新弹窗误关、或旧按钮的确认态残留。
     ConfirmAction.disarmAll();
@@ -150,6 +173,7 @@ export class DialogBox {
     this._optBtns = [];
     this._selectedIdx = -1;
     this._confirming = false;
+    this._suppressBackdropClose = false;
     if (this._hintEl) this._hintEl.style.display = 'none';
     opts.forEach((opt, i) => {
       const btn = createEl('button', {
@@ -171,6 +195,10 @@ export class DialogBox {
 
     // §16.4：点击别处 = 取消选中（有选中时不关闭）；无选中时沿用 backdropClose 关闭
     this.mask.onclick = (e) => {
+      // 同一次手势的 pointerdown 已判定为「点别处取消」→ 这次 click 只用于取消，不关闭弹窗
+      const swallow = this._suppressBackdropClose;
+      this._suppressBackdropClose = false;
+      if (swallow) return;
       if (e.target !== this.mask || this._confirming) return;
       if (this._selectedIdx >= 0) { this._deselect(); return; }
       if (backdropClose) this.hide();
@@ -199,18 +227,20 @@ export class DialogBox {
   _chooseOption(i) {
     if (!this.visible || this._confirming) return;
     if (this._opts[i]?.safe) { this._confirmOption(i); return; }
-    if (this._selectedIdx === i) { this._confirmOption(i); return; }
+    const btn = this._optBtns[i];
+    // 状态唯一依据 = 共享组件是否处于待确认态；_selectedIdx 只是镜像，
+    // 绝不拿可能过期的它判断「第二次点击」，否则取消后会跳过 arm 直接执行
+    if (ConfirmAction.isArmed(btn)) { this._confirmOption(i); return; }
+    // arm 内部会 disarmAll（可能触发 onDisarm 把 _selectedIdx 归零），所以先 arm 再写镜像
+    if (!ConfirmAction.arm(btn, { hintEl: this._hintEl, text: CONFIRM_TEXT })) return;
     this._selectedIdx = i;
-    this._optBtns.forEach((btn, k) => {
-      if (k === i) ConfirmAction.arm(btn, { hintEl: this._hintEl, text: CONFIRM_TEXT });
-      else ConfirmAction.disarm(btn);
-    });
+    this._suppressBackdropClose = false;
   }
 
   _deselect() {
-    this._selectedIdx = -1;
+    // 取消的唯一入口：disarmAll → onDisarm 监听器统一复位 _selectedIdx / 提示
     ConfirmAction.disarmAll();
-    if (this._hintEl) this._hintEl.style.display = 'none';
+    this._suppressBackdropClose = false;
   }
 
   // §16.4：确认 —— 立即调用 onSelect（业务先于动画），随后整卡 1.5 秒淡出
@@ -243,6 +273,7 @@ export class DialogBox {
     this._opts = [];
     this._selectedIdx = -1;
     this._confirming = false;
+    this._suppressBackdropClose = false;
     if (this._hintEl) this._hintEl.style.display = 'none';
     if (this._keyHandler) {
       window.removeEventListener('keydown', this._keyHandler);

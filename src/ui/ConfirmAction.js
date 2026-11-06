@@ -28,6 +28,10 @@ const STYLE_KEYS = ['background', 'borderColor', 'boxShadow', 'pointerEvents', '
 const records = new Map();
 let _guardInstalled = false;
 
+// 取消待确认态的统一复位通知（点别处 / ESC / 显式 disarm / 淡出结束都会触发）。
+// 调用方（DialogBox 等）必须在这里同步自己的状态机，禁止「只改 UI 不改内部状态」。
+const _disarmListeners = new Set();
+
 function snapshot(btn) {
   const s = {};
   for (const k of STYLE_KEYS) s[k] = btn?.style ? btn.style[k] : undefined;
@@ -110,7 +114,24 @@ export function arm(btn, opts = {}) {
   return true;
 }
 
-/** 取消待确认态并复原（点别处 / 切换选中对象时调用） */
+/**
+ * 注册取消通知：任何 disarm 都会回调（btn, rec），用于调用方复位自己的状态机。
+ * @param {(btn:object, rec:object)=>void} fn
+ * @returns {Function} 取消注册
+ */
+export function onDisarm(fn) {
+  if (typeof fn !== 'function') return () => {};
+  _disarmListeners.add(fn);
+  return () => _disarmListeners.delete(fn);
+}
+
+function notifyDisarm(btn, rec) {
+  for (const fn of [..._disarmListeners]) {
+    try { fn(btn, rec); } catch (err) { devLog.error('[ConfirmAction.onDisarm]', err); }
+  }
+}
+
+/** 取消待确认态并复原（点别处 / ESC / 切换选中对象 / 显式取消的唯一入口） */
 export function disarm(btn) {
   const rec = records.get(btn);
   if (!rec) return false;
@@ -120,6 +141,8 @@ export function disarm(btn) {
   btn?.classList?.remove('confirm-done');
   hideHint(rec);
   records.delete(btn);
+  // 状态复位后必须通知调用方 —— 否则调用方自己的选中态会残留，下次点击会跳过 arm 直接执行
+  notifyDisarm(btn, rec);
   return true;
 }
 
@@ -196,5 +219,5 @@ export function handleOutsideClick(target) {
 
 export default {
   CONFIRM_TEXT, CONFIRM_FADE_MS, CONFIRM_ARM_BG, CONFIRM_DONE_BG,
-  arm, disarm, disarmAll, trigger, isArmed, isConfirming, handleOutsideClick,
+  arm, disarm, disarmAll, trigger, isArmed, isConfirming, handleOutsideClick, onDisarm,
 };

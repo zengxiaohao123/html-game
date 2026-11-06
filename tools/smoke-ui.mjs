@@ -674,9 +674,12 @@ head_('§16.10 睡觉：先文字弹窗 → 弹窗内二次确认 → 同一 tic
   ConfirmAction.handleOutsideClick(funcBar.root);
   assert(!ConfirmAction.isArmed(dlg._optBtns[1]) && gs.day === dayBefore, '点别处 → 取消待确认、不换日');
   assert(dlg._hintEl.style.display === 'none', '取消后提示隐藏');
+  assert(dlg._selectedIdx === -1, '取消后内部选中态归零（不残留旧选项）', dlg._selectedIdx);
 
-  // ③ 再点两次「睡觉」→ 第二次同一 tick 换日，弹窗 1.5 秒淡出且不可再点
+  // ③ 取消后再点一次 → 必须重新待确认（不能跳过 arm 直接睡），再点一次才换日
   dlg._optBtns[1].click();
+  assert(ConfirmAction.isArmed(dlg._optBtns[1]) && gs.day === dayBefore,
+    '取消后再点一次「睡觉」→ 重新待确认、不换日');
   dlg._optBtns[1].click();
   assert(gs.day === dayBefore + 1, '第二次点「睡觉」→ 同一 tick 立即换日');
   assert(dlg.visible === true && dlg.mask.style.opacity === '0' && dlg.mask.style.pointerEvents === 'none',
@@ -740,6 +743,14 @@ head_('统一二次确认 ConfirmAction：1.5s 淡出 / 淡出期锁定 / 点别
   assert(btn.children.length === 0, '不传 hintEl → 不在按钮上自动创建行内提示');
   ConfirmAction.disarm(btn);
 
+  // 显式 disarm 也走同一复位通知（点别处 / ESC / 显式调用只有一个入口）
+  let disarmHits = 0;
+  const offDisarm = ConfirmAction.onDisarm(() => { disarmHits++; });
+  ConfirmAction.arm(btn);
+  ConfirmAction.disarm(btn);
+  assert(disarmHits === 1, 'disarm 显式调用 → 触发 onDisarm 复位通知', disarmHits);
+  offDisarm();
+
   ConfirmAction.arm(btn, { hintEl: hint });
   assert(hint.style.display === 'block' && hint._text === ConfirmAction.CONFIRM_TEXT,
     '传入弹窗提示元素 → 才显示「你确定这么做？」');
@@ -764,6 +775,106 @@ head_('统一二次确认 ConfirmAction：1.5s 淡出 / 淡出期锁定 / 点别
   await new Promise((r) => setTimeout(r, 80));
   assert(faded === 1 && hits === 1, '淡出结束 → onFaded 触发一次，业务不重复');
   assert(!ConfirmAction.isConfirming(btn) && btn.style.pointerEvents === '', '淡出结束 → 按钮复原可再点');
+}
+
+head_('二次确认三态：取消后必须重新 arm（禁止跳过待确认直接执行）');
+{
+  const ConfirmAction = await import('../src/ui/ConfirmAction.js');
+  const { DialogBox } = await import('../src/ui/DialogBox.js');
+  const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+  const dlg = trackDlg(new DialogBox());
+  dlg.mount();
+  dlg.confirmFadeMs = 30;
+  director.dialogBox = dlg;
+
+  let picks = 0;
+  const showDialog = () => EventBus.emit(GE.DIALOG_SHOW, {
+    title: '三态测试',
+    content: '点选项',
+    options: [
+      { label: '取消', safe: true, onSelect: () => {} },
+      { label: '执行', onSelect: () => { picks++; } },
+    ],
+  });
+
+  // A) arm → 点弹窗内容区取消（视觉复位）→ 再点一次：必须重新 arm
+  showDialog();
+  dlg._optBtns[1].click();
+  assert(ConfirmAction.isArmed(dlg._optBtns[1]) && picks === 0, 'A1 首次点击 → 待确认、不执行');
+  ConfirmAction.handleOutsideClick(dlg.contentEl);
+  assert(!ConfirmAction.isArmed(dlg._optBtns[1]) && dlg._selectedIdx === -1,
+    'A2 点内容区 → 取消且内部选中态归零（不只是视觉复位）', dlg._selectedIdx);
+  dlg.mask.click(); // 同一手势的 click：只取消，不关闭弹窗
+  assert(dlg.visible === true, 'A3 取消手势的 click 不关闭弹窗');
+  dlg._optBtns[1].click();
+  assert(ConfirmAction.isArmed(dlg._optBtns[1]) && picks === 0, 'A4 取消后再点一次 → 重新 arm、不执行');
+  dlg._optBtns[1].click();
+  assert(picks === 1 && dlg._confirming === true, 'A5 再点一次 → 执行且仅一次');
+  await sleepMs(80);
+  assert(dlg.visible === false && dlg._selectedIdx === -1, 'A6 执行后关闭并复位');
+
+  // B) arm → ESC → 重新打开 → 点一次仍只 arm
+  showDialog();
+  dlg._optBtns[1].click();
+  assert(ConfirmAction.isArmed(dlg._optBtns[1]) && picks === 1, 'B1 arm 后、ESC 前不执行');
+  dlg._keyHandler({ key: 'Escape', preventDefault() {} });
+  assert(dlg.visible === false && picks === 1 && dlg._selectedIdx === -1,
+    'B2 ESC → 关闭、复位、不执行');
+  showDialog();
+  dlg._optBtns[1].click();
+  assert(ConfirmAction.isArmed(dlg._optBtns[1]) && picks === 1, 'B3 ESC 取消后重开 → 点一次只 arm');
+  dlg._optBtns[1].click();
+  assert(picks === 2, 'B4 再点 → 执行一次');
+  await sleepMs(80);
+
+  // C) 连续 5 次 arm/取消 → 始终不执行；取消后再点仍从 arm 开始
+  showDialog();
+  let ok = true;
+  for (let k = 0; k < 5; k++) {
+    dlg._optBtns[1].click();
+    ok = ok && ConfirmAction.isArmed(dlg._optBtns[1]) && dlg._confirming === false;
+    ConfirmAction.handleOutsideClick(dlg.contentEl);
+    ok = ok && !ConfirmAction.isArmed(dlg._optBtns[1]) && dlg._selectedIdx === -1 && dlg._confirming === false;
+    dlg.mask.click();
+  }
+  assert(ok && picks === 2 && dlg.visible === true, 'C1 连续 5 次 arm/取消 → 始终不执行、弹窗不关');
+  dlg._optBtns[1].click();
+  assert(ConfirmAction.isArmed(dlg._optBtns[1]) && picks === 2, 'C2 5 次取消后点一次 → 仍只 arm');
+  dlg._optBtns[1].click();
+  assert(picks === 3, 'C3 再点 → 执行一次');
+  await sleepMs(80);
+
+  // D) 设置面板「清空此槽」同链路（同一 DialogBox 状态机）
+  let cleared = 0;
+  EventBus.emit(GE.DIALOG_SHOW, {
+    title: '🗂️ Slot 2',
+    content: '已存在存档',
+    options: [
+      { label: '📂 读取此存档', onSelect: () => {} },
+      { label: '💾 覆盖存档', onSelect: () => {} },
+      { label: '🗑️ 清空此槽', onSelect: () => { cleared++; } },
+      { label: '取消', onSelect: () => {} },
+    ],
+  });
+  dlg._optBtns[2].click();
+  assert(ConfirmAction.isArmed(dlg._optBtns[2]) && cleared === 0, 'D1 清空此槽首次点击 → 待确认、不清空');
+  ConfirmAction.handleOutsideClick(dlg.contentEl);
+  assert(!ConfirmAction.isArmed(dlg._optBtns[2]) && dlg._selectedIdx === -1 && cleared === 0,
+    'D2 点别处 → 取消、不清空');
+  dlg.mask.click();
+  dlg._optBtns[2].click();
+  assert(ConfirmAction.isArmed(dlg._optBtns[2]) && cleared === 0, 'D3 取消后再点 → 重新 arm、不清空');
+  dlg._optBtns[2].click();
+  assert(cleared === 1, 'D4 再点 → 清空一次');
+  await sleepMs(80);
+  assert(dlg.visible === false, 'D5 清空后弹窗关闭');
+
+  // E) 执行后不残留：新弹窗点一次仍然只 arm
+  showDialog();
+  dlg._optBtns[1].click();
+  assert(ConfirmAction.isArmed(dlg._optBtns[1]) && picks === 3, 'E1 执行后新弹窗 → 点一次只 arm');
+  dlg.hide();
+  director.dialogBox = null;
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1385,12 +1496,12 @@ head_('第 11 批 §16.4：DialogBox 选项两段式 + 数字键等效 + 弹窗�
   assert(dlg._optBtns[2].classList.contains('dialog-opt-flash'), '确认项闪烁类已加');
   assert(dlg.mask.style.pointerEvents === 'none', '淡出期间整卡不可再点');
   key('1');
-  assert(dlg._selectedIdx === 2, '确认动画期间其他数字键无效');
+  assert(dlg._selectedIdx === 2, '确认动画期间其他数字键无效', dlg._selectedIdx);
 
   // ── 4) 1.5 秒（冒烟 30ms）淡出后才关闭（业务已在第 3 步当场生效） ──
   assert(dlg.visible === true && dlg.mask.style.opacity === '0', '淡出中：卡片仍在、透明度归零');
   await sleepMs(500);
-  assert(dlg.visible === false, '淡出结束 → 弹窗关闭');
+  assert(dlg.visible === false, '淡出结束 → 弹窗关闭', { visible: dlg.visible, confirming: dlg._confirming });
   assert(picked === '丙', '执行业务在淡出前已完成，不被动画拦截', picked);
 
   // ── 5) 弹窗打开时数字键不抢 HotBar；关闭后恢复 ──
