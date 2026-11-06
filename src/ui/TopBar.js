@@ -62,7 +62,7 @@ export class TopBar {
     this.extremeText = null;
 
     this.yearText = null;
-    this.mdText = null;
+
     this.weekText = null;
     this.dayText = null;
     this.goldText = null;
@@ -181,29 +181,30 @@ export class TopBar {
 
   // ════════════════════════════════════════════════════════════
   // 第二段：双牌结构（§16.7）
-  //   主牌 = 木框 + 米黄内衬：按语义分两格 —— 左格「年 + 月日」（同类日期信息归并），
-  //         细竖线裁切，右格「星期」（独立维度小标签）+「第 N 天」（弱化计数）
+  //   主牌 = 撕页台历：顶部装订条（3 颗装订钉）+ 深红月份色带（左「年」右「月」）
+  //         + 纸页中央大号「日」数字 + 页脚「星期」（左）与弱化「第 N 天」印记（右）
   //   副牌 = 主牌下方两根小木钉悬挂的独立胶囊金币铭牌（徽章在左、大号数字在右）
   //   两块牌水平正放，不做 rotate / skew
   // ════════════════════════════════════════════════════════════
   _buildSign() {
     const sign = createEl('div', { class: ['hud-sign'], parent: this.left });
 
-    // 主牌：按语义分组成「日期块 | 独立票根」（整体水平正放，不旋转）
-    //   左块：年 + 月日（同类信息归并）；竖线分隔；右块：星期（独立维度）+ 第 N 天（弱化）
+    // 主牌：撕页台历（装订条 / 月份色带 / 大数字 / 页脚三项），整体水平正放
     const main = createEl('div', { class: ['hud-sign-main'], parent: sign });
-    const inner = createEl('div', { class: ['hud-sign-inner'], parent: main });
-    const date = createEl('div', { class: ['hud-sign-date'], parent: inner });
-    this.yearText = createEl('span', { class: ['hud-sign-year'], text: '', parent: date });
-    const mdRow = createEl('div', { class: ['hud-sign-mdrow'], parent: date });
-    this.monthNum = createEl('span', { class: ['hud-sign-num'], text: '', attrs: { title: '月份' }, parent: mdRow });
-    createEl('span', { class: ['hud-sign-unit'], text: '月', parent: mdRow });
-    this.dayNum = createEl('span', { class: ['hud-sign-num'], text: '', attrs: { title: '日期' }, parent: mdRow });
-    createEl('span', { class: ['hud-sign-unit'], text: '日', parent: mdRow });
-    createEl('div', { class: ['hud-sign-rule'], parent: inner });
-    const side = createEl('div', { class: ['hud-sign-side'], parent: inner });
-    this.weekText = createEl('div', { class: ['hud-sign-week'], text: '', parent: side });
-    this.dayText = createEl('div', { class: ['hud-sign-dayno'], text: '', parent: side });
+    const sheet = createEl('div', { class: ['hud-sign-sheet'], parent: main });
+    const bind = createEl('div', { class: ['hud-sign-bind'], parent: sheet });
+    for (let i = 0; i < 3; i++) createEl('i', { parent: bind });
+    // 月份色带：年份弱、月份强（都属"日历上的点"，同处一条抬头带）
+    const band = createEl('div', { class: ['hud-sign-band'], parent: sheet });
+    this.yearText = createEl('span', { class: ['hud-sign-year'], text: '', parent: band });
+    this.monthNum = createEl('span', { class: ['hud-sign-month'], text: '', attrs: { title: '月份' }, parent: band });
+    // 纸页主体：只放「日」——日历上最大的永远是当天数字
+    const dayWrap = createEl('div', { class: ['hud-sign-bigday'], parent: sheet });
+    this.dayNum = createEl('span', { class: ['hud-sign-bigday-num'], text: '', attrs: { title: '日期' }, parent: dayWrap });
+    // 页脚：星期（左）+ 第 N 天（右，弱化成印记）
+    const foot = createEl('div', { class: ['hud-sign-foot'], parent: sheet });
+    this.weekText = createEl('span', { class: ['hud-sign-week'], text: '', parent: foot });
+    this.dayText = createEl('span', { class: ['hud-sign-dayno'], text: '', parent: foot });
 
     // 两根小木钉（连接主牌与金币副牌）
     const pegs = createEl('div', { class: ['hud-sign-pegs'], parent: sign });
@@ -276,9 +277,10 @@ export class TopBar {
     applyOverload(this.dangerText,   dangerNow,   c.danger);
     applyOverload(this.extremeText,  extremeNow,  c.extreme);
 
-    // 日期体系（§6.1）：月日为主视觉、年/星期/第 N 天为元信息 —— 全部为实时文本节点
+    // 日期体系（§6.1）：纸页大数字 = 日，「月」在抬头色带、「年」弱在色带左端，
+    // 页脚左侧星期、右侧「第 N 天」印记 —— 全部为实时文本节点
     const cal = this.gs.calendar || {};
-    if (this.monthNum) this.monthNum.textContent = cal.month ? `${cal.month}` : '';
+    if (this.monthNum) this.monthNum.textContent = cal.month ? `${cal.month}月` : '';
     if (this.dayNum)   this.dayNum.textContent   = cal.dayOfMonth ? `${cal.dayOfMonth}` : '';
     if (this.yearText) this.yearText.textContent = cal.year ? `${cal.year} 年` : '';
     if (this.weekText) this.weekText.textContent = WEEK_NAMES[(cal.weekday || 0) - 1] || '';

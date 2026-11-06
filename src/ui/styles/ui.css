@@ -473,8 +473,8 @@ body.build-mode .map-container {
 
 /* ── 第二段：双牌结构（日期主牌 + 木钉悬挂的胶囊「金币」副牌）──
  * 参照星露谷时间/金币 UI 的排版语言，按本作删减（无时间、无天气图标格）：
- *   · 主牌：橙色木质外框 + 米黄内衬板，按语义分两格 —— 左格「年 + 月日」（同类日期信息归并），
- *           细竖线裁切，右格「星期」（独立维度小标签）+「第 N 天」（弱化计数）
+ *   · 主牌：撕页台历 —— 木质外框 + 顶部装订条（3 颗装订钉）+ 深红月份色带（左「年」右「月」）
+ *           + 纸页中央大号「日」数字 + 页脚「星期」与弱化「第 N 天」印记
  *   · 副牌：主牌下方两根小木钉悬挂，独立胶囊铭牌（米黄内衬 + 金币徽章 + 大号暗红数字）
  *   · 两块牌水平正放（无 rotate / skew），手绘质感只靠描边与不规则圆角
  * 全部为 CSS/DOM 自绘，日期与金币是实时文本节点，不贴参考图。 */
@@ -488,11 +488,11 @@ body.build-mode .map-container {
   /* 天数牌 + 金币副牌一律水平正放：不加 rotate / skew（手绘质感只靠描边与不规则圆角） */
 }
 
-/* 主牌：橙色木质外框 + 米黄内衬 + 分格日期 */
+/* 主牌：撕页台历（木质外框 + 装订条 + 纸页 + 月份色带 + 大号日数字） */
 .hud-sign-main {
   position: relative;
   width: 164px;
-  height: 56px;
+  height: 60px;
   box-sizing: border-box;
   border: 3px solid #5E2D08;
   border-radius: 7px 10px 6px 9px / 9px 6px 10px 7px;
@@ -504,102 +504,122 @@ body.build-mode .map-container {
     0 3px 0 rgba(58, 30, 8, 0.24),
     0 6px 9px rgba(0, 0, 0, 0.22),
     inset 0 1px 0 rgba(255, 236, 190, 0.65);
+  font-family: "Arial Black", "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif;
 }
-/* 米黄内衬板：内缩一圈 + 细棕描边 + 顶部内阴影。
- * 按语义分组：左侧「年 + 月日」为同一日期块，一根细竖线作票根裁切线，
- * 右侧「星期 + 第 N 天」为另一块浅褐底标（星期是独立维度，第 N 天从属弱化）。
+/* 纸页：日历那张"纸"，顶部被装订条压住，底部是页脚。
  * 整块水平正放，不做 rotate / skew。 */
-.hud-sign-inner {
+.hud-sign-sheet {
   position: absolute;
   inset: 3px;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 2px 4px;
+  overflow: hidden;
   border: 1.5px solid #C08636;
   border-radius: 4px 7px 3px 6px / 6px 3px 7px 4px;
-  background: linear-gradient(180deg, #FBEBC0 0%, #F3DCA6 55%, #E9CD92 100%);
+  background:
+    repeating-linear-gradient(0deg, rgba(150, 105, 50, 0.05) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, #FDF0CC 0%, #F4DDA6 58%, #E8CB8F 100%);
   box-shadow:
-    inset 0 2px 3px rgba(120, 70, 20, 0.18),
-    inset 0 -1px 0 rgba(255, 248, 220, 0.7);
-  font-family: "Arial Black", "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif;
+    inset 0 2px 3px rgba(120, 70, 20, 0.16),
+    inset 0 -1px 0 rgba(255, 250, 225, 0.8);
   text-shadow: 0 1px 0 #FFF4D6, 0 1px 1px rgba(90, 50, 15, 0.18);
 }
+/* 装订条：压住纸页顶端，三颗装订钉做出"撕页台历"的手感 */
+.hud-sign-bind {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 8px;
+  background: linear-gradient(180deg, #8A4B12 0%, #5E2D08 100%);
+  border-bottom: 1px solid #3A1C05;
+  box-shadow: 0 1px 2px rgba(40, 20, 5, 0.3);
+}
+.hud-sign-bind i {
+  position: absolute;
+  top: -3px;
+  width: 4px;
+  height: 10px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #F2C178, #9A5715);
+  box-shadow: 0 1px 1px rgba(40, 20, 5, 0.5);
+}
+.hud-sign-bind i:nth-child(1) { left: 16px; }
+.hud-sign-bind i:nth-child(2) { left: 73px; }
+.hud-sign-bind i:nth-child(3) { left: 130px; }
 
-/* 左块：年在上、月日在下（同类日期信息归并，整体左对齐成块） */
-.hud-sign-date {
+/* 月份色带：深红抬头带，左「年」弱、右「月」强（都属日历上的点，同处一条抬头） */
+.hud-sign-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 8px;
+  height: 12px;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  flex-shrink: 0;
-  white-space: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px;
+  background: linear-gradient(180deg, #9A3410, #7A240B);
+  border-bottom: 1px solid #5A1A06;
 }
 .hud-sign-year {
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 800;
   line-height: 1;
-  color: #8A5A2B;
-  letter-spacing: 1.2px;
+  color: #FFEBC0;
+  letter-spacing: 1px;
+  white-space: nowrap;
 }
-.hud-sign-mdrow { display: flex; align-items: baseline; }
-.hud-sign-num {
-  font-size: 19px;
+.hud-sign-month {
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  color: #FFF6DC;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+/* 纸页主体：日历上最大的永远是"当天"，这里只放日数字 */
+.hud-sign-bigday {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 17px;
+  text-align: center;
+}
+.hud-sign-bigday-num {
+  display: block;
+  font-size: 30px;
   font-weight: 900;
   line-height: 1;
   color: #4A2A10;
-  letter-spacing: 0.5px;
-}
-.hud-sign-unit {
-  font-size: 8.5px;
-  font-weight: 800;
-  line-height: 1;
-  color: #7A4A18;
   letter-spacing: 0;
-  margin: 0 2px 0 1px;
-  transform: translateY(-6px);
+  text-shadow: 0 1px 0 #FFF4D6, 0 2px 1px rgba(90, 50, 15, 0.22);
 }
 
-/* 竖线分隔：像票根上的裁切线 */
-.hud-sign-rule {
-  width: 1px;
-  height: 30px;
-  background: linear-gradient(180deg, transparent 0%, #C08636 22%, #C08636 78%, transparent 100%);
-  opacity: 0.75;
-}
-
-/* 右块：浅褐底标分格（色块把「星期 / 第 N 天」从左侧日期块里分离出来） */
-.hud-sign-side {
+/* 页脚：星期（左）+ 第 N 天印记（右，压到最弱一级） */
+.hud-sign-foot {
+  position: absolute;
+  left: 7px;
+  right: 7px;
+  bottom: 3px;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-  flex-shrink: 0;
-  padding: 3px 3px 2px;
-  border-radius: 3px 5px 4px 6px / 5px 3px 6px 4px;
-  background: linear-gradient(180deg, rgba(178, 111, 38, 0.17) 0%, rgba(178, 111, 38, 0.05) 52%, rgba(178, 111, 38, 0.15) 100%);
-  box-shadow:
-    inset 0 0 0 1px rgba(160, 94, 28, 0.22),
-    inset 0 1px 0 rgba(255, 244, 214, 0.6);
+  align-items: flex-end;
+  justify-content: space-between;
 }
 .hud-sign-week {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 900;
   line-height: 1;
   color: #5A2E0E;
-  letter-spacing: 0.5px;
+  letter-spacing: 1px;
   white-space: nowrap;
-  padding-bottom: 1px;
-  border-bottom: 1.5px solid #C08636;
 }
 .hud-sign-dayno {
-  font-size: 7.5px;
+  font-size: 6.5px;
   font-weight: 800;
   line-height: 1;
-  color: #8A5A2B;
-  letter-spacing: 0.2px;
+  color: #9A6A38;
+  letter-spacing: 0.4px;
+  opacity: 0.85;
   white-space: nowrap;
 }
 
