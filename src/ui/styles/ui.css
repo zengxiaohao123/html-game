@@ -474,7 +474,7 @@ body.build-mode .map-container {
 /* ── 第二段：双牌结构（日期主牌 + 木钉悬挂的胶囊「金币」副牌）──
  * 参照星露谷时间/金币 UI 的排版语言，按本作删减（无时间、无天气图标格）：
  *   · 主牌：撕页台历 —— 木质外框 + 顶部装订条（3 颗装订钉）+ 深红月份色带（左「年」右「月」）
- *           + 纸页中央大号「日」数字 + 页脚「星期」与弱化「第 N 天」印记
+ *           + 纸页中央「日」大数字与紧随其后的「星期」（日期行「28 周日」）
  *   · 副牌：主牌下方两根小木钉悬挂，独立胶囊铭牌（米黄内衬 + 金币徽章 + 大号暗红数字）
  *   · 两块牌水平正放（无 rotate / skew），手绘质感只靠描边与不规则圆角
  * 全部为 CSS/DOM 自绘，日期与金币是实时文本节点，不贴参考图。 */
@@ -492,7 +492,7 @@ body.build-mode .map-container {
 .hud-sign-main {
   position: relative;
   width: 164px;
-  height: 60px;
+  height: 62px;
   box-sizing: border-box;
   border: 3px solid #5E2D08;
   border-radius: 7px 10px 6px 9px / 9px 6px 10px 7px;
@@ -577,33 +577,26 @@ body.build-mode .map-container {
   white-space: nowrap;
 }
 
-/* 纸页主体：日历上最大的永远是"当天"，这里只放日数字 */
+/* 纸页主体：日期行「28 周日」——日数字是绝对主角，星期紧随其后、与数字同基线，
+ * 两者作为一个整体居中，避免页脚只剩星期时右侧留空 */
 .hud-sign-bigday {
   position: absolute;
   left: 0;
   right: 0;
-  top: 17px;
-  text-align: center;
+  top: 20px;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 7px;
 }
 .hud-sign-bigday-num {
   display: block;
-  font-size: 30px;
+  font-size: 28px;
   font-weight: 900;
   line-height: 1;
   color: #4A2A10;
   letter-spacing: 0;
   text-shadow: 0 1px 0 #FFF4D6, 0 2px 1px rgba(90, 50, 15, 0.22);
-}
-
-/* 页脚：星期（左）+ 第 N 天印记（右，压到最弱一级） */
-.hud-sign-foot {
-  position: absolute;
-  left: 7px;
-  right: 7px;
-  bottom: 3px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
 }
 .hud-sign-week {
   font-size: 12px;
@@ -612,15 +605,7 @@ body.build-mode .map-container {
   color: #5A2E0E;
   letter-spacing: 1px;
   white-space: nowrap;
-}
-.hud-sign-dayno {
-  font-size: 6.5px;
-  font-weight: 800;
-  line-height: 1;
-  color: #9A6A38;
-  letter-spacing: 0.4px;
-  opacity: 0.85;
-  white-space: nowrap;
+  text-shadow: 0 1px 0 #FFF4D6, 0 1px 1px rgba(90, 50, 15, 0.18);
 }
 
 /* 两根小木钉：连接主牌与金币副牌 */

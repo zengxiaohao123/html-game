@@ -6,7 +6,7 @@
 //   │  │ 竖 │  ⚔ 10
 //   │  │ 框 │  ◆◆◆◆◆◆◆◆ 5/8
 //   │  └──余默┘
-//   │  ╭── 主牌：左「2 年 / 12月 28日」│ 右「周日 / 第 224 天」──╮   ← 第二段（木框 + 米黄内衬）
+//   │  ╭── 主牌：抬头带「2 年 / 12月」│ 纸页「28 周日」──╮   ← 第二段（木框 + 米黄纸页）
 //   │   ┆（木钉） （木钉）┆
 //   │  ╰── 🪙 999999 ─────╯                        ← 金币胶囊副牌，悬挂在主牌下方
 //   │  (📋)                                          ← 第三段（再往下一点，独立一块）
@@ -64,7 +64,6 @@ export class TopBar {
     this.yearText = null;
 
     this.weekText = null;
-    this.dayText = null;
     this.goldText = null;
     this.nameText = null;
 
@@ -182,7 +181,7 @@ export class TopBar {
   // ════════════════════════════════════════════════════════════
   // 第二段：双牌结构（§16.7）
   //   主牌 = 撕页台历：顶部装订条（3 颗装订钉）+ 深红月份色带（左「年」右「月」）
-  //         + 纸页中央大号「日」数字 + 页脚「星期」（左）与弱化「第 N 天」印记（右）
+  //         + 纸页中央「日」大数字与紧随其后的「星期」（日期行「28 周日」）
   //   副牌 = 主牌下方两根小木钉悬挂的独立胶囊金币铭牌（徽章在左、大号数字在右）
   //   两块牌水平正放，不做 rotate / skew
   // ════════════════════════════════════════════════════════════
@@ -198,13 +197,10 @@ export class TopBar {
     const band = createEl('div', { class: ['hud-sign-band'], parent: sheet });
     this.yearText = createEl('span', { class: ['hud-sign-year'], text: '', parent: band });
     this.monthNum = createEl('span', { class: ['hud-sign-month'], text: '', attrs: { title: '月份' }, parent: band });
-    // 纸页主体：只放「日」——日历上最大的永远是当天数字
+    // 纸页主体：「日」大数字 + 紧随其后的「星期」——即日历日期行「28 周日」
     const dayWrap = createEl('div', { class: ['hud-sign-bigday'], parent: sheet });
     this.dayNum = createEl('span', { class: ['hud-sign-bigday-num'], text: '', attrs: { title: '日期' }, parent: dayWrap });
-    // 页脚：星期（左）+ 第 N 天（右，弱化成印记）
-    const foot = createEl('div', { class: ['hud-sign-foot'], parent: sheet });
-    this.weekText = createEl('span', { class: ['hud-sign-week'], text: '', parent: foot });
-    this.dayText = createEl('span', { class: ['hud-sign-dayno'], text: '', parent: foot });
+    this.weekText = createEl('span', { class: ['hud-sign-week'], text: '', parent: dayWrap });
 
     // 两根小木钉（连接主牌与金币副牌）
     const pegs = createEl('div', { class: ['hud-sign-pegs'], parent: sign });
@@ -278,13 +274,12 @@ export class TopBar {
     applyOverload(this.extremeText,  extremeNow,  c.extreme);
 
     // 日期体系（§6.1）：纸页大数字 = 日，「月」在抬头色带、「年」弱在色带左端，
-    // 页脚左侧星期、右侧「第 N 天」印记 —— 全部为实时文本节点
+    // 星期紧随日数字同基线 —— 全部为实时文本节点
     const cal = this.gs.calendar || {};
     if (this.monthNum) this.monthNum.textContent = cal.month ? `${cal.month}月` : '';
     if (this.dayNum)   this.dayNum.textContent   = cal.dayOfMonth ? `${cal.dayOfMonth}` : '';
     if (this.yearText) this.yearText.textContent = cal.year ? `${cal.year} 年` : '';
     if (this.weekText) this.weekText.textContent = WEEK_NAMES[(cal.weekday || 0) - 1] || '';
-    if (this.dayText)  this.dayText.textContent  = `第 ${this.gs.day} 天`;
     if (this.goldText) this.goldText.textContent = `${p.gold}`;
 
     if (this.nameText) {
