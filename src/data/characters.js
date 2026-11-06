@@ -97,6 +97,8 @@ export const SKILLS = {
     roleId: 'yumo',
     element: 'physical',
     damageMultiplier: 1.0,
+    // §2.8：对 1 名敌人 → target 流（默认取最近存活敌人）
+    judgeMode: 'target',
     hooks: { onEnter: true, onPass: false, onBlessed: true },
     range: 1,
     cooldown: 0,
@@ -112,6 +114,8 @@ export const SKILLS = {
     roleId: 'yumo',
     element: 'physical',
     damageMultiplier: 1.6,
+    // §2.8：对 2 名敌人 → target 流（最近 2 名，targetSelection='nearest'）
+    judgeMode: 'target',
     hooks: { onEnter: true, onPass: false, onBlessed: true },
     range: 1,
     cooldown: 2,
@@ -133,6 +137,12 @@ export const SKILLS = {
     roleId: 'yumo',
     element: 'physical',
     damageMultiplier: 0.6,
+    // §2.8：混合型（先选 1 名再小范围 0.3）→ tile 流，锚点 = 目标中心
+    // 旧实现只做了"消耗地形加伤"，0.3 范围未实现；本轮按文档补齐
+    judgeMode: 'tile',
+    anchor: 'target',
+    areaShape: 'circle',
+    areaRadius: 0.3,
     hooks: { onEnter: true, onPass: false, onBlessed: true },
     range: 1,
     cooldown: 3,
@@ -155,6 +165,8 @@ export const SKILLS = {
     roleId: 'xiayang',
     element: 'fire',
     damageMultiplier: 0.8,
+    // §2.8：对 1 名敌人 → target 流
+    judgeMode: 'target',
     hooks: { onEnter: true, onPass: false, onBlessed: true },
     range: 1,
     cooldown: 0,
@@ -175,6 +187,8 @@ export const SKILLS = {
     roleId: 'xiayang',
     element: 'fire',
     damageMultiplier: 0,   // 引燃本身不直接造成伤害，只施加燃烧
+    // §2.8：对 1 名敌人施加燃烧 → target 流（受祝福时另选"随机 1 名燃烧敌人"，仍属 target 流）
+    judgeMode: 'target',
     hooks: { onEnter: true, onPass: false, onBlessed: true },
     range: 1,
     cooldown: 0,
@@ -200,6 +214,8 @@ export const SKILLS = {
     roleId: 'luyouyou',
     element: 'physical',
     damageMultiplier: 0.5,   // 2 段 × 50% = 每段 0.5×
+    // §2.8：对 1 名敌人 2 段 → target 流；hits 在单次应用内循环，禁止按格放大
+    judgeMode: 'target',
     hooks: { onEnter: true, onPass: false, onBlessed: true },
     range: 1,
     cooldown: 0,
@@ -216,6 +232,8 @@ export const SKILLS = {
     roleId: 'luyouyou',
     element: 'physical',
     damageMultiplier: 0.8,
+    // §2.8：随机 2 名敌人 → target 流（targetSelection='random'，不放回）
+    judgeMode: 'target',
     hooks: { onEnter: true, onPass: false, onBlessed: true },
     range: 1,
     cooldown: 4,
@@ -242,6 +260,9 @@ export const SKILLS = {
     roleId: 'xiayang',
     element: 'physical',
     damageMultiplier: 0,   // 本身不直接造成伤害，只有生命回复 + 攻击力 buff
+    // §2.8：自身 buff + 回血，无敌人目标 → target 流（selfOnly）
+    judgeMode: 'target',
+    selfOnly: true,
     hooks: { onEnter: true, onPass: true, onBlessed: true },
     range: 1,
     cooldown: 0,
@@ -264,6 +285,8 @@ export const SKILLS = {
     roleId: 'xiayang',
     element: 'fire',
     damageMultiplier: 1.6,
+    // §2.8：对 1 名敌人 160% → target 流
+    judgeMode: 'target',
     hooks: { onEnter: true, onPass: false, onBlessed: true },
     range: 1,
     cooldown: 3,
@@ -286,6 +309,12 @@ export const SKILLS = {
     roleId: 'xiayang',
     element: 'fire',
     damageMultiplier: 1.5,
+    // §2.8：混合型（先选 1 名再 1 格圆形范围）→ tile 流，锚点 = 目标中心
+    // 注意：圆形半径 1 按"地块中心距"枚举，只覆盖十字 5 格（旧实现是方形 3×3=9 格）
+    judgeMode: 'tile',
+    anchor: 'target',
+    areaShape: 'circle',
+    areaRadius: 1,
     hooks: { onEnter: true, onPass: false, onBlessed: true },
     range: 1,
     cooldown: 7,
@@ -309,6 +338,9 @@ export const SKILLS = {
     roleId: 'luyouyou',
     element: 'physical',
     damageMultiplier: 0,   // 本身不造成伤害，只给下一次攻击加 buff
+    // §2.8：自身暴击 buff，无敌人目标 → target 流（selfOnly）
+    judgeMode: 'target',
+    selfOnly: true,
     hooks: { onEnter: true, onPass: false, onBlessed: true },
     range: 1,
     cooldown: 0,
@@ -332,6 +364,10 @@ export const SKILLS = {
     roleId: null,   // 通用，不属于任何角色
     element: 'physical',
     damageMultiplier: 1.0,
+    // §2.8：行+列所有敌人 → tile 流，锚点 = 技能所在格，形状 rowColumn
+    judgeMode: 'tile',
+    anchor: 'skillTile',
+    areaShape: 'rowColumn',
     hooks: { onEnter: true, onPass: false, onBlessed: true },
     range: null,    // 行+列所有敌人，不是普通范围
     cooldown: 0,
@@ -358,6 +394,9 @@ export const SKILLS = {
     roleId: 'yumo',
     element: 'physical',
     damageMultiplier: 0,   // 本身不造成伤害，只切换下次攻击元素类型
+    // §2.8：自身效果，无敌人目标 → target 流（selfOnly）
+    judgeMode: 'target',
+    selfOnly: true,
     hooks: { onEnter: false, onPass: false, onBlessed: false },
     range: 1,
     cooldown: 3,
@@ -379,6 +418,8 @@ export const SKILLS = {
     roleId: 'xiayang',
     element: 'fire',
     damageMultiplier: 0.7,
+    // §2.8：燃烧集合内最近 3 名 → target 流（条件集合，集合先定后排序）
+    judgeMode: 'target',
     hooks: { onEnter: false, onPass: false, onBlessed: false },
     range: 1,
     cooldown: 2,
@@ -400,6 +441,11 @@ export const SKILLS = {
     roleId: 'xiayang',
     element: 'fire',
     damageMultiplier: 1.4,   // 一段 140%，二段 260%；Phase 3 LinkSkillSystem 实际计算
+    // §2.8：锚点=目标中心，circle 0.4 / 1.5（按计数档位取 extraEffect 的 tier 半径）
+    judgeMode: 'tile',
+    anchor: 'target',
+    areaShape: 'circle',
+    areaRadius: 1.5,         // 声明上限；运行时按档位用 tier1Radius / tier2Radius
     hooks: { onEnter: false, onPass: false, onBlessed: false },
     range: 1,
     cooldown: 0,   // 这个技能不走冷却，走计数：3 一段 / 7 二段
@@ -427,6 +473,8 @@ export const SKILLS = {
     roleId: 'luyouyou',
     element: 'physical',
     damageMultiplier: 0.7,
+    // §2.8：蓄力集合内最近 1 名 → target 流
+    judgeMode: 'target',
     hooks: { onEnter: false, onPass: false, onBlessed: false },
     range: 1,
     cooldown: 6,
@@ -451,6 +499,11 @@ export const SKILLS = {
     roleId: 'luyouyou',
     element: 'wind',
     damageMultiplier: 0.8,
+    // §2.8：线带型 → tile 流，锚点 = 玩家+目标（玩家格中心 → 随机锁定目标中心），半宽 0.5
+    judgeMode: 'tile',
+    anchor: 'player+target',
+    areaShape: 'line',
+    areaRadius: 0.5,          // 线带半宽（沿用现状 0.5）
     hooks: { onEnter: false, onPass: false, onBlessed: false },
     range: 1,
     cooldown: 5,
@@ -472,6 +525,8 @@ export const SKILLS = {
     roleId: 'luyouyou',
     element: 'physical',
     damageMultiplier: 0.2,   // 每次弹射 20%
+    // §2.8：弹射 3 次 → target 流（以当前目标为锚点、0.3 接触半径内随机）
+    judgeMode: 'target',
     hooks: { onEnter: false, onPass: false, onBlessed: false },
     range: 1,
     cooldown: 1,
@@ -496,6 +551,8 @@ export const SKILLS = {
     roleId: 'luyouyou',
     element: 'wind',
     damageMultiplier: 0.15,
+    // §2.8：1 名敌人（无明确索敌 → 最近存活敌人）→ target 流
+    judgeMode: 'target',
     hooks: { onEnter: false, onPass: false, onBlessed: false },
     range: 1,
     cooldown: 5,
@@ -519,6 +576,8 @@ export const SKILLS = {
     roleId: null,                     // 通用技能，不归属任何角色
     element: 'physical',
     damageMultiplier: 0.5,            // 基础 50%，本日每经过 1 格 +5%
+    // §2.8：1 名敌人（无明确索敌 → 最近存活敌人）→ target 流
+    judgeMode: 'target',
     hooks: { onEnter: false, onPass: false, onBlessed: false },
     range: 1,
     cooldown: 4,

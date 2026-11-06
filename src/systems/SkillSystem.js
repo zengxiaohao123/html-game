@@ -17,67 +17,30 @@
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { HookDispatcher } from '../core/HookDispatcher.js';
-import { Distance } from '../core/Distance.js';
 import { devLog } from '../core/Logger.js';
-import { getSkill, getSkillsByRole, CHARACTERS, SKILLS } from '../data/characters.js';
+import { SKILLS } from '../data/characters.js';
 import { CombatSystem } from './CombatSystem.js';
 import { TalentSystem } from './TalentSystem.js';
 import { LinkSkillSystem } from './LinkSkillSystem.js';
 import { HealSystem } from './HealSystem.js';
-import { CreatureSystem } from './CreatureSystem.js';
+import {
+  createSettlement,
+  commitSettlement,
+  judgeModeOf,
+  liveById,
+  selectSkillTargets,
+  skillTileAnchor,
+  playerAnchor,
+  tileRefsForSkill,
+  tileTargetsOf,
+  registerDamage,
+} from './SkillResolve.js';
 
 /**
  * 每技能的运行时 cooldown：skillId → remainingTurns
  * §12.3：技能卡位置被移动时冷却保留 —— 冷却按技能卡（skillId）计，不绑地块。
  * GS 持久化（跨回合不丢失），resetSkillCooldowns 清空
  */
-
-function getCreaturesInFence(gs) {
-  const list = [];
-  for (const t of gs.map.fence) {
-    for (const cid of (t.creatures || [])) {
-      const c = gs.creatures.find(cc => cc.id === cid);
-      if (c) list.push(c);
-    }
-  }
-  return list;
-}
-
-function findLegalTargets(gs, skill, tileIdx) {
-  const allCreatures = getCreaturesInFence(gs);
-  if (allCreatures.length === 0) return [];
-
-  let pool = allCreatures;
-  if (skill.targetCategory === 'danger_extreme') {
-    // ITM-CON-004 感恩节的晚餐：本日我方把友善生物也视为敌人
-    if (gs.flags?.friendlyAsEnemyToday) {
-      pool = allCreatures.slice();
-    } else {
-      pool = allCreatures.filter(c => c.category === 'danger' || c.category === 'extreme');
-    }
-  } else if (skill.targetCategory === 'friendly_danger_extreme') {
-    pool = allCreatures;
-  }
-  if (pool.length === 0) return [];
-
-  // §12.3：目标 = 技能所在地块到敌人位置最近的合法单位。
-  // 外圈格用网格 (x, y)；栅栏内生物 (row, col) 对应网格坐标 (col+1, row+1)，曼哈顿距离判最近。
-  const { x: sx, y: sy } = Distance.outerIdxToXY(gs.map.size, tileIdx);
-  const dist = (c) => Math.abs(sx - (c.col + 1)) + Math.abs(sy - (c.row + 1));
-  pool.sort((a, b) => dist(a) - dist(b));
-
-  // B-9：targetCount 多目标（SKL-A-002 拼命 2 个最近 / SKL-A-011 风止 2 个随机）
-  const count = Math.max(1, skill.targetCount || 1);
-  if ((skill.targetSelection || 'nearest') === 'random') {
-    const src = pool.slice();
-    const out = [];
-    while (out.length < count && src.length > 0) {
-      out.push(src.splice(Math.floor(Math.random() * src.length), 1)[0]);
-    }
-    return out;
-  }
-  return pool.slice(0, count);
-}
 
 /**
  * 触发某时机下，**params.tileIdx 所在地块上放置的技能**（§12：技能按其所在格的时机触发）
@@ -111,12 +74,25 @@ export function triggerSkillByHook(hookType, params) {
   // 连携技不走普通 hook 触发（它们是实时窗口按键触发的）
   if (skillDef.isLinkSkill) return;
 
-  // 找目标（§12.3：最近合法单位；B-9：targetCount 多目标）
-  const targets = findLegalTargets(gs, skillDef, tileIdx);
-  if (targets.length === 0) return;
+  // §3.2 ⑦c / §3.6：一次结算一份快照 —— 本技能本次触发的判定几何只读这份
+  const settlement = createSettlement(gs, {
+    skillId: skillDef.id,
+    instanceKey: `tile:${tileIdx}`,
+    phase: hookType,
+    roleId: skillDef.roleId,
+    attackerRoleId: skillDef.roleId,
+  });
+  const judgeMode = judgeModeOf(skillDef);
+  const anchor = skillTileAnchor(gs, tileIdx);
+
+  // 主目标（也是 tile 型的锚点来源）：默认最近存活敌人
+  const primary = selectSkillTargets(settlement.snapshot, skillDef, anchor, {
+    friendlyAsEnemyToday: settlement.friendlyAsEnemyToday,
+  });
+  if (primary.length === 0) return; // 保持既有行为：无合法目标则不触发
 
   // 触发！
-  fireOneSkill(gs, skillDef, targets, cdKey, hookType, tileIdx);
+  fireOneSkill(gs, skillDef, primary, cdKey, hookType, tileIdx, settlement, judgeMode, anchor);
   HookDispatcher.fire('onUseSkill', { gs });
 }
 
@@ -138,47 +114,20 @@ function consumeTerrainsForPioneer(gs, count) {
   return consumed;
 }
 
-/**
- * 合纵连横（SKL-A-012）：技能所在格延伸出的行 + 列 覆盖的栅栏格
- * 外圈格 (sx, sy) → 栅栏行 sy-1 / 栅栏列 sx-1（栅栏 (row,col) 对应网格 (col+1, row+1)）
- */
-function getFenceTilesInRowCol(gs, tileIdx) {
-  const { x: sx, y: sy } = Distance.outerIdxToXY(gs.map.size, tileIdx);
-  const fenceRow = sy - 1;
-  const fenceCol = sx - 1;
-  const n = gs.map.fenceRowCols || 1;
-  const out = [];
-  for (const t of gs.map.fence) {
-    const inRow = fenceRow >= 0 && fenceRow < n && t.row === fenceRow;
-    const inCol = fenceCol >= 0 && fenceCol < n && t.col === fenceCol;
-    if (inRow || inCol) out.push(t);
-  }
-  return out;
+/** tile 型锚点参数：anchor='target' 用目标中心；'player+target' 用玩家格中心 + 目标中心 */
+function tileAnchorParams(gs, skill, anchor, primaryEntry) {
+  const targetPoint = primaryEntry ? { x: primaryEntry.x, y: primaryEntry.y } : null;
+  if (skill.anchor === 'target') return { anchorPoint: targetPoint, targetPoint };
+  if (skill.anchor === 'player+target') return { anchorPoint: playerAnchor(gs), targetPoint };
+  return { anchorPoint: anchor, targetPoint };
 }
 
-/** 收集若干栅栏格内的全部存活生物（去重） */
-function collectCreaturesInFenceTiles(gs, fenceTiles) {
-  const seen = new Set();
-  const out = [];
-  for (const t of fenceTiles) {
-    for (const cid of (t.creatures || [])) {
-      if (seen.has(cid)) continue;
-      const c = gs.creatures.find(cc => cc.id === cid);
-      if (c && c.hp > 0) {
-        seen.add(cid);
-        out.push(c);
-      }
-    }
-  }
-  return out;
-}
-
-function fireOneSkill(gs, skill, targets, cdKey, hookName = 'onEnter', tileIdx = null) {
-  const roleDef = CHARACTERS[skill.roleId];
-  const target = Array.isArray(targets) ? targets[0] : targets; // 主目标（日志/范围中心/连携上下文）
-  const targetList = Array.isArray(targets) ? targets : [targets];
-  devLog.info('[SkillSystem] fire', skill.name, '→', target.kind, '(hp', target.hp, '/', target.maxHp, ') x', targetList.length);
-  EventBus.emit(GE.SKILL_TRIGGERED, { skillId: skill.id, roleId: skill.roleId, targetKind: target.kind });
+function fireOneSkill(gs, skill, primaryEntries, cdKey, hookName = 'onEnter', tileIdx = null, settlement, judgeMode, anchor) {
+  const primaryEntry = primaryEntries[0] || null;
+  const primaryLive = primaryEntry ? liveById(gs, primaryEntry.id) : null;
+  const displayTarget = primaryLive || primaryEntry;
+  devLog.info('[SkillSystem] fire', skill.name, '→', displayTarget?.kind, '(hp', displayTarget?.hp, '/', displayTarget?.maxHp, ') x', primaryEntries.length);
+  EventBus.emit(GE.SKILL_TRIGGERED, { skillId: skill.id, roleId: skill.roleId, targetKind: displayTarget?.kind ?? null });
   // §16.3：主动技能在其所在地块结算 → UI 层据此做地块红色瞬时高亮（纯视觉，不参与结算）
   if (typeof tileIdx === 'number') {
     EventBus.emit(GE.SKILL_USED_ON_TILE, { tileIdx, skillId: skill.id, roleId: skill.roleId });
@@ -186,95 +135,59 @@ function fireOneSkill(gs, skill, targets, cdKey, hookName = 'onEnter', tileIdx =
 
   const eff = skill.extraEffect;
 
-  // ── 特殊结算：合纵连横（行 + 列范围伤害，替代单体流程） ──
-  if (eff?.type === 'line_row_column') {
-    const tiles = typeof tileIdx === 'number' ? getFenceTilesInRowCol(gs, tileIdx) : [];
-    const targets = collectCreaturesInFenceTiles(gs, tiles)
-      .filter(c => c.category === 'danger' || c.category === 'extreme' || gs.flags?.friendlyAsEnemyToday);
-    for (const t of targets) {
-      CombatSystem.calculateDamage({
-        atk: gs.player.atk,
-        skill,
-        defender: t,
-        element: 'physical',
-        player: gs.player,
-        gs,
-        roleId: skill.roleId,
-        attackerRoleId: skill.roleId,
-      });
-      if (t.hp <= 0) defeatCreature(gs, t);
-    }
-    devLog.info('[SkillSystem] 合纵连横 命中', targets.length, '名敌人');
-  } else if (eff?.type === 'aoe_radius') {
-    // ── 特殊结算：爆炸狂欢（目标所在栅栏格半径 1 格大范围） ──
-    const nearTiles = gs.map.fence.filter(t =>
-      Math.abs(t.row - target.row) <= (eff.radius ?? 1) && Math.abs(t.col - target.col) <= (eff.radius ?? 1));
-    const targets = collectCreaturesInFenceTiles(gs, nearTiles)
-      .filter(c => c.category === 'danger' || c.category === 'extreme' || gs.flags?.friendlyAsEnemyToday);
-    for (const t of targets) {
-      CombatSystem.calculateDamage({
-        atk: gs.player.atk,
-        skill,
-        defender: t,
-        element: skill.element,
-        player: gs.player,
-        gs,
-        roleId: skill.roleId,
-        attackerRoleId: skill.roleId,
-      });
-      if (t.hp <= 0) defeatCreature(gs, t);
-    }
-    devLog.info('[SkillSystem] 爆炸狂欢 命中', targets.length, '名敌人');
-  } else {
-    // ── 伤害前生效的额外效果 ──
-    let multiplierBonus = 0;
-    if (eff?.type === 'pioneer_multiplier') {
-      // 开拓（SKL-A-003）：攻击前随机消耗地形，每消耗 1 块本次攻击倍率 +70%
-      const consumed = consumeTerrainsForPioneer(gs, eff.consumeCount || 2);
-      multiplierBonus = (eff.perConsumeMultiplier || 0.7) * consumed;
-    } else if (eff?.type === 'damage_modifier_self') {
-      // 众愿（SKL-A-007）：本日内我方火元素伤害 +20%，其余元素及物理 -10%（DaySystem 跨天重置）
-      if (!gs.team) gs.team = {};
-      gs.team.allWishesActive = true;
-      devLog.info('[SkillSystem] 众愿：本日火伤 +20% / 其余 -10% 已生效');
-    }
-
-    const effSkill = multiplierBonus > 0
-      ? { ...skill, damageMultiplier: skill.damageMultiplier + multiplierBonus }
-      : skill;
-
-    const hits = skill.hits || 1;
-
-    // B-9：逐目标结算（单体技能 targetList.length === 1）
-    for (const t of targetList) {
-      if (t.hp <= 0) continue;
-      for (let h = 0; h < hits; h++) {
-        const result = CombatSystem.calculateDamage({
-          atk: gs.player.atk,
-          skill: effSkill,
-          defender: t,
-          element: skill.element,
-          realDamage: !!skill.realDamage,
-          player: gs.player,
-          gs,
-          roleId: skill.roleId,
-          attackerRoleId: skill.roleId,
-        });
-        if (result.immune) break;
-        if (t.hp <= 0) break;
-      }
-
-      // 目标类额外效果（如 apply_buff：风止的虚弱对每个目标施加）
-      applySkillExtraEffects(gs, skill, t, hookName, 'perTarget');
-
-      if (t.hp <= 0) {
-        defeatCreature(gs, t);
-      }
-    }
-
-    // 自身类额外效果（每次触发仅一次，如拼命的 self_hp_drain）
-    applySkillExtraEffects(gs, skill, target, hookName, 'self');
+  // ── 伤害前生效的额外效果 ──
+  let multiplierBonus = 0;
+  if (eff?.type === 'pioneer_multiplier') {
+    // 开拓（SKL-A-003）：攻击前随机消耗地形，每消耗 1 块本次攻击倍率 +70%
+    const consumed = consumeTerrainsForPioneer(gs, eff.consumeCount || 2);
+    multiplierBonus = (eff.perConsumeMultiplier || 0.7) * consumed;
+  } else if (eff?.type === 'damage_modifier_self') {
+    // 众愿（SKL-A-007）：本日内我方火元素伤害 +20%，其余元素及物理 -10%（DaySystem 跨天重置）
+    if (!gs.team) gs.team = {};
+    gs.team.allWishesActive = true;
+    devLog.info('[SkillSystem] 众愿：本日火伤 +20% / 其余 -10% 已生效');
   }
+
+  const multiplier = skill.damageMultiplier + multiplierBonus;
+  const hits = skill.hits || 1;
+
+  // ── 结算：只产出意图，判重 / 应用 / 死亡全部交给批次与死亡队列 ──
+  let hitCount = 0;
+  if (judgeMode === 'tile') {
+    // tile 型：锚点格 → 地块集合 → 碰撞框取生物（跨格按实例去重）→ 同一批次
+    const tiles = tileRefsForSkill(gs, skill, {
+      skillTileIdx: tileIdx,
+      ...tileAnchorParams(gs, skill, anchor, primaryEntry),
+    });
+    const entries = tileTargetsOf(settlement, skill, tiles);
+    if (multiplier > 0) {
+      registerDamage(settlement, entries, { multiplier, element: skill.element, hits, key: skill.id });
+    }
+    hitCount = entries.length;
+    devLog.info('[SkillSystem]', skill.name, 'tile 结算', tiles.length, '格 →', entries.length, '名目标');
+  } else {
+    // target 型：主目标集合已由 selectSkillTargets 按中心点距离 / 随机选出
+    for (const entry of primaryEntries) {
+      const live = liveById(gs, entry.id);
+      if (!live) continue;
+      // 纯 buff / 自身效果型技能（damageMultiplier = 0）不登记伤害，只登记目标类 buff
+      if (multiplier > 0) {
+        registerDamage(settlement, [entry], { multiplier, element: skill.element, hits, key: skill.id });
+      }
+      // 目标类额外效果（buff/debuff 也登记进同一批次，相同 buffId 取最高）
+      applySkillExtraEffects(gs, skill, live, hookName, 'perTarget', settlement.batch);
+      hitCount += 1;
+    }
+  }
+
+  // 批次末统一应用（按登记顺序）+ flush 死亡（掉落 / 移除只结算一次）
+  const { summary, deaths } = commitSettlement(settlement);
+
+  // 自身类额外效果：每次触发一次，且必须在伤害之后（如拼命的 self_hp_drain）
+  applySkillExtraEffects(gs, skill, primaryLive, hookName, 'self', null);
+
+  devLog.info('[SkillSystem]', skill.name, '结算完成：目标', hitCount,
+    '伤害组', summary.damages.length, 'buff组', summary.buffs.length, '击败', deaths.defeated.length);
 
   // 设置 cooldown（按技能卡独立）
   if (cdKey && skill.cooldown && skill.cooldown > 0) {
@@ -288,14 +201,15 @@ function fireOneSkill(gs, skill, targets, cdKey, hookName = 'onEnter', tileIdx =
   }
 
   if (!skill.isLinkSkill) {
-    LinkSkillSystem.onSkillFired(gs, { roleId: skill.roleId, skillId: skill.id, skill, target });
+    LinkSkillSystem.onSkillFired(gs, { roleId: skill.roleId, skillId: skill.id, skill, target: displayTarget });
   }
 }
 
 /**
  * @param {string} phase 'all'（兼容旧调用）| 'perTarget'（目标类，逐目标）| 'self'（自身类，每次触发一次）
+ * @param {object|null} batch 传入 EffectBatch 时 buff 登记进批次（批次末统一应用），null 时立即应用
  */
-function applySkillExtraEffects(gs, skill, target, hookName = 'onEnter', phase = 'all') {
+function applySkillExtraEffects(gs, skill, target, hookName = 'onEnter', phase = 'all', batch = null) {
   const eff = skill.extraEffect;
   if (!eff) return;
   const isSelfPhase = phase === 'all' || phase === 'self';
@@ -334,6 +248,14 @@ function applySkillExtraEffects(gs, skill, target, hookName = 'onEnter', phase =
             devLog.info('[SkillSystem] 引燃【受祝福】燃烧翻倍 →', pick.kind, burn.remainingTurns);
           }
         }
+        break;
+      }
+      // 目标类 buff 登记进同一结算批次（同「目标 + buffId」取最高强度 / 最长时长）
+      if (batch) {
+        batch.buff(target, eff.buffId, {
+          strength: eff.strength,
+          duration: eff.duration,
+        });
         break;
       }
       CombatSystem.applyBuff({
@@ -381,22 +303,6 @@ function applySkillExtraEffects(gs, skill, target, hookName = 'onEnter', phase =
       // 特殊结算路径已处理
       break;
   }
-}
-
-function defeatCreature(gs, target) {
-  devLog.info('[SkillSystem] creature defeated:', target.kind);
-  EventBus.emit(GE.CREATURE_DEFEATED, { creature: target });
-  EventBus.emit(GE.TOAST_SHOW, { text: `✓ 击败 ${target.name || target.kind}`, duration: 1500 });
-
-  for (const t of gs.map.fence) {
-    t.creatures = (t.creatures || []).filter(cid => cid !== target.id);
-  }
-  gs.creatures = gs.creatures.filter(c => c.id !== target.id);
-
-  CreatureSystem.grantKillDrops(gs, target); // 击杀掉落（物品库 BIO drops）
-
-  HookDispatcher.fire('onCreatureDefeated', { gs, creature: target });
-  TalentSystem.onCreatureDefeated(gs, target);
 }
 
 /**

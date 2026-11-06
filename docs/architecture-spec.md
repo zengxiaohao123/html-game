@@ -461,3 +461,73 @@ dq.flush();            // 批次 / 回合末统一处理
 ### 7.4 验收
 
 `node tools/smoke-effectbatch.mjs`：51 条断言，覆盖重复登记取最高、同一目标被两个地块命中只结算一次、`hits` 不按格放大、同名 buff 取最高强度 + 最长时长、已存在 buff 不叠加、死亡延迟到批次末、掉落只结算一次、已死目标不被二次结算、空批次安全、commit 后复用抛错。
+
+---
+
+## 八、技能结算流水线（SkillResolve，阶段 3 已接线）
+
+> 对应《空间碰撞与时序方案》§2.8（judgeMode）、§3.2 ⑦c、§3.5、§3.6、§12.3。
+> 实现：`src/systems/SkillResolve.js`；接线：`SkillSystem.fireOneSkill` / `LinkSkillSystem.resolveLinkSkill` / `TurnSystem` 燃烧 tick。
+
+### 8.1 judgeMode —— 每个技能必填，禁止混合模式
+
+技能定义（`src/data/characters.js`）必须声明 `judgeMode: 'tile' | 'target'`：
+
+- `tile` 型额外声明 `anchor` + `areaShape`（+ `circle` / `line` 的 `areaRadius`）；
+- `target` 型只声明 `targetCount` / `targetSelection`（默认 `nearest`）。
+
+`judgeModeOf(skill)` 缺失 / 非法直接抛错（不做兜底猜模式）；`validateSkillJudgeModes()` 返回 `{ total, tile, target, issues }` 供数据巡检与冒烟。
+
+当前 20 条技能：**target 15 条 / tile 5 条**（tile = 开拓、爆炸狂欢、合纵连横、焚灭、风暴眼）。
+
+### 8.2 结算作用域：一次结算一份快照
+
+```js
+import { createSettlement, commitSettlement, registerDamage } from '../systems/SkillResolve.js';
+
+const settlement = createSettlement(gs, { skillId, instanceKey, phase, roleId, attackerRoleId });
+// settlement = { snapshot, batch, deathQueue, friendlyAsEnemyToday, committed }
+const targets = tileTargetsOf(settlement, skill, tileRefs);   // 只读 snapshot
+registerDamage(settlement, targets, { multiplier, element, hits, key });
+commitSettlement(settlement);   // batch.commit() → deathQueue.flush()
+```
+
+- 结算入口先 `snapshotGeometry(gs)`，整批判定（距离 / 覆盖 / 索敌 / 范围）只读该快照；
+  快照不跨回合、不跨帧复用（每次技能触发 / 连携技 / 回合 tick 各自新建）。
+- HP / buff 等状态按最新值读取（集合先定，效果后算）。
+- `settling` 只存在于同步结算调用栈内；本模块不持有异步状态，不延伸进动画 / 飞字 / 面板。
+
+### 8.3 tile 流水线
+
+`枚举地块 → creaturesInTiles(snapshot, refs) → 按实例去重 → 全部登记进同一个 EffectBatch → commit → flush`
+
+| 形状 | 枚举口径 |
+|---|---|
+| `circle` | 地块**中心点**到锚点（目标 / 技能格中心）距离 ≤ `areaRadius` |
+| `rowColumn` | 技能所在外圈格 → 栅栏行 + 列；贴外圈时越界轴自动略去 |
+| `line` | 地块中心点到线段（玩家格中心 → 锁定目标中心）距离 ≤ `areaRadius`（半宽） |
+
+跨两格生物只登记一次（`creaturesInTiles` 按实例去重）；同一生物被多个受影响格命中由 `EffectBatch` 键二次兜底，不叠伤害。
+
+口径变化（相对旧实现）：`circle 1` 按圆面积覆盖为十字 5 格（旧为方形 9 格）；`开拓 0.3` 按文档补齐为同格范围。
+
+### 8.4 target 流水线
+
+- 参照点：主动技能 = 技能所在地块中心；连携技 = 实例所在地块中心（§12.3）。
+- 未明确索敌的技能一律 `nearestCreatureTo` 语义：中心点直线距离最近存活敌人，并列按栅栏格线性下标升序、再按实例 id；
+- 明确「随机」的（风止、风暴眼锁定）保留随机；
+- 明确集合的（炽燃 = 燃烧集合内最近 3、弱点击破 = 蓄力集合内最近）先定集合并按距离排序；
+- 方位（左侧 / 右侧）= 比较生物**中心点 x**（`isSourceLeftOfTarget`），不用格索引 / 行列入参；
+- 圆-圆接触（追猎弹射）：`dist(圆心, 锚点) ≤ 半径 + 该生物半径`。
+
+### 8.5 死亡延迟改造点（阶段 3）
+
+| 位置 | 改造 |
+|---|---|
+| `SkillSystem.fireOneSkill` | 删除 `defeatCreature`；击杀由 `EffectBatch.commit()` → `deathQueue.markDead()`，`commitSettlement` 统一 `flush()` |
+| `LinkSkillSystem.resolveLinkSkill` | 删除 `dealLinkSkillDamage` 的即时删除与掉落；同一批次 commit + flush |
+| `TurnSystem.advanceTurn` 燃烧 tick | 遍历 `gs.creatures.slice()`，hp 归零只 `markDead`，循环结束后 `flush()`（修复遍历中途删对象导致的漏算 / 重复掉落） |
+
+### 8.6 验收
+
+`node tools/smoke-skill-geometry.mjs`：73 条断言，覆盖行/列跨两格只结算一次、两格命中不叠加、相邻两格各一只都命中、circle / line 地块枚举、最近敌人与并列次序、方位按中心点 x、批次中途死亡后续分组跳过 + 掉落一次、`SkillSystem` / `LinkSkillSystem` / 回合 tick 三条真实接线、judgeMode 全覆盖（20 = 15 + 5）与非法定义抛错。

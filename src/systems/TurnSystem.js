@@ -8,7 +8,7 @@ import { MIN_STAMINA } from '../utils/constants.js';
 import { CombatSystem } from './CombatSystem.js';
 import { SkillSystem } from './SkillSystem.js';
 import { LinkSkillSystem } from './LinkSkillSystem.js';
-import { CreatureSystem } from './CreatureSystem.js';
+import { PendingDeathQueue } from './PendingDeathQueue.js';
 
 /** 心力交瘁 debuff id */
 export const BUFF_EXHAUSTED = 'exhausted';
@@ -51,20 +51,18 @@ export function advanceTurn(gs, cost = 1) {
   }
 
   // Phase 3：回合推进时 tick 所有生物身上的 buff（burn 每回合流失 3% hp 等）
-  for (const c of gs.creatures) {
+  // §3.5：死亡延迟 —— 遍历期间不删对象，hp 归零只入队，批次（回合 tick）末统一 flush，
+  // 修复"遍历中途从 gs.creatures 删除导致漏算 / 重复掉落"
+  const burnDeaths = new PendingDeathQueue(gs);
+  for (const c of gs.creatures.slice()) {
     if (c.hp <= 0) continue;
     CombatSystem.tickBuffsOnTarget(c);
     if (c.hp <= 0) {
-      // 燃烧致死：直接移除
       devLog.info('[TurnSystem] creature died from burn:', c.kind, c.id);
-      for (const t of gs.map.fence) {
-        t.creatures = (t.creatures || []).filter(id => id !== c.id);
-      }
-      gs.creatures = gs.creatures.filter(cc => cc.id !== c.id);
-      EventBus.emit(GE.CREATURE_DEFEATED, { creature: c, killedBy: 'burn' });
-      CreatureSystem.grantKillDrops(gs, c); // 击杀掉落（燃烧致死同样发放）
+      burnDeaths.markDead(c);
     }
   }
+  burnDeaths.flush();
 
   // Phase 3：技能 cooldown 递减
   SkillSystem.advanceSkillCooldowns(gs);

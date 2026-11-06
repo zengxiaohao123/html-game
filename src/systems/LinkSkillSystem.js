@@ -20,10 +20,23 @@ import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { getSkill, SKILLS } from '../data/characters.js';
-import { Distance } from '../core/Distance.js';
-import { CombatSystem } from './CombatSystem.js';
-import { TalentSystem } from './TalentSystem.js';
-import { CreatureSystem } from './CreatureSystem.js';
+import {
+  createSettlement,
+  commitSettlement,
+  judgeModeOf,
+  liveById,
+  enemyPool,
+  orderByDistance,
+  selectNearestEnemies,
+  selectRandomEnemies,
+  entriesNearPoint,
+  instanceAnchor,
+  playerAnchor,
+  circleTileRefs,
+  lineTileRefs,
+  tileTargetsOf,
+  registerDamage,
+} from './SkillResolve.js';
 
 export const WINDOW_MS = 8000; // 8 秒实时窗口
 
@@ -284,38 +297,19 @@ function recordStormEyeElement(gs, element) {
   }
 }
 
-// ── C-2 范围语义辅助 ──
+// ── 结算辅助 ──────────────────────────────────────────────
 
-/** 找到包含指定生物的围栏格 */
-function findFenceTileOfCreature(gs, creatureId) {
-  for (const t of gs.map.fence) {
-    if ((t.creatures || []).includes(creatureId)) return t;
-  }
-  return null;
+/** 连携技参照点（§12.3）：实例所在地块中心；未带 tileIdx 时退回玩家格中心 */
+function linkAnchorOf(gs, ctx) {
+  if (typeof ctx?.tileIdx === 'number') return instanceAnchor(gs, ctx.tileIdx);
+  return playerAnchor(gs);
 }
 
-/** 收集若干围栏格内的全部存活生物（去重） */
-function collectCreaturesInTiles(gs, tiles) {
-  const seen = new Set();
-  const out = [];
-  for (const t of tiles) {
-    for (const cid of (t.creatures || [])) {
-      if (seen.has(cid)) continue;
-      const c = gs.creatures.find(cc => cc.id === cid);
-      if (c && c.hp > 0) { seen.add(cid); out.push(c); }
-    }
-  }
-  return out;
-}
-
-/** 点 (px,py) 到线段 (ax,ay)-(bx,by) 的距离 */
-function pointSegDist(px, py, ax, ay, bx, by) {
-  const dx = bx - ax, dy = by - ay;
-  const len2 = dx * dx + dy * dy;
-  if (len2 === 0) return Math.hypot(px - ax, py - ay);
-  let t = ((px - ax) * dx + (py - ay) * dy) / len2;
-  t = Math.max(0, Math.min(1, t));
-  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+/** 快照条目对应的活体是否带有指定 buff（集合先定：几何读快照，状态读最新） */
+function entryHasBuff(gs, entry, buffId) {
+  const live = liveById(gs, entry.id);
+  if (!live || !Array.isArray(live.activeBuffs)) return false;
+  return live.activeBuffs.some(b => b.id === buffId);
 }
 
 /**
@@ -393,7 +387,8 @@ export function fireLinkSkill(gs, key) {
   const skill = getSkill(entry.skillId);
   if (!skill) return { ok: false, message: 'skillNotFound' };
 
-  const ctx = { ...(entry.context || {}), instanceKey: entry.key };
+  // ctx.tileIdx：连携技实例所在地块 —— 目标型索敌的参照点（§12.3）
+  const ctx = { ...(entry.context || {}), instanceKey: entry.key, tileIdx: entry.tileIdx };
   const result = resolveLinkSkill(gs, skill, ctx);
 
   // 冷却：剩余回合数（TurnSystem.advanceTurn 每回合 -1；跨天不清零 —— §12.7）
@@ -407,18 +402,33 @@ export function fireLinkSkill(gs, key) {
 /**
  * 结算连携技 —— 按 characters.js 里的 triggerCondition / extraEffect
  */
-function resolveLinkSkill(gs, skill, ctx) {
+export function resolveLinkSkill(gs, skill, ctx = {}) {
   devLog.info('[LinkSkillSystem.resolve]', skill.name, 'ctx=', ctx);
   EventBus.emit(GE.TOAST_SHOW, { text: `💥 连携技：${skill.name}！`, duration: 1500 });
 
-  // 找到 fence 里所有 creature
-  const allCreatures = [];
-  for (const t of gs.map.fence) {
-    for (const cid of (t.creatures || [])) {
-      const c = gs.creatures.find(cc => cc.id === cid);
-      if (c) allCreatures.push(c);
-    }
-  }
+  // §3.2 ⑦c / §3.6：一次结算一份快照 —— 本次连携技的判定几何只读这份
+  const judgeMode = judgeModeOf(skill);
+  const settlement = createSettlement(gs, {
+    skillId: skill.id,
+    instanceKey: ctx.instanceKey || `link:${skill.id}`,
+    phase: 'link',
+    roleId: skill.roleId,
+    attackerRoleId: skill.roleId,
+  });
+  const anchor = linkAnchorOf(gs, ctx);
+  const eff = skill.extraEffect || {};
+  let hitCount = 0;
+  let clearStormEyeElements = false;
+
+  /** 登记伤害（跨格 / 重复目标由批次去重；同一目标多段合并） */
+  const register = (entries, opts = {}) => {
+    const applied = registerDamage(settlement, entries, {
+      element: skill.element,
+      ...opts,
+    });
+    hitCount += applied.length;
+    return applied;
+  };
 
   switch (skill.id) {
     case 'skill_link_yumo_drain': {
@@ -431,13 +441,14 @@ function resolveLinkSkill(gs, skill, ctx) {
     }
 
     case 'skill_link_xiayang_scorch': {
-      // 炽燃（SKL-L-004）：对 burn 的至多 3 名敌人 70% 火伤；无则 1 名
-      // C-3：文档无「额外施加燃烧」效果，移除原 applyBuff burn 1
-      const burned = allCreatures.filter(c => isTargetBurned(c));
-      const targets = burned.length > 0 ? burned.slice(0, 3) : (allCreatures.length > 0 ? [allCreatures[0]] : []);
-      for (const t of targets) {
-        dealLinkSkillDamage(gs, skill, t, 'xiayang');
-      }
+      // 炽燃（SKL-L-004）：燃烧集合内**最近**至多 3 名敌人 70% 火伤；无燃烧目标则最近 1 名
+      // C-3：文档无「额外施加燃烧」效果，不施加 burn
+      const burned = enemyPool(settlement.snapshot).filter(e => entryHasBuff(gs, e, 'burn'));
+      const targets = burned.length > 0
+        ? orderByDistance(burned, anchor, settlement.snapshot).slice(0, eff.maxTargetsWithBurn || 3)
+        : selectNearestEnemies(settlement.snapshot, anchor, { count: 1 });
+      register(targets, { multiplier: skill.damageMultiplier, key: skill.id });
+      devLog.info('[LinkSkill] 炽燃 燃烧集合', burned.length, '→ 命中', targets.length);
       break;
     }
 
@@ -445,87 +456,76 @@ function resolveLinkSkill(gs, skill, ctx) {
       // 焚灭：计数 -3 或 -7，一段 140% 小范围 / 二段 260% 超大范围
       // 计数按放置实例独立（ctx.instanceKey）
       const tier = ctx.tier || 1;
-      const eff = skill.extraEffect || {};
-      const multiplier = tier === 2 ? eff.tier2Multiplier : eff.tier1Multiplier;
-      const radius = tier === 2 ? eff.tier2Radius : eff.tier1Radius;
+      const cEff = skill.extraEffect || {};
+      const multiplier = tier === 2 ? cEff.tier2Multiplier : cEff.tier1Multiplier;
+      const radius = tier === 2 ? cEff.tier2Radius : cEff.tier1Radius;
 
       const counter = ctx.instanceKey ? getCounter(gs, ctx.instanceKey) : null;
       const currentCount = counter ? counter.count : 0;
-      const tierCost = tier === 2 ? (eff.countPerTierTwo || 7) : (eff.countPerTierUse || 3);
+      const tierCost = tier === 2 ? (cEff.countPerTierTwo || 7) : (cEff.countPerTierUse || 3);
       if (counter) counter.count = Math.max(0, currentCount - tierCost);
       devLog.info('[LinkSkill] 焚灭 tier', tier, 'consume', tierCost, 'remaining', counter ? counter.count : 0);
 
-      // C-2（SKL-L-002）：以触发目标所在围栏格为中心，欧氏距离 ≤ radius 的围栏格内生物吃伤害
+      // C-2（SKL-L-002）：tile 型 —— 锚点 = 目标**中心点**，枚举地块中心距 ≤ radius 的格子
       // 半径 0.4 → 仅同格（相邻格中心距 = 1）；半径 1.5 → 含对角（√2 ≈ 1.414）
-      const centerTile = findFenceTileOfCreature(gs, ctx.targetCreatureId)
-        || (allCreatures.length > 0 ? findFenceTileOfCreature(gs, allCreatures[0].id) : null);
-      if (!centerTile) break;
-      const nearTiles = gs.map.fence.filter(t =>
-        Math.hypot(t.row - centerTile.row, t.col - centerTile.col) <= radius);
-      const targets = collectCreaturesInTiles(gs, nearTiles);
-      for (const c of targets) {
-        dealLinkSkillDamage(gs, { ...skill, damageMultiplier: multiplier }, c, 'xiayang');
-      }
+      const targetEntry = (ctx.targetCreatureId
+        ? settlement.snapshot.creatures.find(e => e.id === ctx.targetCreatureId)
+        : null) || selectNearestEnemies(settlement.snapshot, anchor, { count: 1 })[0];
+      if (!targetEntry) break;
+      const nearTiles = circleTileRefs(gs, { x: targetEntry.x, y: targetEntry.y }, radius);
+      const targets = tileTargetsOf(settlement, skill, nearTiles);
+      register(targets, { multiplier, key: skill.id });
       devLog.info('[LinkSkill] 焚灭 tier', tier, '半径', radius, '命中格', nearTiles.length, '目标', targets.length);
       break;
     }
 
     case 'skill_link_luyouyou_weak_point': {
-      // 弱点击破：敌人蓄力时 70% 物理 + 3 回合虚弱 25% + 本次暴击率 +100%
-      const target = allCreatures.find(c => isTargetCharging(c)) || (allCreatures.length > 0 ? allCreatures[0] : null);
-      if (target) {
+      // 弱点击破：蓄力集合内**最近** 1 名 70% 物理 + 3 回合虚弱 25% + 本次暴击率 +100%
+      const charging = enemyPool(settlement.snapshot).filter(e => entryHasBuff(gs, e, 'charge'));
+      const targetEntry = orderByDistance(charging, anchor, settlement.snapshot)[0]
+        || selectNearestEnemies(settlement.snapshot, anchor, { count: 1 })[0];
+      if (targetEntry) {
+        const live = liveById(gs, targetEntry.id);
         // C-1（SKL-L-004）：本次暴击率 +100% 走真实暴击判定（CombatSystem 消费该字段），
         // 不再用伤害 ×1.5 捷径 —— 可正常触发 onCrit（比翼 / 风息元素转换联动）
         if (!gs.team) gs.team = {};
         gs.team.luyouyouNextCritBonus = Math.max(gs.team.luyouyouNextCritBonus || 0, 1.0);
-        CombatSystem.calculateDamage({
-          atk: gs.player.atk,
-          skill,
-          defender: target,
-          element: 'physical',
-          player: gs.player,
-          gs,
-          roleId: 'luyouyou',
-          attackerRoleId: 'luyouyou',
-        });
-        CombatSystem.applyBuff({ buffId: 'weakened', target, duration: 3, params: { strength: 0.25 } });
+        register([targetEntry], { multiplier: skill.damageMultiplier, key: skill.id });
+        if (live) settlement.batch.buff(live, 'weakened', { strength: eff.strength ?? 0.25, duration: eff.duration ?? 3 });
       }
       break;
     }
 
     case 'skill_link_luyouyou_storm_eye': {
-      // 风暴眼（SKL-L-007）：锁定随机 1 名敌人，龙卷风从玩家位置沿直线飞向该敌人，
-      // C-2：对线段经过（格子中心到线段距离 ≤ 0.5）的所有敌人 80% 风伤 + 清空该实例计数
-      if (allCreatures.length > 0) {
-        const lockTarget = allCreatures[Math.floor(Math.random() * allCreatures.length)];
-        const start = Distance.outerIdxToXY(gs.map.size, gs.player.x);
-        const tx = lockTarget.col + 1, ty = lockTarget.row + 1;
-        for (const c of allCreatures) {
-          const cx = c.col + 1, cy = c.row + 1;
-          const d = start ? pointSegDist(cx, cy, start.x, start.y, tx, ty) : 0;
-          if (d <= 0.5) {
-            dealLinkSkillDamage(gs, skill, c, 'luyouyou', { overrideElement: 'wind' });
-          }
-        }
+      // 风暴眼（SKL-L-007）：随机锁定 1 名敌人，龙卷风从玩家格中心沿直线飞向目标中心；
+      // tile 型：线段经过（地块中心到线段距离 ≤ areaRadius）的地块内所有生物吃 80% 风伤
+      const lockEntry = selectRandomEnemies(settlement.snapshot, { count: 1 })[0];
+      if (lockEntry) {
+        const from = playerAnchor(gs);
+        const nearTiles = lineTileRefs(gs, from, { x: lockEntry.x, y: lockEntry.y }, skill.areaRadius ?? 0.5);
+        const targets = tileTargetsOf(settlement, skill, nearTiles);
+        register(targets, { multiplier: skill.damageMultiplier, element: 'wind', key: skill.id });
+        devLog.info('[LinkSkill] 风暴眼 锁定', lockEntry.id, '线带', nearTiles.length, '格 →', targets.length, '目标');
       }
-      // 清空该实例的元素累计（不影响其他实例 / 天赋用的 team.dailyElementDamages）
-      if (ctx.instanceKey) getCounter(gs, ctx.instanceKey).elements = [];
+      // 清空该实例的元素累计（在批次提交后执行，避免本次伤害又把元素记回去）
+      if (ctx.instanceKey) clearStormEyeElements = true;
       break;
     }
 
     case 'skill_link_luyouyou_hunt': {
-      // 追猎：上一次攻击的目标 → 3 次弹射 20% 物理；允许重复弹射
-      let lastTarget = allCreatures.find(c => c.id === ctx.targetCreatureId);
-      if (!lastTarget && allCreatures.length > 0) lastTarget = allCreatures[0];
-      if (!lastTarget) break;
+      // 追猎：上一次攻击的目标 → 3 次弹射 20% 物理；允许重复弹射（每次独立伤害键）
+      let cur = (ctx.targetCreatureId
+        ? settlement.snapshot.creatures.find(e => e.id === ctx.targetCreatureId)
+        : null) || selectNearestEnemies(settlement.snapshot, anchor, { count: 1 })[0];
+      if (!cur) break;
 
-      let cur = lastTarget;
-      for (let i = 0; i < 3; i++) {
-        dealLinkSkillDamage(gs, skill, cur, 'luyouyou', { overrideMultiplier: skill.damageMultiplier });
-        // C-2（SKL-L-006）：每次弹射以当前目标为中心半径 0.3 格内（含自身）随机 1 名敌人
-        // —— 围栏格中心距最小为 1，半径 0.3 内候选即当前目标同围栏格的存活生物
-        const curTile = findFenceTileOfCreature(gs, cur.id);
-        const candidates = curTile ? collectCreaturesInTiles(gs, [curTile]) : [];
+      const bounceCount = eff.bounceCount || 3;
+      const bounceRadius = eff.bounceRadius ?? 0.3;
+      for (let i = 0; i < bounceCount; i++) {
+        // 每次弹射独立 key，允许同一目标被多次弹射（不叠加、但逐段结算）
+        register([cur], { multiplier: skill.damageMultiplier, key: `bounce:${i}` });
+        // C-2 / characters.js note：以当前目标**中心点**为锚点、0.3 圆-圆接触半径内随机 1 名（含自身）
+        const candidates = entriesNearPoint(settlement.snapshot, { x: cur.x, y: cur.y }, bounceRadius);
         if (candidates.length > 0) {
           cur = candidates[Math.floor(Math.random() * candidates.length)];
         }
@@ -536,57 +536,37 @@ function resolveLinkSkill(gs, skill, ctx) {
     }
 
     case 'skill_link_luyouyou_rise_wind': {
-      // 风起：对 1 名敌人 15% 风伤 + 3 回合 30% 易伤
-      const target = allCreatures.find(c => c.id === ctx.targetCreatureId) || (allCreatures.length > 0 ? allCreatures[0] : null);
-      if (target) {
-        dealLinkSkillDamage(gs, skill, target, 'luyouyou', { overrideElement: 'wind' });
-        CombatSystem.applyBuff({ buffId: 'vulnerable', target, duration: 3, params: { strength: 0.30 } });
+      // 风起：对 1 名敌人（触发目标优先，否则最近）15% 风伤 + 3 回合 30% 易伤
+      const targetEntry = (ctx.targetCreatureId
+        ? settlement.snapshot.creatures.find(e => e.id === ctx.targetCreatureId)
+        : null) || selectNearestEnemies(settlement.snapshot, anchor, { count: 1 })[0];
+      if (targetEntry) {
+        const live = liveById(gs, targetEntry.id);
+        register([targetEntry], { multiplier: skill.damageMultiplier, element: 'wind', key: skill.id });
+        if (live) settlement.batch.buff(live, 'vulnerable', { strength: eff.strength ?? 0.30, duration: eff.duration ?? 3 });
       }
       break;
     }
 
     case 'skill_link_shift': {
-      // 移形（SKL-L-008）：对 1 名敌人 50% 物理伤害；本日内每经过 1 格倍率 +5%（按结算时的今日累计移动距离）
-      const target = allCreatures.length > 0 ? allCreatures[0] : null;
-      if (target) {
-        const eff = skill.extraEffect || {};
+      // 移形（SKL-L-008）：对 1 名敌人（最近）50% 物理伤害；本日内每经过 1 格倍率 +5%
+      const targetEntry = selectNearestEnemies(settlement.snapshot, anchor, { count: 1 })[0];
+      if (targetEntry) {
         const dist = gs.team?.dailyDistanceMoved || 0;
         const multiplier = (eff.base ?? skill.damageMultiplier) + (eff.perTile ?? 0.05) * dist;
         devLog.info('[LinkSkill] 移形 今日移动', dist, '格 → 倍率', multiplier.toFixed(2));
-        dealLinkSkillDamage(gs, { ...skill, damageMultiplier: multiplier }, target, null);
+        register([targetEntry], { multiplier, key: skill.id });
       }
       break;
     }
   }
-}
 
-/**
- * 对 creature 造成一次技能伤害（内部 helper）
- */
-function dealLinkSkillDamage(gs, skill, target, attackerRoleId, opts = {}) {
-  if (!target || target.hp <= 0) return;
-  const dmg = CombatSystem.calculateDamage({
-    atk: gs.player.atk,
-    skill,
-    defender: target,
-    element: opts.overrideElement || skill.element,
-    player: gs.player,
-    gs,
-    roleId: attackerRoleId,
-    attackerRoleId,
-  });
-  if (target.hp <= 0) {
-    // 击败了 —— fire 击败逻辑（TalentSystem.onCreatureDefeated 会 fire 好奇心）
-    devLog.info('[LinkSkill] defeated', target.kind);
-    EventBus.emit(GE.CREATURE_DEFEATED, { creature: target });
-    for (const t of gs.map.fence) {
-      t.creatures = (t.creatures || []).filter(cid => cid !== target.id);
-    }
-    gs.creatures = gs.creatures.filter(c => c.id !== target.id);
-    CreatureSystem.grantKillDrops(gs, target); // 击杀掉落（物品库 BIO drops）
-    TalentSystem.onCreatureDefeated(gs, target);
-  }
-  return dmg;
+  // 批次末统一应用（登记顺序）+ flush 死亡（掉落 / 移除只结算一次）
+  const { summary, deaths } = commitSettlement(settlement);
+  if (clearStormEyeElements) getCounter(gs, ctx.instanceKey).elements = [];
+  devLog.info('[LinkSkill]', skill.name, '结算完成：', summary.damages.length, '伤害组 /',
+    summary.buffs.length, 'buff组 / 击败', deaths.defeated.length);
+  return { judgeMode, hitCount, batch: summary, deaths: deaths.defeated };
 }
 
 /**
