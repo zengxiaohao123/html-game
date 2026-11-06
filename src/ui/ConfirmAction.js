@@ -1,22 +1,20 @@
 // src/ui/ConfirmAction.js
-// 统一「二次确认」交互规范 —— 全项目唯一实现，所有面板 / 按钮 / 快捷键复用，
+// 统一「二次确认」交互规范 —— 全项目唯一实现，所有面板 / 弹窗选项复用，
 // 禁止各面板自己再写一套 armed / 计时器逻辑（商店「离开」按钮为已定稿例外，保持原实现）。
 //
 // 规范（§16.4 / §16.10 / §16.16 / §16.21）：
-//   ① 首次点击：按钮进入待确认态 —— 底色变化 + 紧邻位置出现「你确定这么做？」
+//   ① 需确认的动作先进入文字弹窗（DialogBox），在弹窗内点目标选项才进入待确认态：
+//      按钮底色变化 + 弹窗内出现「你确定这么做？」（不允许在图标旁 / 屏幕角落出现行内提示）
 //   ② 二次点击：同一 tick 立即执行业务回调（不许延迟、不许先复原再执行）
-//   ③ 执行后：目标面板 / 卡片在 1.5 秒内淡出，期间 pointer-events:none，重复点击无效
+//   ③ 执行后：弹窗 / 卡片在 1.5 秒内淡出，期间 pointer-events:none，重复点击无效
 //   ④ 首次点击后点别处（空白 / 切 tab / 其它按钮）：取消待确认态并复原
-//   ⑤ 快捷键与按钮共用同一状态机（不允许「按钮要确认、快捷键一键生效」的双标）
+//   ⑤ 快捷键与鼠标点击共用同一入口（睡觉 P 键与按钮都先弹同一个文字弹窗）
 //
 // 用法：
-//   ConfirmAction.arm(btn);                                   // 进入待确认
+//   ConfirmAction.arm(btn, { hintEl });                        // 进入待确认（hintEl = 弹窗内提示元素）
 //   ConfirmAction.trigger(btn, onConfirm, { fadeTarget });    // 二次点击 → 立即执行 + 淡出
-//   ConfirmAction.bindKey('sleep', btn, run);                 // 注册快捷键入口
-//   ConfirmAction.keyTrigger('sleep');                        // 快捷键按下（首次 arm / 二次 trigger）
 //   ConfirmAction.handleOutsideClick(target);                 // 点别处取消（document 捕获阶段自动挂）
 
-import { createEl } from './dom.js';
 import { devLog } from '../core/Logger.js';
 
 export const CONFIRM_TEXT = '你确定这么做？';
@@ -26,10 +24,8 @@ export const CONFIRM_DONE_BG = '#f7e6a8'; // 已确认（淡出中）：淡金�
 
 const STYLE_KEYS = ['background', 'borderColor', 'boxShadow', 'pointerEvents', 'cursor'];
 
-/** @type {Map<object, {btn:object, phase:'armed'|'done', orig:object, hint:object|null, ownedHint:boolean, fadeTimer:any, fadeMs:number, onFaded?:Function}>} */
+/** @type {Map<object, {btn:object, phase:'armed'|'done', orig:object, hint:object|null, fadeTimer:any, fadeMs:number}>} */
 const records = new Map();
-/** 快捷键动作 → { btn, run, opts } */
-const keyBindings = new Map();
 let _guardInstalled = false;
 
 function snapshot(btn) {
@@ -66,50 +62,15 @@ function applyDoneStyle(btn) {
 }
 
 function ensureHint(rec, opts) {
-  // 复用调用方提供的提示元素（如 DialogBox 的选项下方小字），否则自动在按钮上创建
-  if (opts.hintEl) {
-    rec.hint = opts.hintEl;
-    rec.ownedHint = false;
-    rec.hint.textContent = opts.text || CONFIRM_TEXT;
-    rec.hint.style.display = 'block';
-    return;
-  }
-  if (!rec.hint) {
-    rec.hint = createHintElement(rec.btn);
-    rec.ownedHint = true;
-  }
-  if (rec.hint) {
-    rec.hint.textContent = opts.text || CONFIRM_TEXT;
-    rec.hint.style.display = 'block';
-  }
-}
-
-function createHintElement(btn) {
-  if (!btn?.style) return null;
-  // 提示挂在按钮内部（absolute，不影响按钮布局），视觉上紧贴按钮下方
-  if (!btn.style.position) btn.style.position = 'relative';
-  return createEl('div', {
-    class: ['confirm-hint'],
-    style: {
-      position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
-      marginTop: '4px', padding: '2px 8px',
-      background: 'rgba(255,251,240,0.96)', border: '2px solid #3a3a3a',
-      borderRadius: '8px', fontSize: '11px', fontWeight: '800', color: '#3a2e20',
-      lineHeight: '1.4', whiteSpace: 'nowrap', zIndex: '6000', pointerEvents: 'none',
-    },
-    text: CONFIRM_TEXT,
-    parent: btn,
-  });
+  // 待确认文案只能出现在调用方指定的位置（DialogBox 弹窗内），绝不自动悬浮在按钮 / 图标旁
+  if (!opts.hintEl) { rec.hint = null; return; }
+  rec.hint = opts.hintEl;
+  rec.hint.textContent = opts.text || CONFIRM_TEXT;
+  rec.hint.style.display = 'block';
 }
 
 function hideHint(rec) {
-  if (!rec.hint) return;
-  if (rec.ownedHint) {
-    rec.hint.remove?.();
-    rec.hint = null;
-  } else {
-    rec.hint.style.display = 'none';
-  }
+  if (rec.hint) rec.hint.style.display = 'none';
 }
 
 function ensureGuard() {
@@ -139,7 +100,6 @@ export function arm(btn, opts = {}) {
     phase: 'armed',
     orig: snapshot(btn),
     hint: null,
-    ownedHint: false,
     fadeTimer: null,
     fadeMs: CONFIRM_FADE_MS,
   };
@@ -234,36 +194,7 @@ export function handleOutsideClick(target) {
   }
 }
 
-/**
- * 注册快捷键入口（与按钮共用同一状态机）。
- * @param {string} action 动作名（如 'sleep'）
- * @param {HTMLElement} btn 作为视觉锚点的按钮
- * @param {Function} run 业务回调
- * @param {object} [opts] 透传给 arm / trigger（hintEl / fadeTarget / fadeMs / onFaded）
- */
-export function bindKey(action, btn, run, opts = {}) {
-  keyBindings.set(action, { btn, run, opts });
-}
-
-export function unbindKey(action) {
-  keyBindings.delete(action);
-}
-
-/**
- * 快捷键按下：首次按下 = arm（与鼠标首次点击等效）；再次按下 = 立即执行。
- * @param {string} action
- * @returns {boolean|null} 已执行 true；仅进入待确认 false；无绑定 null
- */
-export function keyTrigger(action) {
-  const b = keyBindings.get(action);
-  if (!b || !b.btn) return null;
-  if (isArmed(b.btn)) return trigger(b.btn, b.run, b.opts);
-  arm(b.btn, b.opts);
-  return false;
-}
-
 export default {
   CONFIRM_TEXT, CONFIRM_FADE_MS, CONFIRM_ARM_BG, CONFIRM_DONE_BG,
-  arm, disarm, disarmAll, trigger, isArmed, isConfirming,
-  handleOutsideClick, bindKey, unbindKey, keyTrigger,
+  arm, disarm, disarmAll, trigger, isArmed, isConfirming, handleOutsideClick,
 };

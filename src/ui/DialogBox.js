@@ -195,8 +195,10 @@ export class DialogBox {
   }
 
   // §16.4：第一次点击 = 待确认；再次点击已选中项 = 确认（同一 tick 立即执行）
+  // 「取消」这类安全选项可声明 safe:true —— 单击即关闭，不进入待确认（与睡觉/卸下等破坏性选项区分）
   _chooseOption(i) {
     if (!this.visible || this._confirming) return;
+    if (this._opts[i]?.safe) { this._confirmOption(i); return; }
     if (this._selectedIdx === i) { this._confirmOption(i); return; }
     this._selectedIdx = i;
     this._optBtns.forEach((btn, k) => {
@@ -216,6 +218,8 @@ export class DialogBox {
     this._confirming = true;
     const btn = this._optBtns[i];
     const opt = this._opts[i];
+    // safe 选项单击直达确认：先补一次 arm 让共享组件正常走 trigger，同一 tick 内完成 arm→trigger
+    if (!ConfirmAction.isArmed(btn)) ConfirmAction.arm(btn, { hintEl: this._hintEl, text: CONFIRM_TEXT });
     btn?.classList?.add('dialog-opt-flash');
     if (this._hintEl) this._hintEl.style.display = 'none';
     ConfirmAction.trigger(btn, () => {

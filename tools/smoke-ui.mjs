@@ -642,55 +642,85 @@ head_('§16.20 中央接线：开新面板关旧面板 / 开面板退建造');
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });
 }
 
-head_('§16.10 睡觉二次确认（ConfirmAction）+ P 键仅主界面有效');
+head_('§16.10 睡觉：先文字弹窗 → 弹窗内二次确认 → 同一 tick 换日 → 1.5s 淡出；P 键同链路');
 {
   const ConfirmAction = await import('../src/ui/ConfirmAction.js');
-  const sleepBtn = funcBar.sleepBtn;
-  assert(!!sleepBtn, 'FuncBar 睡觉按钮注册为确认锚点');
-  const sleepHint = () => sleepBtn.children.find((c) => c._classes?.has('confirm-hint'));
+  const { DialogBox } = await import('../src/ui/DialogBox.js');
+  const dlg = trackDlg(new DialogBox());
+  dlg.mount();
+  dlg.confirmFadeMs = 30; // 冒烟加速；真实 1.5 秒
+  director.dialogBox = dlg;
+  const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 
   gs.player.stamina = 5;
   const dayBefore = gs.day;
 
-  // ① 首次点击：只进入待确认态（底色变化 + 「你确定这么做？」），不执行
-  const r1 = director.requestSleep();
-  assert(r1 === false && gs.day === dayBefore, '首次触发 → 不执行、不换日');
-  assert(ConfirmAction.isArmed(sleepBtn), '首次触发 → 进入待确认态');
-  assert(sleepBtn.style.background === ConfirmAction.CONFIRM_ARM_BG, '待确认态底色改变');
-  const h1 = sleepHint();
-  assert(!!h1 && h1._text === ConfirmAction.CONFIRM_TEXT && h1.style.display === 'block',
-    '按钮紧邻位置出现「你确定这么做？」');
+  // ① 点睡觉 → 先出现文字弹窗（取消 / 睡觉），未换日；图标旁不得有行内提示
+  director.requestSleep();
+  assert(dlg.visible, '点睡觉 → 出现文字弹窗');
+  assert(dlg.titleEl._text === '睡觉', '弹窗标题为「睡觉」', dlg.titleEl._text);
+  assert((dlg.contentEl._text || '').includes('行动力尚未耗尽'), '正文提示行动力尚未耗尽');
+  assert(dlg._opts.map((o) => o.label).join('/') === '取消/睡觉', '弹窗选项为 取消 / 睡觉');
+  assert(gs.day === dayBefore, '弹窗出现时未换日');
+  assert(!hasText(funcBar.root, ConfirmAction.CONFIRM_TEXT), '睡觉图标旁无行内「你确定这么做？」');
 
-  // ② 点别处 = 取消待确认并复原
+  // ② 弹窗内点「睡觉」一次 → 待确认（底色 + 弹窗内提示），仍不换日
+  dlg._optBtns[1].click();
+  assert(ConfirmAction.isArmed(dlg._optBtns[1]) && gs.day === dayBefore, '点「睡觉」一次 → 待确认、不换日');
+  assert(dlg._optBtns[1].style.background === ConfirmAction.CONFIRM_ARM_BG, '待确认按钮底色改变');
+  assert(dlg._hintEl.style.display === 'block' && dlg._hintEl._text === ConfirmAction.CONFIRM_TEXT,
+    '弹窗内出现「你确定这么做？」');
+  // 点别处 → 取消待确认并复原（弹窗保持打开）
   ConfirmAction.handleOutsideClick(funcBar.root);
-  assert(!ConfirmAction.isArmed(sleepBtn) && gs.day === dayBefore, '点别处 → 取消且不执行');
-  assert(sleepBtn.style.background === 'transparent', '取消后底色复原（回到 FuncBar 透明态）');
-  assert(!sleepHint() || sleepHint().style.display === 'none', '取消后提示隐藏');
+  assert(!ConfirmAction.isArmed(dlg._optBtns[1]) && gs.day === dayBefore, '点别处 → 取消待确认、不换日');
+  assert(dlg._hintEl.style.display === 'none', '取消后提示隐藏');
 
-  // ③ 二次点击：同一 tick 立即执行（旧实现要等 2 秒且先复原）
-  director.requestSleep();
-  assert(ConfirmAction.isArmed(sleepBtn) && gs.day === dayBefore, '再次首次点击 → 进入待确认');
-  director.requestSleep();
-  assert(gs.day === dayBefore + 1, '第二次触发 → 同一 tick 立即换日');
-  assert(ConfirmAction.isConfirming(sleepBtn), '执行后进入淡出锁定态（不可重复点击）');
-  ConfirmAction.disarm(sleepBtn); // 冒烟加速：等价于 1.5 秒淡出结束
+  // ③ 再点两次「睡觉」→ 第二次同一 tick 换日，弹窗 1.5 秒淡出且不可再点
+  dlg._optBtns[1].click();
+  dlg._optBtns[1].click();
+  assert(gs.day === dayBefore + 1, '第二次点「睡觉」→ 同一 tick 立即换日');
+  assert(dlg.visible === true && dlg.mask.style.opacity === '0' && dlg.mask.style.pointerEvents === 'none',
+    '生效后弹窗淡出中且不可再点');
+  await sleepMs(80);
+  assert(dlg.visible === false, '淡出结束 → 弹窗关闭');
 
-  // ④ 快捷键 P 与按钮同规范：首次 arm、二次立即生效
+  // ④ 点「取消」→ 单击关闭（safe 选项）、不换日
+  gs.player.stamina = 5;
+  const dayCancel = gs.day;
+  director.requestSleep();
+  dlg._optBtns[0].click();
+  assert(gs.day === dayCancel, '点取消 → 不换日');
+  await sleepMs(80);
+  assert(dlg.visible === false, '点取消 → 单击关闭弹窗');
+
+  // ⑤ P 键同链路：先弹窗 → 弹窗内两次点「睡觉」
   gs.player.stamina = 5;
   const dayKb = gs.day;
   inputManager._dispatchAction('sleep');
-  assert(ConfirmAction.isArmed(sleepBtn) && gs.day === dayKb, 'P 键第一次 → 只进入待确认，不换日');
-  inputManager._dispatchAction('sleep');
-  assert(gs.day === dayKb + 1, 'P 键第二次 → 同一 tick 立即换日（与按钮同一状态机）');
-  ConfirmAction.disarm(sleepBtn);
+  assert(dlg.visible && gs.day === dayKb, 'P 键 → 同样先出现文字弹窗，不换日');
+  dlg._optBtns[1].click();
+  assert(gs.day === dayKb && ConfirmAction.isArmed(dlg._optBtns[1]), 'P 链路：第一次点睡觉 → 待确认、不换日');
+  dlg._optBtns[1].click();
+  assert(gs.day === dayKb + 1, 'P 链路：第二次点睡觉 → 同一 tick 换日');
+  await sleepMs(80);
+  assert(dlg.visible === false, 'P 链路淡出结束关闭');
 
-  // ⑤ P 键 gating：有面板打开时 _dispatchAction('sleep') 无反应
+  // ⑥ 行动力耗尽 → 无弹窗直接睡（保留旧规则）
+  gs.player.stamina = 0;
+  const dayEmpty = gs.day;
+  const r = director.requestSleep();
+  assert(r === true && gs.day === dayEmpty + 1, '行动力耗尽 → 无弹窗直接睡');
+  assert(dlg.visible === false, '行动力耗尽 → 没有弹窗');
+
+  // ⑦ P 键 gating：有面板打开时 _dispatchAction('sleep') 无反应
   gs.player.stamina = 5;
   EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'inventory' });
   const dayBefore2 = gs.day;
   inputManager._dispatchAction('sleep');
-  assert(gs.day === dayBefore2 && !ConfirmAction.isArmed(sleepBtn), '有界面打开时 P 无效');
+  assert(gs.day === dayBefore2 && !dlg.visible, '有界面打开时 P 无效');
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });
+  dlg.hide();
+  director.dialogBox = null;
 }
 
 head_('统一二次确认 ConfirmAction：1.5s 淡出 / 淡出期锁定 / 点别处取消');
@@ -698,15 +728,21 @@ head_('统一二次确认 ConfirmAction：1.5s 淡出 / 淡出期锁定 / 点别
   const ConfirmAction = await import('../src/ui/ConfirmAction.js');
   assert(ConfirmAction.CONFIRM_FADE_MS === 1500, '淡出时长是常量 1.5 秒（全项目唯一）');
   const btn = new FakeEl('button');
+  const hint = new FakeEl('div');
   const target = new FakeEl('div');
   let hits = 0; let faded = 0;
 
-  // ① 首次 = 待确认：底色 + 提示文案，不执行业务
+  // ① 首次 = 待确认：底色 + 仅调用方指定的弹窗内提示，不自动在按钮旁生成任何文案
   ConfirmAction.arm(btn);
   assert(ConfirmAction.isArmed(btn) && btn.style.background === ConfirmAction.CONFIRM_ARM_BG,
     'arm → 待确认底色变化');
   assert(btn._classes.has('confirm-armed'), 'arm → confirm-armed 类');
-  assert(btn.children.some((c) => c._text === ConfirmAction.CONFIRM_TEXT), 'arm → 出现「你确定这么做？」');
+  assert(btn.children.length === 0, '不传 hintEl → 不在按钮上自动创建行内提示');
+  ConfirmAction.disarm(btn);
+
+  ConfirmAction.arm(btn, { hintEl: hint });
+  assert(hint.style.display === 'block' && hint._text === ConfirmAction.CONFIRM_TEXT,
+    '传入弹窗提示元素 → 才显示「你确定这么做？」');
   assert(hits === 0, 'arm 阶段不执行业务');
 
   // ② 点别处 = 取消并复原
@@ -714,7 +750,7 @@ head_('统一二次确认 ConfirmAction：1.5s 淡出 / 淡出期锁定 / 点别
   assert(!ConfirmAction.isArmed(btn) && btn.style.background === '', '点别处 → 取消并复原');
 
   // ③ 二次 = 同一 tick 执行，随后目标 1.5 秒淡出（冒烟 30ms）
-  ConfirmAction.arm(btn);
+  ConfirmAction.arm(btn, { hintEl: hint });
   const ok = ConfirmAction.trigger(btn, () => { hits++; }, {
     fadeTarget: target, onFaded: () => { faded++; }, fadeMs: 30,
   });
@@ -1177,33 +1213,54 @@ head_('第 10 批任务 B：InventoryPanel 切 tab（点击触发状态变化）
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });
 }
 
-head_('第 10 批任务 B：VehiclePanel 卸下（二次确认后触发状态变化）');
+head_('第 10 批任务 B：VehiclePanel 卸下（文字弹窗 → 弹窗内二次确认）');
 {
   const ConfirmAction = await import('../src/ui/ConfirmAction.js');
+  const { DialogBox } = await import('../src/ui/DialogBox.js');
+  const vd = trackDlg(new DialogBox());
+  vd.mount();
+  vd.confirmFadeMs = 30;
+  director.dialogBox = vd;
+  const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+
   gs.vehicle.current = { vehicleId: 'vehicle_wheel', usageLeft: 3 };
   EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'vehicle' });
   const unloadBtn = buttonsWithText(vehiclePanel.helper.root, '卸下')[0];
   assert(!!unloadBtn, '装备中 → 卸下按钮存在');
 
-  // 首次点击：只进入待确认态，不卸下
+  // ① 点卸下 → 先出现文字弹窗（取消 / 卸下），未卸下
   unloadBtn.click();
-  assert(gs.vehicle.current !== null, '首次点卸下 → 不执行（仍装备中）');
-  assert(ConfirmAction.isArmed(unloadBtn) && unloadBtn.style.background === ConfirmAction.CONFIRM_ARM_BG,
-    '首次点卸下 → 待确认态 + 底色变化');
+  assert(vd.visible, '点卸下 → 先出现文字弹窗');
+  assert(vd._opts.map((o) => o.label).join('/') === '取消/卸下', '弹窗选项为 取消 / 卸下');
+  assert(gs.vehicle.current !== null, '弹窗出现时未卸下');
 
-  // 二次点击：同一 tick 立即卸下
-  unloadBtn.click();
+  // ② 弹窗内点「卸下」一次 → 待确认，仍不卸下
+  vd._optBtns[1].click();
+  assert(ConfirmAction.isArmed(vd._optBtns[1]) && gs.vehicle.current !== null,
+    '第一次点卸下 → 待确认、不执行');
+  assert(vd._hintEl.style.display === 'block', '弹窗内出现「你确定这么做？」');
+
+  // ③ 再点一次 → 同一 tick 立即卸下，弹窗淡出
+  vd._optBtns[1].click();
   assert(gs.vehicle.current === null, '第二次点卸下 → 同一 tick 立即 current=null');
-  assert(ConfirmAction.isConfirming(unloadBtn), '卸下后进入淡出锁定态');
-  // 冒烟加速：等价于 1.5 秒淡出结束（恢复槽位并刷新）
-  ConfirmAction.disarm(unloadBtn);
-  vehiclePanel.slotEl.style.opacity = '';
-  vehiclePanel.slotEl.style.pointerEvents = '';
-  vehiclePanel._refresh();
+  await sleepMs(80);
+  assert(vd.visible === false, '卸下后弹窗淡出关闭');
   // detachVehicle 把剩余次数同步回 available 里的同种载具条目（不新增）
   assert(gs.vehicle.available.some((a) => a.vehicleId === 'vehicle_wheel' && a.usageLeft === 3),
     '卸下后剩余次数同步回库存条目');
+
+  // ④ 点「取消」→ 单击关闭、不卸下
+  gs.vehicle.current = { vehicleId: 'vehicle_wheel', usageLeft: 3 };
+  vehiclePanel._refresh();
+  buttonsWithText(vehiclePanel.helper.root, '卸下')[0].click();
+  vd._optBtns[0].click();
+  assert(gs.vehicle.current !== null, '点取消 → 不卸下');
+  await sleepMs(80);
+  assert(vd.visible === false, '点取消 → 弹窗关闭');
+  gs.vehicle.current = null;
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'vehicle' });
+  vd.hide();
+  director.dialogBox = null;
 }
 
 head_('第 10 批任务 B：TaskPanel 切 tab（点击触发状态变化 + 高亮更新）');

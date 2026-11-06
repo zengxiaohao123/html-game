@@ -10,13 +10,11 @@ import { GE } from '../core/GameEvents.js';
 import { Assets } from '../core/Assets.js';
 import { BuildSystem } from '../systems/BuildSystem.js';
 import { createEl, qs, iconEl } from './dom.js';
-import * as ConfirmAction from './ConfirmAction.js';
 
 export class FuncBar {
   constructor(director) {
     this.director = director;
     this.root = null;
-    this.sleepBtn = null;
   }
 
   mount(parent = qs('#app')) {
@@ -72,26 +70,10 @@ export class FuncBar {
         onclick: () => this._onAction(item.action),
       });
       // §16.8 无实体底板，hover 仅轻微半透明白底反馈
-      // 待确认 / 淡出期间不得覆盖 ConfirmAction 的底色
-      btn.addEventListener('mouseenter', () => {
-        if (ConfirmAction.isArmed(btn) || ConfirmAction.isConfirming(btn)) return;
-        btn.style.background = 'rgba(255,255,255,0.35)';
-      });
-      btn.addEventListener('mouseleave', () => {
-        if (ConfirmAction.isArmed(btn) || ConfirmAction.isConfirming(btn)) return;
-        btn.style.background = 'transparent';
-      });
-      // 按钮内部：只有图标
+      btn.addEventListener('mouseenter', () => { btn.style.background = 'rgba(255,255,255,0.35)'; });
+      btn.addEventListener('mouseleave', () => { btn.style.background = 'transparent'; });
+      // 按钮内部：只有图标（睡觉等需要确认的动作一律先进文字弹窗，不在图标旁出现行内提示）
       btn.appendChild(iconEl('ui', item.id, { size: '28px', fallback: item.emoji }));
-
-      // 🛌 睡觉：按钮与 P 键共用同一 ConfirmAction 状态机（不允许快捷键一键生效）
-      if (item.action === 'sleep') {
-        this.sleepBtn = btn;
-        ConfirmAction.bindKey('sleep', btn, () => this.director?.sleep?.());
-        if (this.director) {
-          this.director.sleepConfirm = () => { ConfirmAction.keyTrigger('sleep'); };
-        }
-      }
     });
   }
 
