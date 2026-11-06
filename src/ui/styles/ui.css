@@ -183,28 +183,28 @@ body.build-mode .map-container {
 /* ── 左上角三段容器（基准 1280×720，等比缩放）── */
 .hud-left {
   position: absolute;
-  top: calc(14px * var(--hud-scale));
+  top: calc(20px * var(--hud-scale));
   left: 16px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 14px;
+  gap: 8px;
   pointer-events: none;
   transform: scale(var(--hud-scale, 1));
   transform-origin: top left;
 }
 
 /* 第一段：立绘 + 生命 + 攻击 + 行动力 */
-.hud-hero-group { position: relative; width: 396px; height: 140px; }
+.hud-hero-group { position: relative; width: 364px; height: 124px; }
 
-/* 细边横向矩形头像框（2026-11-06 修订）：
+/* 细边竖向矩形立绘框（2026-11-06 二次修订：高明显大于宽 84×116，整体较上一版收小）：
  * 框体是独立背景层（z-index 0）；立绘绘制在框体之上（z-index 2），可出血、压住边框。
  * 双层描边：近黑粗描边 + 奶白内线；四角圆度不一致 + 整体轻旋，保留手绘不规整感。 */
 .hud-portrait {
   position: absolute;
-  left: 4px; top: 14px;
-  width: 154px; height: 104px;
-  transform: rotate(-3deg);
+  left: 30px; top: 8px;
+  width: 84px; height: 116px;
+  transform: rotate(-2.6deg);
   transform-origin: top left;
 }
 .hud-portrait-frame {
@@ -220,16 +220,17 @@ body.build-mode .map-container {
     0 4px 0 rgba(36, 26, 18, 0.14),
     0 9px 14px rgba(0, 0, 0, 0.24);
 }
-/* 立绘：放大 + 出血（超出框体，不被框体裁剪，层级高于边框） */
+/* 立绘：放大 + 出血（超出框体，不被框体裁剪，层级高于边框）；
+ * hero.png 内容只占图宽 0.1%~77%（右侧 23% 透明），故用 -39% 位移把可见人物居中 */
 .hud-portrait-img {
   position: absolute;
   left: 50%;
-  bottom: -5px;
+  bottom: 15px;
   z-index: 2;
-  height: 146px;
+  height: 122px;
   width: auto;
   max-width: none;
-  transform: translateX(-46%);
+  transform: translateX(-39%);
   object-fit: contain;
   pointer-events: none;
   filter: drop-shadow(0 2px 0 rgba(36, 26, 18, 0.35)) drop-shadow(0 5px 6px rgba(0, 0, 0, 0.28));
@@ -239,12 +240,12 @@ body.build-mode .map-container {
 .hud-nameplate {
   position: absolute;
   right: 0;
-  top: 86px;
+  top: 82px;
   z-index: 3;
   padding: 2px 10px 3px;
   background: linear-gradient(180deg, #5E3E24 0%, #3E2814 100%);
   color: #FFF8E6;
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 900;
   line-height: 1.1;
   letter-spacing: 1px;
@@ -259,11 +260,11 @@ body.build-mode .map-container {
 /* 右侧三行（上：红心 + 血条　中：攻击力　下：行动力） */
 .hud-stats {
   position: absolute;
-  left: 170px; top: 14px;
+  left: 140px; top: 6px;
   width: 224px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 
 /* 手写粗体白字黑边数字（黑边用多重 text-shadow 叠出，避免 -webkit-text-stroke 吞掉白色填充） */
@@ -466,7 +467,7 @@ body.build-mode .map-container {
     0 2.5px 0 #241A12, 0 5px 6px rgba(0, 0, 0, 0.32);
 }
 
-/* ── 第二段：星露谷风格木牌（金币在左、天数在右；形状不规整 + 木纹 + 木节 + 双钉）── */
+/* ── 第二段：星露谷风格木牌（天数在左、金币在右；形状不规整 + 木纹 + 木节 + 双钉）── */
 .hud-sign {
   position: relative;
   width: 264px;
@@ -508,8 +509,10 @@ body.build-mode .map-container {
   pointer-events: none;
 }
 .hud-sign-col { display: flex; flex-direction: column; justify-content: center; }
-.hud-sign-gold-col { width: 104px; }
-.hud-sign-gold-row { display: flex; align-items: center; gap: 0; }
+/* 天数在左：占据剩余宽度；金币在右：固定宽度并右对齐（图标保持放大） */
+.hud-sign-day-col { flex: 1; gap: 1px; padding-left: 4px; }
+.hud-sign-gold-col { width: 96px; align-items: flex-end; }
+.hud-sign-gold-row { display: flex; align-items: center; justify-content: flex-end; gap: 0; }
 .hud-gold-icon {
   margin: 0 -7px 0 -6px; /* 金币图 PNG 自带透明留白，内缩让金币和数字更紧凑 */
   filter: drop-shadow(0 2px 0 rgba(36, 26, 18, 0.35)) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.25));
@@ -532,7 +535,6 @@ body.build-mode .map-container {
   background: repeating-linear-gradient(180deg, rgba(255, 240, 210, 0.45) 0 4px, transparent 4px 9px);
   border-radius: 2px;
 }
-.hud-sign-day-col { flex: 1; gap: 1px; padding-left: 2px; }
 .hud-sign-day {
   font-size: 16px;
   font-weight: 900;

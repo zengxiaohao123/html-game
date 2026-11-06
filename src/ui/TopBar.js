@@ -2,11 +2,11 @@
 // 顶部 UI 区（设计文档 §16.7，2026-11-06 修订版）：左上角三段式 + 生物容量顶部居中
 //
 //   ┌─ 左上半透明 HUD 根（pointer-events:none，整屏覆盖，不拦截地图）──────────┐
-//   │  ┌─────────────┐  ♥ 100 ▮▮▮▮▮▮▮          ← 第一段：立绘 + 生命 + 攻击 + 行动力
-//   │  │   立绘框     │  ⚔ 10
-//   │  └───────┬─────┘  ◆◆◆◆◆◆◆◆ 5/8
-//   │          余默
-//   │  ╭── 木牌：🪙 128 │ 第 3 天 5月12日 周一 ──╮   ← 第二段（第一段下方一点）
+//   │  ┌────┐  ♥ 100 ▮▮▮▮▮▮▮    ← 第一段：立绘 + 生命 + 攻击 + 行动力
+//   │  │ 竖 │  ⚔ 10
+//   │  │ 框 │  ◆◆◆◆◆◆◆◆ 5/8
+//   │  └──余默┘
+//   │  ╭── 木牌：第 3 天 5月12日 周一 │ 🪙 128 ──╮   ← 第二段（第一段下方一点）
 //   │  ╰──────────────────────────────────────╯
 //   │  (📋)                                          ← 第三段（再往下一点，独立一块）
 //   └──────────────────────────────────────────────────────────────┘
@@ -110,9 +110,10 @@ export class TopBar {
   _buildHeroGroup() {
     const hero = createEl('div', { class: ['hud-hero-group'], parent: this.left });
 
-    // 细边横向矩形头像框（2026-11-06 修订）：
+    // 细边竖向矩形立绘框（2026-11-06 二次修订：高明显大于宽）：
     //   · 框体是独立背景层（z-index 0），立绘绘制在它之上（z-index 2）→ 人物可出血、压住边框
     //   · 双层描边：近黑粗描边 + 奶白内线，四角圆度不一致，整体轻旋
+    //   · 整体尺寸比上一版横向框收小一圈（84×116，上一版 154×104）
     const portrait = createEl('div', {
       class: ['hud-portrait'],
       attrs: { title: '当前出战角色' },
@@ -173,21 +174,23 @@ export class TopBar {
   }
 
   // ════════════════════════════════════════════════════════════
-  // 第二段：金币 + 天数（星露谷风格木牌，形状不规整；金币在左、天数在右）
+  // 第二段：天数 + 金币（星露谷风格木牌，形状不规整；天数在左、金币在右）
   // ════════════════════════════════════════════════════════════
   _buildSign() {
     const sign = createEl('div', { class: ['hud-sign'], parent: this.left });
 
+    // 左：天数 + 日历
+    const dayCol = createEl('div', { class: ['hud-sign-col', 'hud-sign-day-col'], parent: sign });
+    this.dayText = createEl('div', { class: ['hud-sign-day'], text: '', parent: dayCol });
+    this.calText = createEl('div', { class: ['hud-sign-cal'], text: '', parent: dayCol });
+
+    createEl('div', { class: ['hud-sign-div'], parent: sign });
+
+    // 右：金币（图标保持放大）
     const goldCol = createEl('div', { class: ['hud-sign-col', 'hud-sign-gold-col'], parent: sign });
     const goldRow = createEl('div', { class: ['hud-sign-gold-row'], parent: goldCol });
     goldRow.appendChild(iconEl('ui', 'gold', { size: '54px', cls: 'hud-gold-icon', fallback: Assets.ui.gold }));
     this.goldText = createEl('span', { class: ['hud-sign-gold'], text: '', attrs: { title: '金币' }, parent: goldRow });
-
-    createEl('div', { class: ['hud-sign-div'], parent: sign });
-
-    const dayCol = createEl('div', { class: ['hud-sign-col', 'hud-sign-day-col'], parent: sign });
-    this.dayText = createEl('div', { class: ['hud-sign-day'], text: '', parent: dayCol });
-    this.calText = createEl('div', { class: ['hud-sign-cal'], text: '', parent: dayCol });
   }
 
   // ════════════════════════════════════════════════════════════
