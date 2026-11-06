@@ -2,13 +2,29 @@
 // Phase 3 —— 3 角色 + 3 精灵 + 技能定义
 // 设计文档 §12
 
+import { ITEMS } from './items.js';
+
 // ════════════════════════════════════════════════════════════════
 // 精灵定义（每角色 1 个，只影响祈福）
+//   description: 玩家可见正文（设计文档 §12.2 逐字）
+//   note:        内部备注，任何渲染层都不得读取
 // ════════════════════════════════════════════════════════════════
 export const SPIRITS = {
-  momo:    { id: 'momo',    name: 'momo',    emoji: '🐱', ownerRoleId: 'yumo',    description: '每一日的首次祈福所需的行动力和金币各 -50%（至少 -1，最低减至 0）' },
-  qingfeng: { id: 'qingfeng', name: '晴风', emoji: '🍃', ownerRoleId: 'xiayang', description: '每次祈福后为角色回复 6 点生命值，并使本日内角色攻击力 +8%' },
-  yuyuan:  { id: 'yuyuan',  name: '芋圆',    emoji: '🧋', ownerRoleId: 'luyouyou', description: '每次祈福后，本日内的下一次移动不消耗行动力' },
+  momo: {
+    id: 'momo', name: 'momo', emoji: '🐱', ownerRoleId: 'yumo',
+    description: '每一日的首次祈福所需的行动力和金币各 -50%（至少 -1，最低减至 0）。',
+    note: '如果本日首次祈福时所用精灵不是 momo，然后再编辑队伍换成 momo，则该效果无法生效。',
+  },
+  qingfeng: {
+    id: 'qingfeng', name: '晴风', emoji: '🍃', ownerRoleId: 'xiayang',
+    description: '每次祈福后为角色回复 6 点生命值，并使本日内角色攻击力 +8%。',
+    note: '攻击力加成可叠加。即使后续切换精灵，本日内效果仍然存在。',
+  },
+  yuyuan: {
+    id: 'yuyuan', name: '芋圆', emoji: '🧋', ownerRoleId: 'luyouyou',
+    description: '每次祈福后，本日内的下一次移动不消耗行动力。',
+    note: '次数不可叠加，最多就是下一次，不能是下两次，且仅限本日内。多种"不消耗行动力"效果叠加时，只会使行动力消耗变为 0，而不是增加行动力，需要和"行动力 +1"之类的效果区分。',
+  },
 };
 
 // ════════════════════════════════════════════════════════════════
@@ -86,7 +102,7 @@ export const SKILLS = {
     cooldown: 0,
     isLinkSkill: false,
     targetCategory: 'danger_extreme',
-    description: '【进入时】【受祝福时】对 1 名敌人造成 100% 攻击力物理伤害',
+    description: ITEMS.skill_yumo_slash.description,
   },
   skill_yumo_desperate: {
     id: 'skill_yumo_desperate',
@@ -107,7 +123,7 @@ export const SKILLS = {
       type: 'self_hp_drain',
       percent: 0.08,   // 8% 生命流失，可致死（设计文档：流失 8% 生命值）
     },
-    description: '【进入时】【受祝福时】对 2 个敌人造成 160% 攻击力物理伤害；流失 8% 生命值（可致死）',
+    description: ITEMS.skill_yumo_desperate.description,
   },
   skill_yumo_pioneer: {
     id: 'skill_yumo_pioneer',
@@ -127,7 +143,7 @@ export const SKILLS = {
       perConsumeMultiplier: 0.7,   // 每消耗 1 块有地形的地块，本次攻击倍率 +70%（物品库 SKL-A-003）
       consumeCount: 2,             // 攻击前随机消耗 2 块有地形的地块（变为无地形）
     },
-    description: '【进入时】【受祝福时】对敌人造成 60% 攻击力物理伤害（小范围）。攻击前随机消耗 2 块有地形的地块（变为无地形），每消耗 1 块使本次攻击倍率 +70%',
+    description: ITEMS.skill_yumo_pioneer.description,
   },
 
   // ──────────────────────── 夏阳 xiayang ────────────────────────
@@ -149,7 +165,7 @@ export const SKILLS = {
       buffId: 'burn',
       duration: 1,   // 持续 1 回合（设计文档：持续 1 回合）
     },
-    description: '【进入时】【受祝福时】对敌人造成 80% 攻击力火元素伤害，并施加持续 1 回合【燃烧】',
+    description: ITEMS.skill_xiayang_flame_strike.description,
   },
   skill_xiayang_ignite: {
     id: 'skill_xiayang_ignite',
@@ -172,7 +188,7 @@ export const SKILLS = {
       enterOnly: true,             // 【进入时】施加燃烧（物品库 SKL-A-006）
       onBlessedDoubleBurn: true,   // 【受祝福时】随机 1 名正处于燃烧状态的敌人，其燃烧剩余回合翻倍
     },
-    description: '【进入时】对敌人施加持续 5 回合【燃烧】。【受祝福时】随机 1 名正处于【燃烧】状态的敌人，其【燃烧】剩余回合翻倍',
+    description: ITEMS.skill_xiayang_ignite.description,
   },
 
   // ──────────────────────── 陆悠悠 luyouyou ────────────────────────
@@ -190,7 +206,7 @@ export const SKILLS = {
     isLinkSkill: false,
     targetCategory: 'danger_extreme',
     hits: 2,
-    description: '【进入时】【受祝福时】对 1 名敌人造成 2 段 50% 攻击力物理伤害',
+    description: ITEMS.skill_luyouyou_careful_shot.description,
   },
   skill_luyouyou_wind_stop: {
     id: 'skill_luyouyou_wind_stop',
@@ -213,14 +229,14 @@ export const SKILLS = {
       duration: 1,
       strength: 0.25,   // 25% 虚弱
     },
-    description: '【进入时】【受祝福时】对 2 个随机敌人造成 80% 攻击力物理伤害，施加持续 1 回合 25%【虚弱】',
+    description: ITEMS.skill_luyouyou_wind_stop.description,
   },
 
   // ──────────────────────── 夏阳剩余主动技能 ────────────────────────
 
   skill_xiayang_inspire_lv1: {
     id: 'skill_xiayang_inspire_lv1',
-    name: '鼓舞·等级 1',
+    name: '鼓舞・等级 1',
     emoji: '💪',
     icon: null,
     roleId: 'xiayang',
@@ -237,7 +253,7 @@ export const SKILLS = {
       atkBuffPerDay: 15,         // 本日内攻击力 +15，可叠加（进入时触发）
       // 注意：两个效果的触发词条不同，Phase 3 SkillSystem 需区分 onEnter/onPass 分别执行
     },
-    description: '【经过时】【受祝福时】回复相当于 20% 攻击力的生命值。【进入时】【受祝福时】本日内攻击力 +15，可叠加',
+    description: ITEMS.skill_xiayang_inspire_lv1.description,
   },
 
   skill_xiayang_all_wishes: {
@@ -259,7 +275,7 @@ export const SKILLS = {
       othersDamagePenalty: 0.1,        // 其余元素及物理伤害 -10%
       duration: 'permanent_until_day', // 本日内
     },
-    description: '【进入时】【受祝福时】本日内我方火元素伤害 +20%，其余元素及物理伤害 -10%。然后对 1 名敌人造成 160% 攻击力火元素伤害。冷却 3 回合',
+    description: ITEMS.skill_xiayang_all_wishes.description,
   },
 
   skill_xiayang_blast_carnival: {
@@ -280,7 +296,7 @@ export const SKILLS = {
       radius: 1,                       // 半径 1 格大范围
       onBlessedRefreshCooldown: true,  // 【受祝福时】立即刷新冷却
     },
-    description: '【进入时】对 1 名敌人造成 150% 攻击力大范围火元素伤害（半径 1 格）。冷却 7 回合。【受祝福时】立即刷新冷却',
+    description: ITEMS.skill_xiayang_blast_carnival.description,
   },
 
   // ──────────────────────── 陆悠悠剩余主动技能 ────────────────────────
@@ -303,7 +319,7 @@ export const SKILLS = {
       critRateBonus: 1.0,   // 下一次攻击暴击率 +100%
       stackable: false,     // 不可叠加
     },
-    description: '【进入时】【受祝福时】陆悠悠下一次攻击暴击率 +100%，不可叠加',
+    description: ITEMS.skill_luyouyou_breathe_aim.description,
   },
 
   // ──────────────────────── 通用主动技能 ────────────────────────
@@ -325,7 +341,7 @@ export const SKILLS = {
       type: 'line_row_column',
       // 对该地块所在行以及所在列的所有敌人造成伤害
     },
-    description: '【进入时】【受祝福时】对该地块所在行以及所在列的所有敌人造成相当于 100% 攻击力的物理伤害',
+    description: ITEMS.skill_zongheng.description,
   },
 
   // ════════════════════════════════════════════════════════════
@@ -351,7 +367,7 @@ export const SKILLS = {
       type: 'next_attack_element_switch',
       useSameElementAsTrigger: true,  // 使余默下一次攻击伤害类型变为对应元素
     },
-    description: '【连携技】除余默外角色造成元素伤害时可用。使余默下一次攻击伤害类型变为对应元素。冷却：3 回合',
+    description: ITEMS.skill_link_yumo_drain.description,
   },
 
   // 夏阳 连携技
@@ -373,7 +389,7 @@ export const SKILLS = {
       maxTargetsWithBurn: 3,           // 对处于【燃烧】的至多 3 名敌人
       fallbackNoTarget: true,           // 若无符合条件目标，改为攻击 1 名敌人
     },
-    description: '【连携技】有敌人正处于【燃烧】时可用。对处于【燃烧】的至多 3 名敌人造成 70% 攻击力火元素伤害。若无符合条件目标，改为攻击 1 名敌人。冷却 2 回合',
+    description: ITEMS.skill_link_xiayang_scorch.description,
   },
 
   skill_link_xiayang_annihilate: {
@@ -399,7 +415,7 @@ export const SKILLS = {
       tier2Radius: 1.5,                 // 超大范围半径 1.5
       clearOnDayStart: true,            // 【每一日开始时】清空计数
     },
-    description: '【连携技】每次使用夏阳技能计数 +1。计数达 3 用一段，达 7 用二段。一段：140% 攻击力小范围火伤（半径 0.4），计数 -3。二段：260% 攻击力超大范围火伤（半径 1.5），计数 -7。【每一日开始时】清空计数',
+    description: ITEMS.skill_link_xiayang_annihilate.description,
   },
 
   // 陆悠悠 连携技
@@ -422,9 +438,9 @@ export const SKILLS = {
       duration: 3,
       strength: 0.25,
       critRateBonusThisAttack: 1.0,   // 本次攻击暴击率 +100%
-      note: '敌人蓄力状态在其技能介绍中说明。',
     },
-    description: '【连携技】敌人进入【蓄力】时可用。对该敌人（至多 1 名）造成 70% 攻击力物理伤害，施加持续 3 回合的【虚弱】。本次攻击暴击率 +100%。冷却 6 回合',
+    description: ITEMS.skill_link_luyouyou_weak_point.description,
+    note: '敌人蓄力状态在其技能介绍中说明。',
   },
 
   skill_link_luyouyou_storm_eye: {
@@ -445,7 +461,7 @@ export const SKILLS = {
       targetCount: 1,                  // 锁定随机 1 名敌人
       clearCountAfterUse: true,        // 随后清空计数
     },
-    description: '【连携技】本日内我方累计造成 4 种及以上元素伤害后可用。锁定随机 1 名敌人，召唤龙卷风沿直线前进，对碰撞到的所有敌人造成 80% 攻击力风元素伤害。随后清空计数。冷却 5 回合',
+    description: ITEMS.skill_link_luyouyou_storm_eye.description,
   },
 
   skill_link_luyouyou_hunt: {
@@ -468,7 +484,8 @@ export const SKILLS = {
       allowRepeat: true,               // 允许重复弹射
       clearCountAfterUse: true,        // 随后清空计数
     },
-    description: '【连携技】我方角色使用技能攻击敌人 3 次后可用。以上一次攻击的敌人为目标，发射弹射 3 次的箭矢，每次弹射造成 20% 攻击力物理伤害。随后清空计数。冷却 1 回合。每次弹射以当前目标为中心半径 0.3 格内随机 1 名敌人（含目标自身）为新目标，允许重复弹射。',
+    description: ITEMS.skill_link_luyouyou_hunt.description,
+    note: '每次弹射以当前目标为中心半径 0.3 格内随机 1 名敌人（含目标自身）为新目标，允许重复弹射。',
   },
 
   skill_link_luyouyou_rise_wind: {
@@ -490,7 +507,7 @@ export const SKILLS = {
       duration: 3,
       strength: 0.30,                  // 30% 易伤
     },
-    description: '【连携技】我方单位对敌人造成火 / 水 / 雷 / 冰元素伤害时可用。对该敌人（至多 1 名）造成 15% 攻击力风元素伤害，施加持续 3 回合的 30%【易伤】。冷却 5 回合',
+    description: ITEMS.skill_link_luyouyou_rise_wind.description,
   },
 
   // ── SKL-L-008 移形（通用连携技，技能石获得）──
@@ -512,7 +529,7 @@ export const SKILLS = {
       base: 0.5,
       perTile: 0.05,
     },
-    description: '【连携技】使用载具移动后可以使用。对 1 名敌人造成相当于 50% 攻击力的物理伤害。本日内每经过 1 格，本技能倍率 +5%。冷却 4 回合',
+    description: ITEMS.skill_link_shift.description,
   },
 };
 

@@ -262,6 +262,57 @@ def parse_todo(rows):
     return out
 
 
+# ---------------------------------------------------------------- 反向断言
+def raw_descriptions(rows):
+    """物品总表 -> {编号: 描述原单元格（仅去首尾空白）}，用于逐字比对。"""
+    header_i = next(i for i, r in enumerate(rows) if r and r[0] == '物品编号')
+    out = {}
+    for r in rows[header_i + 1:]:
+        if not r or not r[0].startswith(('PRD-', 'VEH-', 'FAC-', 'RES-', 'SKL-', 'ITM-', 'TRN-')):
+            continue
+        c = r + [''] * (16 - len(r))
+        out[c[0]] = c[11].strip()
+    return out
+
+
+def assert_verbatim(items, raw):
+    """生成前断言：每条 description 必须与 xlsx 原单元格逐字相等，备注不得混入正文。"""
+    problems = []
+    for it in items:
+        code = it['libCode']
+        if it['description'] != raw.get(code, ''):
+            problems.append('%s %s 的描述与物品库原文不一致' % (code, it['name']))
+        if not it['description']:
+            problems.append('%s %s 的描述为空' % (code, it['name']))
+        if it['description'] != it['description'].strip():
+            problems.append('%s %s 的描述首尾含空白' % (code, it['name']))
+        note = (it['notes'] or '').strip()
+        if note and note in it['description']:
+            problems.append('%s %s 的备注混入了 description' % (code, it['name']))
+    return problems
+
+
+def assert_generated_file(path, items):
+    """写盘后断言：重新读回 library.js，逐条比对 description 与内存数据。"""
+    text = open(path, encoding='utf-8').read()
+    problems = []
+    for it in items:
+        m = re.search(r'^  %s: (%s),$' % (re.escape(it['id']), r'\{(?:.|\n)*?\}'), text, re.M)
+        if not m:
+            problems.append('生成文件缺少条目 %s' % it['id'])
+            continue
+        try:
+            back = json.loads(m.group(1))
+        except ValueError:
+            problems.append('生成文件条目 %s 不是合法 JSON' % it['id'])
+            continue
+        if back.get('description') != it['description']:
+            problems.append('%s 写盘后描述与源数据不一致' % it['id'])
+        if back.get('notes') == back.get('description'):
+            problems.append('%s 的备注被写进了 description' % it['id'])
+    return problems
+
+
 # ---------------------------------------------------------------- 主流程
 def main():
     check_only = '--check' in sys.argv
@@ -270,6 +321,7 @@ def main():
 
     sheets = load_sheets()
     items, missing = parse_items(sheets['物品总表'], meta)
+    raw = raw_descriptions(sheets['物品总表'])
     code2id = {it['libCode']: it['id'] for it in items}
 
     id_seen, dup = set(), []
@@ -297,6 +349,7 @@ def main():
         for e in p['entries']:
             if e['id'] is None:
                 problems.append('%s 引用了未知编号 %s（%s）' % (p['code'], e['libCode'], e['name']))
+    problems.extend(assert_verbatim(items, raw))
 
     if problems:
         print('✗ 校验失败：')
@@ -318,7 +371,14 @@ def main():
     print('  一级分类：', '、'.join('%s %d' % kv for kv in sorted(by_tier.items(), key=lambda x: -x[1])))
 
     if check_only:
-        print('  （--check 模式，未写盘）')
+        if os.path.exists(OUT):
+            stale = assert_generated_file(OUT, items)
+            if stale:
+                print('✗ 生成文件与物品库不一致（请重新运行 python tools/gen_library.py）：')
+                for p in stale:
+                    print('   -', p)
+                return 1
+        print('  （--check 模式，未写盘；已确认生成文件与物品库一致）')
         return 0
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
@@ -347,6 +407,13 @@ def main():
         f.write('export const TODO_LIST = %s;\n' % js(todo))
 
     print('✓ 已写入 %s' % os.path.relpath(OUT, ROOT))
+    stale = assert_generated_file(OUT, items)
+    if stale:
+        print('✗ 写盘后反向断言失败：')
+        for p in stale:
+            print('   -', p)
+        return 1
+    print('✓ 反向断言通过：%d 条 description 与物品库原文逐字一致，备注 0 混入' % len(items))
     return 0
 
 

@@ -13,6 +13,7 @@
 // 兼容：旧存档/旧代码里可能还写着 'none' / 'grass' / 'water' / 'mud'，
 // 统一用 normalizeTerrain() 归一化，不要在各处手写 if。
 
+import { ITEMS } from './items.js';
 export const TERRAINS = {
   terrain_none: {
     id: 'terrain_none',
@@ -20,7 +21,7 @@ export const TERRAINS = {
     name: '无地形',
     elementAmount: 0,      // 无地形没有元素量
     blocksMove: false,
-    description: '无效果，但本身也是一种地形。',
+    description: ITEMS.terrain_none.description,
   },
   terrain_grass: {
     id: 'terrain_grass',
@@ -28,7 +29,7 @@ export const TERRAINS = {
     name: '草地',
     elementAmount: 10,
     blocksMove: false,
-    description: '有 10 草元素量。部分生物会吃草（消耗草元素量），与部分设施效果相关联。',
+    description: ITEMS.terrain_grass.description,
   },
   terrain_water: {
     id: 'terrain_water',
@@ -36,7 +37,7 @@ export const TERRAINS = {
     name: '水面',
     elementAmount: 10,
     blocksMove: false,     // v0.5 明确：水面不阻碍移动
-    description: '有 10 水元素量。部分生物生活在水中，与部分设施效果相关联。水面不阻碍移动。',
+    description: ITEMS.terrain_water.description,
   },
   terrain_ice: {
     id: 'terrain_ice',
@@ -45,7 +46,7 @@ export const TERRAINS = {
     elementAmount: 10,
     blocksMove: false,     // 不阻挡，但会强制滑行
     slippery: true,        // 徒步进入时被迫向前滑行（见 MovementSystem）
-    description: '有 10 冰元素量。徒步进入时会被迫向前滑行到下一格地块；使用载具移动时不受滑行影响。',
+    description: ITEMS.terrain_ice.description,
   },
 };
 

@@ -25,7 +25,8 @@ export const TALENTS = {
       perElementBonus: 0.2,            // 对应元素伤害 +20%
       dailyReset: true,                // 新一日重置
     },
-    description: '【天赋】物理伤害加成 +50%。每造成一种元素伤害后，本日内物理伤害 -20%，该元素伤害 +20%。按种类计，重复不叠加；新一日重置。',
+    description: '【天赋】物理伤害加成 +50%。每造成一种元素伤害后，本日内物理伤害 -20%，该元素伤害 +20%',
+    note: '按种类计，重复不叠加；新一日重置。',
   },
 
   // ════════════════════════════════════════════════════════════
@@ -34,7 +35,7 @@ export const TALENTS = {
 
   xiayangFearless_lv1: {
     id: 'xiayangFearless_lv1',
-    name: '无所畏惧·等级 1',
+    name: '无所畏惧・等级 1',
     emoji: '📖',
     icon: null,
     roleId: 'xiayang',
@@ -44,7 +45,8 @@ export const TALENTS = {
       physical: 5,                      // 物理伤害 +5（固定值，非百分比）
       fire: 5,                          // 火元素伤害 +5
     },
-    description: '【天赋】我方角色造成的物理伤害 +5，火元素伤害 +5。固定值，不是百分比。',
+    description: '【天赋】我方角色造成的物理伤害 +5，火元素伤害 +5',
+    note: '固定值，不是百分比。',
   },
 
   xiayangEnergetic: {
@@ -58,9 +60,9 @@ export const TALENTS = {
     effectParams: {
       hpRegenMultiplier: 2,             // 睡觉时回复的生命值翻倍
       extraStamina: 2,                  // 额外回复 2 点行动力
-      note: '睡觉本身不回复生命值。此翻倍效果为未来的睡觉增益道具预留。',
     },
-    description: '【天赋】睡觉时回复的生命值翻倍，额外回复 2 点行动力。睡觉本身不回复生命值，此翻倍效果为未来的睡觉增益道具预留。',
+    description: '【天赋】睡觉时回复的生命值翻倍，额外回复 2 点行动力',
+    note: '睡觉本身不回复生命值。此翻倍效果为未来的睡觉增益道具预留。',
   },
 
   xiayangCurious: {
@@ -77,7 +79,8 @@ export const TALENTS = {
       extraGoldChance: 0.5,             // 50% 概率额外获得金币 ×1
       independentRoll: true,            // 两个概率独立判定，可同时触发
     },
-    description: '【天赋】危险生物与极度危险生物被击败时，30% 概率额外获得 1 次奖励，50% 概率额外获得金币 ×1。两个概率独立判定，可同时触发。',
+    description: '【天赋】危险生物与极度危险生物被击败时，30% 概率额外获得 1 次奖励，50% 概率额外获得金币 ×1',
+    note: '两个概率独立判定，可同时触发。',
   },
 
   xiayangWant: {
@@ -91,9 +94,9 @@ export const TALENTS = {
     effectParams: {
       vehicleId: 'vehicle_chance',      // 解锁载具【巧遇】
       perDayLimit: 1,                   // 每天限 1 次
-      note: '不能进入栅栏内。移动时选最短实际路径作为"经过"路径。',
     },
-    description: '【天赋】可使用载具【巧遇】：移动至任意一格，每天限 1 次。不能进入栅栏内。移动时选最短实际路径作为"经过"路径。',
+    description: '【天赋】可使用载具【巧遇】：移动至任意一格，每天限 1 次',
+    note: '不能进入栅栏内。移动时选最短实际路径作为"经过"路径。载具条目见《物品库》【巧遇】。',
   },
 
   xiayangReborn: {
@@ -110,7 +113,8 @@ export const TALENTS = {
       atkBonus: 0.25,                   // 攻击力 +25%
       priorityOverDeathPenalty: true,    // 优先于生命归 0 惩罚（不扣金币、不变行动力、不触发生物停战）
     },
-    description: '【天赋】角色受到致命伤害时不倒下，回复 50% 生命值且攻击力 +25%。冷却 3 天。触发当天算冷却一天。涅槃优先于生命归 0 惩罚（不扣金币、不变行动力、不触发生物停战）。',
+    description: '【天赋】角色受到致命伤害时不倒下，回复 50% 生命值且攻击力 +25%。冷却 3 天',
+    note: '触发当天算冷却一天。涅槃优先于生命归 0 惩罚（不扣金币、不变行动力、不触发生物停战）。',
   },
 
   // ════════════════════════════════════════════════════════════
@@ -119,7 +123,7 @@ export const TALENTS = {
 
   luyouyouSkilled_lv1: {
     id: 'luyouyouSkilled_lv1',
-    name: '巧手·等级 1',
+    name: '巧手・等级 1',
     emoji: '📖',
     icon: null,
     roleId: 'luyouyou',
@@ -128,9 +132,9 @@ export const TALENTS = {
     effectParams: {
       dailyRandomItemChance: 0.4,        // 【每一日开始时】40% 概率获得 1 个随机物品
       craftReturnChance: 0.25,           // 【合成或加工时】25% 概率返还 1 个原材料
-      note: '原材料指本次合成/加工用到的物品。',
     },
-    description: '【天赋】【每一日开始时】40% 概率获得 1 个随机物品。【天赋】【合成或加工时】25% 概率返还 1 个原材料。原材料指本次合成/加工用到的物品。',
+    description: '【天赋】【每一日开始时】40% 概率获得 1 个随机物品\n【天赋】【合成或加工时】25% 概率返还 1 个原材料',
+    note: '原材料指本次合成 / 加工用到的物品。',
   },
 
   luyouyouCooking: {
@@ -143,14 +147,14 @@ export const TALENTS = {
     effectType: 'max_hp_food_bonus',
     effectParams: {
       maxHpBonus: 20,                    // 角色最大生命值 +20
-      note: '食物提供更好回复效果且价值更高（食物系统 Agent 3 具体实现）。',
     },
-    description: '【天赋】食物提供更好回复效果且价值更高。角色最大生命值 +20。',
+    description: '【天赋】食物提供更好回复效果且价值更高。角色最大生命值 +20',
+    note: '食物提供更好回复效果且价值更高（食物系统 Agent 3 具体实现）。',
   },
 
   luyouyouDancing_lv1: {
     id: 'luyouyouDancing_lv1',
-    name: '蹁跹·等级 1',
+    name: '蹁跹・等级 1',
     emoji: '📖',
     icon: null,
     roleId: 'luyouyou',
@@ -160,14 +164,14 @@ export const TALENTS = {
       moveRegen: 6,                       // 【移动后】回复 6 点生命值
       dodgeRate: 0.32,                    // 闪避率 +32%
       dodgeRegenForMainChar: 12,          // 【闪避时】为主角回复 12 点生命值
-      note: '【移动后】指走完一整段路径后触发一次，不是每走一格触发。',
     },
-    description: '【天赋】【移动后】回复 6 点生命值。【天赋】角色闪避率 +32%。【天赋】【闪避时】为主角回复 12 点生命值。【移动后】指走完一整段路径后触发一次，不是每走一格触发。',
+    description: '【天赋】【移动后】回复 6 点生命值\n【天赋】角色闪避率 +32%\n【天赋】【闪避时】为主角回复 12 点生命值',
+    note: '【移动后】指走完一整段路径后触发一次，不是每走一格触发。',
   },
 
   luyouyouWindBreath_lv1: {
     id: 'luyouyouWindBreath_lv1',
-    name: '风息·等级 1',
+    name: '风息・等级 1',
     emoji: '📖',
     icon: null,
     roleId: 'luyouyou',
@@ -178,7 +182,7 @@ export const TALENTS = {
       critRateBonus: 0.3,                 // 陆悠悠所有技能暴击率 +30%
       critElementOverride: 'wind',        // 暴击时本次技能伤害类型改为风元素伤害
     },
-    description: '【天赋】我方角色造成的风元素伤害 +20。【天赋】陆悠悠所有技能暴击率 +30%，暴击时本次技能伤害类型改为风元素伤害。',
+    description: '【天赋】我方角色造成的风元素伤害 +20\n【天赋】陆悠悠所有技能暴击率 +30%，暴击时本次技能伤害类型改为风元素伤害',
   },
 
   luyouyouTwin: {
@@ -194,7 +198,8 @@ export const TALENTS = {
       nonStackable: true,                 // 不可叠加
       defaultDurationDays: 99,            // 未说明持续时间默认 99 天
     },
-    description: '【天赋】陆悠悠攻击暴击后，其余我方角色下一次攻击暴击率 +100%，不可叠加。未说明持续时间默认 99 天。',
+    description: '【天赋】陆悠悠攻击暴击后，其余我方角色下一次攻击暴击率 +100%，不可叠加',
+    note: '未说明持续时间默认 99 天。',
   },
 };
 

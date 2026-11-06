@@ -66,7 +66,7 @@ const FacilityHome = {
   name: '家',
   emoji: Assets.facilities.facility_home,
   value: 0,
-  description: '【永恒】【唯一】\n【经过时】获得 1 金币（每天限 1 次）\n【进入时】获得 1 金币（每天限 1 次）\n【受祝福时】获得 1 金币\n【睡觉时】改为回满行动力',
+  description: ITEMS.facility_home.description,
 
   register() {
     // 经过时：获得 1 金币（每天限 1 次）
@@ -126,7 +126,7 @@ const FacilityTent = {
   name: '帐篷',
   emoji: Assets.facilities.facility_tent,
   value: 5,
-  description: '【睡觉时】改为回满行动力\n【受祝福时】下 1 次使用该帐篷睡觉时，额外回复 3 点行动力',
+  description: ITEMS.facility_tent.description,
 
   register() {
     // onSleep：帐篷睡觉时回满（SleepSystem 主逻辑已在执行前判断，此处处理"受祝福时额外 +3"——
@@ -176,7 +176,7 @@ const FacilityWheat = {
   name: '小麦田块',
   emoji: Assets.facilities.facility_wheat,
   value: 3,
-  description: '【每一日开始时】获得小麦 ×2。若地形为草地，额外小麦 ×1\n【受祝福时】获得小麦 ×3',
+  description: ITEMS.facility_wheat.description,
 
   register() {
     // onDailyStart：找所有麦田格，每格 ×2（草地 +1），总计加背包
@@ -223,7 +223,7 @@ const FacilityRice = {
   name: '水稻田块',
   emoji: Assets.facilities.facility_rice,
   value: 3,
-  description: '【每一日开始时】获得稻草 ×1。若地形为草地额外稻草 ×1；若相邻有水面地形额外稻草 ×2\n【受祝福时】接下来 5 日每日开始时获得稻草 ×1',
+  description: ITEMS.facility_rice.description,
 
   register() {
     // onDailyStart
@@ -301,7 +301,7 @@ const FacilityPotato = {
   name: '土豆田块',
   emoji: Assets.facilities.facility_potato,
   value: 4,
-  description: '【每一日开始时】储存土豆 ×3（至多 30）\n【进入时】可以取走储存的土豆\n【受祝福时】储存土豆 ×5',
+  description: ITEMS.facility_potato.description,
 
   register() {
     // onDailyStart：所有土豆田 +3（受祝福则 +5），上限 30
@@ -355,7 +355,7 @@ const FacilityTulip = {
   name: '郁金香花田',
   emoji: Assets.facilities.facility_tulip,
   value: 8,
-  description: '【每一日开始时】价值随机 -4~+10\n【受祝福时】立即触发 2 次【每一日开始时】的效果\n可以随时采摘',
+  description: ITEMS.facility_tulip.description,
 
   register() {
     HookDispatcher.register('onDailyStart', ({ gs }) => {
@@ -398,7 +398,7 @@ const FacilityStrawberry = {
   name: '草莓田块',
   emoji: Assets.facilities.facility_strawberry,
   value: 5,
-  description: '【经过时】储存草莓 ×1（至多 5，每天限 1 次）\n【进入时】若草莓数量已满，则可以取走所有草莓\n【受祝福时】储存随机 2~5 个草莓',
+  description: ITEMS.facility_strawberry.description,
 
   register() {
     HookDispatcher.register('onPass', ({ gs, tileIdx }) => {
@@ -451,7 +451,7 @@ const FacilityPea = {
   name: '豌豆田块',
   emoji: Assets.facilities.facility_pea,
   value: 4,
-  description: '【使用技能时】储存豌豆 ×1（至多 10，每 2 回合限 1 次）\n【进入时】可以取走储存的豌豆\n【受祝福时】自动取走储存的豌豆',
+  description: ITEMS.facility_pea.description,
 
   register() {
     // onUseSkill：每 2 回合限 1 次（用 gs.turn - last >= 2 判断）
@@ -514,7 +514,7 @@ const FacilityHenhouse = {
   name: '鸡舍',
   emoji: Assets.facilities.facility_henhouse,
   value: 6,
-  description: '【进入时】生成 1 只小鸡（每日限 1 次）。每个鸡舍至多生成 4 只鸡\n【进入时】可以取走储存的鸡蛋（至多储存 10 个）\n【受祝福时】属于该鸡舍的随机 1 只小鸡立刻长大',
+  description: ITEMS.facility_henhouse.description,
 
   register() {
     // 进入时：每日限 1 次生成小鸡（取走鸡蛋已改为 InfoPanel 手动滑动条 §16.4）
@@ -582,7 +582,7 @@ const FacilitySlimehouse = {
   name: '史莱姆屋',
   emoji: Assets.facilities.facility_slimehouse,
   value: 6,
-  description: '【每日开始时】生成 1 只史莱姆（种类随机）\n【受祝福时】接下来的 3 天内，【每日开始时】效果触发 2 次',
+  description: ITEMS.facility_slimehouse.description,
 
   register() {
     // onDailyStart：生成史莱姆（祝福 3 天内 ×2）
@@ -642,7 +642,7 @@ const FacilityCorn = {
   name: '玉米田块',
   emoji: '🌽',
   value: 4,
-  description: '【生物增加时】获得玉米 ×1\n【受祝福时】获得随机 1 个生物',
+  description: ITEMS.facility_corn.description,
 
   register() {
     // onCreatureAdded：任何生物（友善/危险/极度危险）增加时，每块玉米田 +1 玉米
@@ -691,7 +691,7 @@ const FacilityCabbage = {
   name: '卷心菜田块',
   emoji: '🥬',
   value: 4,
-  description: '【每一日开始时】获得卷心菜 ×2，然后消耗背包里的一个卷心菜，将其投向最近的敌人，造成 20 点草元素伤害\n【受祝福时】对所有敌人分别投掷一个卷心菜（不消耗背包中的卷心菜）',
+  description: ITEMS.facility_cabbage.description,
 
   register() {
     // A-8 / L-07：投掷实装（物品库 FAC-012 / OUT-15）
@@ -794,7 +794,7 @@ const ResourceEvent = {
   name: '事件点',
   emoji: Assets.resources.resource_event,
   value: 5,
-  description: '【进入时】遇到随机事件（每日限一次）\n【受祝福时】显示今日此事件具体内容',
+  description: ITEMS.resource_event.description,
   register() {
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
@@ -834,7 +834,7 @@ const ResourceReward = {
   name: '奖励点',
   emoji: Assets.resources.resource_reward,
   value: 8,
-  description: '【进入时】获得随机奖励（每日限一次）\n【受祝福时】下次进入高价值奖励概率提升',
+  description: ITEMS.resource_reward.description,
   register() {
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
@@ -922,7 +922,7 @@ const ResourceHunt = {
   name: '狩猎点',
   emoji: Assets.resources.resource_hunt,
   value: 5,
-  description: '【进入时】可狩猎，概率获得随机生物（每日限一次）\n狩猎普通生物（每日 40%~90%）/ 狩猎危险生物（每日 15%~75%）\n【受祝福时】下一次进入本格狩猎地块时狩猎成功率 +50%（超出 100% 按 100% 计）',
+  description: ITEMS.resource_hunt.description,
   register() {
     // 狩猎需玩家选择目标（普通/危险），交互入口在 InfoPanel 功能选项；进入时仅提示
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
@@ -949,7 +949,7 @@ const ResourceShop = {
   name: '商店',
   emoji: Assets.resources.resource_shop,
   value: 1,
-  description: '【进入时】可进入商店\n【受祝福时】下一次进入时，有概率出现打折商品',
+  description: ITEMS.resource_shop.description,
   internalNote: '每日至多放置 1 个；场上上限 2；不在功能区，必须通过地块功能进入',
   register() {
     // §11.1 / §16.4 / §16.21：踩格不自动进入商店，由信息区「进入商店」功能选项进入
@@ -967,7 +967,7 @@ const ResourceBus = {
   name: '巴士站',
   emoji: Assets.resources.resource_bus,
   value: 5,
-  description: '【进入时】行动力 +1（每日限一次）\n【进入时】获得 1 轮子\n【受祝福时】获得 1 随机载具',
+  description: ITEMS.resource_bus.description,
   register() {
     // RES-005 / OUT-17：每日限一次只标注在「行动力 +1」上；轮子每次进入都给
     HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
@@ -1017,7 +1017,7 @@ const FacilityWildSeed = {
   name: '野生种子',
   emoji: Assets.facilities.facility_wild_seed,
   value: 1,
-  description: '【放置时】变为随机设施',
+  description: ITEMS.facility_wild_seed.description,
   internalNote: '占位物品：允许叠加，没有【唯一】；效果需调用设施池1',
 
   register() {
@@ -1052,7 +1052,7 @@ const FacilityDandelion = {
   name: '蒲公英田地',
   emoji: Assets.facilities.facility_dandelion,
   value: 1,
-  description: '【移动后】根据本次移动经过的距离提升储存的蒲公英的价值\n【放置时】【受祝福时】储存蒲公英 ×1（至多 1 个）\n可以随时采摘',
+  description: ITEMS.facility_dandelion.description,
   internalNote: '每移动 1 格曼哈顿距离价值 +1（初始 1）；使用载具移动按起点到落点计算',
 
   register() {
@@ -1105,7 +1105,7 @@ const FacilityGhostGrass = {
   name: '幽怜草田地',
   emoji: Assets.facilities.facility_ghost_grass,
   value: 12,
-  description: '【放置时】储存幽怜草 ×1（至多 1 个）\n【进入时】可以采摘\n【受祝福时】储存的幽怜草价值 +12（同一日内多次祝福有衰减）\n若本日没有受到过祝福则下一日开始时会直接枯萎',
+  description: ITEMS.facility_ghost_grass.description,
   internalNote: '初始价格 12；同日第 2 次起每次价值增加 -2，最低 +0；枯萎 = 地块内容直接失去',
 
   register() {
@@ -1161,7 +1161,7 @@ const FacilityMugwort = {
   name: '艾草田地',
   emoji: Assets.facilities.facility_mugwort,
   value: 2,
-  description: '【每一日开始时】获得艾草 ×2\n【角色回复生命值时】获得艾草 ×1\n【受祝福时】为角色回复 25% 生命值',
+  description: ITEMS.facility_mugwort.description,
   internalNote: '任意途径回复生命值都算，注意订阅所有回血来源',
 
   register() {
@@ -1198,7 +1198,7 @@ const ResourceMagicShop = {
   name: '魔法商店',
   emoji: Assets.resources.resource_magic_shop,
   value: 1,
-  description: '【进入时】可进入魔法商店\n【受祝福时】下一次进入时，首次刷新免费',
+  description: ITEMS.resource_magic_shop.description,
   internalNote: '每日至多放置 1 个；场上上限 2；首次刷新免费 = 本次进入无论第几次刷新均 0 金币，但正常消耗刷新次数',
 
   register() {

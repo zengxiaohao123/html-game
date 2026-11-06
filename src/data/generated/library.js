@@ -2126,7 +2126,7 @@ export const ITEMS = {
   "traits": [
     "水稻"
   ],
-  "description": "有至少 3 个水稻田块相连时，这些水稻田块产出的作物数量翻倍。相连指相邻地块有水稻田块即算，拐角处同样计算",
+  "description": "有至少 3 个水稻田块相连时，这些水稻田块产出的作物数量翻倍",
   "triggers": [
     "获得后自动生效"
   ],
@@ -2135,7 +2135,7 @@ export const ITEMS = {
   "stackMax": 1,
   "stackByValue": false,
   "sources": "文档未指定具体途径（9 章、11 章通用说明）",
-  "notes": "自带【唯一】；【水稻】为仅用于展示的标签；价值 15 不等于商店售价；魔导书不可出售"
+  "notes": "自带【唯一】；【水稻】为仅用于展示的标签；价值 15 不等于商店售价；魔导书不可出售。相连指相邻地块有水稻田块即算，拐角处同样计算"
 },
   grimoire_grain_full: {
   "id": "grimoire_grain_full",

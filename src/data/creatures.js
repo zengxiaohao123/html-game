@@ -9,6 +9,12 @@
  *   extreme  —— 极度危险（Phase 3 先不生成，预留）
  */
 
+
+// 玩家可见正文（设计文档 §13.3 逐字，按语义分行）；note 永不出现在 UI
+const CHICK_DESC = '生命值 50，攻击力 0，抗性均为 0。成长值初始 0，心情值初始 0。\n每一日开始时消耗对应鸡舍内的稻草 ×1 或小麦 ×1，变为【已投喂】；或在栅栏内自由移动经过草地形时消耗 1 草元素量，下一日开始无需消耗即【已投喂】。两者都不满足则【饥饿】。\n已投喂：成长值 +（10 + 心情值）。饥饿：心情 -1，成长值 +5。\n来自鸡舍：玩家每次进入鸡舍心情 +1（每日限 1 次）；其他方式心情固定 0。\n成长值满 → 变为鸡。通常不受攻击，被击败掉生肉 ×1。';
+const CHICKEN_DESC = '生命值 100，攻击力 0，心情值初始 0。\n投喂机制同小鸡。\n已投喂：产 1 个鸡蛋，并有（心情值 ×10%）概率产优质鸡蛋（心情负视为 0%）。饥饿：心情 -1。\n来自鸡舍：进鸡舍心情 +1（每日限 1 次）；其他方式心情固定 0。\n通常不受攻击，被击败掉生肉 ×3。';
+const SLIME_DESC = '生命值 40，攻击力 10，抗性 0。\n【元素免疫】7 种类型，免疫自身对应元素伤害。\n【粘液喷吐】每一日开始时 5% 概率对随机 1 格施加【粘液】debuff。危险生物容量超负荷时改为 15%。\n被击败掉落史莱姆凝胶 ×1。';
+
 export const CREATURES = {
   // ── 友善 ──
   chick: {
@@ -16,6 +22,7 @@ export const CREATURES = {
     name: '小鸡',
     emoji: '🐣',
     icon: null,
+    description: CHICK_DESC,
     category: 'friendly',
     stage: 'chick',
     hp: 50,
@@ -32,6 +39,7 @@ export const CREATURES = {
     name: '鸡',
     emoji: '🐔',
     icon: null,
+    description: CHICKEN_DESC,
     category: 'friendly',
     stage: 'adult',
     hp: 100,
@@ -50,6 +58,7 @@ export const CREATURES = {
     name: '火史莱姆',
     emoji: '🟠',
     icon: 'assets/images/enemies/slime_fire.png',
+    description: SLIME_DESC,
     category: 'danger',
     stage: 'adult',
     hp: 40,
@@ -66,6 +75,7 @@ export const CREATURES = {
     name: '水史莱姆',
     emoji: '🔵',
     icon: 'assets/images/enemies/slime_water.png',
+    description: SLIME_DESC,
     category: 'danger',
     stage: 'adult',
     hp: 40,
@@ -82,6 +92,7 @@ export const CREATURES = {
     name: '雷史莱姆',
     emoji: '🟡',
     icon: 'assets/images/enemies/slime_thunder.png',
+    description: SLIME_DESC,
     category: 'danger',
     stage: 'adult',
     hp: 40,
@@ -98,6 +109,7 @@ export const CREATURES = {
     name: '冰史莱姆',
     emoji: '🧊',
     icon: 'assets/images/enemies/slime_ice.png',
+    description: SLIME_DESC,
     category: 'danger',
     stage: 'adult',
     hp: 40,
@@ -114,6 +126,7 @@ export const CREATURES = {
     name: '草史莱姆',
     emoji: '🟢',
     icon: 'assets/images/enemies/slime_grass.png',
+    description: SLIME_DESC,
     category: 'danger',
     stage: 'adult',
     hp: 40,
@@ -130,6 +143,7 @@ export const CREATURES = {
     name: '风史莱姆',
     emoji: '🌀',
     icon: 'assets/images/enemies/slime_wind.png',
+    description: SLIME_DESC,
     category: 'danger',
     stage: 'adult',
     hp: 40,
@@ -146,6 +160,7 @@ export const CREATURES = {
     name: '岩史莱姆',
     emoji: '🪨',
     icon: 'assets/images/enemies/slime_rock.png',
+    description: SLIME_DESC,
     category: 'danger',
     stage: 'adult',
     hp: 40,

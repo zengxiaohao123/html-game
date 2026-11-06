@@ -3,13 +3,14 @@
 // 收藏品获得后自动生效，无需手动使用。绝大部分自带【唯一】性质
 // Agent 3 的 CollectibleSystem 读取此文件注册自动生效 hook
 
+import { ITEMS } from './items.js';
 export const COLLECTIBLES = {
   collectible_sad_pumpkin: {
     id: 'collectible_sad_pumpkin',
     itemId: 'collectible_sad_pumpkin',
     name: '悲伤的南瓜',
     emoji: '🎃',
-    description: '场上每储存 1 个作物，角色最大生命值和攻击力各 +2%',
+    description: ITEMS.collectible_sad_pumpkin.description,
     triggerCondition: 'passive',
     effectType: 'storedCrop_scaling',
     effectParams: {
@@ -26,7 +27,7 @@ export const COLLECTIBLES = {
     itemId: 'collectible_fullness',
     name: '果腹',
     emoji: '🍽️',
-    description: '载具的最后一次移动不消耗行动力',
+    description: ITEMS.collectible_fullness.description,
     triggerCondition: 'passive',
     effectType: 'vehicle_last_move_free',
     effectParams: {
@@ -42,7 +43,7 @@ export const COLLECTIBLES = {
     itemId: 'collectible_royal_pillow',
     name: '皇家枕头',
     emoji: '🛏️',
-    description: '睡觉时为角色回复 15% 生命值',
+    description: ITEMS.collectible_royal_pillow.description,
     triggerCondition: 'onSleep',
     effectType: 'sleep_heal_percent',
     effectParams: { percent: 0.15, unique: true },
@@ -54,7 +55,7 @@ export const COLLECTIBLES = {
     itemId: 'collectible_memoir',
     name: '回忆录',
     emoji: '📔',
-    description: '角色最大生命值 +2%。所有角色好感度 +1',
+    description: ITEMS.collectible_memoir.description,
     triggerCondition: 'passive',
     effectType: 'maxhp_percent',
     effectParams: { percent: 0.02, unique: false, stackable: true },
@@ -66,7 +67,7 @@ export const COLLECTIBLES = {
     itemId: 'collectible_farm_guide',
     name: '《农业指南》',
     emoji: '📘',
-    description: '获得 3 个随机设施',
+    description: ITEMS.collectible_farm_guide.description,
     triggerCondition: 'onAcquire',
     effectType: 'grant_facilities',
     effectParams: { count: 3, pool: 'POOL-01', unique: true, sequential: true },
@@ -78,7 +79,7 @@ export const COLLECTIBLES = {
     itemId: 'collectible_deadwood',
     name: '枯木新枝',
     emoji: '🪵',
-    description: '移动后为角色回复（6 点 + 1%）生命值',
+    description: ITEMS.collectible_deadwood.description,
     triggerCondition: 'onMoveEnd',
     effectType: 'move_heal_flat_percent',
     effectParams: { flat: 6, percent: 0.01, unique: true },
@@ -90,7 +91,7 @@ export const COLLECTIBLES = {
     itemId: 'collectible_membership_card',
     name: '会员卡',
     emoji: '💳',
-    description: '商店与魔法商店的所有商品售价 -50%',
+    description: ITEMS.collectible_membership_card.description,
     triggerCondition: 'passive',
     effectType: 'shop_discount',
     effectParams: { discount: 0.5, unique: true, affectsItemValue: false },

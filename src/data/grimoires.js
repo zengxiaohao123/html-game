@@ -3,13 +3,14 @@
 // 魔导书获得后自动生效，无需手动使用。自带【唯一】效果（通用规则，不在词条中显示）
 // Agent 3 的 GrimoireSystem 读取此文件注册自动生效 hook
 
+import { ITEMS } from './items.js';
 export const GRIMOIRES = {
   grimoire_harvest_cereal: {
     id: 'grimoire_harvest_cereal',
     itemId: 'grimoire_harvest_cereal',   // 对应 items.js 里的 id
     name: '庆丰收',
     emoji: '📖',
-    description: '有至少 3 个水稻田块相连时，这些水稻田块产出的作物数量翻倍',
+    description: ITEMS.grimoire_harvest_cereal.description,
     triggerCondition: 'passive_aoe_check',  // Agent 3 每日开始时检查
     effectType: 'field_output_multiplier',
     effectParams: {
@@ -26,7 +27,7 @@ export const GRIMOIRES = {
     itemId: 'grimoire_grain_full',
     name: '穗粒满',
     emoji: '📖',
-    description: '小麦田块获得新特性：【每一日结束时】获得小麦 ×1',
+    description: ITEMS.grimoire_grain_full.description,
     triggerCondition: 'onDayEnd',            // Agent 3 DaySystem 结束日时 fire
     effectType: 'new_facility_trait',
     effectParams: {
