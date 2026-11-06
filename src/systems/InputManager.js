@@ -175,7 +175,8 @@ export class InputManager {
       case 'sleep': {
         // §16.10：P 键只在主界面有效，其他界面按 P 无反应（弹窗打开时不得顶替弹窗）
         if (isSleepBlocked(this.director)) break;
-        this.director.sleep();
+        // 与 🛌 按钮共用 ConfirmAction：首次 P = 进入待确认，二次 P = 同一 tick 生效
+        this.director.requestSleep();
         break;
       }
 

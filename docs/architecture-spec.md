@@ -66,6 +66,7 @@ src/
 │   │   ├── VehiclePanel.js   # T 键载具页面
 │   │   └── ShopPanel.js      # 商店页面（地块功能进入）
 │   ├── DialogBox.js          # 剧情区（底部居中）
+│   ├── ConfirmAction.js      # 统一二次确认状态机（arm/disarm/trigger + 快捷键绑定）
 │   ├── Toast.js              # 中央弹窗提示（物品+1、心力交瘁等）
 │   └── styles/
 │       ├── base.css          # 重置 + 字体 + 基础变量
@@ -323,3 +324,4 @@ export const createInitialState = () => ({
 5. **Emoji 占位优先**：MVP 阶段所有美术用 emoji + 色块，图片替换只改 `Assets.js` 映射表
 6. **地图三属性正交**：地形 / 内容 / 状态 独立存储、独立更新、独立触发效果
 7. **元素伤害体系**：7 种元素（火水雷冰草风岩）+ 物理，每种伤害带类型字段，技能注册时声明
+8. **二次确认唯一实现**：所有需要玩家二次确认的操作（睡觉、拆除/卸下、清空存档、退出等）必须复用 `src/ui/ConfirmAction.js`（`arm` 首次进入待确认 → `trigger` 二次同一 tick 立即执行业务 → 目标面板 1.5 秒淡出；快捷键用 `bindKey/keyTrigger` 走同一状态机）。禁止各面板自写 `_armed` 标志 / 计时器；商店「离开」按钮为已定稿例外，保持原有"只变底色不改文字"实现。

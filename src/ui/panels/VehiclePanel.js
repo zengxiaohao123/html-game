@@ -13,6 +13,7 @@ import { VEHICLES } from '../../data/vehicles.js';
 import { ITEMS } from '../../data/items.js';
 import { VehicleSystem } from '../../systems/VehicleSystem.js';
 import { renderTraitBadges } from '../TraitBadges.js';
+import * as ConfirmAction from '../ConfirmAction.js';
 
 export class VehiclePanel {
   constructor(director) {
@@ -97,10 +98,24 @@ export class VehiclePanel {
       if (def?.description) {
         createEl('div', { style: { fontSize: '10px', color: '#9a8a76', textAlign: 'center', padding: '0 6px', whiteSpace: 'pre-line' }, text: def.description, parent: this.slotEl });
       }
-      createEl('button', {
+      // 卸下：二次确认（首次只进入待确认，二次同一 tick 立即卸下；槽位卡片 1.5 秒淡出后刷新）
+      const detachBtn = createEl('button', {
         class: 'action-btn', text: '卸下', parent: this.slotEl,
-        onclick: () => this._detach(),
       });
+      detachBtn.onclick = () => {
+        if (ConfirmAction.isArmed(detachBtn)) {
+          ConfirmAction.trigger(detachBtn, () => this._detach(false), {
+            fadeTarget: this.slotEl,
+            onFaded: () => {
+              this.slotEl.style.opacity = '';
+              this.slotEl.style.pointerEvents = '';
+              this._refresh();
+            },
+          });
+        } else {
+          ConfirmAction.arm(detachBtn);
+        }
+      };
     } else {
       createEl('div', { style: { fontSize: '14px', color: '#b0a090' }, text: '（空）', parent: box });
       createEl('div', { style: { fontSize: '11px', color: '#888', textAlign: 'center' }, text: '右侧点选装备', parent: this.slotEl });
@@ -147,12 +162,12 @@ export class VehiclePanel {
     }
   }
 
-  _detach() {
+  _detach(refresh = true) {
     const gs = this._getGS(); if (!gs) return;
     VehicleSystem.detachVehicle(gs);
     EventBus.emit(GE.TOAST_SHOW, { text: '📦 载具已卸库存', duration: 1200 });
     devLog.info('[VehiclePanel] detach');
-    this._refresh();
+    if (refresh) this._refresh();
   }
 
   show() {

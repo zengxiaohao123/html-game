@@ -4,9 +4,10 @@
 // §16.4 选项模式：选项放在信息区（右侧信息面板位置），不是屏幕中央模态弹窗：
 //   · 卡片定位与 InfoPanel 一致（右侧 380px、垂直居中），遮罩透明不压暗主界面
 //   · 鼠标点击或数字键 1~6（最多 6 个），两者等效
-//   · 第一次点击 = 选中：浅绿色背景，下方小字「你确定这么做？」
-//   · 点击别处 = 取消选中；点击其他选项 = 切换选中
-//   · 再次点击已选中项 = 确认：选项闪烁 + 淡金色背景，2 秒后淡出并触发结果
+//   · 第一次点击 = 待确认：浅绿色背景，下方小字「你确定这么做？」
+//   · 点击别处 = 取消待确认；点击其他选项 = 切换待确认项
+//   · 再次点击已选中项 = 确认：同一 tick 立即执行结果，随后整卡 1.5 秒淡出
+//     （统一走 ConfirmAction.js，不再有「延迟 2 秒生效 / 先复原再执行」）
 //
 // 调用：
 //   EventBus.emit(GE.DIALOG_SHOW, {
@@ -23,11 +24,8 @@
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { createEl, qs } from './dom.js';
-import { devLog } from '../core/Logger.js';
-
-const SELECT_BG = '#d9efdc';   // §16.4 选中：浅绿色背景
-const CONFIRM_BG = '#f7e6a8';  // §16.4 确认：淡金色背景
-const CONFIRM_FADE_MS = 2000;  // §16.4 确认后 2 秒淡出
+import * as ConfirmAction from './ConfirmAction.js';
+import { CONFIRM_TEXT, CONFIRM_FADE_MS } from './ConfirmAction.js';
 
 export class DialogBox {
   constructor() {
@@ -43,10 +41,8 @@ export class DialogBox {
     this._opts = [];
     this._selectedIdx = -1;
     this._confirming = false;
-    this._confirmTimer = null;
-    this._fadeTimer = null;
     this._hintEl = null;
-    this.confirmFadeMs = CONFIRM_FADE_MS; // 冒烟测试可覆写以加速
+    this.confirmFadeMs = CONFIRM_FADE_MS; // 冒烟测试可覆写以加速（文档口径 1.5 秒）
   }
 
   mount(parent = qs('body')) {
@@ -120,7 +116,7 @@ export class DialogBox {
         fontSize: '12px', color: '#7a6a4f', textAlign: 'center',
         flexShrink: 0, display: 'none',
       },
-      text: '你确定这么做？',
+      text: CONFIRM_TEXT,
       parent: this.box,
     });
 
@@ -130,11 +126,9 @@ export class DialogBox {
 
   show(payload) {
     if (!payload) return;
-    // 重入防护（连点/弹窗叠开）：上一个弹窗仍在显示（含确认淡出期）时，
-    // 先清掉旧确认/淡出计时器并移除旧键盘监听，避免旧计时器把新弹窗误关、
-    // 或多次 show 叠加多个 keydown 监听导致状态错乱。
-    if (this._confirmTimer) { clearTimeout(this._confirmTimer); this._confirmTimer = null; }
-    if (this._fadeTimer) { clearTimeout(this._fadeTimer); this._fadeTimer = null; }
+    // 重入防护（连点/弹窗叠开）：上一个弹窗的待确认态 / 淡出计时器必须先清掉，
+    // 避免旧计时器把新弹窗误关、或旧按钮的确认态残留。
+    ConfirmAction.disarmAll();
     if (this._keyHandler) {
       window.removeEventListener('keydown', this._keyHandler);
       this._keyHandler = null;
@@ -200,51 +194,47 @@ export class DialogBox {
     window.addEventListener('keydown', this._keyHandler);
   }
 
-  // §16.4：第一次点击 = 选中；再次点击已选中项 = 确认
+  // §16.4：第一次点击 = 待确认；再次点击已选中项 = 确认（同一 tick 立即执行）
   _chooseOption(i) {
     if (!this.visible || this._confirming) return;
     if (this._selectedIdx === i) { this._confirmOption(i); return; }
     this._selectedIdx = i;
     this._optBtns.forEach((btn, k) => {
-      btn.style.background = k === i ? SELECT_BG : '';
+      if (k === i) ConfirmAction.arm(btn, { hintEl: this._hintEl, text: CONFIRM_TEXT });
+      else ConfirmAction.disarm(btn);
     });
-    if (this._hintEl) this._hintEl.style.display = 'block';
   }
 
   _deselect() {
     this._selectedIdx = -1;
-    for (const btn of this._optBtns) btn.style.background = '';
+    ConfirmAction.disarmAll();
     if (this._hintEl) this._hintEl.style.display = 'none';
   }
 
-  // §16.4：确认 —— 闪烁 + 淡金底，2 秒后淡出并触发结果
+  // §16.4：确认 —— 立即调用 onSelect（业务先于动画），随后整卡 1.5 秒淡出
   _confirmOption(i) {
     this._confirming = true;
     const btn = this._optBtns[i];
     const opt = this._opts[i];
-    btn.style.background = CONFIRM_BG;
-    btn.classList.add('dialog-opt-flash');
+    btn?.classList?.add('dialog-opt-flash');
     if (this._hintEl) this._hintEl.style.display = 'none';
-    this._confirmTimer = setTimeout(() => {
-      this._confirmTimer = null;
-      this.mask.style.opacity = '0'; // 淡出
-      this._fadeTimer = setTimeout(() => {
-        this._fadeTimer = null;
-        this.hide();
-        try { if (typeof opt.onSelect === 'function') opt.onSelect(); }
-        catch (err) { devLog.error('[DialogBox] onSelect:', err); }
-      }, 320);
-    }, this.confirmFadeMs);
+    ConfirmAction.trigger(btn, () => {
+      if (typeof opt?.onSelect === 'function') opt.onSelect();
+    }, {
+      fadeTarget: this.mask,
+      fadeMs: this.confirmFadeMs,
+      onFaded: () => this.hide(),
+    });
   }
 
   hide() {
-    if (this._confirmTimer) { clearTimeout(this._confirmTimer); this._confirmTimer = null; }
-    if (this._fadeTimer) { clearTimeout(this._fadeTimer); this._fadeTimer = null; }
+    ConfirmAction.disarmAll();
     if (!this.visible) return;
     this.visible = false;
     this.currentPayload = null;
     this.mask.style.display = 'none';
     this.mask.style.opacity = '1';
+    this.mask.style.pointerEvents = '';
     this._optBtns = [];
     this._opts = [];
     this._selectedIdx = -1;

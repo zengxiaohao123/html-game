@@ -308,25 +308,30 @@ export class GameDirector {
   }
 
   /**
-   * 睡觉换日（手动触发 / P 键 / 🛌 按钮）
-   * @param {boolean} [skipConfirm=false] 是否跳过确认（强制睡觉时用）
+   * 睡觉换日（立即执行，不做二次确认）
+   * 玩家入口请走 requestSleep()：按钮 / P 键共用 ConfirmAction 状态机。
    * @returns {boolean} 是否成功睡觉
    */
-  sleep(skipConfirm = false) {
-    // §16.10：行动力 > 0 时弹确认「行动力尚未耗尽，是否确定睡觉？」
-    if (!skipConfirm && this.gs && this.gs.player.stamina > 0) {
-      EventBus.emit(GE.DIALOG_SHOW, {
-        title: '睡觉',
-        content: '行动力尚未耗尽，是否确定睡觉？',
-        options: [
-          { label: '取消', onSelect: () => {} },
-          { label: '确定睡觉', onSelect: () => { SleepSystem.sleep(this.gs, /* isAuto = */ false); } },
-        ],
-      });
-      return false;
-    }
+  sleep() {
+    if (!this.gs) return false;
     SleepSystem.sleep(this.gs, /* isAuto = */ false);
     return true;
+  }
+
+  /**
+   * 玩家主动睡觉入口（🛌 按钮 / P 键）
+   * §16.10：行动力 > 0 时二次确认（首次点击只进入待确认态，二次点击同一 tick 立即换日）；
+   * 行动力已耗尽则无需确认，直接睡。
+   * @returns {boolean} 本次是否已真正执行睡觉
+   */
+  requestSleep() {
+    if (!this.gs) return false;
+    if (this.gs.player.stamina <= 0) return this.sleep();
+    if (typeof this.sleepConfirm === 'function') {
+      this.sleepConfirm(); // UI 层 ConfirmAction.keyTrigger：首次 arm / 二次立即执行
+      return false;
+    }
+    return this.sleep();
   }
 
   /**

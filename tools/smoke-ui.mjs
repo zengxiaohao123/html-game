@@ -642,31 +642,92 @@ head_('§16.20 中央接线：开新面板关旧面板 / 开面板退建造');
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });
 }
 
-head_('§16.10 睡觉确认 + P 键仅主界面有效');
+head_('§16.10 睡觉二次确认（ConfirmAction）+ P 键仅主界面有效');
 {
-  const dialogs = [];
-  const onDialog = (p) => dialogs.push(p);
-  EventBus.on(GE.DIALOG_SHOW, onDialog);
+  const ConfirmAction = await import('../src/ui/ConfirmAction.js');
+  const sleepBtn = funcBar.sleepBtn;
+  assert(!!sleepBtn, 'FuncBar 睡觉按钮注册为确认锚点');
+  const sleepHint = () => sleepBtn.children.find((c) => c._classes?.has('confirm-hint'));
 
   gs.player.stamina = 5;
   const dayBefore = gs.day;
-  const r1 = director.sleep();
-  assert(r1 === false && dialogs.length === 1, '行动力 >0 → 弹确认且不立即睡觉');
-  assert(gs.day === dayBefore, '确认前未换日');
-  assert((dialogs[0].content || '').includes('行动力尚未耗尽'), '确认文案为文档原文');
-  const confirmOpt = dialogs[0].options.find((o) => o.label.includes('确定'));
-  confirmOpt.onSelect();
-  assert(gs.day === dayBefore + 1, '点「确定睡觉」→ 换日');
 
-  // P 键 gating：有面板打开时 _dispatchAction('sleep') 无反应
+  // ① 首次点击：只进入待确认态（底色变化 + 「你确定这么做？」），不执行
+  const r1 = director.requestSleep();
+  assert(r1 === false && gs.day === dayBefore, '首次触发 → 不执行、不换日');
+  assert(ConfirmAction.isArmed(sleepBtn), '首次触发 → 进入待确认态');
+  assert(sleepBtn.style.background === ConfirmAction.CONFIRM_ARM_BG, '待确认态底色改变');
+  const h1 = sleepHint();
+  assert(!!h1 && h1._text === ConfirmAction.CONFIRM_TEXT && h1.style.display === 'block',
+    '按钮紧邻位置出现「你确定这么做？」');
+
+  // ② 点别处 = 取消待确认并复原
+  ConfirmAction.handleOutsideClick(funcBar.root);
+  assert(!ConfirmAction.isArmed(sleepBtn) && gs.day === dayBefore, '点别处 → 取消且不执行');
+  assert(sleepBtn.style.background === 'transparent', '取消后底色复原（回到 FuncBar 透明态）');
+  assert(!sleepHint() || sleepHint().style.display === 'none', '取消后提示隐藏');
+
+  // ③ 二次点击：同一 tick 立即执行（旧实现要等 2 秒且先复原）
+  director.requestSleep();
+  assert(ConfirmAction.isArmed(sleepBtn) && gs.day === dayBefore, '再次首次点击 → 进入待确认');
+  director.requestSleep();
+  assert(gs.day === dayBefore + 1, '第二次触发 → 同一 tick 立即换日');
+  assert(ConfirmAction.isConfirming(sleepBtn), '执行后进入淡出锁定态（不可重复点击）');
+  ConfirmAction.disarm(sleepBtn); // 冒烟加速：等价于 1.5 秒淡出结束
+
+  // ④ 快捷键 P 与按钮同规范：首次 arm、二次立即生效
+  gs.player.stamina = 5;
+  const dayKb = gs.day;
+  inputManager._dispatchAction('sleep');
+  assert(ConfirmAction.isArmed(sleepBtn) && gs.day === dayKb, 'P 键第一次 → 只进入待确认，不换日');
+  inputManager._dispatchAction('sleep');
+  assert(gs.day === dayKb + 1, 'P 键第二次 → 同一 tick 立即换日（与按钮同一状态机）');
+  ConfirmAction.disarm(sleepBtn);
+
+  // ⑤ P 键 gating：有面板打开时 _dispatchAction('sleep') 无反应
   gs.player.stamina = 5;
   EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'inventory' });
-  const dialogsBefore = dialogs.length;
   const dayBefore2 = gs.day;
   inputManager._dispatchAction('sleep');
-  assert(dialogs.length === dialogsBefore && gs.day === dayBefore2, '有界面打开时 P 无效');
+  assert(gs.day === dayBefore2 && !ConfirmAction.isArmed(sleepBtn), '有界面打开时 P 无效');
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });
-  EventBus.off(GE.DIALOG_SHOW, onDialog);
+}
+
+head_('统一二次确认 ConfirmAction：1.5s 淡出 / 淡出期锁定 / 点别处取消');
+{
+  const ConfirmAction = await import('../src/ui/ConfirmAction.js');
+  assert(ConfirmAction.CONFIRM_FADE_MS === 1500, '淡出时长是常量 1.5 秒（全项目唯一）');
+  const btn = new FakeEl('button');
+  const target = new FakeEl('div');
+  let hits = 0; let faded = 0;
+
+  // ① 首次 = 待确认：底色 + 提示文案，不执行业务
+  ConfirmAction.arm(btn);
+  assert(ConfirmAction.isArmed(btn) && btn.style.background === ConfirmAction.CONFIRM_ARM_BG,
+    'arm → 待确认底色变化');
+  assert(btn._classes.has('confirm-armed'), 'arm → confirm-armed 类');
+  assert(btn.children.some((c) => c._text === ConfirmAction.CONFIRM_TEXT), 'arm → 出现「你确定这么做？」');
+  assert(hits === 0, 'arm 阶段不执行业务');
+
+  // ② 点别处 = 取消并复原
+  ConfirmAction.handleOutsideClick(target);
+  assert(!ConfirmAction.isArmed(btn) && btn.style.background === '', '点别处 → 取消并复原');
+
+  // ③ 二次 = 同一 tick 执行，随后目标 1.5 秒淡出（冒烟 30ms）
+  ConfirmAction.arm(btn);
+  const ok = ConfirmAction.trigger(btn, () => { hits++; }, {
+    fadeTarget: target, onFaded: () => { faded++; }, fadeMs: 30,
+  });
+  assert(ok === true && hits === 1, 'trigger → 同一 tick 执行业务（不延迟）');
+  assert(target.style.opacity === '0' && target.style.pointerEvents === 'none',
+    '淡出目标透明度归零且不可再点');
+  assert(ConfirmAction.isConfirming(btn) && btn.style.pointerEvents === 'none', '淡出期间按钮锁定');
+  assert(ConfirmAction.trigger(btn, () => { hits++; }, { fadeTarget: target, fadeMs: 30 }) === false,
+    '淡出期间重复点击无效');
+
+  await new Promise((r) => setTimeout(r, 80));
+  assert(faded === 1 && hits === 1, '淡出结束 → onFaded 触发一次，业务不重复');
+  assert(!ConfirmAction.isConfirming(btn) && btn.style.pointerEvents === '', '淡出结束 → 按钮复原可再点');
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1116,14 +1177,29 @@ head_('第 10 批任务 B：InventoryPanel 切 tab（点击触发状态变化）
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });
 }
 
-head_('第 10 批任务 B：VehiclePanel 卸下（点击触发状态变化）');
+head_('第 10 批任务 B：VehiclePanel 卸下（二次确认后触发状态变化）');
 {
+  const ConfirmAction = await import('../src/ui/ConfirmAction.js');
   gs.vehicle.current = { vehicleId: 'vehicle_wheel', usageLeft: 3 };
   EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'vehicle' });
   const unloadBtn = buttonsWithText(vehiclePanel.helper.root, '卸下')[0];
   assert(!!unloadBtn, '装备中 → 卸下按钮存在');
+
+  // 首次点击：只进入待确认态，不卸下
   unloadBtn.click();
-  assert(gs.vehicle.current === null, '点卸下 → current=null');
+  assert(gs.vehicle.current !== null, '首次点卸下 → 不执行（仍装备中）');
+  assert(ConfirmAction.isArmed(unloadBtn) && unloadBtn.style.background === ConfirmAction.CONFIRM_ARM_BG,
+    '首次点卸下 → 待确认态 + 底色变化');
+
+  // 二次点击：同一 tick 立即卸下
+  unloadBtn.click();
+  assert(gs.vehicle.current === null, '第二次点卸下 → 同一 tick 立即 current=null');
+  assert(ConfirmAction.isConfirming(unloadBtn), '卸下后进入淡出锁定态');
+  // 冒烟加速：等价于 1.5 秒淡出结束（恢复槽位并刷新）
+  ConfirmAction.disarm(unloadBtn);
+  vehiclePanel.slotEl.style.opacity = '';
+  vehiclePanel.slotEl.style.pointerEvents = '';
+  vehiclePanel._refresh();
   // detachVehicle 把剩余次数同步回 available 里的同种载具条目（不新增）
   assert(gs.vehicle.available.some((a) => a.vehicleId === 'vehicle_wheel' && a.usageLeft === 3),
     '卸下后剩余次数同步回库存条目');
@@ -1240,22 +1316,25 @@ head_('第 11 批 §16.4：DialogBox 选项两段式 + 数字键等效 + 弹窗�
   assert(dlg._optBtns[0].style.background === '' && dlg._hintEl.style.display === 'none',
     '取消后背景与小字复位');
 
-  // ── 3) 数字键选择 = 鼠标等效；再按一次 = 确认 ──
+  // ── 3) 数字键选择 = 鼠标等效；再按一次 = 确认（同一 tick 立即执行） ──
   key('2');
   assert(dlg._selectedIdx === 1, '数字键 2 → 选中第 2 项');
   key('3');
   assert(dlg._selectedIdx === 2, '数字键 3 → 切换选中到第 3 项');
   key('3');
   assert(dlg._confirming === true, '再按已选数字键 → 进入确认');
+  assert(picked === '丙', '确认后同一 tick 立即触发 onSelect（不延迟、不先复原）', picked);
   assert(dlg._optBtns[2].style.background === '#f7e6a8', '确认项淡金色背景');
   assert(dlg._optBtns[2].classList.contains('dialog-opt-flash'), '确认项闪烁类已加');
+  assert(dlg.mask.style.pointerEvents === 'none', '淡出期间整卡不可再点');
   key('1');
-  assert(dlg._selectedIdx === 2 && picked === null, '确认动画期间其他数字键无效');
+  assert(dlg._selectedIdx === 2, '确认动画期间其他数字键无效');
 
-  // ── 4) 2 秒（冒烟 30ms）后淡出并触发结果 ──
+  // ── 4) 1.5 秒（冒烟 30ms）淡出后才关闭（业务已在第 3 步当场生效） ──
+  assert(dlg.visible === true && dlg.mask.style.opacity === '0', '淡出中：卡片仍在、透明度归零');
   await sleepMs(500);
-  assert(dlg.visible === false, '确认后弹窗淡出关闭');
-  assert(picked === '丙', 'onSelect 触发且为确认的选项（状态变化）', picked);
+  assert(dlg.visible === false, '淡出结束 → 弹窗关闭');
+  assert(picked === '丙', '执行业务在淡出前已完成，不被动画拦截', picked);
 
   // ── 5) 弹窗打开时数字键不抢 HotBar；关闭后恢复 ──
   inputManager.bind();
@@ -1300,15 +1379,16 @@ head_('第 12 批：弹窗连点重入 / ESC 归弹窗 / drop 复位拖拽标记
   dlg2._optBtns[0].click();
   dlg2._optBtns[0].click(); // 进入确认（计时器在途）
   assert(dlg2._confirming === true, '第一个弹窗进入确认');
+  assert(pickedA === '甲', '旧弹窗确认已当场执行（同一 tick）');
   EventBus.emit(GE.DIALOG_SHOW, {
     title: '第二个',
     options: [{ label: '乙', onSelect: () => { pickedB = '乙'; } }],
   });
   assert(dlg2.visible === true && dlg2._confirming === false && dlg2.titleEl._text === '第二个',
     '第二个弹窗覆盖第一个（确认态复位）');
-  await sleepMs(500); // 越过旧确认计时器时间窗
-  assert(dlg2.visible === true && pickedA === null,
-    '旧确认计时器被清理：不关新弹窗、不触发旧选项');
+  await sleepMs(500); // 越过旧淡出计时器时间窗
+  assert(dlg2.visible === true && pickedA === '甲',
+    '旧淡出计时器被清理：不关新弹窗（旧业务已生效）');
   dlg2._optBtns[0].click();
   dlg2._optBtns[0].click();
   await sleepMs(500);
