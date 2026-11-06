@@ -225,6 +225,8 @@ export class InventoryPanel {
       // §16.15：左侧物品图标格，无文字（iconEl 渲染）
       const iconWrap = createEl('div', { class: 'inv-big-emoji', parent: slot });
       iconWrap.appendChild(this._iconElFor(entry.itemId, '38px'));
+      // 数量角标：右下角常驻（数量为 1 也显示），pointer-events:none 不影响格子点击
+      createEl('div', { class: 'inv-big-qty', text: `×${entry.qty}`, parent: slot });
       slot.title = `${name} ×${entry.qty}`;
 
       // 拖拽放置（§16.15）：仅地块内容类物品可拖（产物、道具等不触发拖拽）；

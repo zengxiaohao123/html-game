@@ -445,6 +445,7 @@
   background: rgba(255, 255, 255, 0.95); border-radius: 7px;
   padding: 0 4px; line-height: 1.5; font-weight: 700;
   border: 1.5px solid #3a3a3a; pointer-events: none;
+  white-space: nowrap; max-width: calc(100% - 6px);
 }
 
 /* ══ 右列：上半（融为一体） + 下半（出货箱） ══ */
