@@ -22,7 +22,7 @@ import { HookDispatcher } from '../core/HookDispatcher.js';
 import { Distance } from '../core/Distance.js';
 import { Direction } from '../utils/Direction.js';
 import { devLog } from '../core/Logger.js';
-import { SkillSystem } from './SkillSystem.js';
+import { firePassHooksAlong, fireEnterHooks } from './MoveHooks.js';
 import { CombatSystem } from './CombatSystem.js';
 import { TalentSystem } from './TalentSystem.js';
 import { VehicleSystem } from './VehicleSystem.js';
@@ -106,10 +106,8 @@ export function move(gs, direction) {
   }
 
   // 2. 逐格结算【经过时】：冰面滑行经过的每一格都算（起点不算，含终点）
-  for (const idx of path) {
-    HookDispatcher.fire('onPass', { gs, tileIdx: idx });
-    SkillSystem.triggerSkillByHook('onPass', { gs, tileIdx: idx });
-  }
+  //    与载具共用 MoveHooks 的同一条路径结算
+  firePassHooksAlong(gs, path);
 
   // 2b. 粘液 debuff：仅最终停留格结算（§15「进入该格时」；冰面滑行经过的中间格不触发）
   {
@@ -135,8 +133,7 @@ export function move(gs, direction) {
   for (const idx of path) markVisited(gs, idx);
 
   // 4. 触发【进入时】：仅最终停留格
-  HookDispatcher.fire('onEnter', { gs, tileIdx: finalIdx });
-  SkillSystem.triggerSkillByHook('onEnter', { gs, tileIdx: finalIdx });
+  fireEnterHooks(gs, finalIdx);
 
   // 5. 广播 MOVE 事件
   EventBus.emit(GE.MOVE, { fromIdx, toIdx: finalIdx, direction, path });

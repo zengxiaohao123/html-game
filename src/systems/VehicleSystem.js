@@ -19,8 +19,7 @@ import { VEHICLES } from '../data/vehicles.js';
 import { ITEMS } from '../data/items.js';
 import { Distance, outerXYToIdx } from '../core/Distance.js';
 import { Direction } from '../utils/Direction.js';
-import { HookDispatcher } from '../core/HookDispatcher.js';
-import { SkillSystem } from './SkillSystem.js';
+import { firePassHooksAlong, fireEnterHooks } from './MoveHooks.js';
 import { StaminaSystem } from './StaminaSystem.js';
 import { canMoveNow, markMoved } from './MoveCooldown.js';
 
@@ -341,6 +340,10 @@ export function tryMove(gs, opts = {}) {
     });
   }
 
+  // 结算【经过时】：与徒步共用同一套逐格结算（§7 经过 = 途经每一格 + 最终停留格，不含起点）
+  // path 里保留了穿越栅栏中心/虚空产生的 null，由 MoveHooks 跳过
+  firePassHooksAlong(gs, path);
+
   // 更新位置
   gs.player.x = targetIdx;
 
@@ -355,19 +358,8 @@ export function tryMove(gs, opts = {}) {
     EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: def.goldOnArrive });
   }
 
-  // Phase 4：载具移动也要触发 onPass / onEnter hook（设施词条正常工作）
-  //   onPass：路径上除最后一格外的每一格（跳过 null——穿越栅栏中心不算经过合法地块）
-  if (path && path.length > 0) {
-    for (const passIdx of path) {
-      if (passIdx != null && passIdx !== targetIdx) {
-        HookDispatcher.fire('onPass', { gs, tileIdx: passIdx });
-        SkillSystem.triggerSkillByHook?.('onPass', { gs, tileIdx: passIdx });
-      }
-    }
-  }
-  //   onEnter：最终停留格
-  HookDispatcher.fire('onEnter', { gs, tileIdx: targetIdx });
-  SkillSystem.triggerSkillByHook?.('onEnter', { gs, tileIdx: targetIdx });
+  // 结算【进入时】：仅最终停留格
+  fireEnterHooks(gs, targetIdx);
 
   // B-2：载具移动距离（起点到落点实际经过的合法格数）随 MOVE 事件广播，
   //      供 GameDirector 推进回合 / 【移动后】hook / 移形累计使用

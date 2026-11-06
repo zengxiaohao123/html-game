@@ -37,10 +37,14 @@ export function outerIdxToXY(size, idx) {
  * @param {number} size 地图边长
  * @param {number} x
  * @param {number} y
- * @returns {number|null} 若 (x,y) 不在外圈（在栅栏内部）返回 null
+ * @returns {number|null} 若 (x,y) 不在外圈（在栅栏内部或越界）返回 null
  */
 export function outerXYToIdx(size, x, y) {
   const ring = size - 1;
+  // 越界坐标（含负坐标）必须返回 null：否则会算出 -1 / total 之外的“幽灵格”，
+  // 载具沿方向扫描时会把出界位置当成合法落点，导致移动到不存在的格子、
+  // 并以非法 tileIdx 触发【经过时】钩子。
+  if (x < 0 || x >= size || y < 0 || y >= size) return null;
   if (x === 0) {
     // 左边
     if (y === 0) return 0; // 左上（属于上边，按上边算）
