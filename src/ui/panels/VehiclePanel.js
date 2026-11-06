@@ -4,8 +4,10 @@
 //       - 当前未装载 → 装载
 //       - 点击当前已装载的那张 → 卸下（回到「徒步跋涉」）
 //       - 已装载 A 时点击 B → A 卸下、B 装上（替换）
+//   · 每张卡片对应一件载具实例（instanceId），同名载具也是两张独立卡片，
+//     各自显示自己的剩余次数、各自装载 / 卸下，互不影响
 //   · 不设「当前装备槽」格子，也不设「装载 / 卸下」按钮；
-//     当前载具直接在它自己的卡片上加绿色边框
+//     当前载具只在它自己那张卡片上加绿色边框（同名另一件不加）
 //   · 每行最多 3 张卡片（1/3 宽），卡片直接显示名称 / 剩余次数 / 描述文本
 // 数据只读 gs.vehicle（不改存档字段、不改移动系统逻辑）
 
@@ -139,12 +141,17 @@ export class VehiclePanel {
 
     v.available.forEach((entry) => {
       const def = VEHICLES[entry.vehicleId] || {};
-      const isCur = !!cur && cur.vehicleId === entry.vehicleId;
+      // 按实例辨识：同名两件是两张独立的卡，绿框只标当前装载的那一件
+      const isCur = !!cur && cur.instanceId === entry.instanceId;
 
       // 整张卡片可点：单击装载 / 卸下 / 替换
       const card = createEl('div', {
         class: 'vehicle-card',
-        attrs: { 'data-vehicle-id': entry.vehicleId, 'data-current': isCur ? '1' : '0' },
+        attrs: {
+          'data-vehicle-id': entry.vehicleId,
+          'data-instance-id': String(entry.instanceId),
+          'data-current': isCur ? '1' : '0',
+        },
         style: {
           boxSizing: 'border-box',
           minHeight: '150px',
@@ -208,6 +215,7 @@ export class VehiclePanel {
   /**
    * 单击结算（无二次确认）：
    *   未装载 → 装载；点已装载的那张 → 卸下；已装载 A 点 B → 替换。
+   * 全部按实例（instanceId）结算：同名另一件不会被当成「已装载的那张」。
    * 同一个事件对象只结算一次，避免冒泡/重复派发造成「装了又卸」。
    */
   _onCardClick(ev, entry) {
@@ -216,12 +224,13 @@ export class VehiclePanel {
     ev?.stopPropagation?.();
 
     const gs = this._getGS();
+    const instanceId = entry?.instanceId;
     const vehicleId = entry?.vehicleId;
-    if (!gs || !vehicleId || !gs.vehicle) return;
+    if (!gs || !Number.isInteger(instanceId) || !vehicleId || !gs.vehicle) return;
     const cur = gs.vehicle.current;
 
-    // 1) 点击当前已装载的那张 → 卸下（回到徒步跋涉）
-    if (cur && cur.vehicleId === vehicleId) {
+    // 1) 点击当前已装载的那一件 → 卸下（回到徒步跋涉）；同名另一件不受影响
+    if (cur && cur.instanceId === instanceId) {
       this._detach();
       return;
     }
@@ -236,9 +245,9 @@ export class VehiclePanel {
       VehicleSystem.detachVehicle(gs);
     }
 
-    // 3) 未装载 → 装载
-    const ok = VehicleSystem.attachVehicle(gs, vehicleId);
-    if (ok) devLog.info('[VehiclePanel] attach', vehicleId);
+    // 3) 未装载 → 装载这一件
+    const ok = VehicleSystem.attachVehicle(gs, instanceId);
+    if (ok) devLog.info('[VehiclePanel] attach', vehicleId, 'instance', instanceId);
   }
 
   _detach() {

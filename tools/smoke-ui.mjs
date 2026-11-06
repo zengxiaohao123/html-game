@@ -361,11 +361,13 @@ head_('§16.12 TeamPanel：快捷编队按钮 + 二级 ESC 回一级');
 head_('§16.16 VehiclePanel：每行 3 张卡片 + 卡片直显描述 + 单击装/卸/替换（无二次确认）');
 {
   const VEHICLES = (await import('../src/data/vehicles.js')).VEHICLES;
+  gs.vehicle.nextInstanceId = 1;
   gs.vehicle.available = [
-    { vehicleId: 'vehicle_wheel', usageLeft: 3 },
-    { vehicleId: 'vehicle_broom', usageLeft: 3 },
-    { vehicleId: 'vehicle_chance', usageLeft: Infinity },
+    { instanceId: 1, vehicleId: 'vehicle_wheel', usageLeft: 3 },
+    { instanceId: 2, vehicleId: 'vehicle_broom', usageLeft: 3 },
+    { instanceId: 3, vehicleId: 'vehicle_chance', usageLeft: Infinity },
   ];
+  gs.vehicle.nextInstanceId = 4;
   gs.vehicle.current = null;
   EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'vehicle' });
 
@@ -454,6 +456,43 @@ head_('§16.16 VehiclePanel：每行 3 张卡片 + 卡片直显描述 + 单击�
   chanceCard.dispatchEvent({ type: 'mouseleave' });
   assert(chanceCard.style.transform === 'scale(1)' && chanceCard.style.background === 'rgba(255,255,255,0.85)',
     '松开 / 移出 → 恢复默认');
+
+  // ⑥ 同名载具 = 两个独立实例：两张卡、各自次数、绿框只标当前那一件
+  gs.vehicle.available = [
+    { instanceId: 10, vehicleId: 'vehicle_wheel', usageLeft: 2 },
+    { instanceId: 11, vehicleId: 'vehicle_wheel', usageLeft: 3 },
+  ];
+  gs.vehicle.current = null;
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'vehicle' });
+  const cardOfInst = (id) => vehiclePanel.cardEls.find((c) => c.getAttribute('data-instance-id') === String(id));
+
+  assert(vehiclePanel.cardEls.length === 2, '同名两件 → 两张独立卡片', vehiclePanel.cardEls.length);
+  assert(cardOfInst(10) && cardOfInst(11) && cardOfInst(10) !== cardOfInst(11),
+    '两张卡片各自带 data-instance-id');
+  assert(hasText(cardOfInst(10), '剩余 ×2') && hasText(cardOfInst(11), '剩余 ×3'),
+    '两张同名卡各自显示自己的剩余次数');
+  assert(cardOfInst(10).style.border === '3px solid #b8a888' && cardOfInst(11).style.border === '3px solid #b8a888',
+    '未装载时两件都是普通描边');
+
+  cardOfInst(10).click();
+  assert(gs.vehicle.current?.instanceId === 10, '点第一件 → 装载第一件');
+  assert(cardOfInst(10).style.border === '3px solid #3fa34d', '绿框只标第一件');
+  assert(cardOfInst(11).style.border === '3px solid #b8a888', '同名第二件不被误标为当前');
+
+  // 已装载第一件时点同名第二件 → 替换；第一件回列表且次数保留
+  cardOfInst(11).click();
+  assert(gs.vehicle.current?.instanceId === 11, '点同名另一件 → 替换为第二件');
+  assert(cardOfInst(11).style.border === '3px solid #3fa34d' && cardOfInst(10).style.border === '3px solid #b8a888',
+    '替换后绿框移到第二件');
+  assert(gs.vehicle.available.find((a) => a.instanceId === 10)?.usageLeft === 2,
+    '第一件回到列表且剩余次数保留');
+  assert(gs.vehicle.available.find((a) => a.instanceId === 11)?.usageLeft === 3,
+    '第二件剩余次数独立（未被第一件的次数覆盖）');
+
+  cardOfInst(11).click();
+  assert(gs.vehicle.current === null, '再点已装载那件 → 卸下');
+  assert(gs.vehicle.available.find((a) => a.instanceId === 11)?.usageLeft === 3,
+    '卸下后仍是同一实例（instanceId 不变、次数保持）');
 
   EventBus.off(GE.DIALOG_SHOW, countDialog);
   hideAllDialogs();
@@ -1433,8 +1472,8 @@ head_('第 10 批任务 B：VehiclePanel 交互全程无二次确认（点别处
   EventBus.on(GE.DIALOG_SHOW, onShow);
 
   gs.vehicle.available = [
-    { vehicleId: 'vehicle_wheel', usageLeft: 2 },
-    { vehicleId: 'vehicle_broom', usageLeft: 3 },
+    { instanceId: 20, vehicleId: 'vehicle_wheel', usageLeft: 2 },
+    { instanceId: 21, vehicleId: 'vehicle_broom', usageLeft: 3 },
   ];
   gs.vehicle.current = null;
   EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'vehicle' });

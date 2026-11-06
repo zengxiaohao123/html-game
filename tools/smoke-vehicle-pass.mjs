@@ -27,6 +27,8 @@ const { GE } = await import('../src/core/GameEvents.js');
 const { Distance } = await import('../src/core/Distance.js');
 const { MovementSystem } = await import('../src/systems/MovementSystem.js');
 const { VehicleSystem } = await import('../src/systems/VehicleSystem.js');
+const { countItem } = await import('../src/systems/InventorySystem.js');
+const { readFileSync } = await import('node:fs');
 
 let pass = 0, fail = 0;
 function assert(cond, msg, extra) {
@@ -61,7 +63,7 @@ function fresh(size = 3) {
   gs.player.x = 0;
   gs.player.stamina = 8;
   gs.player.visitedTodayIdx = [];
-  gs.vehicle = { current: null, available: [], chanceUsedToday: false };
+  gs.vehicle = { current: null, available: [], nextInstanceId: 1, chanceUsedToday: false };
   gs.uiState.lastMoveAt = 0;
   fired.length = 0;
   lastMove = null;
@@ -74,9 +76,10 @@ function setStrawberry(gs, idx) {
 }
 const stored = (gs, idx) => gs.map.outerTiles[idx].contentState?.strawberryStored || 0;
 function equip(gs, vehicleId) {
-  const entry = { vehicleId, usageLeft: 5 };
-  gs.vehicle.available.push({ ...entry });
-  gs.vehicle.current = { ...entry };
+  // 每件载具一个独立实例（instanceId），同名也各自独立
+  const instanceId = gs.vehicle.nextInstanceId++;
+  gs.vehicle.available.push({ instanceId, vehicleId, usageLeft: 5 });
+  gs.vehicle.current = { instanceId, vehicleId, usageLeft: 5 };
 }
 const pathText = (p) => JSON.stringify(p);
 const manhattan = (gs, a, b) => {
@@ -300,6 +303,74 @@ head('random（momo 图腾）：传送后模拟路径，且不再次触发冰面
   assert(stored(gs, 3) === 1, '终点照常结算【经过时】+1', stored(gs, 3));
   assert(gs.player.x === 3, '冰面不因模拟徒步再次引发位移（仍停在 3）', gs.player.x);
   assert(fired.join('|') === 'pass:3|enter:3', '效果层只在终点', fired);
+}
+
+// ── 11. 实例制：同名两件载具是两个独立实例 ──
+head('实例制：同名两件 = 两个独立个体');
+{
+  const gs = fresh();
+  VehicleSystem.gainVehicle(gs, 'vehicle_wheel');
+  VehicleSystem.gainVehicle(gs, 'vehicle_wheel');
+  const [a, b] = gs.vehicle.available;
+
+  assert(gs.vehicle.available.length === 2, '同名两件都进持有列表（不合并、不叠放）', gs.vehicle.available.length);
+  assert(Number.isInteger(a.instanceId) && Number.isInteger(b.instanceId),
+    '每件都有 instanceId', [a.instanceId, b.instanceId]);
+  assert(a.instanceId !== b.instanceId, '同名两件的 instanceId 不同', [a.instanceId, b.instanceId]);
+  assert(a.usageLeft === 1 && b.usageLeft === 1, '每件各自满次数（轮子 1 次）', [a.usageLeft, b.usageLeft]);
+
+  VehicleSystem.attachVehicle(gs, a.instanceId);
+  assert(gs.vehicle.current?.instanceId === a.instanceId, '装载的是第一件');
+  const bUsage = b.usageLeft;
+  const r = VehicleSystem.tryMove(gs, { direction: 'right' });
+  assert(r.ok, '载具移动成功', r.reason);
+  assert(gs.vehicle.current === null, '第一件用完自动卸下');
+  assert(gs.vehicle.available.length === 1 && gs.vehicle.available[0].instanceId === b.instanceId,
+    '只移除用完的那一件，同名另一件仍在列表', gs.vehicle.available.map((x) => x.instanceId));
+  assert(gs.vehicle.available[0].usageLeft === bUsage, '另一件剩余次数不受影响', gs.vehicle.available[0].usageLeft);
+}
+
+// ── 12. 实例制：装载 → 使用 → 卸下 → 再装载仍是同一件 ──
+head('实例制：卸下后再装载仍是同一实例');
+{
+  const gs = fresh();
+  VehicleSystem.gainVehicle(gs, 'vehicle_broom');
+  VehicleSystem.gainVehicle(gs, 'vehicle_broom');
+  const [a, b] = gs.vehicle.available;
+  const aid = a.instanceId;
+  gs.player.x = 6;
+  VehicleSystem.attachVehicle(gs, aid);
+  const r = VehicleSystem.tryMove(gs, { targetIdx: 4 });
+  assert(r.ok, '扫帚移动成功', r.reason);
+  assert(gs.vehicle.current?.instanceId === aid, '移动消耗的是装载的那一件');
+  assert(b.usageLeft === 2, '同名另一件次数不变', b.usageLeft);
+
+  const usedLeft = gs.vehicle.current.usageLeft;
+  VehicleSystem.detachVehicle(gs);
+  assert(gs.vehicle.current === null, '卸下后回到徒步');
+  const back = gs.vehicle.available.find((x) => x.instanceId === aid);
+  assert(!!back, '卸下后这一件回到持有列表');
+  assert(back.instanceId === aid, '卸下后仍是同一实例（instanceId 不变）', back.instanceId);
+  assert(back.usageLeft === usedLeft, '卸下后剩余次数保持', back.usageLeft);
+  assert(gs.vehicle.available.find((x) => x.instanceId === b.instanceId).usageLeft === 2,
+    '卸下不会把次数写回同名另一件');
+
+  VehicleSystem.attachVehicle(gs, aid);
+  assert(gs.vehicle.current?.instanceId === aid && gs.vehicle.current.usageLeft === usedLeft,
+    '再次装载同一实例，次数沿用', gs.vehicle.current);
+}
+
+// ── 13. 载具不入背包：背包不按 id 计数载具 ──
+head('载具不入背包 / countItem 不参与载具判定');
+{
+  const gs = fresh();
+  VehicleSystem.gainVehicle(gs, 'vehicle_wheel');
+  assert(countItem(gs, 'item_wheel') === 0 && countItem(gs, 'vehicle_wheel') === 0,
+    '载具不进背包（背包内不按 id 计数）', [countItem(gs, 'item_wheel'), countItem(gs, 'vehicle_wheel')]);
+  const vehSrc = readFileSync(new URL('../src/systems/VehicleSystem.js', import.meta.url), 'utf8');
+  const invSrc = readFileSync(new URL('../src/systems/InventorySystem.js', import.meta.url), 'utf8');
+  assert(!vehSrc.includes('countItem'), 'VehicleSystem 不使用 countItem');
+  assert(!/vehicle/i.test(invSrc), 'InventorySystem 不把载具当背包物品处理');
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);

@@ -827,7 +827,7 @@ console.log('\n═══ 37. 载具模拟路径：中间格只判定，终点结
   // any 模式（心想事成，3×3 外圈 8 格）：6((0,2)) → 0((0,0)) 最短弧经过 7
   const g = createInitialState();
   VehicleSystem.gainVehicle(g, 'vehicle_chance');
-  VehicleSystem.attachVehicle(g, 'vehicle_chance');
+  VehicleSystem.attachVehicle(g, g.vehicle.available[0].instanceId);
   const midTile = g.map.outerTiles[7];
   midTile.contentId = 'facility_strawberry';
   midTile.contentState = {};
@@ -847,7 +847,7 @@ console.log('\n═══ 37. 载具模拟路径：中间格只判定，终点结
   // line 模式（扫帚）：6((0,2)) → 4((2,2)) 同行，中间格 5((1,2))
   const g2 = createInitialState();
   VehicleSystem.gainVehicle(g2, 'vehicle_broom');
-  VehicleSystem.attachVehicle(g2, 'vehicle_broom');
+  VehicleSystem.attachVehicle(g2, g2.vehicle.available[0].instanceId);
   const midTile2 = g2.map.outerTiles[5];
   midTile2.contentId = 'facility_strawberry';
   midTile2.contentState = {};

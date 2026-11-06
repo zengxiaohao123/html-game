@@ -28,6 +28,7 @@ const { sleep } = await import('../src/systems/SleepSystem.js');
 const { Storage } = await import('../src/state/storage.js');
 const { DayBaseline } = await import('../src/state/DayBaseline.js');
 const { migrateGS, normalizeToDayStart } = await import('../src/state/migrate.js');
+const { VehicleSystem } = await import('../src/systems/VehicleSystem.js');
 const { AUTOSAVE_SLOT } = await import('../src/utils/constants.js');
 
 let pass = 0, fail = 0;
@@ -196,8 +197,10 @@ head('S6 旧档迁移（旧实时档 → 日初基线）');
   check(oldGs.player.hp === 55 && oldGs.player.gold === 77, '地基保留：HP / 金币', { hp: oldGs.player.hp, gold: oldGs.player.gold });
   check(oldGs.creatures.length === 1 && oldGs.creatures[0].hp === 5 && oldGs.creatures[0].growth === 2,
     '地基保留：生物名册 / 血量 / 成长');
-  check(oldGs.creatures[0].pos.x === 1.5 && oldGs.creatures[0].pos.y === 1.5 && oldGs.creatures[0].dir.y === 1,
-    '地基保留：生物 pos / dir');
+  check(oldGs.creatures[0].pos.x === 1.5 && oldGs.creatures[0].pos.y === 1.5
+    && typeof oldGs.creatures[0].dir === 'number',
+    '地基保留：生物 pos / dir（dir 已按阶段 2 语义归一化为弧度）',
+    { pos: oldGs.creatures[0].pos, dir: oldGs.creatures[0].dir });
   check(oldGs.map.outerTiles[6].contentId === homeContent, '地基保留：地块内容');
   check(oldGs.inventory.items.length === invCount, '地基保留：背包');
   check(oldGs.skillCooldowns.skill_yumo_slash === 2, '地基保留：剩余回合冷却（技能）', oldGs.skillCooldowns);
@@ -225,6 +228,43 @@ head('S8 UI 文案（各只留一句）');
   check(!/text:\s*['"][^'"]*当天[^'"]*(丢失|进度)/.test(settingsSrc)
     && !/text:\s*['"][^'"]*日初/.test(settingsSrc), '无当日进度损失解释、槽位无日初标注');
   check(!settingsSrc.includes('Slot ${slot} 存档成功'), '不再出现旧的存档成功提示');
+}
+
+head('S9 载具实例存档往返（同名两件独立保留）');
+{
+  const gs = createInitialState();
+  VehicleSystem.gainVehicle(gs, 'vehicle_broom');
+  VehicleSystem.gainVehicle(gs, 'vehicle_broom');
+  VehicleSystem.gainVehicle(gs, 'vehicle_chance');
+  gs.vehicle.available[0].usageLeft = 1; // 两件同名的次数不同，验证不会被合并/覆盖
+
+  const idsBefore = gs.vehicle.available.map((v) => v.instanceId);
+  const nextBefore = gs.vehicle.nextInstanceId;
+
+  Storage.save(7, DayBaseline.capture(gs));
+  const loaded = migrateGS(Storage.load(7));
+  check(loaded.vehicle.available.length === 3, '读档后实例条数不变（同名不合并）', loaded.vehicle.available.length);
+  check(json(loaded.vehicle.available.map((v) => v.instanceId)) === json(idsBefore),
+    '读档后 instanceId 不变', loaded.vehicle.available.map((v) => v.instanceId));
+  check(loaded.vehicle.available[0].usageLeft === 1 && loaded.vehicle.available[1].usageLeft === 2,
+    '读档后两件同名各自剩余次数不变',
+    [loaded.vehicle.available[0].usageLeft, loaded.vehicle.available[1].usageLeft]);
+  check(loaded.vehicle.nextInstanceId === nextBefore, '读档后 nextInstanceId 保留', loaded.vehicle.nextInstanceId);
+
+  // 无限次数（巧遇）：JSON 无 Infinity → null；载具系统读档后按定义补回
+  check(loaded.vehicle.available[2].usageLeft === null,
+    '（存档口径）Infinity 经 JSON 变为 null', loaded.vehicle.available[2].usageLeft);
+  VehicleSystem.canVehicleReach(loaded, 1); // 触发 ensureVehicleState 归一化
+  check(loaded.vehicle.available[2].usageLeft === Infinity, '载具系统读档后补回无限次数',
+    loaded.vehicle.available[2].usageLeft);
+
+  // 读档后继续获得同名载具：新实例 id 唯一、计数继续推进
+  VehicleSystem.gainVehicle(loaded, 'vehicle_broom');
+  const ids = loaded.vehicle.available.map((v) => v.instanceId);
+  check(new Set(ids).size === ids.length, '读档后新增实例 id 不与已有冲突', ids);
+  check(loaded.vehicle.nextInstanceId === nextBefore + 1, '新增实例推进自增计数', loaded.vehicle.nextInstanceId);
+
+  Storage.clearSlot(7);
 }
 
 console.log(`\n═══ 结果：${pass} 通过 / ${fail} 失败 ═══`);

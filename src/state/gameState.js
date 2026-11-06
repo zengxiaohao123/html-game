@@ -155,9 +155,11 @@ export function createInitialState() {
     activeBuffs: [],
 
     // ── 载具系统（Phase 4） ──
+    // 载具是独立实体：每件一个实例（instanceId），同名不合并、不叠放、不入背包
     vehicle: {
-      current: null,
-      available: [],
+      current: null,          // { instanceId, vehicleId, usageLeft }
+      available: [],          // [{ instanceId, vehicleId, usageLeft }]
+      nextInstanceId: 1,      // 实例 id 自增计数（稳定、可存档、不用时间戳）
       chanceUsedToday: false,
     },
 

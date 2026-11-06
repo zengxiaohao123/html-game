@@ -6,10 +6,16 @@
 //   vehicle_broom (line)         —— 同行列任意格（必须同行或同列），不能穿越非法
 //   vehicle_chance (any)         —— 任意格（心想事成天赋专用），不能进 fence
 //
-// 载具不占背包，单独在载具页面（T 键）管理
+// 载具不占背包，单独在载具页面（T 键）管理。
+// 载具是独立实体：同名载具不是同一个东西，每件都有自己的 instanceId / 剩余次数，
+// 永不按 vehicleId 合并、也不叠放（不放进背包，所以也不存在堆叠）。
 // GS 里新增字段：
-//   gs.vehicle = { current: null | { vehicleId, usageLeft }, available: [{ vehicleId, usageLeft }] }
-//   （available 数组里存玩家"已拥有"的载具；同时只能装备一个）
+//   gs.vehicle = {
+//     current: null | { instanceId, vehicleId, usageLeft },   // 当前装载的那一件
+//     available: [{ instanceId, vehicleId, usageLeft }],      // 持有的每一件（不合并同名）
+//     nextInstanceId: 1,                                      // 实例 id 自增计数（可存档、无时间戳）
+//     chanceUsedToday: false,
+//   }
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
@@ -26,10 +32,25 @@ import { canMoveNow, markMoved } from './MoveCooldown.js';
 function ensureVehicleState(gs) {
   if (!gs.vehicle) {
     gs.vehicle = {
-      current: null,          // { vehicleId, usageLeft }
-      available: [],          // 已获得的载具列表（不叠放，每个独立 entry）
+      current: null,          // { instanceId, vehicleId, usageLeft }
+      available: [],          // 持有的每一件（不叠放、不按 vehicleId 合并）
+      nextInstanceId: 1,      // 实例 id 自增计数
       chanceUsedToday: false, // 心想事成 巧遇 每天限 1 次
     };
+  }
+  const v = gs.vehicle;
+  if (!Array.isArray(v.available)) v.available = [];
+  // 实例 id 缺失时按现有实例推导，保证新分配的 id 不与已有实例冲突
+  if (!Number.isInteger(v.nextInstanceId) || v.nextInstanceId < 1) {
+    let max = 0;
+    for (const e of [...v.available, v.current]) {
+      if (Number.isInteger(e?.instanceId)) max = Math.max(max, e.instanceId);
+    }
+    v.nextInstanceId = max + 1;
+  }
+  // JSON 没有 Infinity：无限次数（巧遇）存档往返后会变成 null，读回时按载具定义补回
+  for (const e of [...v.available, v.current]) {
+    if (e && e.usageLeft == null) e.usageLeft = VEHICLES[e.vehicleId]?.usageCount ?? 1;
   }
 }
 
@@ -114,25 +135,32 @@ export function gainVehicle(gs, vehicleId) {
     return;
   }
   ensureVehicleState(gs);
+  // 每获得一件就是一个新实例：同名载具也是两个独立个体，不合并、不叠放
+  const instanceId = gs.vehicle.nextInstanceId++;
   gs.vehicle.available.push({
+    instanceId,
     vehicleId,
-    usageLeft: def.usageCount || 1,
+    usageLeft: def.usageCount ?? 1,
   });
-  EventBus.emit(GE.VEHICLE_GAIN, { vehicleId });
+  EventBus.emit(GE.VEHICLE_GAIN, { vehicleId, instanceId });
   EventBus.emit(GE.TOAST_SHOW, { text: `🚗 获得载具 ${def.emoji || ''} ${def.name}`, duration: 1500 });
-  devLog.info('[VehicleSystem.gainVehicle]', vehicleId);
+  devLog.info('[VehicleSystem.gainVehicle]', vehicleId, 'instance', instanceId);
 }
 
 /**
- * 装备载具（切到该载具；同时只能装一个）
+ * 装备某一「件」载具（切到该实例；同时只能装一个）
+ * @param {object} gs
+ * @param {number} instanceId 载具实例 id（不是 vehicleId：同名载具各自独立）
  * @returns {boolean}
  */
-export function attachVehicle(gs, vehicleId) {
+export function attachVehicle(gs, instanceId) {
   ensureVehicleState(gs);
-  const entry = gs.vehicle.available.find(a => a.vehicleId === vehicleId);
+  if (!Number.isInteger(instanceId)) return false;
+  const entry = gs.vehicle.available.find(a => a.instanceId === instanceId);
   if (!entry) return false;
 
-  const def = VEHICLES[vehicleId];
+  const def = VEHICLES[entry.vehicleId];
+  if (!def) return false;
 
   // 心想事成：检查 activeGroup 里有没有夏阳
   if (def.talentExclusive === 'xiayang_want') {
@@ -146,33 +174,38 @@ export function attachVehicle(gs, vehicleId) {
     return false;
   }
 
-  gs.vehicle.current = { vehicleId, usageLeft: entry.usageLeft };
-  EventBus.emit(GE.VEHICLE_ATTACH, { vehicleId, attached: true });
+  gs.vehicle.current = {
+    instanceId: entry.instanceId,
+    vehicleId: entry.vehicleId,
+    usageLeft: entry.usageLeft,
+  };
+  EventBus.emit(GE.VEHICLE_ATTACH, { vehicleId: entry.vehicleId, instanceId, attached: true });
   EventBus.emit(GE.TOAST_SHOW, { text: `🚗 装备载具 ${def.emoji || ''} ${def.name}`, duration: 1500 });
-  devLog.info('[VehicleSystem.attachVehicle]', vehicleId);
+  devLog.info('[VehicleSystem.attachVehicle]', entry.vehicleId, 'instance', instanceId);
   return true;
 }
 
 /**
  * 卸下载具（用完了或主动切换）
+ * 卸下后这一件回到持有列表，仍是同一个实例（instanceId 不变、次数保持）
  */
 export function detachVehicle(gs) {
   ensureVehicleState(gs);
   if (gs.vehicle.current) {
     const cur = gs.vehicle.current;
-    // 同步回 available（若 usageLeft > 0）
-    const avail = gs.vehicle.available.find(a => a.vehicleId === cur.vehicleId);
+    // 按实例同步回 available（同名载具不会串到别的实例）
+    const avail = gs.vehicle.available.find(a => a.instanceId === cur.instanceId);
     if (avail) {
       avail.usageLeft = cur.usageLeft;
     }
     gs.vehicle.current = null;
-    EventBus.emit(GE.VEHICLE_ATTACH, { vehicleId: cur.vehicleId, attached: false });
-    devLog.info('[VehicleSystem.detachVehicle]');
+    EventBus.emit(GE.VEHICLE_ATTACH, { vehicleId: cur.vehicleId, instanceId: cur.instanceId, attached: false });
+    devLog.info('[VehicleSystem.detachVehicle]', 'instance', cur.instanceId);
   }
 }
 
 /**
- * 消费载具使用次数（用完自动卸下并从 available 移除）
+ * 消费当前这一件载具的使用次数（用完自动卸下并从 available 移除该实例）
  */
 function consumeUsage(gs) {
   ensureVehicleState(gs);
@@ -186,15 +219,15 @@ function consumeUsage(gs) {
   }
 
   if (cur.usageLeft <= 0) {
-    // 用完 —— 卸下并从 available 移除
-    const idx = gs.vehicle.available.findIndex(a => a.vehicleId === cur.vehicleId);
+    // 用完 —— 卸下并移除「这一件」（同名其它实例不受影响）
+    const idx = gs.vehicle.available.findIndex(a => a.instanceId === cur.instanceId);
     if (idx >= 0) gs.vehicle.available.splice(idx, 1);
     gs.vehicle.current = null;
     EventBus.emit(GE.TOAST_SHOW, { text: `🚗 ${def.name} 使用完毕`, duration: 1500 });
-    devLog.info('[VehicleSystem.consumeUsage]', cur.vehicleId, 'used up');
+    devLog.info('[VehicleSystem.consumeUsage]', cur.vehicleId, 'instance', cur.instanceId, 'used up');
   } else {
-    // 同步 available
-    const avail = gs.vehicle.available.find(a => a.vehicleId === cur.vehicleId);
+    // 同步 available 中「这一件」的剩余次数
+    const avail = gs.vehicle.available.find(a => a.instanceId === cur.instanceId);
     if (avail) avail.usageLeft = cur.usageLeft;
   }
   return true;
