@@ -23,7 +23,7 @@ import { GE } from '../core/GameEvents.js';
 import { BlessSystem } from './BlessSystem.js';
 import { BuildSystem } from './BuildSystem.js';
 import {
-  isBlessBlocked, isHotbarBlocked, isMovementBlocked, isSleepBlocked,
+  isBlessBlocked, isHotbarBlocked, isMovementBlocked, isSleepBlocked, isStoryBlocked,
 } from './InputGate.js';
 import { devLog } from '../core/Logger.js';
 
@@ -50,6 +50,20 @@ const KEY_TO_ACTION = {
   't': 'vehicle',
   'j': 'task',
   'k': 'codex',
+};
+
+/**
+ * 有专属快捷键的页面（动作 → 面板 key）。
+ * 二次按下同一键 = ESC 关掉该面板（仅当它是栈顶）。商店 / 信息区没有专属键，不在此表。
+ */
+const ACTION_TO_PANEL = {
+  inventory: 'inventory',
+  role: 'role',
+  team: 'team',
+  forge: 'forge',
+  vehicle: 'vehicle',
+  task: 'task',
+  codex: 'codex',
 };
 
 export class InputManager {
@@ -142,6 +156,19 @@ export class InputManager {
 
   _dispatchAction(action) {
     const gs = this.director?.getGS?.();
+
+    // ── 有专属快捷键的页面：同键二次按下 = ESC（关掉栈顶该面板） ──
+    // 仅在它是当前栈顶时生效；若上面还压着别的面板，则照常走"切换/打开"。
+    const panelKey = ACTION_TO_PANEL[action];
+    if (panelKey) {
+      // 剧情 / 事件期间不响应面板快捷键（保持既有输入封锁）
+      if (isStoryBlocked(this.director)) return;
+      if (this._closeIfTopmost(panelKey)) return;
+      EventBus.emit(GE.UI_PANEL_OPEN, { panel: panelKey });
+      if (action === 'task') EventBus.emit(GE.TASK_OPEN, {});
+      return;
+    }
+
     // §16.20 / §16.10 / §16.6：模态界面、剧情/事件、建造模式下主界面快捷键无效；
     // 信息区（info）不算阻塞；祈福动画期间可睡觉，但不可再次祈福（BlessSystem 自身亦互斥）。
     switch (action) {
@@ -158,36 +185,10 @@ export class InputManager {
         BlessSystem.blessStart(gs);
         break;
 
-      case 'inventory':
-        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'inventory' });
-        break;
-
       case 'buildMode':
         if (!gs) return;
         if (gs.buildMode) BuildSystem.exitBuildMode(gs);
         else BuildSystem.enterBuildMode(gs);
-        break;
-
-      // ══ Phase 4 —— 设计文档 §15.x ══
-      case 'role':
-        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'role' });
-        break;
-      case 'team':
-        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'team' });
-        break;
-      case 'forge':
-        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'forge' });
-        break;
-      case 'vehicle':
-        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'vehicle' });
-        break;
-      case 'task':
-        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'task' });
-        EventBus.emit(GE.TASK_OPEN, {});
-        break;
-
-      case 'codex':
-        EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'codex' });
         break;
 
       case 'settings': {
@@ -199,6 +200,18 @@ export class InputManager {
       default:
         devLog.warn('[InputManager] 未知动作:', action);
     }
+  }
+
+  /**
+   * 同键关闭：仅当该面板正处于 openPanels 栈顶时，按 ESC 同款路径关掉它。
+   * 返回 true 表示已按"二次按下 = 关闭"处理。
+   */
+  _closeIfTopmost(panelKey) {
+    const stack = this.director?.openPanels || [];
+    if (stack[stack.length - 1] !== panelKey) return false;
+    EventBus.emit(GE.UI_PANEL_CLOSE, { panel: panelKey });
+    devLog.info('[InputManager] 同键二次按下 → 关闭面板(等同ESC):', panelKey);
+    return true;
   }
 }
 

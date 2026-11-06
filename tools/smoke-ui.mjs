@@ -1641,5 +1641,76 @@ head_('第 14 批：信息区不阻塞快捷键（§16.4）+ 魔法商店先选�
 }
 
 // ════════════════════════════════════════════════════════════
+head_('第 15 批：同键二次按下 = ESC（专属快捷键页面）');
+{
+  const { DialogBox } = await import('../src/ui/DialogBox.js');
+
+  // 干净起点
+  for (const p of ['info', 'inventory', 'role', 'team', 'forge', 'vehicle', 'task', 'codex', 'shop', 'settings']) {
+    EventBus.emit(GE.UI_PANEL_CLOSE, { panel: p });
+  }
+  if (gs.buildMode) BuildSystem.exitBuildMode(gs);
+  hideAllDialogs();
+  assert(director.openPanels.length === 0, '前置：面板栈为空', director.openPanels);
+
+  const shortcutPanels = [
+    ['b', 'inventory', () => inventoryPanel.visible],
+    ['c', 'role', () => rolePanel.helper.visible],
+    ['l', 'team', () => teamPanel.helper.visible],
+    ['f', 'forge', () => forgePanel.helper.visible],
+    ['t', 'vehicle', () => vehiclePanel.helper.visible],
+    ['j', 'task', () => taskPanel.helper.visible],
+    ['k', 'codex', () => codexPanel.helper.visible],
+  ];
+  const key = (k) => window.dispatchEvent({ type: 'keydown', key: k, preventDefault() {} });
+
+  inputManager.bind();
+  // ── 每个有专属键的页面：开 → 同键 → 关 ──
+  for (const [k, panelKey, isVisible] of shortcutPanels) {
+    key(k);
+    assert(isVisible() && director.openPanels.includes(panelKey),
+      `K-${panelKey}-1：按 ${k.toUpperCase()} 打开 ${panelKey}`, director.openPanels);
+    key(k);
+    assert(!isVisible() && !director.openPanels.includes(panelKey),
+      `K-${panelKey}-2：再按 ${k.toUpperCase()} 关闭 ${panelKey}（等同 ESC）`, director.openPanels);
+  }
+
+  // ── 跨面板：不误关下层，只按栈顶判断 ──
+  key('b');
+  assert(inventoryPanel.visible && director.openPanels.includes('inventory'), '跨-1 背包已打开');
+  key('c');
+  assert(rolePanel.helper.visible && !inventoryPanel.visible && !director.openPanels.includes('inventory'),
+    '跨-2 背包开着按 C → 正常切换到角色页（背包被中央关闭，不误判为同键）', director.openPanels);
+  key('b');
+  assert(inventoryPanel.visible && !rolePanel.helper.visible
+    && director.openPanels[director.openPanels.length - 1] === 'inventory',
+    '跨-3 角色页按 B → 切回背包而非误关角色', director.openPanels);
+  key('b');
+  assert(!inventoryPanel.visible && director.openPanels.length === 0, '跨-4 背包为栈顶时再按 B 才关闭');
+
+  // ── 剧情 / 事件期间仍被拦 ──
+  const dlgK = trackDlg(new DialogBox());
+  dlgK.mount();
+  const prevDlgK = director.dialogBox;
+  director.dialogBox = dlgK;
+  dlgK.show({ title: '剧情封锁', options: [{ label: '继续', onSelect: () => {} }] });
+  key('b');
+  assert(!inventoryPanel.visible && director.openPanels.length === 0 &&
+    !director.openPanels.includes('inventory'), '门控-1 剧情/事件期间按 B 被拦截', director.openPanels);
+  dlgK.hide();
+  director.dialogBox = prevDlgK;
+
+  // ── 建造模式：不误触发同键关闭 ──
+  BuildSystem.enterBuildMode(gs);
+  key('b');
+  assert(inventoryPanel.visible && gs.buildMode === false,
+    '门控-2 建造模式按 B 正常打开背包（退出建造，不误判为关闭）', { buildMode: gs.buildMode });
+  key('b');
+  assert(!inventoryPanel.visible && director.openPanels.length === 0,
+    '门控-3 再按 B 关闭背包（同键关闭在探索模式生效）', director.openPanels);
+  inputManager.unbind();
+}
+
+// ════════════════════════════════════════════════════════════
 console.log(`\nsmoke-ui 结果：${pass} 通过 / ${fail} 失败（共 ${pass + fail}）`);
 process.exit(fail > 0 ? 1 : 0);

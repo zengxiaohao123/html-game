@@ -67,6 +67,11 @@ export function isSleepBlocked(director) {
   return isMovementBlocked(director);
 }
 
+/** 剧情 / 事件是否正在进行（面板类快捷键在此期间也不响应） */
+export function isStoryBlocked(director) {
+  return getInputBlockReasons(director).includes(INPUT_BLOCK.STORY);
+}
+
 /**
  * 快捷栏 1~0 是否被阻塞。
  * 建造模式允许（§16.14）；信息区允许；仅主菜单 / 模态面板 / 剧情事件时阻塞。
