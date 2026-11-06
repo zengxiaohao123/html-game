@@ -500,11 +500,30 @@ head_('第 8 批：商店/魔法商店逐项 UI（选项齐全/正方格/留白/
   shopPanel.tabBtns[0].click();   // 回购买
   assert(shopPanel.catRailEl.style.display === 'none', '购买 tab 不显示分类栏');
 
-  // 6) 常驻 UI 层级：商店遮罩 5500 之上仍可见可点（§16.21）
-  assert(Number(topBar.root.style.zIndex) > 5500, 'TopBar 层级高于商店', topBar.root.style.zIndex);
-  assert(Number(funcBar.root.style.zIndex) > 5500, 'FuncBar 层级高于商店', funcBar.root.style.zIndex);
-  assert(Number(hotBar.wrapEl.style.zIndex) > 5500, 'HotBar 层级高于商店', hotBar.wrapEl.style.zIndex);
-  assert(Number(settingsPanel.mask.style.zIndex) > 5500, '设置面板层级高于商店（二级嵌套可见）');
+  // 6) 层级链（2026-11-06 新规则）：面板/遮罩 ≥5000 > 信息区 100 > HUD 与容量条 80 > 地图 ≤50；
+  //    功能区/快捷栏 5600 夹在面板与商店遮罩之间。打开新界面要能遮挡左上角 HUD，且 HUD 不拦截鼠标。
+  const shopMaskZ = Number(shopPanel.root.style.zIndex);
+  const topBarZ = Number(topBar.root.style.zIndex);
+  assert(shopMaskZ >= 5000 && shopMaskZ > topBarZ,
+    '商店遮罩层级高于 TopBar（遮罩 ≥5000 > HUD 80）', { shop: shopMaskZ, topBar: topBarZ });
+  assert(shopPanel.root.style.position === 'fixed' && shopPanel.root.style.inset === '0',
+    '商店遮罩全屏铺满（打开时覆盖左上角 HUD 区域）',
+    { position: shopPanel.root.style.position, inset: shopPanel.root.style.inset });
+  assert(String(topBar.root.style.pointerEvents) === 'none',
+    'HUD 根不拦截鼠标（pointer-events:none → 点击左上角命中遮罩）', topBar.root.style.pointerEvents);
+  assert(Number(inventoryPanel.mask.style.zIndex) > topBarZ,
+    '背包面板层级高于 TopBar', { panel: inventoryPanel.mask.style.zIndex, topBar: topBarZ });
+  assert(Number(infoPanel.root.style.zIndex) > topBarZ,
+    '信息区层级高于 HUD 与容量条（100 > 80）',
+    { info: infoPanel.root.style.zIndex, topBar: topBarZ });
+  assert(Number(funcBar.root.style.zIndex) > shopMaskZ
+    && Number(funcBar.root.style.zIndex) < Number(inventoryPanel.mask.style.zIndex),
+    '功能区 5600 高于商店遮罩、低于面板 6000', funcBar.root.style.zIndex);
+  assert(Number(hotBar.wrapEl.style.zIndex) > shopMaskZ
+    && Number(hotBar.wrapEl.style.zIndex) < Number(inventoryPanel.mask.style.zIndex),
+    '快捷栏 5600 高于商店遮罩、低于面板 6000', hotBar.wrapEl.style.zIndex);
+  assert(Number(settingsPanel.mask.style.zIndex) > shopMaskZ,
+    '设置面板层级高于商店（二级嵌套可见）');
 
   // 6.1) 「离开」二次确认：灰底白字 → 红底白字（不离开）→ 再点才离开；点别处取消
   assert(shopPanel.leaveBtn.style.color === '#fff' && shopPanel.leaveBtn.style.background === '#9a9488',
