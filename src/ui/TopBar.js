@@ -6,7 +6,7 @@
 //   │  │ 竖 │  ⚔ 10
 //   │  │ 框 │  ◆◆◆◆◆◆◆◆ 5/8
 //   │  └──余默┘
-//   │  ╭── 主牌：主行「12月 28日」/ 副行「2 年 · 周日 · 第 224 天」──╮   ← 第二段（木框 + 米黄内衬）
+//   │  ╭── 主牌：左「2 年 / 12月 28日」│ 右「周日 / 第 224 天」──╮   ← 第二段（木框 + 米黄内衬）
 //   │   ┆（木钉） （木钉）┆
 //   │  ╰── 🪙 999999 ─────╯                        ← 金币胶囊副牌，悬挂在主牌下方
 //   │  (📋)                                          ← 第三段（再往下一点，独立一块）
@@ -181,26 +181,29 @@ export class TopBar {
 
   // ════════════════════════════════════════════════════════════
   // 第二段：双牌结构（§16.7）
-  //   主牌 = 木框 + 米黄内衬：主行「月日」大数字 + 上标单位（视觉主体），副行「年 / 星期 / 第 N 天」小字元信息
+  //   主牌 = 木框 + 米黄内衬：按语义分两格 —— 左格「年 + 月日」（同类日期信息归并），
+  //         细竖线裁切，右格「星期」（独立维度小标签）+「第 N 天」（弱化计数）
   //   副牌 = 主牌下方两根小木钉悬挂的独立胶囊金币铭牌（徽章在左、大号数字在右）
+  //   两块牌水平正放，不做 rotate / skew
   // ════════════════════════════════════════════════════════════
   _buildSign() {
     const sign = createEl('div', { class: ['hud-sign'], parent: this.left });
 
-    // 主牌：日期（主行 = 月日大数字 + 上标单位；副行 = 年 / 星期 / 第 N 天 的元信息）
+    // 主牌：按语义分组成「日期块 | 独立票根」（整体水平正放，不旋转）
+    //   左块：年 + 月日（同类信息归并）；竖线分隔；右块：星期（独立维度）+ 第 N 天（弱化）
     const main = createEl('div', { class: ['hud-sign-main'], parent: sign });
     const inner = createEl('div', { class: ['hud-sign-inner'], parent: main });
-    const rowMain = createEl('div', { class: ['hud-sign-row', 'hud-sign-row-main'], parent: inner });
-    this.monthNum = createEl('span', { class: ['hud-sign-num'], text: '', attrs: { title: '月份' }, parent: rowMain });
-    createEl('span', { class: ['hud-sign-unit'], text: '月', parent: rowMain });
-    this.dayNum = createEl('span', { class: ['hud-sign-num'], text: '', attrs: { title: '日期' }, parent: rowMain });
-    createEl('span', { class: ['hud-sign-unit'], text: '日', parent: rowMain });
-    const rowMeta = createEl('div', { class: ['hud-sign-row', 'hud-sign-row-meta'], parent: inner });
-    this.yearText = createEl('span', { class: ['hud-sign-year'], text: '', parent: rowMeta });
-    createEl('span', { class: ['hud-sign-dot'], text: '·', parent: rowMeta });
-    this.weekText = createEl('span', { class: ['hud-sign-week'], text: '', parent: rowMeta });
-    createEl('span', { class: ['hud-sign-dot'], text: '·', parent: rowMeta });
-    this.dayText = createEl('span', { class: ['hud-sign-dayno'], text: '', parent: rowMeta });
+    const date = createEl('div', { class: ['hud-sign-date'], parent: inner });
+    this.yearText = createEl('span', { class: ['hud-sign-year'], text: '', parent: date });
+    const mdRow = createEl('div', { class: ['hud-sign-mdrow'], parent: date });
+    this.monthNum = createEl('span', { class: ['hud-sign-num'], text: '', attrs: { title: '月份' }, parent: mdRow });
+    createEl('span', { class: ['hud-sign-unit'], text: '月', parent: mdRow });
+    this.dayNum = createEl('span', { class: ['hud-sign-num'], text: '', attrs: { title: '日期' }, parent: mdRow });
+    createEl('span', { class: ['hud-sign-unit'], text: '日', parent: mdRow });
+    createEl('div', { class: ['hud-sign-rule'], parent: inner });
+    const side = createEl('div', { class: ['hud-sign-side'], parent: inner });
+    this.weekText = createEl('div', { class: ['hud-sign-week'], text: '', parent: side });
+    this.dayText = createEl('div', { class: ['hud-sign-dayno'], text: '', parent: side });
 
     // 两根小木钉（连接主牌与金币副牌）
     const pegs = createEl('div', { class: ['hud-sign-pegs'], parent: sign });

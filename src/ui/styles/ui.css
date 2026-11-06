@@ -473,9 +473,10 @@ body.build-mode .map-container {
 
 /* ── 第二段：双牌结构（日期主牌 + 木钉悬挂的胶囊「金币」副牌）──
  * 参照星露谷时间/金币 UI 的排版语言，按本作删减（无时间、无天气图标格）：
- *   · 主牌：橙色木质外框 + 米黄内衬板，内分两行 —— 上行「年 + 月日」（大号日期），
- *           下行「星期 + 第 N 天」（小标签），层级字号区分，不堆一排文字
+ *   · 主牌：橙色木质外框 + 米黄内衬板，按语义分两格 —— 左格「年 + 月日」（同类日期信息归并），
+ *           细竖线裁切，右格「星期」（独立维度小标签）+「第 N 天」（弱化计数）
  *   · 副牌：主牌下方两根小木钉悬挂，独立胶囊铭牌（米黄内衬 + 金币徽章 + 大号暗红数字）
+ *   · 两块牌水平正放（无 rotate / skew），手绘质感只靠描边与不规则圆角
  * 全部为 CSS/DOM 自绘，日期与金币是实时文本节点，不贴参考图。 */
 .hud-sign {
   position: relative;
@@ -484,7 +485,7 @@ body.build-mode .map-container {
   flex-direction: column;
   align-items: center;
   pointer-events: none;
-  transform: rotate(-1.2deg);
+  /* 天数牌 + 金币副牌一律水平正放：不加 rotate / skew（手绘质感只靠描边与不规则圆角） */
 }
 
 /* 主牌：橙色木质外框 + 米黄内衬 + 分格日期 */
@@ -504,17 +505,18 @@ body.build-mode .map-container {
     0 6px 9px rgba(0, 0, 0, 0.22),
     inset 0 1px 0 rgba(255, 236, 190, 0.65);
 }
-/* 米黄内衬板：内缩一圈 + 细棕描边 + 顶部内阴影；内部分主行（月日）与副行（元信息）。
- * 文字与金币数字、姓名牌共用同一套「粗体 + 浅色内衬 + 浅色顶部高光」的光影语言；
- * 年份 / 星期 / 天数只靠字号、字重、颜色深浅与分隔符形成节奏。 */
+/* 米黄内衬板：内缩一圈 + 细棕描边 + 顶部内阴影。
+ * 按语义分组：左侧「年 + 月日」为同一日期块，一根细竖线作票根裁切线，
+ * 右侧「星期 + 第 N 天」为另一块浅褐底标（星期是独立维度，第 N 天从属弱化）。
+ * 整块水平正放，不做 rotate / skew。 */
 .hud-sign-inner {
   position: absolute;
   inset: 3px;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 1px;
+  gap: 5px;
   padding: 2px 4px;
   border: 1.5px solid #C08636;
   border-radius: 4px 7px 3px 6px / 6px 3px 7px 4px;
@@ -525,61 +527,80 @@ body.build-mode .map-container {
   font-family: "Arial Black", "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif;
   text-shadow: 0 1px 0 #FFF4D6, 0 1px 1px rgba(90, 50, 15, 0.18);
 }
-.hud-sign-row {
+
+/* 左块：年在上、月日在下（同类日期信息归并，整体左对齐成块） */
+.hud-sign-date {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  flex-shrink: 0;
   white-space: nowrap;
 }
-.hud-sign-row-main { gap: 0; align-items: baseline; }
-
-/* 主行：月 / 日 的大数字（视觉主体）+ 上标小单位字 */
+.hud-sign-year {
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  color: #8A5A2B;
+  letter-spacing: 1.2px;
+}
+.hud-sign-mdrow { display: flex; align-items: baseline; }
 .hud-sign-num {
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 900;
   line-height: 1;
   color: #4A2A10;
   letter-spacing: 0.5px;
 }
 .hud-sign-unit {
-  font-size: 9px;
+  font-size: 8.5px;
   font-weight: 800;
   line-height: 1;
   color: #7A4A18;
   letter-spacing: 0;
-  margin: 0 5px 0 1px;
-  transform: translateY(-7px);
+  margin: 0 2px 0 1px;
+  transform: translateY(-6px);
 }
 
-/* 副行：年 / 星期 / 第 N 天 的元信息 —— 用字号、字重、颜色深浅与「·」分隔做排版节奏 */
-.hud-sign-row-meta { gap: 3px; margin-top: 3px; }
-.hud-sign-year {
-  font-size: 10px;
-  font-weight: 800;
-  line-height: 1;
-  color: #8A5A2B;
-  letter-spacing: 0.5px;
+/* 竖线分隔：像票根上的裁切线 */
+.hud-sign-rule {
+  width: 1px;
+  height: 30px;
+  background: linear-gradient(180deg, transparent 0%, #C08636 22%, #C08636 78%, transparent 100%);
+  opacity: 0.75;
+}
+
+/* 右块：浅褐底标分格（色块把「星期 / 第 N 天」从左侧日期块里分离出来） */
+.hud-sign-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+  padding: 3px 3px 2px;
+  border-radius: 3px 5px 4px 6px / 5px 3px 6px 4px;
+  background: linear-gradient(180deg, rgba(178, 111, 38, 0.17) 0%, rgba(178, 111, 38, 0.05) 52%, rgba(178, 111, 38, 0.15) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(160, 94, 28, 0.22),
+    inset 0 1px 0 rgba(255, 244, 214, 0.6);
 }
 .hud-sign-week {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 900;
   line-height: 1;
   color: #5A2E0E;
   letter-spacing: 0.5px;
-}
-.hud-sign-dot {
-  font-size: 9px;
-  font-weight: 800;
-  line-height: 1;
-  color: #C08636;
+  white-space: nowrap;
+  padding-bottom: 1px;
+  border-bottom: 1.5px solid #C08636;
 }
 .hud-sign-dayno {
-  font-size: 10px;
+  font-size: 7.5px;
   font-weight: 800;
   line-height: 1;
   color: #8A5A2B;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
 }
 
 /* 两根小木钉：连接主牌与金币副牌 */
