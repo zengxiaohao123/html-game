@@ -176,6 +176,35 @@ for (const [rel] of DETAIL_VIEWS) {
   if (/class:\s*['"]trait-badge/.test(src)) errors.push(`[词条徽章重复实现] ${rel} 自行拼了 trait-badge DOM`);
 }
 
+// 运行时状态徽章：必须走 renderStateBadges 统一入口，且名称/含义取自物品库（禁止自造词）
+checked++;
+if (!infoSrc.includes('renderStateBadges(')) {
+  errors.push('[状态徽章缺失] InfoPanel 生物详情未接入 renderStateBadges 统一入口');
+}
+checked++;
+if (/class:\s*['"]state-badge/.test(infoSrc)) {
+  errors.push('[状态徽章重复实现] InfoPanel 自行拼了 state-badge DOM');
+}
+checked++;
+if (!badgeSrc.includes('export function renderStateBadges')) {
+  errors.push('[状态徽章缺失] TraitBadges.js 未导出 renderStateBadges 统一入口');
+}
+checked++;
+if (!infoSrc.includes('lastFed')) {
+  errors.push('[生物状态数据源] InfoPanel 生物状态未读取实例字段 lastFed');
+}
+
+// 技能只做展示：信息区不得存在任何「使用技能卡 / 使用技能」手动入口
+checked++;
+if (/使用技能卡|使用技能/.test(infoSrc)) {
+  errors.push('[技能手动入口] InfoPanel 仍存在「使用技能卡/使用技能」按钮文案或点击逻辑');
+}
+checked++;
+const skillSysSrc = readFileSync(new URL('../src/systems/SkillSystem.js', import.meta.url), 'utf8');
+if (/triggerSkillAtTile/.test(infoSrc) || /triggerSkillAtTile/.test(skillSysSrc)) {
+  errors.push('[技能手动入口] triggerSkillAtTile 仍被引用（应为 0 调用点）');
+}
+
 // ── 输出 ──
 if (errors.length) {
   console.error(`✗ 文案校验失败：${errors.length} 项\n`);

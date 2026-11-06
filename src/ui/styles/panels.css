@@ -544,6 +544,26 @@
   text-shadow: 0 1px 1px rgba(0,0,0,0.35);
 }
 
+/* 运行时状态徽章：沿用词条徽章的缎带语言，仅按状态倾向换色（好/坏/中性） */
+.state-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.state-badge.good {
+  background: linear-gradient(180deg, #8fd06f 0%, #3f9e4d 100%);
+  border-color: #2e6b36;
+}
+.state-badge.bad {
+  background: linear-gradient(180deg, #f4a24b 0%, #c85a1b 100%);
+  border-color: #8a3b0c;
+}
+.state-badge.neutral {
+  background: linear-gradient(180deg, #8fb8e0 0%, #3f6fa8 100%);
+  border-color: #2b4d78;
+}
+
 /* ── 右半：行动（slider + 数量 + 按钮） ── */
 .inv-right-top-right {
   display: flex;

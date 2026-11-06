@@ -15,7 +15,6 @@ import { GE } from '../core/GameEvents.js';
 import { Assets } from '../core/Assets.js';
 import { Distance } from '../core/Distance.js';
 import { BlessSystem, BLESS_STAMINA_COST, BLESS_GOLD_COST } from '../systems/BlessSystem.js';
-import { SkillSystem } from '../systems/SkillSystem.js';
 import { InventorySystem } from '../systems/InventorySystem.js';
 import { getDef, huntCreature } from '../data/facilities.js';
 import { depositHenhouseFeed } from '../systems/CreatureSystem.js';
@@ -28,10 +27,10 @@ import { getCreatureDef } from '../data/creatures.js';
 import { syncPumpkin } from '../systems/PassiveItemSystem.js';
 import { POTIONS } from '../data/potions.js';
 import { getBuff } from '../data/buffs.js';
-import { ITEMS } from '../data/items.js';
+import { ITEMS, GLOSSARY } from '../data/items.js';
 import { getTerrain, normalizeTerrain } from '../data/terrains.js';
 import { createEl, qs, iconEl } from './dom.js';
-import { renderTraitBadges } from './TraitBadges.js';
+import { renderTraitBadges, renderStateBadges } from './TraitBadges.js';
 
 /** 滑入/滑出 transform（§16.4：面板用 top/bottom 双锚点固定高度，只做横向滑入滑出） */
 const SLIDE_IN_TRANSFORM = 'translate(0, 0)';
@@ -55,11 +54,49 @@ const STATE_META = {
 /** 生物分类显示名 */
 const CATEGORY_NAMES = { friendly: '友善', danger: '危险', extreme: '高危' };
 
+/** 物品库词条（GLOSSARY）按 term 精确查找：状态名称/含义的唯一来源，禁止自造词 */
+const glossaryOf = (term) => GLOSSARY.find((g) => g && g.term === term) || null;
+
+/**
+ * 生物「实例」的运行时状态（数据源：该生物对象自身字段，不是物种通用描述）
+ *   · 投喂状态：lastFed —— CreatureSystem.dailyTick 每自然日起始逐只结算
+ *       true → 【已投喂】；false → 【饥饿】；undefined（当日尚未结算）→ 暂不展示
+ *   · buff / debuff：实例 activeBuffs（名称与含义取自 BUFFS 数据层）
+ * 名称一律取物品库 GLOSSARY（已投喂 / 饥饿）；查不到就不显示，避免自造词。
+ */
+function getCreatureStates(c) {
+  const out = [];
+  if (!c) return out;
+  if (c.kind === 'chick' || c.kind === 'chicken') {
+    const name = c.lastFed === true ? '已投喂' : (c.lastFed === false ? '饥饿' : null);
+    const g = name ? glossaryOf(name) : null;
+    if (g) {
+      out.push({
+        name: g.term,
+        emoji: c.lastFed === true ? '🍚' : '😣',
+        tone: c.lastFed === true ? 'good' : 'bad',
+        meaning: g.meaning || '',
+      });
+    }
+  }
+  for (const b of (c.activeBuffs || [])) {
+    const bDef = getBuff(b.id);
+    out.push({
+      name: bDef?.name || b.id,
+      emoji: bDef?.emoji || '❓',
+      tone: 'neutral',
+      meaning: bDef?.description || '',
+    });
+  }
+  return out;
+}
+
 export class InfoPanel {
   constructor() {
     this.root = null;
     this.tabsWrap = null;
     this.bodyWrap = null;
+    this.actionWrap = null;         // 固定操作区（滚动区之外，常驻可见）
     this.currentTileIdx = null;     // 当前选中的外圈地块 idx（null = 未选中，InfoPanel 滑出）
     this.currentFenceIdx = null;    // 当前选中的栅栏内地块 idx
     this.currentGs = null;
@@ -119,6 +156,17 @@ export class InfoPanel {
       parent: this.root,
     });
 
+    // 固定操作区（§16.4）：功能选项 / 操作按钮放在滚动区之外，始终可见、不被正文滚动带走。
+    // flexShrink:0 ⇒ 不参与正文压缩；默认隐藏，仅当地块内容 tab 有操作按钮时显示。
+    this.actionWrap = createEl('div', {
+      style: {
+        flexShrink: '0', display: 'none', flexDirection: 'column', gap: '6px',
+        borderTop: '2px dashed #b8a888', paddingTop: '8px',
+      },
+      attrs: { 'data-info-actions': '1' },
+      parent: this.root,
+    });
+
     this._subscribeEvents();
     return this.root;
   }
@@ -170,36 +218,47 @@ export class InfoPanel {
     this._panelOpen = false;
   }
 
-  /** 根据当前模式重建 tab 按钮条（§16.4：地块内容 / 状态 / 单位 恒存在；祈福仅祈福模式） */
+  /**
+   * tab 集合按「当前选中对象」动态生成（§16.4 固定顺位：地块内容 → 状态 → 单位 → 祈福）
+   *   地块内容：恒有（唯一例外是祈福模式，只显示祈福）
+   *   状态：该地块存在状态时才有（地形算状态；无地形 terrain_none 不算）
+   *   单位：该地块上有单位（外圈＝玩家在此格；栅栏内＝有生物）时才有
+   *   祈福：独立入口，仅点击精灵（mode='bless'）时出现，普通地块不显示
+   * 选中对象变化后若当前 tab 不再存在 → 自动落回第一个合法 tab（优先地块内容）。
+   */
   _rebuildTabs() {
     if (!this.tabsWrap) return;
     // 清空
     while (this.tabsWrap.firstChild) this.tabsWrap.removeChild(this.tabsWrap.firstChild);
 
+    const gs = this._getGS();
     const tabs = [];
     if (this.mode === 'bless') {
-      // 祈福模式：只显示祈福 tab（无其他三个 tab）
+      // 祈福模式：只有祈福 tab（不显示地块内容）
       tabs.push({ label: '祈福', render: 'bless' });
     } else if (this.mode === 'fence') {
-      // 栅栏内地块：地块内容 / 状态 / 单位 总是存在
-      tabs.push({ label: '地块内容', render: 'fenceContent' });
-      tabs.push({ label: '状态', render: 'fenceState' });
-      tabs.push({ label: '单位', render: 'fenceUnits' });
+      const cell = gs?.map?.fence?.[this.currentFenceIdx];
+      if (cell) {
+        tabs.push({ label: '地块内容', render: 'fenceContent' });
+        if (this._fenceHasState(cell)) tabs.push({ label: '状态', render: 'fenceState' });
+        if ((cell.creatures || []).length > 0) tabs.push({ label: '单位', render: 'fenceUnits' });
+      }
     } else {
-      // 外圈地块：地块内容 / 状态 / 单位 总是存在
-      tabs.push({ label: '地块内容', render: 'content' });
-      tabs.push({ label: '状态', render: 'state' });
-      tabs.push({ label: '单位', render: 'unit' });
+      const tile = gs?.map?.outerTiles?.[this.currentTileIdx];
+      if (tile) {
+        tabs.push({ label: '地块内容', render: 'content' });
+        if (this._tileHasState(tile)) tabs.push({ label: '状态', render: 'state' });
+        if (gs?.player?.x === tile.idx) tabs.push({ label: '单位', render: 'unit' });
+      }
     }
 
     if (tabs.length === 0) return;
 
+    // 顺位固定：兜底与「当前 tab 失效」都落到 0（地块内容 / 祈福）
+    const prevRender = this._currentTabs?.[this.activeTabIdx]?.render;
     if (this.activeTabIdx === undefined || this.activeTabIdx >= tabs.length) {
       this.activeTabIdx = 0;
-    }
-    const prevRender = this._currentTabs?.[this.activeTabIdx]?.render;
-    const stillValid = tabs.some(t => t.render === prevRender);
-    if (!stillValid && prevRender !== undefined) {
+    } else if (prevRender !== undefined && !tabs.some(t => t.render === prevRender)) {
       this.activeTabIdx = 0;
     }
 
@@ -219,9 +278,29 @@ export class InfoPanel {
     this._currentTabs = tabs;
   }
 
+  /** 外圈地块是否有「状态」：地形（无地形不算）+ 地块 buff/debuff + 已放置的放置型道具 */
+  _tileHasState(tile) {
+    if (!tile) return false;
+    if (tile.terrain && normTerrain(tile.terrain) !== 'terrain_none') return true;
+    if ((tile.states || []).length > 0) return true;
+    if ((tile.contentState?.placedItems || []).length > 0) return true;
+    return false;
+  }
+
+  /** 栅栏内地块是否有「状态」：地形（无地形不算）；状态 tab 目前只渲染地形 */
+  _fenceHasState(cell) {
+    if (!cell) return false;
+    return !!(cell.terrain && normTerrain(cell.terrain) !== 'terrain_none');
+  }
+
   _renderBody() {
     if (!this.bodyWrap || !this.root) return;
     while (this.bodyWrap.firstChild) this.bodyWrap.removeChild(this.bodyWrap.firstChild);
+    // 固定操作区每次重绘清空；内容 tab 渲染后会把操作按钮挪进来（滚动区之外）
+    if (this.actionWrap) {
+      while (this.actionWrap.firstChild) this.actionWrap.removeChild(this.actionWrap.firstChild);
+      this.actionWrap.style.display = 'none';
+    }
 
     this._rebuildTabs();
 
@@ -934,45 +1013,9 @@ export class InfoPanel {
           });
         }
       } else if (contentId.startsWith('skill_')) {
-        // Phase 4 —— 技能卡地块：显示技能详情 + 手动触发
-        const skillObj = SkillSystem.getSkillById?.(contentId) || SKILLS[contentId];
-        if (skillObj) {
-          createEl('div', {
-            style: {
-              padding: '8px 10px', background: 'rgba(255,255,255,0.8)',
-              borderLeft: '3px solid #e8a900', borderRadius: '4px',
-              fontSize: '12px', color: '#3a2e20', lineHeight: '1.6', marginBottom: '6px',
-              whiteSpace: 'pre-line',
-            },
-            text: `${skillObj.emoji} ${skillObj.name}\n${skillObj.description || ''}`,
-            parent: this.bodyWrap,
-          });
-          if (skillObj.isLinkSkill) {
-            // 连携技不走地块手动触发（§12.5：条件达成后弹实时窗口，按 E 使用）
-            createEl('div', {
-              style: {
-                width: '100%', padding: '8px 10px', boxSizing: 'border-box',
-                fontSize: '12px', color: '#3a2e20', textAlign: 'center',
-                background: 'rgba(232, 169, 0, 0.12)', border: '1px dashed #e8a900',
-                borderRadius: '6px',
-              },
-              text: '⚡ 连携技：放置后满足解锁条件时，于实时窗口按 E 使用',
-              parent: this.bodyWrap,
-            });
-          } else {
-            createEl('button', {
-              class: 'action-btn',
-              style: { width: '100%', fontSize: '14px', background: '#ffe099' },
-              text: '⚡ 使用技能卡',
-              parent: this.bodyWrap,
-              onclick: () => {
-                const tileIdx = this.currentTileIdx;
-                EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
-                SkillSystem.triggerSkillAtTile(gs, tileIdx);
-              },
-            });
-          }
-        }
+        // 技能地块：信息区只做展示（标题 / 词条徽章 / 描述 / 冷却）。
+        // 技能没有任何手动使用入口：主动技能由描述条件自动触发，连携技在实时窗口按 E 使用（§12.5）。
+        // （历史 bug：旧代码在此重复渲染图标 + 名称 + 描述，导致同一技能出现两套详情）
       }
       // 其他 resource_ 前缀（如未来的新资源点）— 词条自动触发，无额外功能选项
     }
@@ -1092,6 +1135,20 @@ export class InfoPanel {
       }
     }
 
+    // §16.4：功能选项 / 操作按钮统一放进固定操作区（滚动区之外），常驻可见不随正文滚动
+    this._promoteActionButtons();
+  }
+
+  /**
+   * 把本次「地块内容」渲染出的操作按钮从滚动区挪到固定操作区。
+   * 单一收口点：新增任何 action-btn 都自动常驻底部，避免再次长在长正文末尾被挤出视野。
+   */
+  _promoteActionButtons() {
+    if (!this.actionWrap) return;
+    const btns = Array.from(this.bodyWrap.children || [])
+      .filter((el) => el.classList && el.classList.contains('action-btn'));
+    for (const b of btns) this.actionWrap.appendChild(b);
+    this.actionWrap.style.display = this.actionWrap.children.length > 0 ? 'flex' : 'none';
   }
 
   /** 收获滑动条（§16.4：较大，可占两行高度） */
@@ -1506,6 +1563,10 @@ export class InfoPanel {
     // 生物详情：展示词条统一徽章入口（无词条时不渲染）
     renderTraitBadges(this.bodyWrap, def.traits, { marginBottom: '8px' });
 
+    // 该生物「实例」的运行时状态徽章（已投喂 / 饥饿 / buff），放在名称正下方；
+    // 与上面的展示词条严格区分：词条静态，状态随实例数据实时变化
+    renderStateBadges(this.bodyWrap, getCreatureStates(c), { marginBottom: '8px' });
+
     // 子 tab 条
     const subTabs = [
       { key: 'stats', label: '数值' },
@@ -1551,23 +1612,19 @@ export class InfoPanel {
         parent: this.bodyWrap,
       });
     } else {
-      // 状态：当前 buff/debuff（无则空态提示）
-      const buffs = c.activeBuffs || [];
-      if (buffs.length === 0) {
+      // 状态：该「实例」的运行时状态（投喂状态 + buff/debuff），名称/含义取数据层
+      const states = getCreatureStates(c);
+      if (states.length === 0) {
         createEl('div', {
           style: { padding: '20px 10px', textAlign: 'center', color: '#b0a090', fontSize: '13px', fontStyle: 'italic' },
-          text: '（当前没有 buff / debuff）',
+          text: '（当前没有状态）',
           parent: this.bodyWrap,
         });
       } else {
-        for (const b of buffs) {
-          const bDef = getBuff(b.id);
-          const remain = (b.remainingDays !== undefined && b.remainingDays !== null)
-            ? `（剩 ${b.remainingDays} 天）`
-            : (b.remainingTurns !== undefined ? `（剩 ${b.remainingTurns} 回合）` : '');
+        for (const s of states) {
           createEl('div', {
             style: { fontSize: '13px', color: '#3a2e20', padding: '4px 0', borderBottom: '1px dashed #d4c4a4', whiteSpace: 'pre-line' },
-            text: `${bDef?.emoji || '❓'} ${bDef?.name || b.id}${remain}：${bDef?.description || ''}`,
+            text: `${s.emoji} ${s.name}：${s.meaning}`,
             parent: this.bodyWrap,
           });
         }
@@ -1643,6 +1700,14 @@ export class InfoPanel {
         this._renderBody();
       }
     });
+
+    // 生物「实例」状态变化（跨日投喂结算 / 生成 / 死亡）→ 生物详情页实时刷新徽章
+    const refreshCreatureDetail = () => {
+      if (this.creatureDetailId) this._renderBody();
+    };
+    EventBus.on(GE.DAY_START, refreshCreatureDetail);
+    EventBus.on(GE.CREATURE_SPAWNED, refreshCreatureDetail);
+    EventBus.on(GE.CREATURE_DEFEATED, refreshCreatureDetail);
 
     EventBus.on(GE.BLESS_START, () => {
       this._renderBody();

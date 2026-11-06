@@ -76,8 +76,8 @@ head('P0-1 连携技按 E 触发队列头部');
   gs.map.outerTiles[1].contentId = 'skill_link_xiayang_scorch';
   LinkSkillSystem.onSkillCardPlaced(gs, 1, 'skill_link_xiayang_scorch');
   gs.linkSkillQueue = [
-    { key: '0|skill_link_yumo_drain', skillId: 'skill_link_yumo_drain', tileIdx: 0, roleId: 'yumo', expireAtMs: Date.now() + 3000, context: { element: 'fire' } },
-    { key: '1|skill_link_xiayang_scorch', skillId: 'skill_link_xiayang_scorch', tileIdx: 1, roleId: 'xiayang', expireAtMs: Date.now() + 3000, context: {} },
+    { key: '0|skill_link_yumo_drain', skillId: 'skill_link_yumo_drain', tileIdx: 0, roleId: 'yumo', expireAtMs: Date.now() + 8000, context: { element: 'fire' } },
+    { key: '1|skill_link_xiayang_scorch', skillId: 'skill_link_xiayang_scorch', tileIdx: 1, roleId: 'xiayang', expireAtMs: Date.now() + 8000, context: {} },
   ];
   const r = LinkSkillSystem.fireCurrentQueueTop(gs);
   assert(!!r && r.ok === true, 'fireCurrentQueueTop 结算成功', r);

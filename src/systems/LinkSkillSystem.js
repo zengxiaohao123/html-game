@@ -25,7 +25,7 @@ import { CombatSystem } from './CombatSystem.js';
 import { TalentSystem } from './TalentSystem.js';
 import { CreatureSystem } from './CreatureSystem.js';
 
-const WINDOW_MS = 3000; // 3 秒实时窗口
+export const WINDOW_MS = 8000; // 8 秒实时窗口
 
 // ── 实例标识 ──────────────────────────────────────────────
 
@@ -160,7 +160,7 @@ export function pruneUnplaced(gs) {
 }
 
 /**
- * M-09（§12.5）：3 秒窗口只在条目成为队首（可触发）时开始计时，排队不计时。
+ * M-09（§12.5）：8 秒窗口只在条目成为队首（可触发）时开始计时，排队不计时。
  * 队首条目尚无窗口时立即开始计时。
  */
 function armHeadWindow(gs) {
@@ -202,7 +202,7 @@ function tryEnqueue(gs, instance, opts = {}) {
     skillId: instance.skillId,
     tileIdx: instance.tileIdx,
     roleId: instance.roleId,
-    // M-09（§12.5）：排队不计时，成为队首时才开始 3 秒窗口
+    // M-09（§12.5）：排队不计时，成为队首时才开始 8 秒窗口
     expireAtMs: null,
     cooldownTurns,
     context,  // 触发上下文（如元素类型、目标 creature 对象等）

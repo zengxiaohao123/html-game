@@ -44,7 +44,7 @@ src/
 │   ├── InventorySystem.js    # 背包 + 出货箱 + 快捷栏 + 拖拽放置
 │   ├── CombatSystem.js       # 伤害计算 + 闪避 + 元素免疫 + 范围
 │   ├── SkillSystem.js        # 技能触发（进入时/经过时/受祝福时）
-│   ├── LinkSkillSystem.js    # 连携技（解锁检测 + 3 秒窗口 + 队列）
+│   ├── LinkSkillSystem.js    # 连携技（解锁检测 + 8 秒窗口 + 队列）
 │   ├── CreatureSystem.js     # 生物实时移动 + 投喂 + 成长 + 心情
 │   └── BuildSystem.js        # 建造模式 + 放置/替换地块内容
 ├── ui/                       # UI 渲染层（订阅 EventBus，更新 DOM）
@@ -52,10 +52,10 @@ src/
 │   ├── MapView.js            # 地图区渲染（外圈 8 格 + 中心栅栏）
 │   ├── TopBar.js             # 顶部状态栏（生命/攻击/行动力/金币/容量）
 │   ├── FuncBar.js            # 功能区（8 图标，从右往左）
-│   ├── InfoPanel.js          # 信息区（右侧滑入，4 tab）
+│   ├── InfoPanel.js          # 信息区（右侧滑入，动态 tab：地块内容/状态/单位/祈福；按钮固定在滚动区外）
 │   ├── HotBar.js             # 快捷物品栏（底部居中，10 格）
 │   ├── SpiritArea.js         # 左侧精灵 + 祈福按钮
-│   ├── LinkSkillUI.js        # 连携区（3 秒窗口小圆框 + 队列）
+│   ├── LinkSkillUI.js        # 连携区（8 秒窗口小圆框 + 队列）
 │   ├── panels/
 │   │   ├── MainMenu.js       # 主菜单（新游戏/读档/图鉴）
 │   │   ├── SettingsPanel.js  # ESC 设置（存档/读档/回主菜单）

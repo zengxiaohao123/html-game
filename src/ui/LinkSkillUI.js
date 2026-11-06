@@ -1,10 +1,10 @@
 // src/ui/LinkSkillUI.js
 // Phase 4 重写 —— 连携技实时窗口（非 Panel，不走 panel-mask 那套）
-// 订阅 GE.LINK_SKILL_QUEUE 变化时自动显示；3 秒倒计时；按 E 触发队列头部（§12.5）；超时自动消失
+// 订阅 GE.LINK_SKILL_QUEUE 变化时自动显示；8 秒倒计时；按 E 触发队列头部（§12.5）；超时自动消失
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
-import { LinkSkillSystem } from '../systems/LinkSkillSystem.js';
+import { LinkSkillSystem, WINDOW_MS } from '../systems/LinkSkillSystem.js';
 import { SKILLS } from '../data/characters.js';
 import { createEl, qs, iconEl } from './dom.js';
 import { devLog } from '../core/Logger.js';
@@ -58,7 +58,7 @@ export class LinkSkillUI {
     this._keyHandler = (e) => {
       if (!this.visible) return;
       const key = e.key;
-      // §12.5：每个连携技 3 秒窗口，期间按 E 使用（固定触发队列头部）
+      // §12.5：每个连携技 8 秒窗口，期间按 E 使用（固定触发队列头部）
       if (key === 'e' || key === 'E') {
         e.preventDefault();
         this._triggerQueueTop();
@@ -160,7 +160,7 @@ export class LinkSkillUI {
       const entry = queue[idx];
       if (!entry) return;
       const remainMs = Math.max(0, entry.expireAtMs - now);
-      const pct = remainMs / 3000 * 100;
+      const pct = remainMs / WINDOW_MS * 100;
       barEl.innerHTML = '';
       const fill = createEl('div', {
         style: {

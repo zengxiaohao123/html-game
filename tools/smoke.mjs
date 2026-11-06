@@ -992,7 +992,7 @@ console.log('\n═══ 39. 连携技实例化：必须放置 / 同名独立 / 
     check(g.linkSkillQueue.length === 0, '拆除后条件再次达成也不入队');
   }
 
-  // 6) 入队后 3 秒内拆卡 → 按 E 不结算
+  // 6) 入队后 8 秒内拆卡 → 按 E 不结算
   {
     const g = createInitialState();
     g.team.groups[0].roles = ALL_ROLES.slice();
@@ -1004,10 +1004,10 @@ console.log('\n═══ 39. 连携技实例化：必须放置 / 同名独立 / 
     BuildSystem.clearContent(g, 0);
     check(g.linkSkillQueue.length === 0, '拆卡 → 队列条目立即清除');
     // 模拟「队列未清理的残留窗口」：强行塞回条目再按 E
-    g.linkSkillQueue = [{ key: '0|skill_link_yumo_drain', skillId: 'skill_link_yumo_drain', tileIdx: 0, context: { element: 'fire' }, expireAtMs: Date.now() + 3000 }];
+    g.linkSkillQueue = [{ key: '0|skill_link_yumo_drain', skillId: 'skill_link_yumo_drain', tileIdx: 0, context: { element: 'fire' }, expireAtMs: Date.now() + 8000 }];
     const r = LinkSkillSystem.fireCurrentQueueTop(g);
     check(!r.ok && r.message === 'unplaced' && g.linkSkillQueue.length === 0 && !g.team.yumoNextElementOverride,
-      '拆卡后 3 秒内按 E → 不结算（窗口作废）');
+      '拆卡后 8 秒内按 E → 不结算（窗口作废）');
   }
 
   // 7) 角色离队 → 已放置技能自动回背包；不在编队不可放置

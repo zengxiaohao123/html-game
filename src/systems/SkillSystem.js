@@ -7,7 +7,8 @@
 //     技能持续存在（不消耗 tile.contentId），按 tileIdx + skillId 独立 cooldown。
 //     同时 fire HookDispatcher.fire('onUseSkill', ...) 让豌豆架储存豌豆。
 //
-//   triggerSkillAtTile(tileIdx)  —— 辅助：走到某格时主动触发 onEnter（由 facilities.js 或 UI 调用）
+//   ⚠ 技能没有任何手动使用入口：主动技能只由描述里的触发时机自动结算，
+//     连携技只在实时窗口按 E 使用（§12.5）；信息区对技能只做展示。
 //
 // 为什么不注册到 HookDispatcher？
 //   HookDispatcher 是词条 hook（设施/资源/祝福/睡觉 等时机），是数据层写死时机；
@@ -399,13 +400,6 @@ function defeatCreature(gs, target) {
 }
 
 /**
- * 主动触发某格的所有技能（外部辅助：UI 手动触发）
- */
-export function triggerSkillAtTile(gs, tileIdx) {
-  triggerSkillByHook('onEnter', { gs, tileIdx });
-}
-
-/**
  * 推进回合后，递减所有技能 cooldown（GameDirector 上层调用 TurnSystem 后再调这个）
  */
 export function advanceSkillCooldowns(gs) {
@@ -433,7 +427,6 @@ export function getSkillById(id) {
 
 export const SkillSystem = {
   triggerSkillByHook,
-  triggerSkillAtTile,
   advanceSkillCooldowns,
   resetSkillCooldowns,
   getSkillById,

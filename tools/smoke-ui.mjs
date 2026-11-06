@@ -249,13 +249,60 @@ head_('§16.19 HotBar：数量恒显 / 0 时「可合成」判定');
   assert(hasText(hotBar.root, '可合成'), '数量为 0 且材料足够 → 显示「可合成」');
 }
 
-head_('§16.4 InfoPanel：1/4 宽 + 三总显 tab + 面板栈接线');
+head_('§16.4 InfoPanel：1/4 宽 + 动态 tab（按选中对象生成）+ 面板栈接线');
 {
+  const tile = gs.map.outerTiles[2];
+  const saved = {
+    terrain: tile.terrain, states: tile.states, placedItems: tile.contentState?.placedItems,
+    contentId: tile.contentId, contentState: tile.contentState, px: gs.player.x,
+  };
+  // 基准：无地形、无状态、玩家不在该格 → 只有「地块内容」
+  tile.contentId = null;
+  tile.contentState = {};
+  tile.terrain = 'terrain_none';
+  tile.states = [];
+  gs.player.x = 0;
   infoPanel.selectTile(2);
   assert(infoPanel._panelOpen === true, '滑入后 emit UI_PANEL_OPEN(info)');
   assert(director.openPanels.includes('info'), 'openPanels 栈含 info', director.openPanels);
-  assert(hasText(infoPanel.root, '地块内容') && hasText(infoPanel.root, '状态') && hasText(infoPanel.root, '单位'),
-    '地块内容 / 状态 / 单位 三 tab 恒显');
+  let labels = (infoPanel._currentTabs || []).map((t) => t.label).join('/');
+  assert(labels === '地块内容', `无地形且无单位 → 只有地块内容（实测 ${labels}）`);
+
+  // 有地形（地形视为状态）→ 状态 tab 出现在第 2 位
+  tile.terrain = 'terrain_grass';
+  infoPanel._renderBody();
+  labels = (infoPanel._currentTabs || []).map((t) => t.label).join('/');
+  assert(labels === '地块内容/状态', `有地形 → 出现状态且顺位第 2（实测 ${labels}）`);
+
+  // 玩家在该格（有单位）→ 单位 tab 出现在第 3 位；顺位固定 地块内容→状态→单位
+  gs.player.x = 2;
+  infoPanel._renderBody();
+  labels = (infoPanel._currentTabs || []).map((t) => t.label).join('/');
+  assert(labels === '地块内容/状态/单位', `有单位 → 出现单位且顺位第 3（实测 ${labels}）`);
+
+  // 已选 tab 因对象变化消失 → 自动回落到合法的「地块内容」
+  buttonsWithText(infoPanel.root, '单位')[0].click();
+  assert(infoPanel.activeTabIdx === 2, '点单位 tab → activeTabIdx=2', infoPanel.activeTabIdx);
+  gs.player.x = 0;
+  infoPanel._renderBody();
+  assert(infoPanel.activeTabIdx === 0, '单位消失后自动落回地块内容（activeTabIdx=0）', infoPanel.activeTabIdx);
+  assert(!hasText(infoPanel.tabsWrap, '单位'), '单位 tab 已移除');
+
+  // 点精灵 → 只有「祈福」，不显示「地块内容」
+  infoPanel.showBlessTab();
+  labels = (infoPanel._currentTabs || []).map((t) => t.label).join('/');
+  assert(labels === '祈福', `祈福模式 → 只有祈福 tab（实测 ${labels}）`);
+  assert(!hasText(infoPanel.tabsWrap, '地块内容'), '祈福模式不显示地块内容 tab');
+
+  // 外框固定尺寸（§16.4：top/bottom 双锚点 + overflow hidden，尺寸不随 tab 数变化）
+  assert(infoPanel.root.style.top === '76px' && infoPanel.root.style.bottom === '100px'
+    && infoPanel.root.style.overflow === 'hidden', '外框 top/bottom 锚定且 overflow:hidden（尺寸不随内容变化）');
+
+  tile.terrain = saved.terrain;
+  tile.states = saved.states;
+  tile.contentId = saved.contentId;
+  tile.contentState = saved.contentState;
+  gs.player.x = saved.px;
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
   assert(infoPanel._panelOpen === false, 'UI_PANEL_CLOSE(info) → 滑出');
 }
@@ -825,17 +872,177 @@ head_('第 9 批：商店剩余预览 / 背包拖拽放置 / 粘液中文名');
 // ════════════════════════════════════════════════════════════
 head_('第 10 批任务 A：InfoPanel 精修后 tab/地形文案状态正确');
 {
+  const tile = gs.map.outerTiles[2];
+  const savedTerrain = tile.terrain;
+  tile.terrain = 'terrain_grass'; // 地形视为状态 → 状态 tab 才会出现
   infoPanel.selectTile(2);
   assert(infoPanel.mode === 'tile', 'selectTile 后为 tile 模式', infoPanel.mode);
   // 点「状态」tab → activeTabIdx 变化且渲染状态内容
   buttonsWithText(infoPanel.root, '状态')[0].click();
   assert(infoPanel.activeTabIdx === 1, '点状态 tab → activeTabIdx=1', infoPanel.activeTabIdx);
-  assert(hasText(infoPanel.root, '地形：'), '状态 tab 渲染地形行');
-  assert(!hasText(infoPanel.root, '地形：terrain_'), '地形行显示中文名（不露原始 id）');
+  assert(hasText(infoPanel.root, '草地：'), '状态 tab 渲染地形行（中文名 + 词条描述）');
+  assert(!hasText(infoPanel.root, 'terrain_grass'), '地形行不露原始 id');
   assert(!hasText(infoPanel.root, 'tile idx ='), '调试文案已移除');
   // 点回「地块内容」
   buttonsWithText(infoPanel.root, '地块内容')[0].click();
   assert(infoPanel.activeTabIdx === 0, '点地块内容 tab → activeTabIdx=0');
+  tile.terrain = savedTerrain;
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+}
+
+head_('第 11 批：InfoPanel 技能详情只渲染一套（防重复 + 无 ⚡ 提示行）');
+{
+  const { SKILLS } = await import('../src/data/characters.js');
+  const tile = gs.map.outerTiles[2];
+  const saved = { id: tile.contentId, st: tile.contentState };
+
+  // 连携技：标题 / 描述 / 冷却只出现一套，且无 ⚡ 提示行、无「使用技能卡」死按钮
+  tile.contentId = 'skill_link_shift';
+  tile.contentState = {};
+  infoPanel.selectTile(2);
+  const linkNameNodes = findAll(infoPanel.root, (el) => el._text === SKILLS.skill_link_shift.name);
+  assert(linkNameNodes.length === 1,
+    `连携技详情标题只出现一套（实测 ${linkNameNodes.length} 套）`);
+  const cooldownRows = findAll(infoPanel.root, (el) => el._text && el._text.includes('冷却：'));
+  assert(cooldownRows.length === 1, `连携技冷却只出现一行（实测 ${cooldownRows.length} 行）`);
+  assert(!hasText(infoPanel.root, '⚡ 连携技：放置后满足解锁条件时'), '不再出现 ⚡ 连携技提示行');
+  assert(!hasText(infoPanel.root, '⚡ 使用技能卡'), '连携技地块不出现「使用技能卡」死按钮');
+
+  // 主动技能：详情同样只一套，且没有任何手动使用入口（挑描述行数最多的一条，覆盖多行分支）
+  const activeSkill = Object.values(SKILLS)
+    .filter((s) => !s.isLinkSkill && s.id.startsWith('skill_'))
+    .sort((a, b) => String(b.description).split('\n').length - String(a.description).split('\n').length)[0];
+  tile.contentId = activeSkill.id;
+  tile.contentState = {};
+  infoPanel.selectTile(2);
+  const activeNameNodes = findAll(infoPanel.root, (el) => el._text === activeSkill.name);
+  assert(activeNameNodes.length === 1,
+    `主动技能详情标题只出现一套（实测 ${activeNameNodes.length} 套）`);
+  const activeLines = String(activeSkill.description).split('\n').filter(Boolean);
+  const activeDescRows = findAll(infoPanel.root, (el) => el._classes && el._classes.has('facility-desc-row'));
+  assert(activeDescRows.length === activeLines.length,
+    `主动技能描述行数与数据一致（实测 ${activeDescRows.length} 行 / 数据 ${activeLines.length} 行）`);
+  for (const ln of activeLines) {
+    const n = findAll(infoPanel.root, (el) => el._text === ln).length;
+    assert(n === 1, `主动技能描述行「${ln.slice(0, 14)}…」只出现一次（实测 ${n} 次）`);
+  }
+  assert(!hasText(infoPanel.root, '使用技能卡') && !hasText(infoPanel.root, '使用技能'),
+    '主动技能信息区没有任何「使用技能」手动入口');
+
+  // 天赋：详情只渲染一套（RolePanel 技能展示页）
+  const { TALENTS } = await import('../src/data/talents.js');
+  const savedRoleId = rolePanel.selectedRoleId;
+  const talent = Object.values(TALENTS).find((t) => t.roleId === savedRoleId) || Object.values(TALENTS)[0];
+  rolePanel.selectedRoleId = talent.roleId;
+  rolePanel._refresh();
+  const talentNameCount = findAll(rolePanel.helper.root, (el) => el._text === talent.name).length;
+  const talentDescCount = findAll(rolePanel.helper.root, (el) => el._text === talent.description).length;
+  assert(talentNameCount === 1, `天赋标题只出现一套（实测 ${talentNameCount} 套）`);
+  assert(talentDescCount === 1, `天赋描述只出现一段（实测 ${talentDescCount} 段）`);
+  rolePanel.selectedRoleId = savedRoleId;
+  rolePanel._refresh();
+
+  tile.contentId = saved.id;
+  tile.contentState = saved.st;
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+}
+
+head_('第 12 批：信息区固定操作区（按钮在滚动区外）+ 生物实例状态徽章');
+{
+  const tile = gs.map.outerTiles[2];
+  const saved = { id: tile.contentId, st: tile.contentState, terrain: tile.terrain, px: gs.player.x };
+
+  // ── A) 长内容鸡舍：操作按钮必须全部落在固定操作区（滚动容器之外） ──
+  tile.contentId = 'facility_henhouse';
+  tile.contentState = { eggStored: 8, eggStoredGolden: 3, doorOpen: true, henhouseFeed: {} };
+  tile.terrain = 'terrain_grass';
+  InventorySystem.addItem(gs, 'item_rice_straw', 2);
+  InventorySystem.addItem(gs, 'item_wheat', 2);
+  gs.player.x = 2; // 身处该格 → 最长的内容分支（鸡蛋/优质蛋/投放饲料）
+  infoPanel.selectTile(2);
+  assert(infoPanel.actionWrap.style.display === 'flex', '有操作选项 → 固定操作区显示');
+  const doorBtns = buttonsWithText(infoPanel.actionWrap, '🚪');
+  assert(doorBtns.length === 1, '鸡舍「开门/关门」选项存在（数据层有 action、渲染未丢）', doorBtns.length);
+  const contentBtns = findAll(infoPanel.root, (el) => el._classes && el._classes.has('action-btn'));
+  assert(contentBtns.length > 0 && contentBtns.every((b) => infoPanel.actionWrap.contains(b)),
+    `地块内容操作按钮全部在固定操作区（${contentBtns.length} 个）`);
+  assert(contentBtns.every((b) => !infoPanel.bodyWrap.contains(b)),
+    '滚动容器内没有任何操作按钮（不会被长正文挤出视野/裁切）');
+  assert(infoPanel.bodyWrap.style.overflowY === 'auto' && infoPanel.bodyWrap.style.minHeight === '0',
+    '正文是唯一滚动区（overflowY:auto + minHeight:0）');
+  assert(infoPanel.actionWrap.style.flexShrink === '0', '固定操作区不参与正文压缩（常驻可见）');
+  assert(hasText(infoPanel.bodyWrap, '【进入时】'), '长内容时正文仍保留设施描述（可滚动查看）');
+  const beforeDoor = tile.contentState.doorOpen;
+  doorBtns[0].click();
+  assert(tile.contentState.doorOpen === !beforeDoor, '点开门/关门 → 鸡舍门状态翻转（按钮可点）');
+
+  // ── B) 技能地块不产生任何操作按钮（技能只展示，无手动入口） ──
+  const { SKILLS } = await import('../src/data/characters.js');
+  const activeSkill = Object.values(SKILLS).find((s) => !s.isLinkSkill && s.id.startsWith('skill_'));
+  tile.contentId = activeSkill.id;
+  tile.contentState = {};
+  infoPanel.selectTile(2);
+  const skillBtns = findAll(infoPanel.root, (el) => el._classes && el._classes.has('action-btn'));
+  assert(skillBtns.length === 0,
+    `技能地块没有任何操作按钮（实测 ${skillBtns.map((b) => b.textContent.trim()).join('|') || '0 个'}）`);
+  assert(infoPanel.actionWrap.style.display === 'none', '技能地块固定操作区不显示（无操作可做）');
+
+  // ── C) 生物实例状态徽章：已投喂 vs 饥饿 必须不同 ──
+  const cell = gs.map.fence[0];
+  const savedFenceCreatures = cell.creatures;
+  const savedGsCreatures = gs.creatures.slice();
+  const mkChick = (id, fed) => ({
+    id, kind: 'chick', hp: 50, maxHp: 50, atk: 0, growth: 0, growthMax: 100,
+    mood: 0, stage: 'chick', category: 'friendly', lastFed: fed, activeBuffs: [],
+  });
+  cell.creatures = ['t12_fed', 't12_hungry'];
+  gs.creatures.push(mkChick('t12_fed', true), mkChick('t12_hungry', false));
+  EventBus.emit(GE.FENCE_TILE_CLICKED, { fenceIdx: 0 });
+  assert(infoPanel.mode === 'fence', '点栅栏内地块 → fence 模式');
+  const fenceLabels = (infoPanel._currentTabs || []).map((t) => t.label).join('/');
+  assert(fenceLabels.includes('单位'), `有生物 → 单位 tab 出现（实测 ${fenceLabels}）`);
+  buttonsWithText(infoPanel.root, '单位')[0].click();
+  const cards = findAll(infoPanel.root, (el) => el._listeners && el._listeners.click && el.tagName === 'DIV'
+    && el.attributes && el.attributes.title && ['小鸡'].includes(el.attributes.title));
+  assert(cards.length === 2, '栅栏格显示两只小鸡（实例列表）', cards.length);
+
+  cards[0].click();
+  assert(infoPanel.creatureDetailId === 't12_fed', '点第 1 只 → 打开该实例详情');
+  const fedBadges = findAll(infoPanel.root, (el) => el._classes && el._classes.has('state-badge'));
+  assert(fedBadges.length === 1 && fedBadges[0]._text.includes('已投喂'),
+    `已投喂个体显示【已投喂】徽章（实测 ${fedBadges.map((b) => b._text).join('|')}）`);
+  assert(!hasText(infoPanel.root, '饥饿'), '已投喂个体不显示【饥饿】');
+
+  // 返回列表 → 点第 2 只（饥饿）→ 徽章不同
+  buttonsWithText(infoPanel.root, '←')[0].click();
+  // 返回后重新取卡片（列表已重绘）
+  const cards2 = findAll(infoPanel.root, (el) => el._listeners && el._listeners.click && el.tagName === 'DIV'
+    && el.attributes && el.attributes.title && ['小鸡'].includes(el.attributes.title));
+  cards2[1].click();
+  assert(infoPanel.creatureDetailId === 't12_hungry', '点第 2 只 → 打开另一实例');
+  const hungryBadges = findAll(infoPanel.root, (el) => el._classes && el._classes.has('state-badge'));
+  assert(hungryBadges.length === 1 && hungryBadges[0]._text.includes('饥饿'),
+    `饥饿个体显示【饥饿】徽章（实测 ${hungryBadges.map((b) => b._text).join('|')}）`);
+  assert(!hasText(infoPanel.root, '已投喂'), '饥饿个体不显示【已投喂】');
+
+  // 状态变化 → 详情徽章实时刷新（模拟跨日结算：lastFed 翻转 + CREATURE_DEFEATED 通知）
+  const target = gs.creatures.find((c) => c.id === 't12_hungry');
+  target.lastFed = true;
+  EventBus.emit(GE.CREATURE_DEFEATED, { creature: target });
+  const afterBadges = findAll(infoPanel.root, (el) => el._classes && el._classes.has('state-badge'));
+  assert(afterBadges.length === 1 && afterBadges[0]._text.includes('已投喂'),
+    '状态变为已投喂后徽章随之刷新（无需重开面板）');
+
+  // ── 还原 ──
+  cell.creatures = savedFenceCreatures;
+  gs.creatures.length = 0;
+  gs.creatures.push(...savedGsCreatures);
+  infoPanel.creatureDetailId = null;
+  tile.contentId = saved.id;
+  tile.contentState = saved.st;
+  tile.terrain = saved.terrain;
+  gs.player.x = saved.px;
+  infoPanel.selectTile(2);
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
 }
 
@@ -1288,7 +1495,9 @@ head_('第 13 批 波 2：UI 修复验证（门控 / 信息区 / 商店 / 建造
   LinkSkillSystem.enqueue(gs, { tileIdx: 3, skillId: 'skill_link_luyouyou_rise_wind' });
   const qe1 = gs.linkSkillQueue[0];
   const qe2 = gs.linkSkillQueue[1];
-  assert(qe1 && qe1.expireAtMs > Date.now(), 'M-09：队首开始 3 秒窗口');
+  assert(qe1 && qe1.expireAtMs > Date.now(), 'M-09：队首开始 8 秒窗口');
+  assert(qe1 && qe1.expireAtMs - Date.now() > 7500 && qe1.expireAtMs - Date.now() <= 8000,
+    `M-09：窗口时长 8000ms（实测 ${qe1 ? qe1.expireAtMs - Date.now() : '?'}ms）`);
   assert(qe2 && qe2.expireAtMs === null, 'M-09：排队条目不计时（§12.5）');
   qe1.expireAtMs = Date.now() - 10;
   LinkSkillSystem.pruneExpired(gs);
