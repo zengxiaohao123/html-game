@@ -22,6 +22,9 @@ import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { BlessSystem } from './BlessSystem.js';
 import { BuildSystem } from './BuildSystem.js';
+import {
+  isBlessBlocked, isHotbarBlocked, isMovementBlocked, isSleepBlocked,
+} from './InputGate.js';
 import { devLog } from '../core/Logger.js';
 
 const KEY_TO_DIRECTION = {
@@ -62,21 +65,22 @@ export class InputManager {
     this._handler = (e) => {
       const key = (e.key || '').toLowerCase();
       const gs = this.director?.getGS?.();
+      const director = this.director;
 
-      // ── §16.20 界面门控：任意界面/弹窗打开时，主界面快捷键无效（ESC 除外） ──
-      const uiOpen = (this.director?.openPanels?.length || 0) > 0
-        || !!this.director?.settingsPanel?.visible;
-      const dialogOpen = !!this.director?.dialogBox?.visible;
-
-      // ── 建造模式 gating ──
-      if (gs?.buildMode === true) {
-        if (key === 'w' || key === 'a' || key === 's' || key === 'd'
-          || key === ' ' || key === 'space'
-          || key === 'p') {
+      // ── 主菜单（全屏模态遮罩）：任何游戏快捷键都不得穿透（含 ESC） ──
+      if (director?.mainMenu?.visible) {
+        if (key === 'tab' || key === ' '
+          || KEY_TO_DIRECTION[key] || KEY_TO_ACTION[key]) {
           e.preventDefault();
-          return;
         }
+        return;
       }
+
+      // ── 输入门控：显式阻塞原因（§16.4 / §16.5 / §16.6 / §16.14 / §16.20） ──
+      // 只有真正独占输入的模态才阻塞；信息区（info）是常驻侧栏，不阻塞探索操作。
+      const movementBlocked = isMovementBlocked(director);
+      const hotbarBlocked = isHotbarBlocked(director);
+      const dialogOpen = !!director?.dialogBox?.visible;
 
       // Tab / 空格 必须 preventDefault
       if (key === 'tab' || key === ' ') {
@@ -85,8 +89,8 @@ export class InputManager {
 
       // ── 1-0 数字键 → HotBar 选中 ──
       // 弹窗打开时数字键归选项模式（§16.4 数字键 1~6 选择选项），此处不抢
-      // 界面打开时主界面快捷键无效（§16.20）
-      if (gs && !uiOpen && !dialogOpen) {
+      // 建造模式 / 信息区打开时仍可选中（§16.14 / §16.4）
+      if (gs && !hotbarBlocked) {
         const num = parseInt(key, 10);
         if (!isNaN(num) && num >= 1 && num <= 9) {
           e.preventDefault();
@@ -101,12 +105,9 @@ export class InputManager {
       }
 
       if (KEY_TO_DIRECTION[key]) {
-        // §16.20：界面/弹窗打开时 WASD 移动无效
-        if (uiOpen || dialogOpen) {
-          e.preventDefault();
-          return;
-        }
+        // §16.20：模态界面 / 剧情事件 / 建造模式下 WASD 移动无效
         e.preventDefault();
+        if (movementBlocked) return;
         this.director.move(KEY_TO_DIRECTION[key]);
         return;
       }
@@ -116,7 +117,7 @@ export class InputManager {
       // 因此同时认 DialogBox 在事件上打的消费标记，保证与监听注册顺序无关。
       // 否则会出现「ESC 关弹窗的同时又打开设置」的状态错乱。
       if (KEY_TO_ACTION[key] === 'settings'
-        && (this.director?.dialogBox?.visible || e._dialogConsumedEsc)) {
+        && (dialogOpen || e._dialogConsumedEsc)) {
         return;
       }
 
@@ -141,22 +142,19 @@ export class InputManager {
 
   _dispatchAction(action) {
     const gs = this.director?.getGS?.();
-    // §16.20 / §16.10：界面或弹窗打开时，主界面快捷键（P 睡觉 / 空格祈福）无效
-    const uiOpen = (this.director?.openPanels?.length || 0) > 0
-      || !!this.director?.settingsPanel?.visible;
-    const dialogOpen = !!this.director?.dialogBox?.visible;
+    // §16.20 / §16.10 / §16.6：模态界面、剧情/事件、建造模式下主界面快捷键无效；
+    // 信息区（info）不算阻塞；祈福动画期间可睡觉，但不可再次祈福（BlessSystem 自身亦互斥）。
     switch (action) {
       case 'sleep': {
         // §16.10：P 键只在主界面有效，其他界面按 P 无反应（弹窗打开时不得顶替弹窗）
-        if (uiOpen || dialogOpen) break;
+        if (isSleepBlocked(this.director)) break;
         this.director.sleep();
         break;
       }
 
       case 'bless':
         // 祈福走两步式：blessStart 扣消耗 + 选目标 → BlessAnimation 播完 → blessCommit
-        // §16.20 / §16.6：界面打开或弹窗显示时不能祈福
-        if (!gs || uiOpen || dialogOpen) break;
+        if (!gs || isBlessBlocked(this.director)) break;
         BlessSystem.blessStart(gs);
         break;
 

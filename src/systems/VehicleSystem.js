@@ -22,6 +22,7 @@ import { Direction } from '../utils/Direction.js';
 import { HookDispatcher } from '../core/HookDispatcher.js';
 import { SkillSystem } from './SkillSystem.js';
 import { StaminaSystem } from './StaminaSystem.js';
+import { canMoveNow, markMoved } from './MoveCooldown.js';
 
 function ensureVehicleState(gs) {
   if (!gs.vehicle) {
@@ -215,6 +216,9 @@ function sameRowOrCol(gs, aIdx, bIdx) {
  * @returns {{ ok: boolean, path: number[] | null, finalIdx: number | null, reason?: string }}
  */
 export function tryMove(gs, opts = {}) {
+  // §5.2：与 WASD /「前往」共用同一套 0.5 秒移动冷却（冷却期间直接忽略）
+  if (!canMoveNow(gs)) return { ok: false, reason: 'cooldown' };
+
   ensureVehicleState(gs);
   const cur = gs.vehicle.current;
   if (!cur) return { ok: false, reason: 'noVehicle' };
@@ -373,6 +377,7 @@ export function tryMove(gs, opts = {}) {
   EventBus.emit(GE.TILE_UPDATED, { tileIdx: targetIdx });
 
   devLog.info('[VehicleSystem.tryMove]', def.name, fromIdx, '→', targetIdx, 'path=', path);
+  markMoved(gs);
 
   return { ok: true, path, finalIdx: targetIdx };
 }

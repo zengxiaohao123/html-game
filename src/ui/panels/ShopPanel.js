@@ -99,17 +99,23 @@ export class ShopPanel {
   // ────────────────────────────────────────── 打开 / 关闭
   open(tileIdx) {
     const gs = this.gs;
-    if (!gs) return;
+    if (!gs) { this._rollbackStack(); return; }
     if (tileIdx == null) {
       const t = gs.map.outerTiles.find((x) => x.contentId === 'resource_shop' || x.contentId === 'resource_magic_shop');
       tileIdx = t ? t.idx : -1;
     }
     if (tileIdx < 0) {
       EventBus.emit(GE.TOAST_SHOW, { text: '🏪 附近没有商店', duration: 1500 });
+      this._rollbackStack();
       return;
     }
     const enter = enterShop(gs, tileIdx);
-    if (!enter.ok) return;
+    if (!enter.ok) {
+      // 修复幽灵门控：进入失败（如本回合刚离开）时回收已入栈的 'shop' 条目，
+      // 否则栈里有、屏幕外没有 → WASD 被锁死，而提示又要求「走一步再进」。
+      this._rollbackStack();
+      return;
+    }
 
     this.tileIdx = tileIdx;
     this.kind = enter.shop.kind;
@@ -119,6 +125,13 @@ export class ShopPanel {
     this._render();
     EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'shop' });
     devLog.info('[ShopPanel] open tile', tileIdx, this.kind);
+  }
+
+  /** 打开失败时把栈条目退回（GameDirector 栈内统一记作 'shop'，魔法商店也一样） */
+  _rollbackStack() {
+    // 延迟到本次 OPEN 事件分发结束：GameDirector 的入栈 handler 晚于本面板注册，
+    // 立即 emit 会被随后的入栈覆盖，形成「栈里有、屏幕外没有」的幽灵条目。
+    setTimeout(() => EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'shop' }), 0);
   }
 
   close() {

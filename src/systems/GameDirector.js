@@ -22,6 +22,7 @@ import { SkillSystem } from './SkillSystem.js';
 import { InventorySystem } from './InventorySystem.js';
 import { TalentSystem } from './TalentSystem.js';
 import { LinkSkillSystem } from './LinkSkillSystem.js';
+import { canMoveNow, markMoved, resetMoveCooldown } from './MoveCooldown.js';
 
 /** 初始小麦田放置的格 idx（Phase 1 演示用） */
 const INITIAL_WHEAT_TILE_IDX = 2; // 右上位置
@@ -34,8 +35,55 @@ export class GameDirector {
     this.started = false;
     /** Panel 栈 —— 后开的在上，ESC 先关栈顶 */
     this.openPanels = [];
+    /** 面板实例登记表（key → 面板/helper）：用于校验栈内条目是否真的显示着 */
+    this.panelRefs = {};
     /** 已注册的 EventBus listener 标记（防止 start() 重复注册） */
     this._listenersRegistered = false;
+  }
+
+  /**
+   * 登记面板实例（供栈自愈校验用；main.js 装配时调用）
+   * @param {string} key UI_PANEL_OPEN 使用的 panel key
+   * @param {object} instance 面板实例（暴露 visible 或 helper.visible）
+   */
+  registerPanel(key, instance) {
+    if (!key || !instance) return;
+    this.panelRefs[key] = instance;
+  }
+
+  /** 读取面板实际可见性；未登记或无法判断时返回 null（不做判断） */
+  _panelVisible(key) {
+    const inst = this.panelRefs[key];
+    if (!inst) return null;
+    if (typeof inst.visible === 'boolean') return inst.visible;
+    if (typeof inst.helper?.visible === 'boolean') return inst.helper.visible;
+    return null;
+  }
+
+  /** 回收「栈里有、屏幕外没有」的幽灵条目（自愈，不抛错、不影响正常面板） */
+  pruneOpenPanels(reason = '') {
+    let removed = 0;
+    for (const panel of [...this.openPanels]) {
+      if (this._panelVisible(panel) === false) {
+        this.openPanels = this.openPanels.filter((p) => p !== panel);
+        removed += 1;
+        devLog.warn('[GameDirector] 栈自愈：移除未显示的面板', panel, '原因=', reason || 'unknown');
+      }
+    }
+    if (removed > 0) devLog.info('[GameDirector] openPanels 自愈后 →', this.openPanels);
+    return removed;
+  }
+
+  /**
+   * 校验刚入栈的面板是否真的打开了（面板 open 失败 / 提前 return 时不留下幽灵条目）
+   * 延迟到当前事件分发结束后执行，等面板自身的 show() 完成。
+   */
+  _validatePanelEntry(key) {
+    if (!this.openPanels.includes(key)) return;
+    if (this._panelVisible(key) === false) {
+      this.openPanels = this.openPanels.filter((p) => p !== key);
+      devLog.warn('[GameDirector] 面板', key, '未实际显示 → 回收栈条目 →', this.openPanels);
+    }
   }
 
   _registerOnce() {
@@ -96,12 +144,18 @@ export class GameDirector {
         this.openPanels.push(key);
       }
       devLog.info('[GameDirector] openPanels +', key, '→', this.openPanels);
+      // 只记录「确实已显示」的面板：当前事件分发结束后校验，open 失败的立刻回收
+      if (this.panelRefs[key]) {
+        setTimeout(() => this._validatePanelEntry(key), 0);
+      }
     });
     EventBus.on(GE.UI_PANEL_CLOSE, ({ panel }) => {
       if (!panel) return;
       const idx = this.openPanels.indexOf(panel);
       if (idx >= 0) this.openPanels.splice(idx, 1);
       devLog.info('[GameDirector] openPanels -', panel, '→', this.openPanels);
+      // 关闭路径兜底：顺手回收其他「不可见却仍在栈里」的幽灵条目
+      this.pruneOpenPanels('panelClose:' + panel);
     });
   }
 
@@ -110,6 +164,7 @@ export class GameDirector {
    */
   startNewGame() {
     this.openPanels = [];
+    resetMoveCooldown(this.gs);
     // 先关闭所有已开的 Panel（逐个发 CLOSE 事件让 UI 清理）
     // 不发 STATE_RESET —— 某些订阅者（MapView 等）会解构 {gs}，但 start() 之前 gs 是 null
     // start() 末尾会发 BOOT 事件，所有 UI 模块都会收到并初始化
@@ -179,6 +234,9 @@ export class GameDirector {
 
     // 8. 标记启动完成
     this.started = true;
+    resetMoveCooldown(this.gs);
+    // 9. 栈自愈：BOOT / STATE_RESET 后只保留真正显示着的面板
+    this.pruneOpenPanels('start');
     devLog.info('GameDirector 启动完成 ✓ day=', this.gs.day, 'stamina=', this.gs.player.stamina);
   }
 
@@ -211,6 +269,8 @@ export class GameDirector {
     EventBus.emit(GE.STATE_RESET, { gs: this.gs });
     EventBus.emit(GE.TILE_UPDATED);
     EventBus.emit(GE.STAT_CHANGE);
+    resetMoveCooldown(this.gs);
+    this.pruneOpenPanels('loadGame');
     devLog.info('[GameDirector.loadGame] 读档成功 day=', this.gs.day);
     return true;
   }
@@ -223,8 +283,16 @@ export class GameDirector {
    * @returns {number|null} 成功返回目标格 idx，失败返回 null
    */
   move(direction) {
+    // §5.2：两次移动之间至少间隔 0.5 秒。冷却期间直接忽略（不排队、不累积）。
+    if (!canMoveNow(this.gs)) {
+      devLog.info('[GameDirector] 移动冷却中，忽略本次移动:', direction);
+      return null;
+    }
     const result = MovementSystem.move(this.gs, direction);
     if (result === null) return null;
+
+    // 只有真正走动了才记录时间戳（撞墙/边界不占用冷却）
+    markMoved(this.gs);
 
     // 推进回合
     const turnResult = TurnSystem.advanceTurn(this.gs, 1);

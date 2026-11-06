@@ -160,6 +160,18 @@ taskPanel.mount();
 const codexPanel = new CodexPanel(director);
 codexPanel.mount();
 
+// 面板实例登记 —— GameDirector 用它们校验「栈内条目是否真的显示着」（栈自愈）
+director.registerPanel('info', infoPanel);
+director.registerPanel('settings', settingsPanel);
+director.registerPanel('inventory', inventoryPanel);
+director.registerPanel('shop', shopPanel);
+director.registerPanel('role', rolePanel);
+director.registerPanel('team', teamPanel);
+director.registerPanel('forge', forgePanel);
+director.registerPanel('vehicle', vehiclePanel);
+director.registerPanel('task', taskPanel);
+director.registerPanel('codex', codexPanel);
+
 // 4. 输入
 const inputManager = new InputManager(director);
 inputManager.bind();

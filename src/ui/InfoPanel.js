@@ -132,6 +132,17 @@ export class InfoPanel {
     return this.root;
   }
 
+  /**
+   * 面板是否真正显示在屏幕上（供 GameDirector 栈自愈校验；只看视觉状态，不看栈标记）
+   * 滑出态的 transform 含 100% 位移，滑入态为 translate(0, 0)。
+   */
+  get visible() {
+    if (!this.root) return false;
+    if (this.root.style.display === 'none') return false;
+    const transform = this.root.style.transform || '';
+    return !transform.includes('100%');
+  }
+
   /** 滑入屏幕（§16.14：建造模式不滑入、不 emit OPEN；已显示时不重复 emit） */
   slideIn() {
     if (!this.root) return;
@@ -1585,8 +1596,15 @@ export class InfoPanel {
     // 建造模式下 InfoPanel 完全隐藏（§16.14：不滑出、不 emit）
     EventBus.on(GE.UI_MODE_CHANGE, ({ mode }) => {
       if (!this.root) return;
-      this.root.style.display = mode === 'build' ? 'none' : '';
-      if (mode === 'build') this.slideOut();
+      if (mode === 'build') {
+        this.root.style.display = 'none';
+        // 修复幽灵门控：建造期间信息区必须同步退栈 / 清选中态，
+        // 禁止出现「栈里有 info、屏幕外没有」导致退出建造后 WASD 不动的状态。
+        this._hideSelf(true);
+        return;
+      }
+      // 退出建造：恢复容器显示，但保持滑出态（不擅自把信息区重新打开）
+      this.root.style.display = '';
     });
 
     // 面板栈接线：GameDirector 中央逻辑打开其他面板时会发 CLOSE 'info' → 向右滑出
