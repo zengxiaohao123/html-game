@@ -195,16 +195,17 @@ body.build-mode .map-container {
 }
 
 /* 第一段：立绘 + 生命 + 攻击 + 行动力 */
-.hud-hero-group { position: relative; width: 364px; height: 124px; }
+.hud-hero-group { position: relative; width: 312px; height: 114px; }
 
-/* 细边竖向矩形立绘框（2026-11-06 二次修订：高明显大于宽 84×116，整体较上一版收小）：
- * 框体是独立背景层（z-index 0）；立绘绘制在框体之上（z-index 2），可出血、压住边框。
- * 双层描边：近黑粗描边 + 奶白内线；四角圆度不一致 + 整体轻旋，保留手绘不规整感。 */
+/* 细边竖向矩形立绘框（2026-11-06 四次修订：72×96，再收小一圈并左移贴合）：
+ * 框体是独立背景层（z-index 0）；立绘绘制在框体之上（z-index 2）。
+ * 双层描边：近黑粗描边 + 奶白内线；四角圆度不一致 + 整体轻旋，保留手绘不规整感。
+ * 底边约束：框底距行动力行底部只略低几像素，不整体下沉。 */
 .hud-portrait {
   position: absolute;
-  left: 30px; top: 8px;
-  width: 84px; height: 116px;
-  transform: rotate(-2.6deg);
+  left: 12px; top: 10px;
+  width: 72px; height: 96px;
+  transform: rotate(-2.4deg);
   transform-origin: top left;
 }
 .hud-portrait-frame {
@@ -220,32 +221,32 @@ body.build-mode .map-container {
     0 4px 0 rgba(36, 26, 18, 0.14),
     0 9px 14px rgba(0, 0, 0, 0.24);
 }
-/* 立绘：放大 + 出血（超出框体，不被框体裁剪，层级高于边框）；
- * hero.png 内容只占图宽 0.1%~77%（右侧 23% 透明），故用 -39% 位移把可见人物居中 */
+/* 立绘：按美观摆放（可轻微出血，层级高于边框）；hero.png 右侧 23% 为透明留白，
+ * 故用 -43% 位移让人物左缘贴合框左、可见人物落在视觉中心 */
 .hud-portrait-img {
   position: absolute;
   left: 50%;
-  bottom: 15px;
+  bottom: 13px;
   z-index: 2;
-  height: 122px;
+  height: 90px;
   width: auto;
   max-width: none;
-  transform: translateX(-39%);
+  transform: translateX(-43%);
   object-fit: contain;
   pointer-events: none;
   filter: drop-shadow(0 2px 0 rgba(36, 26, 18, 0.35)) drop-shadow(0 5px 6px rgba(0, 0, 0, 0.28));
 }
 
-/* 姓名牌（字号加大；右边缘与立绘框右边缘对齐） */
+/* 姓名牌：横向居中压框底（以视觉平衡为准，不再强制右对齐框右边缘） */
 .hud-nameplate {
   position: absolute;
-  right: 0;
-  top: 82px;
+  left: 50%;
+  top: 68px;
   z-index: 3;
   padding: 2px 10px 3px;
   background: linear-gradient(180deg, #5E3E24 0%, #3E2814 100%);
   color: #FFF8E6;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 900;
   line-height: 1.1;
   letter-spacing: 1px;
@@ -254,14 +255,14 @@ body.build-mode .map-container {
   border-radius: 7px 10px 6px 9px;
   box-shadow: 0 0 0 2px rgba(255, 248, 230, 0.92), 0 3px 0 rgba(36, 26, 18, 0.22);
   text-shadow: 0 1px 0 #241A12;
-  transform: rotate(1deg);
+  transform: translateX(-50%) rotate(1deg);
 }
 
 /* 右侧三行（上：红心 + 血条　中：攻击力　下：行动力） */
 .hud-stats {
   position: absolute;
-  left: 140px; top: 6px;
-  width: 224px;
+  left: 96px; top: 6px;
+  width: 216px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -467,14 +468,15 @@ body.build-mode .map-container {
     0 2.5px 0 #241A12, 0 5px 6px rgba(0, 0, 0, 0.32);
 }
 
-/* ── 第二段：双牌结构（主牌「天数」+ 木钉悬挂的胶囊「金币」副牌）──
- * 参照星露谷时间/金币 UI 的排版语言，但只保留天数与金币（本作无时间、无星期/天气）：
- *   · 主牌：橙色木质外框（渐变 + 深棕粗描边 + 内里高光）+ 米黄内衬板 + 大号天数
+/* ── 第二段：双牌结构（日期主牌 + 木钉悬挂的胶囊「金币」副牌）──
+ * 参照星露谷时间/金币 UI 的排版语言，按本作删减（无时间、无天气图标格）：
+ *   · 主牌：橙色木质外框 + 米黄内衬板，内分两行 —— 上行「年 + 月日」（大号日期），
+ *           下行「星期 + 第 N 天」（小标签），层级字号区分，不堆一排文字
  *   · 副牌：主牌下方两根小木钉悬挂，独立胶囊铭牌（米黄内衬 + 金币徽章 + 大号暗红数字）
- * 全部为 CSS/DOM 自绘，天数与金币是实时文本节点，不贴参考图。 */
+ * 全部为 CSS/DOM 自绘，日期与金币是实时文本节点，不贴参考图。 */
 .hud-sign {
   position: relative;
-  width: 140px;
+  width: 164px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -482,11 +484,11 @@ body.build-mode .map-container {
   transform: rotate(-1.2deg);
 }
 
-/* 主牌：橙色木质外框 + 米黄内衬 + 大号天数 */
+/* 主牌：橙色木质外框 + 米黄内衬 + 分格日期 */
 .hud-sign-main {
   position: relative;
-  width: 140px;
-  height: 36px;
+  width: 164px;
+  height: 56px;
   box-sizing: border-box;
   border: 3px solid #5E2D08;
   border-radius: 7px 10px 6px 9px / 9px 6px 10px 7px;
@@ -499,13 +501,16 @@ body.build-mode .map-container {
     0 6px 9px rgba(0, 0, 0, 0.22),
     inset 0 1px 0 rgba(255, 236, 190, 0.65);
 }
-/* 米黄内衬板：内缩一圈 + 细棕描边 + 顶部内阴影 */
+/* 米黄内衬板：内缩一圈 + 细棕描边 + 顶部内阴影；内部分上下两行 */
 .hud-sign-inner {
   position: absolute;
   inset: 3px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 1px;
+  padding: 2px 4px;
   border: 1.5px solid #C08636;
   border-radius: 4px 7px 3px 6px / 6px 3px 7px 4px;
   background: linear-gradient(180deg, #FBEBC0 0%, #F3DCA6 55%, #E9CD92 100%);
@@ -513,20 +518,57 @@ body.build-mode .map-container {
     inset 0 2px 3px rgba(120, 70, 20, 0.18),
     inset 0 -1px 0 rgba(255, 248, 220, 0.7);
 }
-.hud-sign-day {
+.hud-sign-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  white-space: nowrap;
+}
+.hud-sign-row-top { gap: 4px; }
+.hud-sign-row-bottom { gap: 6px; }
+
+/* 上行：年（小号副信息，基线略降）+ 月日（大号主信息） */
+.hud-sign-year {
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  color: #8A5A2B;
+  transform: translateY(2px);
+  letter-spacing: 0.5px;
+}
+.hud-sign-md {
   font-size: 19px;
   font-weight: 900;
   line-height: 1;
   color: #4A2A10;
-  letter-spacing: 2px;
+  letter-spacing: 0.5px;
   text-shadow: 0 1px 0 #FFF4D6, 0 2px 1px rgba(90, 50, 15, 0.22);
 }
-.hud-sign-cal { display: none; }
+/* 下行：星期为小标签，第 N 天为小号副信息 */
+.hud-sign-week {
+  font-size: 10.5px;
+  font-weight: 900;
+  line-height: 1.35;
+  color: #6B3A12;
+  padding: 0 3px;
+  border: 1px solid #C08636;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #F6DCA8 0%, #EBC582 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 248, 220, 0.8);
+}
+.hud-sign-dayno {
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  color: #7A4A18;
+  letter-spacing: 0.5px;
+}
 
 /* 两根小木钉：连接主牌与金币副牌 */
 .hud-sign-pegs {
   position: relative;
-  width: 140px;
+  width: 164px;
   height: 4px;
   flex-shrink: 0;
 }
@@ -543,18 +585,18 @@ body.build-mode .map-container {
 .hud-sign-peg:first-child { left: 34px; }
 .hud-sign-peg:last-child  { right: 34px; }
 
-/* 金币副牌：独立胶囊铭牌（宽度略窄于主牌，随数字位数自动变宽） */
+/* 金币副牌：独立胶囊铭牌（宽度略窄于主牌，最小容纳 6 位数，位数更多则自动加宽不压缩） */
 .hud-sign-coin {
   position: relative;
-  min-width: 116px;
-  height: 33px;
+  min-width: 150px;
+  height: 36px;
   box-sizing: border-box;
-  padding: 0 10px;
+  padding: 0 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 3px solid #6E370C;
-  border-radius: 17px;
+  border-radius: 18px;
   background:
     repeating-linear-gradient(92deg, rgba(90, 40, 10, 0.1) 0 2px, rgba(255, 220, 160, 0.06) 2px 4px, transparent 4px 9px),
     linear-gradient(180deg, #F0A04A 0%, #DA7E2A 44%, #B85F17 100%);
@@ -578,7 +620,6 @@ body.build-mode .map-container {
   display: flex;
   align-items: center;
   gap: 2px;
-  max-width: 100%;
 }
 .hud-gold-icon {
   flex-shrink: 0;
@@ -597,7 +638,7 @@ body.build-mode .map-container {
   text-shadow: 0 1px 0 #FFDCA8, 0 2px 0 rgba(80, 24, 6, 0.32);
 }
 
-/* ── 第三段：任务块（独立一块，圆木片造型）── */
+/* ── 第三段：任务块（独立一块，直接用美术素材图标，不再加圆形木片底衬）── */
 .hud-task {
   position: relative;
   width: 56px;
@@ -607,24 +648,26 @@ body.build-mode .map-container {
   justify-content: center;
   cursor: pointer;
   pointer-events: auto;
-  border: 3px solid #241A12;
-  border-radius: 46% 54% 48% 52% / 52% 47% 53% 48%;
-  background:
-    radial-gradient(circle at 34% 26%, rgba(255, 230, 180, 0.35) 0 6px, transparent 9px),
-    linear-gradient(180deg, #B07B3F 0%, #7A4E24 70%, #5E3A1A 100%);
-  box-shadow:
-    0 0 0 4px #FFF8E6,
-    0 5px 0 rgba(36, 26, 18, 0.16),
-    0 10px 14px rgba(0, 0, 0, 0.26);
+  border: none;
+  background: none;
+  box-shadow: none;
   transform: rotate(2deg);
   transition: transform 0.12s ease-out;
 }
-.hud-task:hover { transform: rotate(2deg) translateY(-2px); }
+.hud-task img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35)) drop-shadow(0 3px 5px rgba(0, 0, 0, 0.28));
+}
+.hud-task:hover { transform: rotate(2deg) translateY(-2px) scale(1.04); }
 
-/* ── 生物容量：屏幕顶部居中（纸胶带条，超载红闪由 .overload-blink 控制）── */
+/* ── 生物容量：屏幕顶部居中（纸胶带条，超载红闪由 .overload-blink 控制）──
+ * top 随 --hud-scale 缩放：基准 1280 下描边与屏幕上沿留约 8px 空隙，4px 奶白描边完整可见，
+ * 1280 / 1920 及任意缩放都不贴屏幕上沿 */
 .hud-center {
   position: absolute;
-  top: 6px;
+  top: calc(14px * var(--hud-scale));
   left: 0; right: 0;
   display: flex;
   justify-content: center;

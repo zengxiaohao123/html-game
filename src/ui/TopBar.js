@@ -6,9 +6,9 @@
 //   │  │ 竖 │  ⚔ 10
 //   │  │ 框 │  ◆◆◆◆◆◆◆◆ 5/8
 //   │  └──余默┘
-//   │  ╭── 主牌：第 3 天 ─╮                        ← 第二段（木框 + 米黄内衬，只放天数）
+//   │  ╭── 主牌：上行「2 年 12 月 28 日」/ 下行「周日 · 第 224 天」──╮   ← 第二段（木框 + 米黄内衬，日期分两行）
 //   │   ┆（木钉） （木钉）┆
-//   │  ╰── 🪙 1673 ──────╯                        ← 金币胶囊副牌，悬挂在主牌下方
+//   │  ╰── 🪙 999999 ─────╯                        ← 金币胶囊副牌，悬挂在主牌下方
 //   │  (📋)                                          ← 第三段（再往下一点，独立一块）
 //   └──────────────────────────────────────────────────────────────┘
 //
@@ -34,6 +34,9 @@ import { renderStamina } from './staminaGems.js';
 /** 血条分段数（§16.7 分段、倾斜、红→绿均匀渐变） */
 const HP_SEGMENTS = 7;
 
+/** 星期显示名（§6.1：周一为一周之始） */
+const WEEK_NAMES = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
 /** 基准分辨率（其它分辨率按此等比缩放） */
 const BASE_W = 1280;
 const BASE_H = 720;
@@ -58,6 +61,9 @@ export class TopBar {
     this.dangerText = null;
     this.extremeText = null;
 
+    this.yearText = null;
+    this.mdText = null;
+    this.weekText = null;
     this.dayText = null;
     this.goldText = null;
     this.nameText = null;
@@ -110,10 +116,10 @@ export class TopBar {
   _buildHeroGroup() {
     const hero = createEl('div', { class: ['hud-hero-group'], parent: this.left });
 
-    // 细边竖向矩形立绘框（2026-11-06 二次修订：高明显大于宽）：
+    // 细边竖向矩形立绘框（2026-11-06 四次修订：72×96，比上一版 76×102 再收小一圈）：
     //   · 框体是独立背景层（z-index 0），立绘绘制在它之上（z-index 2）→ 人物可出血、压住边框
     //   · 双层描边：近黑粗描边 + 奶白内线，四角圆度不一致，整体轻旋
-    //   · 整体尺寸比上一版横向框收小一圈（84×116，上一版 154×104）
+    //   · 框底只比行动力行底部略低几像素（不整体下沉）
     const portrait = createEl('div', {
       class: ['hud-portrait'],
       attrs: { title: '当前出战角色' },
@@ -126,7 +132,7 @@ export class TopBar {
       attrs: { src: Assets.getIcon('ui', 'player') || 'assets/images/characters/hero.png', alt: '' },
       parent: portrait,
     });
-    // 姓名牌：右边缘与立绘框右边缘对齐，字号加大
+    // 姓名牌：横向居中压框底（以视觉平衡为准，不强制对齐框右边缘）
     this.nameText = createEl('div', {
       class: ['hud-nameplate'],
       text: '余默',
@@ -175,23 +181,28 @@ export class TopBar {
 
   // ════════════════════════════════════════════════════════════
   // 第二段：双牌结构（§16.7）
-  //   主牌 = 木框 + 米黄内衬 + 大号天数（本作无时间/星期/天气，只保留天数）
-  //   副牌 = 主牌下方两根小木钉悬挂的独立胶囊金币铭牌（金币徽章在左、大号数字在右）
+  //   主牌 = 木框 + 米黄内衬，内分两行：上行「年 + 月日」（大号日期），下行「星期 + 第 N 天」（小标签）
+  //   副牌 = 主牌下方两根小木钉悬挂的独立胶囊金币铭牌（徽章在左、大号数字在右）
   // ════════════════════════════════════════════════════════════
   _buildSign() {
     const sign = createEl('div', { class: ['hud-sign'], parent: this.left });
 
-    // 主牌：天数
+    // 主牌：日期（年 / 月日 / 星期 / 第 N 天）
     const main = createEl('div', { class: ['hud-sign-main'], parent: sign });
     const inner = createEl('div', { class: ['hud-sign-inner'], parent: main });
-    this.dayText = createEl('div', { class: ['hud-sign-day'], text: '', attrs: { title: '第几天' }, parent: inner });
+    const rowTop = createEl('div', { class: ['hud-sign-row', 'hud-sign-row-top'], parent: inner });
+    this.yearText = createEl('span', { class: ['hud-sign-year'], text: '', parent: rowTop });
+    this.mdText = createEl('span', { class: ['hud-sign-md'], text: '', parent: rowTop });
+    const rowBottom = createEl('div', { class: ['hud-sign-row', 'hud-sign-row-bottom'], parent: inner });
+    this.weekText = createEl('span', { class: ['hud-sign-week'], text: '', parent: rowBottom });
+    this.dayText = createEl('span', { class: ['hud-sign-dayno'], text: '', parent: rowBottom });
 
     // 两根小木钉（连接主牌与金币副牌）
     const pegs = createEl('div', { class: ['hud-sign-pegs'], parent: sign });
     createEl('div', { class: ['hud-sign-peg'], parent: pegs });
     createEl('div', { class: ['hud-sign-peg'], parent: pegs });
 
-    // 副牌：金币胶囊铭牌（徽章在左、数字在右，宽度随位数自动变宽）
+    // 副牌：金币胶囊铭牌（徽章在左、数字在右，宽度随位数自动变宽，至少容纳 6 位）
     const coin = createEl('div', { class: ['hud-sign-coin'], parent: sign });
     createEl('div', { class: ['hud-sign-coin-inner'], parent: coin });
     const coinRow = createEl('div', { class: ['hud-sign-coin-row'], parent: coin });
@@ -212,7 +223,7 @@ export class TopBar {
       },
       parent: this.left,
     });
-    this.taskIconEl.appendChild(iconEl('ui', 'task', { size: '34px', fallback: '📋' }));
+    this.taskIconEl.appendChild(iconEl('ui', 'task', { size: '48px', fallback: '📋' }));
   }
 
   /** 容量条目：彩点 + 弱标签 + 强数值（数值 span 承担超载红闪） */
@@ -257,13 +268,12 @@ export class TopBar {
     applyOverload(this.dangerText,   dangerNow,   c.danger);
     applyOverload(this.extremeText,  extremeNow,  c.extreme);
 
-    if (this.dayText) {
-      this.dayText.textContent = `第 ${this.gs.day} 天`;
-      // 日历（年月日/星期）只作 tooltip，不在主牌上占位（§16.7：本作无时间、无星期/天气）
-      this.dayText.title = this.gs.calendar
-        ? `${this.gs.calendar.year} 年 ${this.gs.calendar.month} 月 ${this.gs.calendar.dayOfMonth} 日 周${'一二三四五六日'[this.gs.calendar.weekday - 1] || ''}`
-        : '第几天';
-    }
+    // 日期体系（§6.1）：年 / 月日 / 星期 / 第 N 天 —— 全部为实时文本节点
+    const cal = this.gs.calendar || {};
+    if (this.yearText) this.yearText.textContent = cal.year ? `${cal.year} 年` : '';
+    if (this.mdText)   this.mdText.textContent   = cal.month ? `${cal.month} 月 ${cal.dayOfMonth} 日` : '';
+    if (this.weekText) this.weekText.textContent = WEEK_NAMES[(cal.weekday || 0) - 1] || '';
+    if (this.dayText)  this.dayText.textContent  = `第 ${this.gs.day} 天`;
     if (this.goldText) this.goldText.textContent = `${p.gold}`;
 
     if (this.nameText) {
