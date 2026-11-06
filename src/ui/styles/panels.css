@@ -487,12 +487,13 @@
   font-style: italic;
 }
 
-/* topRow：emoji 左 + 价值列居右 */
+/* topRow：emoji 左 + 名字/数量紧贴其右 + 单价/总价值居左区最右 */
 .inv-detail-toprow {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto 1fr auto;
   gap: 8px;
   align-items: start;
+  flex-shrink: 0;
 }
 
 .inv-detail-emoji {
@@ -501,8 +502,17 @@
   filter: drop-shadow(0 3px 3px rgba(0,0,0,0.2));
 }
 
-/* 价值列：整体居右对齐，所有子元素 text-align:right */
-.inv-detail-value-col {
+/* 名字列：名字在上、数量在下，紧贴图标右侧 */
+.inv-detail-name-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* 价格列：单价 / 总价值整体居左区最右，所有子元素 text-align:right */
+.inv-detail-price-col {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -513,7 +523,7 @@
 
 .inv-detail-name {
   font-weight: 700; color: #3a2e20; font-size: 15px;
-  margin-bottom: 2px;
+  margin-bottom: 0;
 }
 
 /* 价值行：只有 icon + 数字，整体居右 */

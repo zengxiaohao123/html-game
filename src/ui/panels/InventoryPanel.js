@@ -306,33 +306,27 @@ export class InventoryPanel {
     const emojiWrap = createEl('div', { class: 'inv-detail-emoji', parent: topRow });
     emojiWrap.appendChild(this._iconElFor(this.selectedItemId, '46px'));
 
-    // 右：名称 + 数量 + 价值两行（整组居右）
-    const rightCol = createEl('div', { class: 'inv-detail-value-col', parent: topRow });
-    createEl('div', { class: 'inv-detail-name', text: name, parent: rightCol });
+    // 图标右侧紧贴：名字（上）+ 数量（下，图标 + 数字，不出现文字标签）
+    const nameCol = createEl('div', { class: 'inv-detail-name-col', parent: topRow });
+    createEl('div', { class: 'inv-detail-name', text: name, parent: nameCol });
     createEl('div', {
       class: 'inv-value-line',
-      parent: rightCol,
-      html: `<span class="inv-value-icon">📦</span><span class="inv-value-num">数量 ×${entry.qty}</span>`,
+      parent: nameCol,
+      html: `<span class="inv-value-icon">📦</span><span class="inv-value-num">×${entry.qty}</span>`,
     });
 
-    if (typeof value === 'number') {
-      createEl('div', {
-        class: 'inv-value-line',
-        parent: rightCol,
-        html: `<span class="inv-value-icon">🪙</span><span class="inv-value-num">${value}</span>`,
-      });
-      createEl('div', {
-        class: 'inv-value-line',
-        parent: rightCol,
-        html: `<span class="inv-value-icon">💰</span><span class="inv-value-num">${value * entry.qty}</span>`,
-      });
-    } else {
-      createEl('div', {
-        class: 'inv-value-line',
-        parent: rightCol,
-        html: `<span class="inv-value-icon">🪙</span><span class="inv-value-num">—</span>`,
-      });
-    }
+    // 左区最右：单价 / 总价值（居右排布，图标 + 数字，不出现文字标签）
+    const priceCol = createEl('div', { class: 'inv-detail-price-col', parent: topRow });
+    createEl('div', {
+      class: 'inv-value-line',
+      parent: priceCol,
+      html: `<span class="inv-value-icon">🪙</span><span class="inv-value-num">${typeof value === 'number' ? `×${value}` : '—'}</span>`,
+    });
+    createEl('div', {
+      class: 'inv-value-line',
+      parent: priceCol,
+      html: `<span class="inv-value-icon">💰</span><span class="inv-value-num">${typeof value === 'number' ? `×${value * entry.qty}` : '—'}</span>`,
+    });
 
     // 显性词条：统一徽章入口，不混入描述正文
     renderTraitBadges(this.detailEl, ITEM?.traits);
@@ -361,37 +355,6 @@ export class InventoryPanel {
           createEl('span', { text: `${this._resolveName(inp.itemId)}×${inp.qty}`, parent: row });
         });
       }
-    }
-
-    // ── 消耗道具：使用 / 指向使用（v0.5 §14.1 使用型 / 放置型）──
-    const potion = POTIONS[this.selectedItemId];
-    if (potion?.useEffect) {
-      const needTarget = ItemTargeting.needsTarget(this.selectedItemId);
-      const isPlaced = potion.useEffect.type.startsWith('placed_');
-      const label = needTarget
-        ? (isPlaced ? `📦 选择地块放置（${potion.name}）` : `🎯 选择地块使用（${potion.name}）`)
-        : `✅ 使用 ${potion.name}`;
-      const btn = createEl('button', {
-        class: ['action-btn'],
-        style: {
-          marginTop: '8px', width: '100%', fontSize: '13px',
-          background: needTarget ? '#fff3d0' : '#e8ffe8',
-          border: needTarget ? '2px solid #d9a441' : undefined,
-        },
-        text: label,
-        parent: this.detailEl,
-      });
-      btn.onclick = () => {
-        const gs = this.director.getGS();
-        if (needTarget) {
-          // 需要指定地块：先关背包，回到地图点选（ESC 可取消）
-          this.hide();
-          ItemTargeting.start(gs, this.selectedItemId);
-          return;
-        }
-        const res = UseItemSystem.useItem(gs, this.selectedItemId, { tileIdx: gs.player.x });
-        if (res.ok) this._reRender();
-      };
     }
   }
 
@@ -511,6 +474,38 @@ export class InventoryPanel {
         this._reRender();
       },
     });
+
+    // ── 功能选项（如初级肥料的选择地块）：位于右侧行动区，不再占用左区描述空间 ──
+    const potion = POTIONS[this.selectedItemId];
+    if (potion?.useEffect) {
+      const needTarget = ItemTargeting.needsTarget(this.selectedItemId);
+      const isPlaced = potion.useEffect.type.startsWith('placed_');
+      const funcLabel = needTarget
+        ? (isPlaced ? `📦 选择地块放置（${potion.name}）` : `🎯 选择地块使用（${potion.name}）`)
+        : `✅ 使用 ${potion.name}`;
+      const btn = createEl('button', {
+        class: ['action-btn', 'inv-action-func'],
+        style: {
+          marginTop: '4px', width: '100%', fontSize: '12px',
+          background: needTarget ? '#fff3d0' : '#e8ffe8',
+          border: needTarget ? '2px solid #d9a441' : undefined,
+        },
+        text: funcLabel,
+        parent: this.actionEl,
+      });
+      btn.onclick = () => {
+        const gs = this._getGS();
+        if (!gs) return;
+        if (needTarget) {
+          // 需要指定地块：先关背包，回到地图点选（ESC 可取消）
+          this.hide();
+          ItemTargeting.start(gs, this.selectedItemId);
+          return;
+        }
+        const res = UseItemSystem.useItem(gs, this.selectedItemId, { tileIdx: gs.player.x });
+        if (res.ok) this._reRender();
+      };
+    }
   }
 
   /** 行动区按钮点击：更新数量显示 */
