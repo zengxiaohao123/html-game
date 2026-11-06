@@ -1,10 +1,16 @@
 // src/systems/CreatureSystem.js
-// Phase 3 —— 生物系统
-//   spawnCreature(kind)    —— 生成 1 只，放入 fence 空位；处理容量；emit
-//   tickAllCreatures(gs)  —— 每 2 秒随机方向走 1 格（requestAnimationFrame / 定时）
+// Phase 3 —— 生物系统（阶段 2：连续积分移动）
+//   spawnCreature(kind)    —— 生成 1 只，放入栅栏合法点（允许完全重叠）
+//   stepCreatures(gs, dtSec) —— 固定 200ms 逻辑步内的连续积分（pos），由 RealtimeClock 驱动
+//   advanceCreatureRendering(gs, dtSec) —— 每帧推进 renderPos（不参与判定，结算期间也不停）
 //   feedCreature(gs, creatureId) —— 投喂逻辑（简化）
 //   dailyTick(gs)         —— DaySystem.startNewDay 末尾调用：饥饿检测、成长、心情、产蛋、容量警告
-//   startRealtimeLoop(gs) / stopRealtimeLoop() —— requestAnimationFrame 驱动 tick
+//
+// 运动模型（设计文档 §2.3 / §18.3）：
+//   - pos 连续逻辑坐标（判定权威），renderPos 渲染插值位置；
+//   - speedPerTile = 秒/格（3~6 秒/格），dir = 弧度（任意方向）；
+//   - 随机游走：目标点 + 角速度上限的平滑转向；到达目标后偶尔停顿；
+//   - 只裁剪栅栏边界（圆心 + 半径不出栅栏），生物之间不碰撞、不分离、允许重叠。
 //
 // 容量 & 超载惩罚（§13.2，2026-11-04 裁决）：
 //   友善超载 → 2 天后 友善类收益归 0（wheat/rice/strawberry/pea/henhouse 产蛋）
@@ -21,18 +27,36 @@ import { ITEMS } from '../data/items.js';
 import { normalizeTerrain } from '../data/terrains.js';
 import { InventorySystem } from './InventorySystem.js';
 import { CombatSystem } from './CombatSystem.js';
-import { DEFAULT_CREATURE_RADIUS, fenceTileRect } from '../core/Geometry.js';
+import {
+  DEFAULT_CREATURE_RADIUS,
+  FENCE_ORIGIN_X,
+  FENCE_ORIGIN_Y,
+  clamp,
+  creatureRadius,
+  fenceCellOfGrid,
+  fenceRect,
+  fenceTileRect,
+} from '../core/Geometry.js';
 
 // ── 生物计数器（每次 spawn 都给唯一 id） ──
 let _nextCreatureId = 1;
 export function resetCreatureIdCounter() { _nextCreatureId = 1; }
 
-// ── 实时 tick 计时 ──
-// 每 2 秒所有生物走 1 格
-const TICK_INTERVAL_MS = 2000;
-let _realtimeTimerId = null;
-let _lastTickMs = 0;
-let _tickRafId = null;
+// ── 运动参数 ──
+/** 秒/格 合法区间（设计文档 §2.3：3~6 秒走 1 格） */
+export const MIN_SECONDS_PER_TILE = 3;
+export const MAX_SECONDS_PER_TILE = 6;
+/** 平滑转向的最大角速度（弧度/秒）；保证不会瞬间反向抖动 */
+const MAX_TURN_RATE = 2.4;
+/** 到达目标后的停顿概率与时长（秒；刻意不用 Ms 后缀，避免被日初基线判为墙钟字段） */
+const PAUSE_CHANCE_ON_ARRIVE = 0.3;
+const PAUSE_MIN_S = 0.3;
+const PAUSE_MAX_S = 0.9;
+/** 重新取目标点的间隔（到达/超时都会重取，秒） */
+const RETARGET_MIN_S = 1.2;
+const RETARGET_MAX_S = 3.5;
+/** 视为到达目标点的距离（格） */
+const ARRIVE_EPS = 0.06;
 
 /**
  * 生成 1 只生物
@@ -73,10 +97,14 @@ export function spawnCreature(gs, kind, opts = {}) {
     // 连续坐标（判定权威位置）与半径（格）
     pos,
     radius,
-    // 连续移动预留（本阶段仍走 2 秒跳格）：朝向单位向量、格/秒、闲逛目标点
+    // 运动：dir = 弧度（任意方向）；speedPerTile = 秒/格；闲逛目标点 + 停顿/重取计时
     dir,
-    speedPerTile: typeof def.speedPerTile === 'number' ? def.speedPerTile : 0.25,
+    speedPerTile: typeof def.speedPerTile === 'number' && def.speedPerTile > 0
+      ? def.speedPerTile
+      : defaultSecondsPerTile(),
     targetPos: null,
+    pauseLeft: 0,
+    retargetLeft: 0,
     // 渲染插值位置：表现层可随帧更新，结算冻结只冻结 pos，不影响这里
     renderPos: { x: pos.x, y: pos.y },
     hp: def.hp,
@@ -133,100 +161,226 @@ function randomPointInRect(rect, radius) {
   };
 }
 
-/** 任意方向的单位向量（自由闲逛，非四方向） */
+/** 任意方向的初始朝向（弧度，自由闲逛，非四方向） */
 function randomDirection() {
-  const a = Math.random() * Math.PI * 2;
-  return { x: Math.cos(a), y: Math.sin(a) };
+  return Math.random() * Math.PI * 2;
+}
+
+/** 速度兜底（秒/格）：取区间中值，避免缺字段时以 0 速卡死 */
+function defaultSecondsPerTile() {
+  return (MIN_SECONDS_PER_TILE + MAX_SECONDS_PER_TILE) / 2;
 }
 
 function countByCategory(gs, category) {
   return gs.creatures.filter(c => c.category === category).length;
 }
 
+// ────────────────────────────────────────────────────────────
+// 连续积分（逻辑步 200ms 由 RealtimeClock 调用）
+// ────────────────────────────────────────────────────────────
+
+function normalizeAngle(a) {
+  const twoPi = Math.PI * 2;
+  let v = a % twoPi;
+  if (v < 0) v += twoPi;
+  return v;
+}
+
+/** 从 from 转向 to 的最短角差（-π, π] */
+function shortestAngleDelta(from, to) {
+  let d = normalizeAngle(to - from);
+  if (d > Math.PI) d -= Math.PI * 2;
+  return d;
+}
+
+/** 以最大角速度朝目标角度平滑转向（不允许瞬间反向） */
+function turnToward(from, to, maxDeltaRad) {
+  const d = shortestAngleDelta(from, to);
+  if (Math.abs(d) <= maxDeltaRad) return normalizeAngle(to);
+  return normalizeAngle(from + Math.sign(d) * maxDeltaRad);
+}
+
+/** 栅栏内合法区间（圆心 + 半径不出栅栏） */
+function fenceInner(gs, radius) {
+  const f = fenceRect(gs);
+  return {
+    x0: f.x0 + radius,
+    x1: f.x1 - radius,
+    y0: f.y0 + radius,
+    y1: f.y1 - radius,
+  };
+}
+
+/** 把圆心夹回栅栏内合法区域（长大变半径 / 读档越界时用） */
+export function clampCreatureToFence(gs, creature) {
+  if (!creature) return creature;
+  const r = creatureRadius(creature);
+  const inner = fenceInner(gs, r);
+  for (const key of ['pos', 'renderPos']) {
+    const p = creature[key];
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+    p.x = clamp(p.x, inner.x0, inner.x1);
+    p.y = clamp(p.y, inner.y0, inner.y1);
+  }
+  return creature;
+}
+
+/** 随机取栅栏内的闲逛目标点（圆心不越界） */
+function pickWanderTarget(gs, creature) {
+  const inner = fenceInner(gs, creatureRadius(creature));
+  for (let i = 0; i < 8; i++) {
+    const x = inner.x0 + Math.random() * Math.max(0, inner.x1 - inner.x0);
+    const y = inner.y0 + Math.random() * Math.max(0, inner.y1 - inner.y0);
+    if (Math.hypot(x - creature.pos.x, y - creature.pos.y) > ARRIVE_EPS * 4) return { x, y };
+  }
+  return { x: (inner.x0 + inner.x1) / 2, y: (inner.y0 + inner.y1) / 2 };
+}
+
+/** 主格兼容缓存：row/col + fence[].creatures（几何归属仍以 pos+radius 为准） */
+function syncPrimaryFenceTile(gs, creature) {
+  const rowCols = gs.map?.fenceRowCols || 0;
+  if (rowCols <= 0 || !Array.isArray(gs.map?.fence)) return;
+  const gridX = clamp(Math.floor(creature.pos.x), FENCE_ORIGIN_X, FENCE_ORIGIN_X + rowCols - 1);
+  const gridY = clamp(Math.floor(creature.pos.y), FENCE_ORIGIN_Y, FENCE_ORIGIN_Y + rowCols - 1);
+  const cell = fenceCellOfGrid(gs, gridX, gridY);
+  if (!cell) return;
+  if (creature.row === cell.row && creature.col === cell.col) return;
+
+  const oldTile = gs.map.fence.find(t => t.row === creature.row && t.col === creature.col);
+  if (oldTile?.creatures) {
+    oldTile.creatures = oldTile.creatures.filter(id => id !== creature.id);
+  }
+  creature.row = cell.row;
+  creature.col = cell.col;
+  const newTile = gs.map.fence[cell.row * rowCols + cell.col];
+  if (newTile) {
+    newTile.creatures = newTile.creatures || [];
+    if (!newTile.creatures.includes(creature.id)) newTile.creatures.push(creature.id);
+  }
+  return newTile;
+}
+
+/** 进入草地形时消耗 1 草元素量（§13.3 放牧路径） */
+function consumeGrassOnEnter(gs, creature, newTile) {
+  if (!newTile) return false;
+  if (normalizeTerrain(newTile.terrain) !== 'terrain_grass' || (newTile.terrainAmount ?? 0) <= 0) return false;
+  newTile.terrainAmount -= 1;
+  if (creature.kind === 'chick' || creature.kind === 'chicken') creature.grazedForFeed = true;
+  if (newTile.terrainAmount <= 0) {
+    newTile.terrain = 'terrain_none';
+    EventBus.emit(GE.TILE_UPDATED);
+  }
+  return true;
+}
+
 /**
- * 实时移动 tick：每 2 秒换方向走 1 格
- * 用 setInterval 驱动（比 requestAnimationFrame 简单，一样准）
- * 扩展 fence 后会自动走邻居格；初始 1×1 fence 就停住
+ * 一个逻辑步的连续积分：只推进 pos（判定权威位置）。
+ * 回合 / 技能结算期间由 RealtimeClock 跳过本函数（pos 冻结），渲染位置照常推进。
+ * @param {object} gs
+ * @param {number} dtSec 逻辑步时长（秒）
  */
-function tickAllCreaturesOnce(gs) {
-  const rowCols = gs.map.fenceRowCols;
-  if (rowCols <= 1) return; // 1×1 栅栏没邻居，不移动
+export function stepCreatures(gs, dtSec) {
+  if (!gs || !Array.isArray(gs.creatures)) return;
+  let tileChanged = false;
 
   for (const c of gs.creatures) {
     if (!c || c.hp <= 0) continue;
-    if (c.lastMoveTs && Date.now() - c.lastMoveTs < (c.moveEverySec || 2) * 1000) continue;
+    if (!c.pos || !Number.isFinite(c.pos.x) || !Number.isFinite(c.pos.y)) continue;
+    const fence = fenceRect(gs);
+    const r = creatureRadius(c);
+    if (fence.x1 <= fence.x0) continue;
 
-    const dir = Random.pick(['up', 'down', 'left', 'right']);
-    const [dr, dc] = {
-      up:    [-1, 0],
-      down:  [ 1, 0],
-      left:  [ 0,-1],
-      right: [ 0, 1],
-    }[dir];
-    const nr = c.row + dr;
-    const nc = c.col + dc;
-    if (nr < 0 || nr >= rowCols || nc < 0 || nc >= rowCols) continue;
-
-    // 挪栅格引用
-    const oldTile = gs.map.fence.find(t => t.row === c.row && t.col === c.col);
-    const newTile = gs.map.fence.find(t => t.row === nr && t.col === nc);
-    if (!newTile) continue;
-
-    // 更新 old tile
-    if (oldTile && oldTile.creatures) {
-      oldTile.creatures = oldTile.creatures.filter(id => id !== c.id);
+    // 停顿：不移动、不转向
+    if ((c.pauseLeft || 0) > 0) {
+      c.pauseLeft = Math.max(0, c.pauseLeft - dtSec);
+      continue;
     }
-    // 应用新位置
-    c.row = nr;
-    c.col = nc;
-    // 临时跳格阶段：逻辑位置与渲染位置一起落到新格中心；后续连续移动时
-    // pos 由逻辑推进、renderPos 由表现层插值，二者分离（结算冻结只冻结 pos）
-    const center = { x: nc + 1.5, y: nr + 1.5 };
-    c.pos = { x: center.x, y: center.y };
-    c.renderPos = { x: center.x, y: center.y };
-    c.dir = { x: dc, y: dr };
-    newTile.creatures = newTile.creatures || [];
-    newTile.creatures.push(c.id);
-    c.lastMoveTs = Date.now();
 
-    // 经过草地形时消耗 1 草元素量（v0.5 §13.3：鸡/小鸡可啃草代替投喂）
-    if (normalizeTerrain(newTile.terrain) === 'terrain_grass' && (newTile.terrainAmount ?? 0) > 0) {
-      newTile.terrainAmount -= 1;
-      // §13.3 放牧路径：啃草后「下一日开始无需消耗即【已投喂】」——打标记，
-      // 由次日 dailyTick 消费（免扣鸡舍内储存的饲料）
-      if (c.kind === 'chick' || c.kind === 'chicken') c.grazedForFeed = true;
-      if (newTile.terrainAmount <= 0) {
-        newTile.terrain = 'terrain_none';
-        EventBus.emit(GE.TILE_UPDATED);
+    // 目标点：到达 / 超时 / 被边界打断后重取
+    c.retargetLeft = (c.retargetLeft || 0) - dtSec;
+    if (!c.targetPos || c.retargetLeft <= 0) {
+      c.targetPos = pickWanderTarget(gs, c);
+      c.retargetLeft = RETARGET_MIN_S + Math.random() * (RETARGET_MAX_S - RETARGET_MIN_S);
+    }
+
+    const dx = c.targetPos.x - c.pos.x;
+    const dy = c.targetPos.y - c.pos.y;
+    if (Math.hypot(dx, dy) < ARRIVE_EPS) {
+      // 到达：偶尔停顿（低概率，避免"每步都在抖"），再取下一个目标
+      if (Math.random() < PAUSE_CHANCE_ON_ARRIVE) {
+        c.pauseLeft = PAUSE_MIN_S + Math.random() * (PAUSE_MAX_S - PAUSE_MIN_S);
       }
+      c.targetPos = pickWanderTarget(gs, c);
+      c.retargetLeft = RETARGET_MIN_S + Math.random() * (RETARGET_MAX_S - RETARGET_MIN_S);
+    }
+
+    // 平滑转向（角速度上限 → 不会瞬间反向抖动）
+    const desired = Math.atan2(c.targetPos.y - c.pos.y, c.targetPos.x - c.pos.x);
+    c.dir = turnToward(
+      Number.isFinite(c.dir) ? c.dir : desired,
+      desired,
+      MAX_TURN_RATE * dtSec,
+    );
+
+    // 连续位移：秒/格 → 本次逻辑步的格数
+    const speed = typeof c.speedPerTile === 'number' && c.speedPerTile > 0
+      ? c.speedPerTile : defaultSecondsPerTile();
+    const dist = dtSec / speed;
+    const inner = fenceInner(gs, r);
+    const beforeX = c.pos.x;
+    const beforeY = c.pos.y;
+    c.pos.x = clamp(c.pos.x + Math.cos(c.dir) * dist, inner.x0, inner.x1);
+    c.pos.y = clamp(c.pos.y + Math.sin(c.dir) * dist, inner.y0, inner.y1);
+
+    // 越界被裁剪 → 丢弃目标，下一步重新取朝内的目标（靠角速度平滑转向，不瞬间反弹）
+    const hitX = c.pos.x === inner.x0 || c.pos.x === inner.x1;
+    const hitY = c.pos.y === inner.y0 || c.pos.y === inner.y1;
+    if (hitX || hitY) {
+      c.targetPos = null;
+      c.retargetLeft = 0;
+    }
+
+    const moved = Math.abs(c.pos.x - beforeX) + Math.abs(c.pos.y - beforeY);
+    if (moved > 0) {
+      const newTile = syncPrimaryFenceTile(gs, c);
+      if (newTile && consumeGrassOnEnter(gs, c, newTile)) tileChanged = true;
     }
   }
 
-  EventBus.emit(GE.TILE_UPDATED);
+  // ⑤ 一次性广播：只有地块内容真的变化才发（连续移动本身由渲染层逐帧绘制）
+  if (tileChanged) EventBus.emit(GE.TILE_UPDATED);
 }
 
 /**
- * 启动实时循环（setInterval 每 1 秒检查）
- * 必须传入 getter 函数：() => gs（避免关闭后 GS 被换了）
+ * 每帧推进 renderPos（表现层位置，不参与判定）。
+ * 与逻辑积分使用同一套速度/方向；结算冻结期间 pos 停下，但本函数照常调用。
+ * @param {object} gs
+ * @param {number} dtSec 真实帧时长（秒）
  */
-export function startRealtimeLoop(getterFn) {
-  if (_realtimeTimerId != null) return;
-  _realtimeTimerId = setInterval(() => {
-    const gs = getterFn && getterFn();
-    if (gs) tickAllCreaturesOnce(gs);
-  }, 1000);   // 每秒检查一次，moveEverySec 内部再过滤
-  devLog.info('[CreatureSystem] realtime loop started');
-}
+export function advanceCreatureRendering(gs, dtSec) {
+  if (!gs || !Array.isArray(gs.creatures) || dtSec <= 0) return;
+  const stepSec = Math.min(0.1, dtSec); // 单帧最多 100ms，避免切后台瞬移
+  const fence = fenceRect(gs);
+  if (fence.x1 <= fence.x0) return;
 
-export function stopRealtimeLoop() {
-  if (_realtimeTimerId != null) {
-    clearInterval(_realtimeTimerId);
-    _realtimeTimerId = null;
-    devLog.info('[CreatureSystem] realtime loop stopped');
-  }
-  if (_tickRafId != null) {
-    cancelAnimationFrame(_tickRafId);
-    _tickRafId = null;
+  for (const c of gs.creatures) {
+    if (!c || c.hp <= 0) continue;
+    if (!c.renderPos || !Number.isFinite(c.renderPos.x) || !Number.isFinite(c.renderPos.y)) {
+      c.renderPos = { x: c.pos?.x ?? 0, y: c.pos?.y ?? 0 };
+      continue;
+    }
+    if ((c.pauseLeft || 0) > 0) continue;
+    const r = creatureRadius(c);
+    const speed = typeof c.speedPerTile === 'number' && c.speedPerTile > 0
+      ? c.speedPerTile : defaultSecondsPerTile();
+    const dist = stepSec / speed;
+    const dir = Number.isFinite(c.dir) ? c.dir : 0;
+    const inner = {
+      x0: fence.x0 + r, x1: fence.x1 - r,
+      y0: fence.y0 + r, y1: fence.y1 - r,
+    };
+    c.renderPos.x = clamp(c.renderPos.x + Math.cos(dir) * dist, inner.x0, inner.x1);
+    c.renderPos.y = clamp(c.renderPos.y + Math.sin(dir) * dist, inner.y0, inner.y1);
   }
 }
 
@@ -432,6 +586,8 @@ function growUpChick(gs, chick) {
     chick.radius = adultDef.radius;
     chick.speedPerTile = adultDef.speedPerTile;
   }
+  // 半径 1/6 → 0.25 后圆可能越界：把圆心夹回栅栏合法区域（遗留问题本轮修掉）
+  clampCreatureToFence(gs, chick);
 }
 
 /**
@@ -579,13 +735,13 @@ export function withdrawHenhouseFeed(gs, tileIdx, itemId, qty = 1) {
 
 export const CreatureSystem = {
   spawnCreature,
-  tickAllCreatures: tickAllCreaturesOnce,
+  stepCreatures,
+  advanceCreatureRendering,
+  clampCreatureToFence,
   dailyTick,
   feedCreature,
   grantKillDrops,
   depositHenhouseFeed,
   withdrawHenhouseFeed,
-  startRealtimeLoop,
-  stopRealtimeLoop,
   resetCreatureIdCounter,
 };

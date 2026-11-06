@@ -18,11 +18,11 @@ import { MovementSystem } from './MovementSystem.js';
 import { TurnSystem } from './TurnSystem.js';
 import { SleepSystem } from './SleepSystem.js';
 import { exitBuildMode, autoRemoveSkillsOutsideTeam } from './BuildSystem.js';
-import { CreatureSystem } from './CreatureSystem.js';
 import { SkillSystem } from './SkillSystem.js';
 import { InventorySystem } from './InventorySystem.js';
 import { TalentSystem } from './TalentSystem.js';
 import { LinkSkillSystem } from './LinkSkillSystem.js';
+import { getRealtimeClock } from './RealtimeClock.js';
 import { canMoveNow, markMoved, resetMoveCooldown } from './MoveCooldown.js';
 
 /** 初始小麦田放置的格 idx（Phase 1 演示用） */
@@ -185,12 +185,6 @@ export class GameDirector {
     // 防重复注册 EventBus listener
     this._registerOnce();
 
-    // 清理旧的 timer（防止 startNewGame 多次调用时 timer 累积）
-    if (this._linkSkillTimer) {
-      clearInterval(this._linkSkillTimer);
-      this._linkSkillTimer = null;
-    }
-
     // 1. 创建初始 GS
     this.gs = createInitialState();
 
@@ -204,17 +198,12 @@ export class GameDirector {
     HookDispatcher.clearAll(); // 先清空 Phase 0 的 demo hook
     registerFacilities();
 
-    // 4. Phase 3：启动生物实时 tick 循环
-    CreatureSystem.startRealtimeLoop(() => this.gs);
+    // 4. 统一实时时钟（单一定时器）：固定 200ms 逻辑步按 §18.3 顺序执行
+    // 连携窗口过期 → 条件扫描 → 生物连续积分；原 1000ms 轮询与生物 2000ms 跳格已移除
+    getRealtimeClock(() => this.gs).start();
 
     // 5. Phase 4：Agent 3 —— 天赋 passive
     TalentSystem.firePassive(this.gs);
-
-    // 每秒定时：pruneExpired（连携技超时）+ periodicConditionScan（炽燃/弱点击破条件检测）
-    this._linkSkillTimer = setInterval(() => {
-      LinkSkillSystem.pruneExpired(this.gs);
-      LinkSkillSystem.periodicConditionScan(this.gs);
-    }, 1000);
 
     // 6. 初始背包物品（让玩家有东西可选来建造）
     // A-13：skill_heart_force 为未知物品（物品库/设计文档均无此条目）—— 移除
@@ -266,16 +255,8 @@ export class GameDirector {
     DayBaseline.setCurrent(this.baseline);
     this.gs = DayBaseline.install(loadedGs);
 
-    // 清理旧的定时器（防止 loadGame 多次调用时 timer 累积）
-    if (this._linkSkillTimer) {
-      clearInterval(this._linkSkillTimer);
-      this._linkSkillTimer = null;
-    }
-    // 重新启动 linkSkill 定时（loadGame 后 GameDirector 没调 start()，所以这里补）
-    this._linkSkillTimer = setInterval(() => {
-      LinkSkillSystem.pruneExpired(this.gs);
-      LinkSkillSystem.periodicConditionScan(this.gs);
-    }, 1000);
+    // 读档后确保统一实时时钟在跑（start() 幂等，时钟 getter 始终读 this.gs）
+    getRealtimeClock(() => this.gs).start();
 
     // 读档后重新 fire passive（确保烹饪/蹁跹 maxHp/dodgeRate 正确）
     TalentSystem.firePassive(this.gs);

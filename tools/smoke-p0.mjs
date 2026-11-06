@@ -425,7 +425,7 @@ head('史莱姆 7 变体：属性免疫与数值逐项核对物品库 05 表');
     const def = CREATURES[kind];
     assert(def && def.hp === 40 && def.atk === 10, `${kind} hp 40 / atk 10`, def && { hp: def.hp, atk: def.atk });
     assert(def.element === elem && def.elementImmune === elem, `${kind} 属性/免疫 = ${elem}`, { element: def.element, immune: def.elementImmune });
-    assert(def.moveEverySec === 2, `${kind} spd 2 → moveEverySec 2`, def.moveEverySec);
+    assert(def.speedPerTile >= 3 && def.speedPerTile <= 6, `${kind} 连续移动速度 ∈ 3~6 秒/格`, def.speedPerTile);
   }
 }
 

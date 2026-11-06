@@ -98,7 +98,12 @@ export function normalizeToDayStart(gs) {
   // 1) 墙钟
   if (Array.isArray(gs.creatures)) {
     for (const c of gs.creatures) {
-      if (isPlainObject(c)) delete c.lastMoveTs;
+      if (isPlainObject(c)) {
+        delete c.lastMoveTs;
+        delete c.moveEverySec;
+        delete c.pauseMs;    // 阶段 2 开发期旧字段 → pauseLeft（秒）
+        delete c.retargetMs; // 阶段 2 开发期旧字段 → retargetLeft（秒）
+      }
     }
   }
   delete gs.blessLockUntilMs;
@@ -221,9 +226,17 @@ export function migrateGS(loadedGs) {
       if (typeof c.radius !== 'number' || c.radius <= 0) {
         c.radius = (def && def.radius) || DEFAULT_CREATURE_RADIUS;
       }
-      if (typeof c.speedPerTile !== 'number' || c.speedPerTile <= 0) {
-        c.speedPerTile = (def && def.speedPerTile) || 0.25;
+      // 阶段 2：speedPerTile 语义统一为「秒/格」（区间 3~6）。
+      // 旧档（含阶段 1）存的是「格/秒」（0.2~0.3），小于 3 的一律按旧单位取倒数换算。
+      const defSpeed = (def && def.speedPerTile) || 4.5;
+      let speed = c.speedPerTile;
+      if (typeof speed !== 'number' || !Number.isFinite(speed) || speed <= 0) {
+        speed = defSpeed;
+      } else if (speed < 3) {
+        speed = 1 / speed; // 旧语义 格/秒 → 秒/格
       }
+      c.speedPerTile = Math.min(6, Math.max(3, speed));
+
       if (!isPlainObject(c.pos) || !Number.isFinite(c.pos.x) || !Number.isFinite(c.pos.y)) {
         const row = typeof c.row === 'number' ? c.row : 0;
         const col = typeof c.col === 'number' ? c.col : 0;
@@ -232,10 +245,27 @@ export function migrateGS(loadedGs) {
       if (!isPlainObject(c.renderPos) || !Number.isFinite(c.renderPos.x) || !Number.isFinite(c.renderPos.y)) {
         c.renderPos = { x: c.pos.x, y: c.pos.y };
       }
-      if (!isPlainObject(c.dir) || !Number.isFinite(c.dir.x) || !Number.isFinite(c.dir.y)) {
-        c.dir = { x: 1, y: 0 };
+      // 方向统一为弧度；旧档若是单位向量（阶段 1）转 atan2
+      if (isPlainObject(c.dir) && Number.isFinite(c.dir.x) && Number.isFinite(c.dir.y)) {
+        c.dir = Math.atan2(c.dir.y, c.dir.x);
+      } else if (typeof c.dir !== 'number' || !Number.isFinite(c.dir)) {
+        c.dir = 0;
       }
       if (!('targetPos' in c)) c.targetPos = null;
+      if (typeof c.pauseLeft !== 'number') c.pauseLeft = 0;
+      if (typeof c.retargetLeft !== 'number') c.retargetLeft = 0;
+
+      // 读档时半径可能已变大（或存档越界）：圆心夹回栅栏内合法区域
+      const rowCols = loadedGs.map?.fenceRowCols || 0;
+      if (rowCols > 0) {
+        const r = c.radius;
+        const x0 = FENCE_ORIGIN_X + r, x1 = FENCE_ORIGIN_X + rowCols - r;
+        const y0 = FENCE_ORIGIN_Y + r, y1 = FENCE_ORIGIN_Y + rowCols - r;
+        for (const p of [c.pos, c.renderPos]) {
+          p.x = Math.min(x1, Math.max(x0, p.x));
+          p.y = Math.min(y1, Math.max(y0, p.y));
+        }
+      }
     }
   }
 

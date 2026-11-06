@@ -46,7 +46,8 @@ src/
 │   ├── CombatSystem.js       # 伤害计算 + 闪避 + 元素免疫 + 范围
 │   ├── SkillSystem.js        # 技能触发（进入时/经过时/受祝福时）
 │   ├── LinkSkillSystem.js    # 连携技（解锁检测 + 8 秒窗口 + 队列）
-│   ├── CreatureSystem.js     # 生物实时移动 + 投喂 + 成长 + 心情
+│   ├── RealtimeClock.js      # 统一实时时钟（200ms 逻辑步 + 渲染插值 + 结算快照冻结）
+│   ├── CreatureSystem.js     # 生物连续积分移动（3~6 秒/格）+ 投喂 + 成长 + 心情
 │   └── BuildSystem.js        # 建造模式 + 放置/替换地块内容
 ├── ui/                       # UI 渲染层（订阅 EventBus，更新 DOM）
 │   ├── UIController.js       # UI 总控（模式切换 + 页面管理）
@@ -224,8 +225,31 @@ snapshotGeometry(gs)                    // 冻结逻辑圆位置/半径的快照
 
 1. **地图外圈边长可配置**：初始 3×3，后续道具可扩长/扩宽。外圈边长 `size` 变化时，栅栏内区域 = `(size-2)×(size-2)` 同步变大，但**栅栏原点恒为网格 (1,1)**；`outerTiles` 长度 = `4*(size-1)`。禁止把 3×3 / 8 格 / 240px 写死。地块像素由可用区域 `computeTilePx()` 反算，扩图不挤压、不错位。逻辑层（如 `BlessSystem`）只输出逻辑坐标，像素换算只发生在 UI（`MapView` / `BlessAnimation`）。
 2. **生物只属于栅栏域**：圆贴边压到外圈框不算位于外圈地块（外圈单位页只显示角色）。`fence[].creatures` 只是「主格」兼容缓存，**几何归属以 `pos` + `radius` 计算**；允许一格多只、允许完全重叠，生成不再要求整格为空（容量仍按分类软上限统计）。
-3. **逻辑位置 vs 渲染位置**：`pos` 是判定权威位置；`renderPos` 是表现层插值位置。结算冻结（主动技能/回合结算）只冻结 `pos`（用 `snapshotGeometry()` 捕获），渲染层继续按 `renderPos` 插值，画面不停。连续移动阶段（后续）逻辑推进 `pos`、表现层写 `renderPos`。
+3. **逻辑位置 vs 渲染位置**：`pos` 是判定权威位置；`renderPos` 是表现层插值位置。结算冻结（主动技能/回合结算）只冻结 `pos`（用 `snapshotGeometry()` 捕获），渲染层继续按 `renderPos` 插值，画面不停。阶段 2 起两者都由 `RealtimeClock` 推进：逻辑步写 `pos`，每个真实帧独立写 `renderPos`（见 §2.5）。
 4. **默认索敌（全项目统一）**：任何未明确写索敌对象的技能，一律选**最近的敌人**（圆心到圆心直线距离），即 `nearestCreatureTo(gs, point)` 默认语义（`enemiesOnly: true` + 存活判定）。
+
+### 2.5 RealtimeClock（统一实时时钟 / 渲染插值）
+
+```js
+// src/systems/RealtimeClock.js
+LOGIC_STEP_MS = 200            // 固定逻辑步长（设计文档 §18.3）
+new RealtimeClock(getGs)       // 每个需要时读当前 GS（读档/重开后仍指向最新对象）
+clock.start() / stop()         // 唯一一个 40ms 驱动定时器
+clock.advance(realDtMs)        // 浏览器由驱动调用；测试可直接传入任意 dt
+clock.runSettlement(gs, fn)    // 毫秒级同步结算栈：取 snapshotGeometry 并冻结逻辑积分
+clock.onStep(fn)               // 订阅 200ms 逻辑步（连携窗口 UI 进度条用），返回退订函数
+clock.settling                 // 是否在同步结算栈内
+getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
+```
+
+**时钟结构（单一定时器）**：
+
+- **只允许一个逻辑定时器**：`RealtimeClock` 的 40ms 驱动。真实 dt 进入累加器，按 `200ms` 切片执行逻辑步；不足一步的余量留到下一帧（所以 0.5s 实测位移约有 0~1 步的残差）。
+- **逻辑步顺序（设计文档 §18.3）**：① 连携窗口过期 `pruneExpired` → ② 条件扫描 `periodicConditionScan` → ③ 生物连续积分 `stepCreatures` → ④ 移动后的地块效果（啃草）→ ⑤ 一次性广播（仅地块内容真的变化时 emit `TILE_UPDATED`，逐帧移动本身不广播）。
+- **已合并的旧定时器**：`GameDirector` 的 1000ms 连携轮询、`CreatureSystem` 的 1000/2000ms 生物移动、`LinkSkillUI` 的 200ms 进度计时器全部移除。连携窗口 UI 改为 `clock.onStep()` 订阅；8 秒窗口仍由 `LinkSkillSystem` 用 `Date.now()` 判定，`WINDOW_MS = 8000` 与到期事件（`triggered:false`）不变。
+- **渲染插值**：`advance()` 无论是否结算都调用 `CreatureSystem.advanceCreatureRendering(gs, dt)` 推进 `renderPos`；`MapView` 的 rAF 只读 `renderPos` 画像素，不写逻辑位置。
+- **结算冻结边界**：`runSettlement` 必须同步调用，`settling` 只存在于毫秒级结算栈内；禁止延长到动画、飞字、淡出、面板打开期间。演出各自消费自己的快照，不持有 settle 锁。
+- **运动模型**：随机游走（目标点 + 角速度上限 `2.4 rad/s` 平滑转向，到达后低概率停顿 0.3~0.9 秒），方向为任意弧度；速度 `speedPerTile` 单位为**秒/格**（3~6），只被栅栏边界裁剪（圆心 + 半径不出栅栏），生物之间不碰撞、允许完全重叠。小鸡长大半径 `1/6 → 0.25` 时圆心立即夹回合法区。
 
 ---
 
@@ -276,9 +300,10 @@ export const createInitialState = () => ({
                                //   radius,                            // 圆半径（格），小鸡 1/6 / 鸡·史莱姆 0.25
                                //   pos: {x, y},                       // 连续逻辑坐标（判定权威；可任意小数）
                                //   renderPos: {x, y},                 // 渲染插值位置（表现层写，不参与判定）
-                               //   dir: {x, y},                       // 朝向单位向量（任意方向）
-                               //   speedPerTile,                      // 格/秒，区间 0.167~0.333（3~6 秒/格）
-                               //   targetPos: null }                  // 闲逛目标点（预留）
+                               //   dir,                               // 朝向弧度（任意方向，非四方向）
+                               //   speedPerTile,                      // 秒/格，区间 3~6（小鸡 3.0 / 鸡 4.2 / 史莱姆 5.0）
+                               //   targetPos: null,                   // 闲逛目标点（逻辑坐标）
+                               //   pauseLeft, retargetLeft }          // 停顿/重取目标的剩余秒数（非墙钟，可入日初基线）
                                // row/col 仅为主格兼容缓存；几何归属以 pos+radius 计算
   
   // === 背包 ===

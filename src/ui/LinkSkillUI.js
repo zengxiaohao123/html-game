@@ -5,6 +5,7 @@
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { LinkSkillSystem, WINDOW_MS } from '../systems/LinkSkillSystem.js';
+import { getRealtimeClock } from '../systems/RealtimeClock.js';
 import { SKILLS } from '../data/characters.js';
 import { createEl, qs, iconEl } from './dom.js';
 import { devLog } from '../core/Logger.js';
@@ -15,7 +16,7 @@ export class LinkSkillUI {
     this.root = null;
     this.listEl = null;
     this.visible = false;
-    this._timer = null;
+    this._unsubClock = null;
     this._keyHandler = null;
   }
 
@@ -68,12 +69,12 @@ export class LinkSkillUI {
   }
 
   _setupTimer() {
-    // 200ms tick：让系统层 pruneExpired，然后更新 DOM 进度条
-    this._timer = setInterval(() => {
-      const gs = this._getGS(); if (!gs) return;
-      LinkSkillSystem.pruneExpired(gs);
+    // 合并进统一实时时钟：窗口过期由 RealtimeClock 的 200ms 逻辑步统一 pruneExpired，
+    // 这里只订阅逻辑步刷新进度条，不再单独起 200ms 定时器（避免第二个逻辑 timer）。
+    // WINDOW_MS（8 秒）与到期行为不变：过期判定仍在 LinkSkillSystem 内按 Date.now 计算。
+    this._unsubClock = getRealtimeClock(() => this._getGS()).onStep(() => {
       this._updateProgress();
-    }, 200);
+    });
   }
 
   _triggerQueueTop() {

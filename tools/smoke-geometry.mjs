@@ -61,8 +61,8 @@ function addCreature(gs, { id, kind = 'chicken', pos, radius = null, hp = 10, ca
     pos: { ...pos },
     radius: radius ?? G.creatureRadius(kind),
     renderPos: { ...pos },
-    dir: { x: 1, y: 0 },
-    speedPerTile: def?.speedPerTile ?? 0.25,
+    dir: 0,
+    speedPerTile: def?.speedPerTile ?? 4.5,
   };
   gs.creatures.push(c);
   return c;
@@ -193,9 +193,9 @@ head('5. CreatureSystem：生成不再要求整格为空，允许完全重叠');
   check(!!c1, '整格已占用时仍能生成（不再要求整格为空）', c1?.id);
   check(c1?.pos && Number.isFinite(c1.pos.x) && Number.isFinite(c1.pos.y), '生成即带连续坐标 pos.x/pos.y', c1?.pos);
   check(c1?.radius === CREATURES.chick.radius, '实例半径取自生物定义 1/6', c1?.radius);
-  check(typeof c1?.dir?.x === 'number' && typeof c1?.dir?.y === 'number', '预留任意方向 dir 向量', c1?.dir);
-  check(typeof c1?.speedPerTile === 'number' && c1.speedPerTile >= 1 / 6 && c1.speedPerTile <= 1 / 3,
-    '预留速度 speedPerTile ∈ [0.167,0.333] 格/秒（3~6 秒 1 格）', c1?.speedPerTile);
+  check(typeof c1?.dir === 'number' && Number.isFinite(c1.dir), 'dir 为任意弧度（不是四方向）', c1?.dir);
+  check(typeof c1?.speedPerTile === 'number' && c1.speedPerTile >= 3 && c1.speedPerTile <= 6,
+    'speedPerTile ∈ [3,6] 秒/格（阶段 2 语义）', c1?.speedPerTile);
   check(c1?.targetPos === null, '预留闲逛目标点 targetPos');
   check(!!c1?.renderPos && c1.renderPos.x === c1.pos.x, '渲染插值位置 renderPos 已初始化');
   check(tile.creatures.length === 2, '同一栅栏格可注册多只生物', tile.creatures.length);
@@ -384,7 +384,7 @@ head('10. 旧存档迁移：补 pos / radius / renderPos / dir / targetPos');
   check(c.pos.x === 1.5 && c.pos.y === 1.5, 'pos 回填为主格中心 (1.5,1.5)（栅栏原点 1,1）', c.pos);
   check(c.radius === 0.25, '旧生物按定义补 radius=0.25', c.radius);
   check(c.renderPos.x === c.pos.x && c.renderPos.y === c.pos.y, 'renderPos 与逻辑位置初始一致');
-  check(Array.isArray([c.dir.x, c.dir.y]) && Number.isFinite(c.dir.x), 'dir 朝向已补默认值');
+  check(typeof c.dir === 'number' && Number.isFinite(c.dir), 'dir 朝向已补弧度默认值');
   check(c.targetPos === null, 'targetPos 已补 null（预留闲逛目标）');
   check(c.speedPerTile === CREATURES.chicken.speedPerTile, 'speedPerTile 按定义补齐', c.speedPerTile);
 }
