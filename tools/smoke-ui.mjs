@@ -358,12 +358,107 @@ head_('§16.12 TeamPanel：快捷编队按钮 + 二级 ESC 回一级');
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'team' });
 }
 
-head_('§16.16 VehiclePanel：独立格 + 剩余次数');
+head_('§16.16 VehiclePanel：每行 3 张卡片 + 卡片直显描述 + 单击装/卸/替换（无二次确认）');
 {
-  gs.vehicle.available.push({ vehicleId: 'vehicle_wheel', usageLeft: 3 });
+  const VEHICLES = (await import('../src/data/vehicles.js')).VEHICLES;
+  gs.vehicle.available = [
+    { vehicleId: 'vehicle_wheel', usageLeft: 3 },
+    { vehicleId: 'vehicle_broom', usageLeft: 3 },
+    { vehicleId: 'vehicle_chance', usageLeft: Infinity },
+  ];
+  gs.vehicle.current = null;
   EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'vehicle' });
+
+  let dlgShows = 0;
+  const countDialog = () => { dlgShows++; };
+  EventBus.on(GE.DIALOG_SHOW, countDialog);
+
+  const cardOf = (id) => vehiclePanel.cardEls.find((c) => c.getAttribute('data-vehicle-id') === id);
+  const descOf = (card) => card.children.find((c) => c.classList?.contains('vehicle-desc'));
+
+  // 结构与布局
   assert(vehiclePanel.helper?.visible === true, 'OPEN(vehicle) → 显示');
-  assert(hasText(vehiclePanel.helper.root, '剩余'), '载具格显示剩余使用次数');
+  assert(String(vehiclePanel.invEl.style.gridTemplateColumns).includes('repeat(3'),
+    '卡片栅格每行最多 3 张、每张 minmax(0,1fr)（≈1/3 宽，最后一行左对齐）',
+    vehiclePanel.invEl.style.gridTemplateColumns);
+  assert(vehiclePanel.cardEls.length === 3, '3 辆载具 → 3 张卡片', vehiclePanel.cardEls.length);
+  assert(buttonsWithText(vehiclePanel.helper.root, '装载').length === 0, '无「装载」按钮');
+  assert(buttonsWithText(vehiclePanel.helper.root, '卸下').length === 0, '无「卸下」按钮');
+  assert(!hasText(vehiclePanel.helper.root, '当前装备槽') && !hasText(vehiclePanel.helper.root, '（空）'),
+    '无「当前装载中载具」格子');
+  assert(hasText(vehiclePanel.helper.root, '徒步跋涉'), '未装载 → 顶部显示「当前：徒步跋涉」');
+
+  // 卡片内直达描述（不需要点开）
+  const wheelCard = cardOf('vehicle_wheel');
+  const desc = descOf(wheelCard);
+  assert(!!desc, '卡片直接渲染描述块（无需点开）');
+  assert(desc._text === VEHICLES.vehicle_wheel.description,
+    '描述逐字取数据层 ITEMS[id].description', desc._text);
+  assert(desc.style.whiteSpace === 'pre-line', '描述保留原有换行（white-space: pre-line）');
+  assert(desc.style.WebkitLineClamp === '4' && desc.style.overflow === 'hidden',
+    '超长描述卡内 4 行截断 + 省略号，不撑破 1/3 栅格', desc.style.WebkitLineClamp);
+  assert(hasText(wheelCard, '剩余 ×3'), '卡片显示剩余使用次数');
+  assert(hasText(wheelCard, VEHICLES.vehicle_wheel.name), '卡片显示载具名称');
+  assert(wheelCard.style.minHeight === '150px', '卡片最小高度固定，长描述不撑破栅格', wheelCard.style.minHeight);
+  assert(wheelCard.style.border === '3px solid #b8a888', '未装载卡片为普通描边');
+
+  // ① 单击装载（无确认 / 无弹窗）
+  wheelCard.click();
+  assert(gs.vehicle.current?.vehicleId === 'vehicle_wheel', '单击卡片一次 → 装载');
+  assert(dlgShows === 0 && !hasText(vehiclePanel.helper.root, '你确定这么做？'),
+    '装载全程无弹窗、无二次确认', dlgShows);
+  assert(cardOf('vehicle_wheel').style.border === '3px solid #3fa34d',
+    '当前载具卡片绿色边框高亮', cardOf('vehicle_wheel').style.border);
+  assert(cardOf('vehicle_broom').style.border === '3px solid #b8a888', '非当前载具保持普通描边');
+  assert(hasText(vehiclePanel.helper.root, '当前：') && hasText(vehiclePanel.helper.root, VEHICLES.vehicle_wheel.name),
+    '顶部状态行显示当前载具');
+  assert(vehiclePanel.cardEls.every((c) => c.getAttribute('data-current')
+    === (c.getAttribute('data-vehicle-id') === 'vehicle_wheel' ? '1' : '0')), 'data-current 只标记当前载具');
+
+  // ② 再点同一张 → 卸下（回到徒步），无确认
+  cardOf('vehicle_wheel').click();
+  assert(gs.vehicle.current === null, '再点已装载的那张一次 → 卸下');
+  assert(dlgShows === 0, '卸下全程无弹窗、无二次确认', dlgShows);
+  assert(hasText(vehiclePanel.helper.root, '徒步跋涉'), '卸下后顶部回到「徒步跋涉」');
+  assert(cardOf('vehicle_wheel').style.border === '3px solid #b8a888', '卸下后绿框消失');
+  assert(gs.vehicle.available.find((a) => a.vehicleId === 'vehicle_wheel')?.usageLeft === 3,
+    '卸下后剩余次数同步回库存条目');
+
+  // ③ 已装载 A 时点 B → 一次即替换（绿框移动），无确认
+  cardOf('vehicle_wheel').click();
+  assert(gs.vehicle.current?.vehicleId === 'vehicle_wheel', '先装载轮子');
+  cardOf('vehicle_broom').click();
+  assert(gs.vehicle.current?.vehicleId === 'vehicle_broom', '已装载时点另一张一次 → 替换');
+  assert(dlgShows === 0, '替换全程无弹窗、无二次确认', dlgShows);
+  assert(cardOf('vehicle_broom').style.border === '3px solid #3fa34d', '替换后绿框移到新载具');
+  assert(cardOf('vehicle_wheel').style.border === '3px solid #b8a888', '替换后旧载具绿框移除');
+  assert(gs.vehicle.available.find((a) => a.vehicleId === 'vehicle_wheel')?.usageLeft === 3,
+    '替换时旧载具剩余次数也同步回库存');
+  assert(hasText(vehiclePanel.helper.root, VEHICLES.vehicle_broom.name), '顶部状态行切换到新载具');
+
+  // ④ 同一次点击只结算一次：同一事件对象重复派发不出现「装了又卸」
+  const broomCard = cardOf('vehicle_broom');
+  const dupEv = { type: 'click', target: broomCard, preventDefault() {}, stopPropagation() {} };
+  broomCard.dispatchEvent(dupEv);
+  broomCard.dispatchEvent(dupEv);
+  assert(gs.vehicle.current === null && dlgShows === 0,
+    '同一事件对象重复派发 → 只结算一次（无抖动）', gs.vehicle.current);
+
+  // ⑤ hover / 按下反馈
+  const chanceCard = cardOf('vehicle_chance');
+  chanceCard.dispatchEvent({ type: 'mouseenter' });
+  assert(chanceCard.style.background === '#fff8dc', 'hover → 背景高亮反馈');
+  chanceCard.dispatchEvent({ type: 'mousedown' });
+  assert(chanceCard.style.transform === 'scale(0.975)', '按下 → 缩放反馈');
+  chanceCard.dispatchEvent({ type: 'mouseup' });
+  chanceCard.dispatchEvent({ type: 'mouseleave' });
+  assert(chanceCard.style.transform === 'scale(1)' && chanceCard.style.background === 'rgba(255,255,255,0.85)',
+    '松开 / 移出 → 恢复默认');
+
+  EventBus.off(GE.DIALOG_SHOW, countDialog);
+  hideAllDialogs();
+  gs.vehicle.current = null;
+  gs.vehicle.available = [];
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'vehicle' });
 }
 
@@ -1324,9 +1419,8 @@ head_('第 10 批任务 B：InventoryPanel 切 tab（点击触发状态变化）
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });
 }
 
-head_('第 10 批任务 B：VehiclePanel 卸下（文字弹窗 → 弹窗内二次确认）');
+head_('第 10 批任务 B：VehiclePanel 交互全程无二次确认（点别处/无弹窗）');
 {
-  const ConfirmAction = await import('../src/ui/ConfirmAction.js');
   const { DialogBox } = await import('../src/ui/DialogBox.js');
   const vd = trackDlg(new DialogBox());
   vd.mount();
@@ -1334,43 +1428,40 @@ head_('第 10 批任务 B：VehiclePanel 卸下（文字弹窗 → 弹窗内二�
   director.dialogBox = vd;
   const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  gs.vehicle.current = { vehicleId: 'vehicle_wheel', usageLeft: 3 };
-  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'vehicle' });
-  const unloadBtn = buttonsWithText(vehiclePanel.helper.root, '卸下')[0];
-  assert(!!unloadBtn, '装备中 → 卸下按钮存在');
+  let dlgShows = 0;
+  const onShow = () => { dlgShows++; };
+  EventBus.on(GE.DIALOG_SHOW, onShow);
 
-  // ① 点卸下 → 先出现文字弹窗（取消 / 卸下），未卸下
-  unloadBtn.click();
-  assert(vd.visible, '点卸下 → 先出现文字弹窗');
-  assert(vd._opts.map((o) => o.label).join('/') === '取消/卸下', '弹窗选项为 取消 / 卸下');
-  assert(gs.vehicle.current !== null, '弹窗出现时未卸下');
-
-  // ② 弹窗内点「卸下」一次 → 待确认，仍不卸下
-  vd._optBtns[1].click();
-  assert(ConfirmAction.isArmed(vd._optBtns[1]) && gs.vehicle.current !== null,
-    '第一次点卸下 → 待确认、不执行');
-  assert(vd._hintEl.style.display === 'block', '弹窗内出现「你确定这么做？」');
-
-  // ③ 再点一次 → 同一 tick 立即卸下，弹窗淡出
-  vd._optBtns[1].click();
-  assert(gs.vehicle.current === null, '第二次点卸下 → 同一 tick 立即 current=null');
-  await sleepMs(80);
-  assert(vd.visible === false, '卸下后弹窗淡出关闭');
-  // detachVehicle 把剩余次数同步回 available 里的同种载具条目（不新增）
-  assert(gs.vehicle.available.some((a) => a.vehicleId === 'vehicle_wheel' && a.usageLeft === 3),
-    '卸下后剩余次数同步回库存条目');
-
-  // ④ 点「取消」→ 单击关闭、不卸下
-  gs.vehicle.current = { vehicleId: 'vehicle_wheel', usageLeft: 3 };
-  vehiclePanel._refresh();
-  buttonsWithText(vehiclePanel.helper.root, '卸下')[0].click();
-  vd._optBtns[0].click();
-  assert(gs.vehicle.current !== null, '点取消 → 不卸下');
-  await sleepMs(80);
-  assert(vd.visible === false, '点取消 → 弹窗关闭');
+  gs.vehicle.available = [
+    { vehicleId: 'vehicle_wheel', usageLeft: 2 },
+    { vehicleId: 'vehicle_broom', usageLeft: 3 },
+  ];
   gs.vehicle.current = null;
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'vehicle' });
+
+  const cardOf = (id) => vehiclePanel.cardEls.find((c) => c.getAttribute('data-vehicle-id') === id);
+
+  // 连续：装载 → 卸下 → 装载 → 替换，每一步都只结算一次
+  cardOf('vehicle_wheel').click();
+  assert(gs.vehicle.current?.vehicleId === 'vehicle_wheel', '单击装载（立即生效）');
+  cardOf('vehicle_wheel').click();
+  assert(gs.vehicle.current === null, '再点同一张卸下（立即生效）');
+  cardOf('vehicle_wheel').click();
+  cardOf('vehicle_broom').click();
+  assert(gs.vehicle.current?.vehicleId === 'vehicle_broom', '已装载时点别的替换（立即生效）');
+  await sleepMs(60);
+
+  assert(dlgShows === 0 && vd.visible === false, '全程未发 DIALOG_SHOW、无弹窗', dlgShows);
+  assert(!hasText(vehiclePanel.helper.root, '你确定这么做？'), '无待确认行内文案');
+  assert(vehiclePanel.cardEls.filter((c) => c.style.border === '3px solid #3fa34d').length === 1,
+    '同一时刻只有一张卡片是绿色边框');
+  assert(buttonsWithText(vehiclePanel.helper.root, '卸下').length === 0
+    && buttonsWithText(vehiclePanel.helper.root, '装载').length === 0, '仍无装载 / 卸下按钮');
+
+  EventBus.off(GE.DIALOG_SHOW, onShow);
+  gs.vehicle.current = null;
+  gs.vehicle.available = [];
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'vehicle' });
-  vd.hide();
   director.dialogBox = null;
 }
 
