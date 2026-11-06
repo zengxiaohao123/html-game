@@ -799,37 +799,47 @@ console.log('\n═══ 36. 状态持续时间上限 99（C-8） ═══');
   check(b.remainingTurns === 99, `C-8：刷新合并也钳制 99（实际 ${b.remainingTurns}）`);
 }
 
-console.log('\n═══ 37. 载具最短实际路径视为经过（B-21） ═══');
+console.log('\n═══ 37. 载具模拟路径：中间格只判定，终点结算（B-21） ═══');
 {
   // any 模式（心想事成，3×3 外圈 8 格）：6((0,2)) → 0((0,0)) 最短弧经过 7
   const g = createInitialState();
   VehicleSystem.gainVehicle(g, 'vehicle_chance');
   VehicleSystem.attachVehicle(g, 'vehicle_chance');
-  g.map.outerTiles[0].contentId = null;
-  const sTile = g.map.outerTiles[7];
-  sTile.contentId = 'facility_strawberry';
-  sTile.contentState = {};
-  sTile.dailyFlags = {};
+  const midTile = g.map.outerTiles[7];
+  midTile.contentId = 'facility_strawberry';
+  midTile.contentState = {};
+  midTile.dailyFlags = {};
+  const dstTile = g.map.outerTiles[0];
+  dstTile.contentId = 'facility_strawberry';
+  dstTile.contentState = {};
+  dstTile.dailyFlags = {};
   g.player.x = 6;
   g.player.stamina = 8;
   const r = VehicleSystem.tryMove(g, { vehicleId: 'vehicle_chance', targetIdx: 0 });
   check(r.ok, `心想事成移动成功（${r.reason || 'ok'}）`);
   check(g.player.x === 0, '落点为目标格');
-  check((sTile.contentState.strawberryStored || 0) === 1, 'B-21：any 模式最短路径中间格触发 onPass');
+  check(r.path.length === 2 && r.path[0] === 7 && r.path[1] === 0, 'any 模式模拟路径 = [7,0]');
+  check((midTile.contentState.strawberryStored || 0) === 0, 'B-21：中间格不结算地块效果');
+  check((dstTile.contentState.strawberryStored || 0) === 1, 'B-21：终点结算【经过时】+1');
   // line 模式（扫帚）：6((0,2)) → 4((2,2)) 同行，中间格 5((1,2))
   const g2 = createInitialState();
   VehicleSystem.gainVehicle(g2, 'vehicle_broom');
   VehicleSystem.attachVehicle(g2, 'vehicle_broom');
-  g2.map.outerTiles[4].contentId = null;
-  const mTile = g2.map.outerTiles[5];
-  mTile.contentId = 'facility_strawberry';
-  mTile.contentState = {};
-  mTile.dailyFlags = {};
+  const midTile2 = g2.map.outerTiles[5];
+  midTile2.contentId = 'facility_strawberry';
+  midTile2.contentState = {};
+  midTile2.dailyFlags = {};
+  const dstTile2 = g2.map.outerTiles[4];
+  dstTile2.contentId = 'facility_strawberry';
+  dstTile2.contentState = {};
+  dstTile2.dailyFlags = {};
   g2.player.x = 6;
   g2.player.stamina = 8;
   const r2 = VehicleSystem.tryMove(g2, { vehicleId: 'vehicle_broom', targetIdx: 4 });
   check(r2.ok, `扫帚移动成功（${r2.reason || 'ok'}）`);
-  check((mTile.contentState.strawberryStored || 0) === 1, 'B-21：line 模式中间格触发 onPass');
+  check(r2.path.length === 2 && r2.path[0] === 5 && r2.path[1] === 4, 'line 模式模拟路径 = [5,4]');
+  check((midTile2.contentState.strawberryStored || 0) === 0, 'B-21：line 中间格不结算地块效果');
+  check((dstTile2.contentState.strawberryStored || 0) === 1, 'B-21：line 终点结算【经过时】+1');
 }
 
 console.log('\n═══ 38. 农耕手册保证抽到 3 个设施（C-15） ═══');

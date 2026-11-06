@@ -19,7 +19,7 @@ import { VEHICLES } from '../data/vehicles.js';
 import { ITEMS } from '../data/items.js';
 import { Distance, outerXYToIdx } from '../core/Distance.js';
 import { Direction } from '../utils/Direction.js';
-import { firePassHooksAlong, fireEnterHooks } from './MoveHooks.js';
+import { firePassHookAt, fireEnterHooks } from './MoveHooks.js';
 import { StaminaSystem } from './StaminaSystem.js';
 import { canMoveNow, markMoved } from './MoveCooldown.js';
 
@@ -47,8 +47,12 @@ function buildRingOrder(gs) {
   return seq.filter(i => i !== null && i !== undefined);
 }
 
-/** 'any' 模式：沿外圈环两弧取短的一条路径（不含起点，含终点） */
-function shortestRingPath(gs, fromIdx, toIdx) {
+/**
+ * 载具移动完成后，按徒步跋涉方式模拟「起点 → 终点」的默认最短路径。
+ * 外圈是一个环，两弧取短的一条（等长时取顺时针），不含起点、含终点。
+ * 该路径只用于【经过时】判定与路径长度，不触发冰面滑行等地形位移效果。
+ */
+function simulateWalkPath(gs, fromIdx, toIdx) {
   const ring = buildRingOrder(gs);
   const a = ring.indexOf(fromIdx);
   const b = ring.indexOf(toIdx);
@@ -236,7 +240,6 @@ export function tryMove(gs, opts = {}) {
     return { ok: false, reason: 'badTarget' };
   }
   let targetIdx = null;
-  let path = [];
 
   if (def.movePattern === 'directional') {
     // 轮子：指定方向最多 maxRange 格。
@@ -256,13 +259,7 @@ export function tryMove(gs, opts = {}) {
     for (let step = 1; step <= maxRange; step++) {
       cx += dx; cy += dy;
       const idx = outerXYToIdx(gs.map.size, cx, cy);
-      if (idx !== null) {
-        finalIdx = idx;
-        path.push(idx);
-      } else {
-        // null（栅栏中心/虚空）—— 轮子继续穿越，不阻挡
-        path.push(null);
-      }
+      if (idx !== null) finalIdx = idx;
     }
 
     if (finalIdx === null) {
@@ -278,42 +275,20 @@ export function tryMove(gs, opts = {}) {
       return { ok: false, reason: 'notSameRowCol' };
     }
     targetIdx = opts.targetIdx;
-    // B-21：同行/列最短实际路径视为「经过」—— 补齐中间格（栅栏中心 null 跳过）
-    {
-      const { x: fx, y: fy } = Distance.outerIdxToXY(gs.map.size, fromIdx);
-      const { x: tx, y: ty } = Distance.outerIdxToXY(gs.map.size, targetIdx);
-      if (fx === tx) {
-        const step = ty > fy ? 1 : -1;
-        for (let y = fy + step; ; y += step) {
-          const idx = outerXYToIdx(gs.map.size, fx, y);
-          if (idx !== null) path.push(idx);
-          if (y === ty) break;
-        }
-      } else {
-        const step = tx > fx ? 1 : -1;
-        for (let x = fx + step; ; x += step) {
-          const idx = outerXYToIdx(gs.map.size, x, fy);
-          if (idx !== null) path.push(idx);
-          if (x === tx) break;
-        }
-      }
-    }
   } else if (def.movePattern === 'any') {
     // 任意格（巧遇 / 图腾 / 号角 / 飞毯 / 购物车 / 大巴 / 飞剑 —— 落点再由 landFilter 约束）
     if (opts.targetIdx == null) return { ok: false, reason: 'needTarget' };
     if (opts.targetIdx === fromIdx) return { ok: false, reason: 'sameTile' };
     targetIdx = opts.targetIdx;
-    // B-21（心想事成：移动到任意地块，最短路径视为「经过」）—— 外圈环两弧取短
-    path = shortestRingPath(gs, fromIdx, targetIdx);
   } else if (def.movePattern === 'range') {
     // 曼哈顿距离 ≤ maxRange 的任意格（马匹 / 重弹簧 / 拓荒者）
+    // 曼哈顿距离只用于「可达性判定」；【经过时】与路径长度另按模拟徒步路径计算
     if (opts.targetIdx == null) return { ok: false, reason: 'needTarget' };
     if (opts.targetIdx === fromIdx) return { ok: false, reason: 'sameTile' };
     if (manhattan(gs, fromIdx, opts.targetIdx) > (def.maxRange || 2)) {
       return { ok: false, reason: 'outOfRange' };
     }
     targetIdx = opts.targetIdx;
-    path = [targetIdx];
   } else if (def.movePattern === 'random') {
     // 随机一格（momo 图腾）：优先本日未进入过的地块
     const cands = listLandingTiles(gs);
@@ -324,10 +299,13 @@ export function tryMove(gs, opts = {}) {
       : [];
     const pool = prefer.length ? prefer : cands;
     targetIdx = pool[Math.floor(Math.random() * pool.length)];
-    path = [targetIdx];
   } else {
     return { ok: false, reason: 'badPattern' };
   }
+
+  // 无论哪种载具：位置先落到终点，再按徒步模拟「起点 → 终点」的最短路径，
+  // 用这条路径结算【经过时】与路径长度（曼哈顿距离不参与此计算）
+  const path = simulateWalkPath(gs, fromIdx, targetIdx);
 
   // 落点限制（设施 / 资源 / 技能 / 指定地块）
   if (!landOk(gs, targetIdx, def)) return { ok: false, reason: 'landFilter' };
@@ -349,9 +327,9 @@ export function tryMove(gs, opts = {}) {
     });
   }
 
-  // 结算【经过时】：与徒步共用同一套逐格结算（§7 经过 = 途经每一格 + 最终停留格，不含起点）
-  // path 里保留了穿越栅栏中心/虚空产生的 null，由 MoveHooks 跳过
-  firePassHooksAlong(gs, path);
+  // 效果层只在终点生效：模拟路径的中间格只参与判定/长度，不触发地块或状态效果
+  // （终点确实被抵达，照常触发【经过时】，随后再触发【进入时】）
+  firePassHookAt(gs, targetIdx);
 
   // 更新位置
   gs.player.x = targetIdx;
@@ -370,9 +348,9 @@ export function tryMove(gs, opts = {}) {
   // 结算【进入时】：仅最终停留格
   fireEnterHooks(gs, targetIdx);
 
-  // B-2：载具移动距离（起点到落点实际经过的合法格数）随 MOVE 事件广播，
-  //      供 GameDirector 推进回合 / 【移动后】hook / 移形累计使用
-  const distance = Math.max(1, (path || []).filter(i => i != null).length);
+  // B-2：载具移动的路径长度 = 模拟徒步路径的格数（含终点），不是曼哈顿距离；
+  //      随 MOVE 事件广播，供 GameDirector 推进回合 / 【移动后】hook / 移形累计使用
+  const distance = Math.max(1, (path || []).length);
   EventBus.emit(GE.MOVE, { fromIdx, toIdx: targetIdx, byVehicle: true, distance, path });
   EventBus.emit(GE.TILE_UPDATED, { tileIdx: fromIdx });
   EventBus.emit(GE.TILE_UPDATED, { tileIdx: targetIdx });

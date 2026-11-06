@@ -135,13 +135,13 @@ export function move(gs, direction) {
   // 4. 触发【进入时】：仅最终停留格
   fireEnterHooks(gs, finalIdx);
 
-  // 5. 广播 MOVE 事件
-  EventBus.emit(GE.MOVE, { fromIdx, toIdx: finalIdx, direction, path });
+  // 5. 广播 MOVE 事件（路径长度 = 本次经过的格数，与载具口径一致）
+  const distance = path.length;
+  EventBus.emit(GE.MOVE, { fromIdx, toIdx: finalIdx, direction, path, distance });
   EventBus.emit(GE.TILE_UPDATED, { tileIdx: fromIdx });
   EventBus.emit(GE.TILE_UPDATED, { tileIdx: finalIdx });
 
   // 6. 【移动后】：走完整段路径后触发一次（距离 = 本次经过的格数）
-  const distance = path.length;
   // 移形（SKL-L-008）：累计本日移动距离（本日内每经过 1 格倍率 +5%）
   if (!gs.team) gs.team = {};
   gs.team.dailyDistanceMoved = (gs.team.dailyDistanceMoved || 0) + distance;
