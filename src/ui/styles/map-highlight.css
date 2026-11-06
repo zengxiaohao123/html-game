@@ -1,0 +1,41 @@
+/* src/ui/styles/map-highlight.css
+ * 技能卡所在地块高亮（v0.5 §16.3 / §12.5）
+ * 类名由 src/ui/TileHighlight.js 挂/摘：tile-hl-red / tile-hl-gold / tile-hl-gold-flash
+ * 只用描边 + 外发光，不铺纯色覆盖层，保证地块内容图标与地形清晰可见。
+ */
+
+/* 基线：描边常驻但透明，靠颜色过渡实现淡入淡出（地块节点自带 transition: all .15s） */
+.map-tile {
+  outline: 3px solid transparent;
+  outline-offset: -3px;
+}
+
+/* 主动技能在其地块结算：红色瞬时高亮（1 秒后由 JS 摘类，自动淡出） */
+.map-tile.tile-hl-red {
+  outline-color: #e24434;
+  box-shadow:
+    0 0 0 3px rgba(226, 68, 52, 0.45),
+    0 0 16px rgba(255, 96, 70, 0.6),
+    inset 0 0 18px rgba(255, 120, 90, 0.28);
+  z-index: 3;
+}
+
+/* 连携技队首：金色持续高亮 */
+.map-tile.tile-hl-gold {
+  outline-color: #f2b01e;
+  box-shadow:
+    0 0 0 3px rgba(242, 176, 30, 0.5),
+    0 0 18px rgba(255, 198, 60, 0.7),
+    inset 0 0 20px rgba(255, 214, 102, 0.32);
+  z-index: 3;
+}
+
+/* 连携技被使用：金色瞬时高亮（比队首亮一档） */
+.map-tile.tile-hl-gold-flash {
+  outline-color: #ffd75e;
+  box-shadow:
+    0 0 0 4px rgba(255, 210, 90, 0.6),
+    0 0 26px rgba(255, 214, 100, 0.85),
+    inset 0 0 22px rgba(255, 226, 140, 0.4);
+  z-index: 3;
+}

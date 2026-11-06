@@ -46,6 +46,7 @@ export const GE = {
 
   // ── 战斗 / 技能 ──
   SKILL_TRIGGERED: 'skill:triggered',
+  SKILL_USED_ON_TILE: 'skill:usedOnTile',    // 主动技能在某地块结算（UI 层据此做该地块红色瞬时高亮）
   DAMAGE_DEALT: 'damage:dealt',
   DAMAGE_TAKEN: 'damage:taken',
   DAMAGE_DODGED: 'damage:dodged',            // Phase 4：闪避成功

@@ -178,6 +178,10 @@ function fireOneSkill(gs, skill, targets, cdKey, hookName = 'onEnter', tileIdx =
   const targetList = Array.isArray(targets) ? targets : [targets];
   devLog.info('[SkillSystem] fire', skill.name, '→', target.kind, '(hp', target.hp, '/', target.maxHp, ') x', targetList.length);
   EventBus.emit(GE.SKILL_TRIGGERED, { skillId: skill.id, roleId: skill.roleId, targetKind: target.kind });
+  // §16.3：主动技能在其所在地块结算 → UI 层据此做地块红色瞬时高亮（纯视觉，不参与结算）
+  if (typeof tileIdx === 'number') {
+    EventBus.emit(GE.SKILL_USED_ON_TILE, { tileIdx, skillId: skill.id, roleId: skill.roleId });
+  }
 
   const eff = skill.extraEffect;
 

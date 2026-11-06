@@ -22,6 +22,7 @@ import { SettingsPanel } from './ui/SettingsPanel.js';
 import { BlessAnimation } from './ui/BlessAnimation.js';
 import { DialogBox } from './ui/DialogBox.js';
 import { LinkSkillUI } from './ui/LinkSkillUI.js';
+import { TileHighlight } from './ui/TileHighlight.js';
 import { InventoryPanel } from './ui/panels/InventoryPanel.js';
 import { RolePanel } from './ui/panels/RolePanel.js';
 import { TeamPanel } from './ui/panels/TeamPanel.js';
@@ -49,6 +50,8 @@ loadStylesheet('./src/ui/styles/map.css');
 loadStylesheet('./src/ui/styles/panels.css');
 loadStylesheet('./src/ui/styles/hotbar.css');
 loadStylesheet('./src/ui/styles/ui.css');
+// 技能卡所在地块高亮（v0.5 §16.3）
+loadStylesheet('./src/ui/styles/map-highlight.css');
 
 devLog.info('=== 转盘农场 Phase 2B 启动中 ===');
 
@@ -151,6 +154,10 @@ vehiclePanel.mount();
 // Phase 4 新增：连携技实时窗口（LinkSkillSystem 入队时自动显示；按 1/2/3 触发）
 const linkSkillUI = new LinkSkillUI(director);
 linkSkillUI.mount();
+
+// 技能卡所在地块高亮（必须在 MapView 之后 mount：订阅顺序保证地块重建后重新挂类）
+const tileHighlight = new TileHighlight(director);
+tileHighlight.mount();
 
 // Phase 4 新增：任务面板（J 切换；2 tab 日常/核心；Phase 5 补任务列表）
 const taskPanel = new TaskPanel(director);
