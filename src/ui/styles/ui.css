@@ -237,25 +237,28 @@ body.build-mode .map-container {
   filter: drop-shadow(0 2px 0 rgba(36, 26, 18, 0.35)) drop-shadow(0 5px 6px rgba(0, 0, 0, 0.28));
 }
 
-/* 姓名牌：横向居中压框底（以视觉平衡为准，不再强制右对齐框右边缘） */
+/* 姓名牌：压在立绘框**右下外沿**（右缘与框右缘大致对齐、整体略偏下）。
+ * 参照 左上角ui.jpg：浅米底 + 深棕细描边 + 小圆角 + 轻微旋转；
+ * 尺寸约为框宽 45%（上限不超过 2/3），字号 10px，不抢立绘与数值。 */
 .hud-nameplate {
   position: absolute;
-  left: 50%;
-  top: 68px;
+  right: -3px;
+  bottom: -7px;
   z-index: 3;
-  padding: 2px 10px 3px;
-  background: linear-gradient(180deg, #5E3E24 0%, #3E2814 100%);
-  color: #FFF8E6;
-  font-size: 17px;
+  padding: 1px 5px 2px;
+  background: linear-gradient(180deg, #FFFDF2 0%, #F7E7C2 100%);
+  color: #3E2814;
+  font-size: 10px;
   font-weight: 900;
-  line-height: 1.1;
+  line-height: 1.2;
   letter-spacing: 1px;
   white-space: nowrap;
-  border: 2px solid #241A12;
-  border-radius: 7px 10px 6px 9px;
-  box-shadow: 0 0 0 2px rgba(255, 248, 230, 0.92), 0 3px 0 rgba(36, 26, 18, 0.22);
-  text-shadow: 0 1px 0 #241A12;
-  transform: translateX(-50%) rotate(1deg);
+  border: 1.5px solid #2E1B0C;
+  border-radius: 5px 6px 4px 5px;
+  box-shadow: 0 1px 0 rgba(46, 27, 12, 0.2), 0 3px 5px rgba(0, 0, 0, 0.22);
+  text-shadow: 0 1px 0 #FFF6DE;
+  transform: rotate(1.5deg);
+  transform-origin: right bottom;
 }
 
 /* 右侧三行（上：红心 + 血条　中：攻击力　下：行动力） */
@@ -501,7 +504,9 @@ body.build-mode .map-container {
     0 6px 9px rgba(0, 0, 0, 0.22),
     inset 0 1px 0 rgba(255, 236, 190, 0.65);
 }
-/* 米黄内衬板：内缩一圈 + 细棕描边 + 顶部内阴影；内部分上下两行 */
+/* 米黄内衬板：内缩一圈 + 细棕描边 + 顶部内阴影；内部分主行（月日）与副行（元信息）。
+ * 文字与金币数字、姓名牌共用同一套「粗体 + 浅色内衬 + 浅色顶部高光」的光影语言；
+ * 年份 / 星期 / 天数只靠字号、字重、颜色深浅与分隔符形成节奏。 */
 .hud-sign-inner {
   position: absolute;
   inset: 3px;
@@ -517,6 +522,8 @@ body.build-mode .map-container {
   box-shadow:
     inset 0 2px 3px rgba(120, 70, 20, 0.18),
     inset 0 -1px 0 rgba(255, 248, 220, 0.7);
+  font-family: "Arial Black", "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif;
+  text-shadow: 0 1px 0 #FFF4D6, 0 1px 1px rgba(90, 50, 15, 0.18);
 }
 .hud-sign-row {
   display: flex;
@@ -525,43 +532,53 @@ body.build-mode .map-container {
   width: 100%;
   white-space: nowrap;
 }
-.hud-sign-row-top { gap: 4px; }
-.hud-sign-row-bottom { gap: 6px; }
+.hud-sign-row-main { gap: 0; align-items: baseline; }
 
-/* 上行：年（小号副信息，基线略降）+ 月日（大号主信息） */
-.hud-sign-year {
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1;
-  color: #8A5A2B;
-  transform: translateY(2px);
-  letter-spacing: 0.5px;
-}
-.hud-sign-md {
-  font-size: 19px;
+/* 主行：月 / 日 的大数字（视觉主体）+ 上标小单位字 */
+.hud-sign-num {
+  font-size: 20px;
   font-weight: 900;
   line-height: 1;
   color: #4A2A10;
   letter-spacing: 0.5px;
-  text-shadow: 0 1px 0 #FFF4D6, 0 2px 1px rgba(90, 50, 15, 0.22);
 }
-/* 下行：星期为小标签，第 N 天为小号副信息 */
-.hud-sign-week {
-  font-size: 10.5px;
-  font-weight: 900;
-  line-height: 1.35;
-  color: #6B3A12;
-  padding: 0 3px;
-  border: 1px solid #C08636;
-  border-radius: 4px;
-  background: linear-gradient(180deg, #F6DCA8 0%, #EBC582 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 248, 220, 0.8);
-}
-.hud-sign-dayno {
-  font-size: 11px;
+.hud-sign-unit {
+  font-size: 9px;
   font-weight: 800;
   line-height: 1;
   color: #7A4A18;
+  letter-spacing: 0;
+  margin: 0 5px 0 1px;
+  transform: translateY(-7px);
+}
+
+/* 副行：年 / 星期 / 第 N 天 的元信息 —— 用字号、字重、颜色深浅与「·」分隔做排版节奏 */
+.hud-sign-row-meta { gap: 3px; margin-top: 3px; }
+.hud-sign-year {
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  color: #8A5A2B;
+  letter-spacing: 0.5px;
+}
+.hud-sign-week {
+  font-size: 10.5px;
+  font-weight: 900;
+  line-height: 1;
+  color: #5A2E0E;
+  letter-spacing: 0.5px;
+}
+.hud-sign-dot {
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  color: #C08636;
+}
+.hud-sign-dayno {
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  color: #8A5A2B;
   letter-spacing: 0.5px;
 }
 

@@ -6,7 +6,7 @@
 //   │  │ 竖 │  ⚔ 10
 //   │  │ 框 │  ◆◆◆◆◆◆◆◆ 5/8
 //   │  └──余默┘
-//   │  ╭── 主牌：上行「2 年 12 月 28 日」/ 下行「周日 · 第 224 天」──╮   ← 第二段（木框 + 米黄内衬，日期分两行）
+//   │  ╭── 主牌：主行「12月 28日」/ 副行「2 年 · 周日 · 第 224 天」──╮   ← 第二段（木框 + 米黄内衬）
 //   │   ┆（木钉） （木钉）┆
 //   │  ╰── 🪙 999999 ─────╯                        ← 金币胶囊副牌，悬挂在主牌下方
 //   │  (📋)                                          ← 第三段（再往下一点，独立一块）
@@ -132,7 +132,7 @@ export class TopBar {
       attrs: { src: Assets.getIcon('ui', 'player') || 'assets/images/characters/hero.png', alt: '' },
       parent: portrait,
     });
-    // 姓名牌：横向居中压框底（以视觉平衡为准，不强制对齐框右边缘）
+    // 姓名牌：小号浅米底铭牌，压在立绘框右下外沿（右缘大致对齐框右缘、整体略偏下）
     this.nameText = createEl('div', {
       class: ['hud-nameplate'],
       text: '余默',
@@ -181,21 +181,26 @@ export class TopBar {
 
   // ════════════════════════════════════════════════════════════
   // 第二段：双牌结构（§16.7）
-  //   主牌 = 木框 + 米黄内衬，内分两行：上行「年 + 月日」（大号日期），下行「星期 + 第 N 天」（小标签）
+  //   主牌 = 木框 + 米黄内衬：主行「月日」大数字 + 上标单位（视觉主体），副行「年 / 星期 / 第 N 天」小字元信息
   //   副牌 = 主牌下方两根小木钉悬挂的独立胶囊金币铭牌（徽章在左、大号数字在右）
   // ════════════════════════════════════════════════════════════
   _buildSign() {
     const sign = createEl('div', { class: ['hud-sign'], parent: this.left });
 
-    // 主牌：日期（年 / 月日 / 星期 / 第 N 天）
+    // 主牌：日期（主行 = 月日大数字 + 上标单位；副行 = 年 / 星期 / 第 N 天 的元信息）
     const main = createEl('div', { class: ['hud-sign-main'], parent: sign });
     const inner = createEl('div', { class: ['hud-sign-inner'], parent: main });
-    const rowTop = createEl('div', { class: ['hud-sign-row', 'hud-sign-row-top'], parent: inner });
-    this.yearText = createEl('span', { class: ['hud-sign-year'], text: '', parent: rowTop });
-    this.mdText = createEl('span', { class: ['hud-sign-md'], text: '', parent: rowTop });
-    const rowBottom = createEl('div', { class: ['hud-sign-row', 'hud-sign-row-bottom'], parent: inner });
-    this.weekText = createEl('span', { class: ['hud-sign-week'], text: '', parent: rowBottom });
-    this.dayText = createEl('span', { class: ['hud-sign-dayno'], text: '', parent: rowBottom });
+    const rowMain = createEl('div', { class: ['hud-sign-row', 'hud-sign-row-main'], parent: inner });
+    this.monthNum = createEl('span', { class: ['hud-sign-num'], text: '', attrs: { title: '月份' }, parent: rowMain });
+    createEl('span', { class: ['hud-sign-unit'], text: '月', parent: rowMain });
+    this.dayNum = createEl('span', { class: ['hud-sign-num'], text: '', attrs: { title: '日期' }, parent: rowMain });
+    createEl('span', { class: ['hud-sign-unit'], text: '日', parent: rowMain });
+    const rowMeta = createEl('div', { class: ['hud-sign-row', 'hud-sign-row-meta'], parent: inner });
+    this.yearText = createEl('span', { class: ['hud-sign-year'], text: '', parent: rowMeta });
+    createEl('span', { class: ['hud-sign-dot'], text: '·', parent: rowMeta });
+    this.weekText = createEl('span', { class: ['hud-sign-week'], text: '', parent: rowMeta });
+    createEl('span', { class: ['hud-sign-dot'], text: '·', parent: rowMeta });
+    this.dayText = createEl('span', { class: ['hud-sign-dayno'], text: '', parent: rowMeta });
 
     // 两根小木钉（连接主牌与金币副牌）
     const pegs = createEl('div', { class: ['hud-sign-pegs'], parent: sign });
@@ -268,10 +273,11 @@ export class TopBar {
     applyOverload(this.dangerText,   dangerNow,   c.danger);
     applyOverload(this.extremeText,  extremeNow,  c.extreme);
 
-    // 日期体系（§6.1）：年 / 月日 / 星期 / 第 N 天 —— 全部为实时文本节点
+    // 日期体系（§6.1）：月日为主视觉、年/星期/第 N 天为元信息 —— 全部为实时文本节点
     const cal = this.gs.calendar || {};
+    if (this.monthNum) this.monthNum.textContent = cal.month ? `${cal.month}` : '';
+    if (this.dayNum)   this.dayNum.textContent   = cal.dayOfMonth ? `${cal.dayOfMonth}` : '';
     if (this.yearText) this.yearText.textContent = cal.year ? `${cal.year} 年` : '';
-    if (this.mdText)   this.mdText.textContent   = cal.month ? `${cal.month} 月 ${cal.dayOfMonth} 日` : '';
     if (this.weekText) this.weekText.textContent = WEEK_NAMES[(cal.weekday || 0) - 1] || '';
     if (this.dayText)  this.dayText.textContent  = `第 ${this.gs.day} 天`;
     if (this.goldText) this.goldText.textContent = `${p.gold}`;
