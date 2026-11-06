@@ -180,6 +180,12 @@ const taskPanel = new TaskPanel(director); taskPanel.mount();
 const codexPanel = new CodexPanel(director); codexPanel.mount();
 const inputManager = new InputManager(director);   // 不 bind，直接调 _dispatchAction
 
+// 测试用例会多次 new DialogBox（游戏里只有一个）：登记以便逐个清理，
+// 避免上一个弹窗实例残留 visible 影响后续用例的输入门控
+const _dlgRegistry = [];
+const trackDlg = (d) => { _dlgRegistry.push(d); return d; };
+const hideAllDialogs = () => _dlgRegistry.forEach((d) => { if (d.visible) d.hide(); });
+
 // HotBar 预置（镜像 main.js）
 gs.hotbar[0] = { itemId: 'facility_tent' };
 EventBus.emit(GE.BOOT, { gs });
@@ -355,8 +361,10 @@ head_('§16.21/16.22 ShopPanel：悬浮刷新 / 12 格 / ✖ / 金币不足灰�
   EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'shop', tileIdx: shopTile.idx });
   assert(shopPanel.visible === true, 'OPEN(shop) → 进入商店');
   assert(director.openPanels.includes('shop'), 'openPanels 栈含 shop', director.openPanels);
-  assert(shopPanel.refreshBtn && shopPanel.refreshBtn.style.position === 'absolute',
-    '刷新按钮悬浮定位（absolute）', shopPanel.refreshBtn?.style?.position);
+  const stageChildren = shopPanel.gridEl.parentNode.children;
+  assert(shopPanel.refreshBtn.parentNode === shopPanel.gridEl.parentNode
+    && stageChildren.indexOf(shopPanel.refreshBtn) < stageChildren.indexOf(shopPanel.gridEl),
+    '刷新按钮位于第一行第一个商品左侧（同一行、在网格之前）');
   const gridCells = shopPanel.gridEl ? shopPanel.gridEl.children.length : 0;
   assert(gridCells === 12, '商品网格 12 格（4×3）', gridCells);
   const closeBtn = buttonsWithText(shopPanel.root, '✖')[0];
@@ -388,10 +396,10 @@ head_('第 8 批：商店/魔法商店逐项 UI（选项齐全/正方格/留白/
   EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'shop', tileIdx: shopTile.idx });
   assert(shopPanel.visible === true, '新店 OPEN(shop) → 进入');
 
-  // 1) 功能选项与文档完全一致：[售卖][购买] 切换 + 悬浮刷新 + 右下离开 + 右上✖，不多不少
+  // 1) 功能选项与文档完全一致：[购买][售卖] 切换 + 第一行左侧刷新 + 右下离开 + 右上✖，不多不少
   const tabLabels = shopPanel.tabBtns.map((b) => b._text);
-  assert(JSON.stringify(tabLabels) === JSON.stringify(['售卖', '购买']),
-    '切换按钮恰为 [售卖, 购买] 且顺序一致', tabLabels);
+  assert(JSON.stringify(tabLabels) === JSON.stringify(['购买', '售卖']),
+    '切换按钮恰为 [购买, 售卖]（出售/购买互换位置）', tabLabels);
   const refreshText = shopPanel.refreshBtn.children.map((c) => c._text || '').join('');
   assert(refreshText.includes('刷新'), '刷新按钮含「刷新」+ 价格文案', refreshText);
   assert(shopPanel.leaveBtn && shopPanel.leaveBtn._text === '离开', '右下角「离开」大按钮');
@@ -433,10 +441,13 @@ head_('第 8 批：商店/魔法商店逐项 UI（选项齐全/正方格/留白/
   gs.player.gold = goldBackup;
 
   // 5) 售卖 tab：背包格同卡片三要素；不可售物品「售卖」灰化且格上无多余文字
-  const unsellableId = Object.keys(ITEMS).find((id) => !isSellable(id));
+  // 选一个带展示词条且不可售的物品，同时校验词条徽章
+  const unsellableId = 'grimoire_grain_full';
+  assert(!isSellable(unsellableId) && (ITEMS[unsellableId]?.traits || []).length > 0,
+    '前置：词条物品存在且不可售', unsellableId);
   gs.inventory.items.push({ itemId: unsellableId, qty: 1 });
   EventBus.emit(GE.INVENTORY_CHANGE, {});
-  shopPanel.tabBtns[0].click();   // 售卖
+  shopPanel.tabBtns[1].click();   // 售卖
   assert(!hasText(shopPanel.root, '不可售'), '售卖格不显示「不可售」文字（灰化在详情按钮）');
   const targetCell = [...shopPanel.gridEl.children].find((c) => {
     let hit = false;
@@ -447,9 +458,47 @@ head_('第 8 批：商店/魔法商店逐项 UI（选项齐全/正方格/留白/
   targetCell.onclick();
   const sellOk = buttonsWithText(shopPanel.detailEl, '售卖')[0];
   assert(sellOk && sellOk.disabled === true, '不可售物品 → 详情「售卖」灰化');
-  buttonsWithText(shopPanel.root, '✖')[0].click();   // 关弹窗
-  gs.inventory.items = gs.inventory.items.filter((e) => e.itemId !== unsellableId);
-  shopPanel.tabBtns[1].click();   // 回购买
+  const traitBadges = findAll(shopPanel.detailEl, (el) => el.classList && el.classList.contains('trait-badge'));
+  assert(traitBadges.length > 0, '详情显示展示词条徽章（trait-badge）', traitBadges.length);
+
+  // 5.1) 售卖分类栏：与背包同一套分组 + 图标 + 选中态，可筛选（§16.21）
+  const unsellableBackup = gs.inventory.items.filter((e) => e.itemId !== unsellableId);
+  gs.inventory.items = [
+    { itemId: 'item_wheat', qty: 3 },
+    { itemId: unsellableId, qty: 1 },
+  ];
+  EventBus.emit(GE.INVENTORY_CHANGE, {});
+  buttonsWithText(shopPanel.root, '✖')[0].click();   // 关详情弹窗
+  assert(shopPanel.catRailEl && shopPanel.catRailEl.style.display === 'flex', '售卖 tab 显示左侧分类栏');
+  assert(shopPanel.catRailEl.children.length === 8, '分类栏 8 个分组（与背包一致）', shopPanel.catRailEl.children.length);
+  assert(shopPanel.catRailEl.children[0].classList.contains('active'), '默认「总览」选中态');
+  assert(shopPanel.catRailEl.children.filter((c) => c.classList.contains('active')).length === 1,
+    '分类栏选中态唯一');
+  assert(shopPanel.catRailEl.children[5].textContent.includes('产物'), '分类含图标分组：产物');
+
+  shopPanel.catRailEl.children[5].click();   // 产物
+  assert(shopPanel.catRailEl.children[5].classList.contains('active'), '点击分类 → 选中态切换');
+  assert(shopPanel.gridEl.children.length === 1, '产物分类仅显示 1 个可售物品格', shopPanel.gridEl.children.length);
+
+  // 5.2) 售卖数量：- / 输入 / + / 最大，确认才成交；购买无数量选择（§16.21）
+  const goldBeforeQty = gs.player.gold;
+  shopPanel.gridEl.children[0].onclick();
+  const qtyInput = findAll(shopPanel.detailEl, (el) => el.getAttribute('type') === 'number')[0];
+  assert(!!qtyInput && qtyInput.value === '1', '售卖详情含数量输入，默认 1', qtyInput?.value);
+  const plusBtn = buttonsWithText(shopPanel.detailEl, '+')[0];
+  const maxBtn = buttonsWithText(shopPanel.detailEl, '最大')[0];
+  assert(!!plusBtn && !!maxBtn, '数量步进器含 + 与「最大」');
+  plusBtn.click();
+  assert(qtyInput.value === '2', '点击 + → 数量 2');
+  maxBtn.click();
+  assert(qtyInput.value === '3', '点击「最大」→ 数量 3（上限=该堆数量）');
+  buttonsWithText(shopPanel.detailEl, '售卖')[0].click();
+  assert(gs.player.gold === goldBeforeQty + 3 * 2, '一次卖出 3 个小麦 → +6 金币',
+    { before: goldBeforeQty, after: gs.player.gold });
+  gs.inventory.items = unsellableBackup;
+  EventBus.emit(GE.INVENTORY_CHANGE, {});
+  shopPanel.tabBtns[0].click();   // 回购买
+  assert(shopPanel.catRailEl.style.display === 'none', '购买 tab 不显示分类栏');
 
   // 6) 常驻 UI 层级：商店遮罩 5500 之上仍可见可点（§16.21）
   assert(Number(topBar.root.style.zIndex) > 5500, 'TopBar 层级高于商店', topBar.root.style.zIndex);
@@ -457,8 +506,21 @@ head_('第 8 批：商店/魔法商店逐项 UI（选项齐全/正方格/留白/
   assert(Number(hotBar.wrapEl.style.zIndex) > 5500, 'HotBar 层级高于商店', hotBar.wrapEl.style.zIndex);
   assert(Number(settingsPanel.mask.style.zIndex) > 5500, '设置面板层级高于商店（二级嵌套可见）');
 
+  // 6.1) 「离开」二次确认：灰底白字 → 红底白字（不离开）→ 再点才离开；点别处取消
+  assert(shopPanel.leaveBtn.style.color === '#fff' && shopPanel.leaveBtn.style.background === '#9a9488',
+    '离开按钮初始灰底白字');
   shopPanel.leaveBtn.click();
-  assert(shopPanel.visible === false, '「离开」→ 关闭商店');
+  assert(shopPanel.visible === true && shopPanel.leaveBtn._text === '确认离开？',
+    '第一次点击只变红、不离开', shopPanel.leaveBtn._text);
+  assert(shopPanel.leaveBtn.style.background.includes('ff7b7b') && shopPanel.leaveBtn.style.color === '#fff',
+    '第一次点击 → 红底白字');
+  shopPanel.root.dispatchEvent({ type: 'click' });
+  assert(shopPanel.leaveBtn._text === '离开' && shopPanel.leaveBtn.style.background === '#9a9488',
+    '点击别处 → 取消确认、恢复灰底白字');
+  shopPanel.leaveBtn.click();
+  assert(shopPanel.leaveBtn._text === '确认离开？', '再次进入确认态');
+  shopPanel.leaveBtn.click();
+  assert(shopPanel.visible === false, '第二次点击「确认离开」→ 关闭商店');
 
   // 7) 魔法商店：同布局，10 格商品 + 2 空格（§16.22）
   const magicTile = gs.map.outerTiles.find((t) => !t.contentId);
@@ -471,7 +533,9 @@ head_('第 8 批：商店/魔法商店逐项 UI（选项齐全/正方格/留白/
   assert(empties.length === 2, '魔法商店留 2 个空格', empties.length);
   assert(hasText(shopPanel.root, '魔法商人'), '魔法商店商人对话框');
   shopPanel.leaveBtn.click();
-  assert(shopPanel.visible === false, '魔法商店「离开」→ 关闭');
+  assert(shopPanel.visible === true, '魔法商店「离开」第一次点击不关闭');
+  shopPanel.leaveBtn.click();
+  assert(shopPanel.visible === false, '魔法商店「离开」二次确认后关闭');
 }
 
 head_('§16.20 中央接线：开新面板关旧面板 / 开面板退建造');
@@ -895,7 +959,7 @@ head_('第 10 批任务 B：MainMenu 图鉴入口（点击触发状态变化）'
 head_('第 11 批 §16.4：DialogBox 选项两段式 + 数字键等效 + 弹窗期间数字键不抢 HotBar');
 {
   const { DialogBox } = await import('../src/ui/DialogBox.js');
-  const dlg = new DialogBox();
+  const dlg = trackDlg(new DialogBox());
   dlg.mount();
   dlg.confirmFadeMs = 30; // 冒烟加速（文档口径仍为 2 秒，见 CONFIRM_FADE_MS）
   director.dialogBox = dlg; // InputManager 数字键 gating 依赖（镜像 main.js）
@@ -973,7 +1037,7 @@ head_('第 12 批：弹窗连点重入 / ESC 归弹窗 / drop 复位拖拽标记
 {
   const { DialogBox } = await import('../src/ui/DialogBox.js');
   const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
-  const dlg2 = new DialogBox();
+  const dlg2 = trackDlg(new DialogBox());
   dlg2.mount();
   dlg2.confirmFadeMs = 30;
   const prevDlg = director.dialogBox;
@@ -1069,7 +1133,7 @@ head_('第 13 批 波 2：UI 修复验证（门控 / 信息区 / 商店 / 建造
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });
 
   // ── M-02：弹窗打开时 P 不顶替弹窗（§16.10） ──
-  const dlgW2 = new DialogBox();
+  const dlgW2 = trackDlg(new DialogBox());
   dlgW2.mount();
   const prevDlgW2 = director.dialogBox;
   director.dialogBox = dlgW2;
@@ -1156,7 +1220,7 @@ head_('第 13 批 波 2：UI 修复验证（门控 / 信息区 / 商店 / 建造
   teamPanel.helper.hide();
 
   // ── M-08：选项模式放信息区（§16.4） ──
-  const dlgPos = new DialogBox();
+  const dlgPos = trackDlg(new DialogBox());
   dlgPos.mount();
   dlgPos.show({ title: '位置测试', options: [{ label: '甲', onSelect: () => {} }] });
   assert(dlgPos.box.style.right === '20px' && dlgPos.box.style.transform === 'translate(0, -50%)',
@@ -1198,6 +1262,114 @@ head_('第 13 批 波 2：UI 修复验证（门控 / 信息区 / 商店 / 建造
   HookDispatcher.fire('onBlessed', { gs, tileIdx: cornTile.idx });
   assert(!toastsW2.some((t) => t.includes('Phase')), 'L-01：玉米受祝福无残留 Phase 文案');
   EventBus.off(GE.TOAST_SHOW, onToastW2);
+}
+
+// ════════════════════════════════════════════════════════════
+head_('第 14 批：信息区不阻塞快捷键（§16.4）+ 魔法商店先选项后进店（§11.2 / §16.22）');
+{
+  const { DialogBox } = await import('../src/ui/DialogBox.js');
+  const { HookDispatcher } = await import('../src/core/HookDispatcher.js');
+
+  // 干净起点
+  for (const p of ['info', 'inventory', 'role', 'team', 'forge', 'vehicle', 'task', 'codex', 'shop', 'settings']) {
+    EventBus.emit(GE.UI_PANEL_CLOSE, { panel: p });
+  }
+  if (gs.buildMode) BuildSystem.exitBuildMode(gs);
+  // 前序用例的 DialogBox 实例仍订阅 DIALOG_SHOW，可能残留 visible → 全部关闭后再测
+  hideAllDialogs();
+  assert(director.openPanels.length === 0, '前置：面板栈为空', director.openPanels);
+
+  // ── 信息区打开时：WASD / 1~0 / 空格 / Tab 全部可用 ──
+  infoPanel.selectTile(2);
+  assert(infoPanel.visible && director.openPanels.includes('info'), '前置：信息区已打开（栈含 info）', director.openPanels);
+  inputManager.bind();
+
+  gs.uiState.lastMoveAt = 0;
+  gs.player.x = 0;
+  const x0 = gs.player.x;
+  window.dispatchEvent({ type: 'keydown', key: 'd', preventDefault() {} });
+  assert(gs.player.x !== x0, 'T1-1：信息区打开时 WASD 可移动', { x0, x1: gs.player.x });
+  assert(infoPanel.visible, 'T1-2：移动后信息区仍显示（未被误关）');
+
+  let selT1 = null;
+  const onSelT1 = (p) => { selT1 = p; };
+  EventBus.on(GE.HOTBAR_SELECT_SLOT, onSelT1);
+  window.dispatchEvent({ type: 'keydown', key: '1', preventDefault() {} });
+  EventBus.off(GE.HOTBAR_SELECT_SLOT, onSelT1);
+  assert(selT1 && selT1.slotIdx === 0, 'T1-3：信息区打开时数字键 1 可选中快捷栏', selT1);
+
+  gs.player.stamina = 8;
+  gs.player.gold = 10;
+  gs.uiState.blessing = false;
+  const stamina0 = gs.player.stamina;
+  window.dispatchEvent({ type: 'keydown', key: ' ', preventDefault() {} });
+  assert(gs.player.stamina < stamina0 && gs.uiState.blessing === true,
+    'T1-4：信息区打开时空格可祈福（扣行动力并进入祈福演出）', { stamina0, now: gs.player.stamina });
+  gs.uiState.blessing = false; // 清理（本脚本未挂 BlessAnimation，不会自动 commit）
+
+  window.dispatchEvent({ type: 'keydown', key: 'tab', preventDefault() {} });
+  assert(gs.buildMode === true, 'T1-5：信息区打开时 Tab 可进入建造模式');
+  BuildSystem.exitBuildMode(gs);
+
+  // ── ESC：只关信息区，不打开设置 ──
+  infoPanel.selectTile(2);
+  assert(director.openPanels.includes('info'), '前置：ESC 测试前信息区在栈中');
+  window.dispatchEvent({ type: 'keydown', key: 'Escape', preventDefault() {} });
+  assert(infoPanel.visible === false && settingsPanel.visible === false && director.openPanels.length === 0,
+    'T1-6：ESC 只关闭信息区，不打开设置', { stack: director.openPanels });
+
+  // ── 封锁未放松：真模态（背包 / 剧情事件）仍禁止移动 ──
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'inventory' });
+  gs.uiState.lastMoveAt = 0;
+  const xb = gs.player.x;
+  window.dispatchEvent({ type: 'keydown', key: 'd', preventDefault() {} });
+  assert(gs.player.x === xb, 'T1-7：背包（真模态）打开时 WASD 仍被封锁');
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });
+
+  const dlgT1 = trackDlg(new DialogBox());
+  dlgT1.mount();
+  const prevDlgT1 = director.dialogBox;
+  director.dialogBox = dlgT1;
+  dlgT1.show({ title: '封锁校验', options: [{ label: '好', onSelect: () => {} }] });
+  const xd = gs.player.x;
+  window.dispatchEvent({ type: 'keydown', key: 'd', preventDefault() {} });
+  assert(gs.player.x === xd, 'T1-8：剧情/事件弹窗期间 WASD 仍被封锁');
+  dlgT1.hide();
+  director.dialogBox = prevDlgT1;
+  inputManager.unbind();
+
+  // ── 魔法商店：踩格不自动进店，信息区「进入魔法商店」点击进入 ──
+  const magicTile = gs.map.outerTiles[5];
+  magicTile.contentId = 'resource_magic_shop';
+  magicTile.contentState = {};
+  magicTile.dailyFlags = {};
+  magicTile.states = [];
+  HookDispatcher.fire('onEnter', { gs, tileIdx: magicTile.idx });
+  assert(shopPanel.visible === false, 'T2-1：踩魔法商店格不自动打开商店（与普通商店一致）');
+
+  gs.player.x = magicTile.idx;
+  infoPanel.selectTile(magicTile.idx);
+  const magicBtns = buttonsWithText(infoPanel.root, '进入魔法商店');
+  assert(magicBtns.length === 1, 'T2-2：信息区地块内容 tab 有「进入魔法商店」功能选项');
+  magicBtns[0].click();
+  assert(shopPanel.visible === true && shopPanel.kind === 'magic',
+    'T2-3：点击功能选项后才打开魔法商店', { visible: shopPanel.visible, kind: shopPanel.kind });
+
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'shop' });
+  assert(shopPanel.visible === false && !director.openPanels.includes('shop'), 'T2-4：关闭后栈内无魔法商店残留');
+
+  // 同回合再点：提示清晰 + 不残留栈条目
+  const toastsT2 = [];
+  const onToastT2 = (p) => toastsT2.push(String(p.text || ''));
+  EventBus.on(GE.TOAST_SHOW, onToastT2);
+  infoPanel.selectTile(magicTile.idx);
+  buttonsWithText(infoPanel.root, '进入魔法商店')[0].click();
+  await new Promise((r) => setTimeout(r, 0));
+  EventBus.off(GE.TOAST_SHOW, onToastT2);
+  assert(shopPanel.visible === false, 'T2-5：本回合已进过 → 不再打开商店面板');
+  assert(toastsT2.some((t) => t.includes('本回合已离开')), 'T2-6：无法进入时有清晰提示', toastsT2);
+  assert(!director.openPanels.includes('shop') && director.openPanels.length === 0,
+    'T2-7：进入失败不残留面板栈条目（输入不锁死）', director.openPanels);
 }
 
 // ════════════════════════════════════════════════════════════

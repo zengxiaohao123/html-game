@@ -135,7 +135,8 @@ EventBus.on(GE.UI_PANEL_OPEN, onPanel);
 HookDispatcher.fire('onEnter', { gs, tileIdx: 7 });
 HookDispatcher.fire('onEnter', { gs, tileIdx: 7 });
 EventBus.off(GE.UI_PANEL_OPEN, onPanel);
-assert(panelOpens === 2, '同日可多次进入（无每日限次；修复旧实现的每日 flag 误拦截）', panelOpens);
+// §11.2 与普通商店统一：踩格不自动打开，需在信息区功能选项点「进入魔法商店」
+assert(panelOpens === 0, '踩格不再自动打开魔法商店（信息区功能选项进入）', panelOpens);
 
 const e1 = ShopSystem.enterShop(gs, 7);
 assert(e1.ok === true, 'enterShop 正常进入', e1);

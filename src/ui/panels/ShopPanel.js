@@ -2,25 +2,31 @@
 // 商店 / 魔法商店页面（设计文档 v0.5 §16.21 / §16.22，第 8 批 UI 重做）
 //
 // 布局（居中卡片 + 四周留白；暗色遮罩盖地图，不盖顶部 UI 区与底部栏——它们 z-index 更高）：
-//   ┌───────────┬───────────────────────────────┐
-//   │           │              [售卖] [购买]  ✖ │
-//   │  商人立绘  │   ┌────┬────┬────┬────┐       │
-//   │ (33.333%) │ 🔄│ 商品格 4×3（正方形）│      │
-//   │ ┌对话框┐  │ 刷新│ └────┴────┴────┴────┘   │
-//   │ └─────┘  │                        [离开] │
-//   └───────────┴───────────────────────────────┘
-//   🔄刷新 悬浮在立绘右上方（左右两栏交界附近，absolute）。
+//   ┌───────────┬───────────────────────────────────┐
+//   │           │                       [购买] [售卖] ✖ │
+//   │  商人立绘  │ ┌──┬───────────────────────────┐   │
+//   │ (33.333%) │ │🔄│ 商品格 4×3（正方形）        │   │
+//   │ ┌对话框┐  │ │刷新│ ┌────┬────┬────┬────┐     │   │
+//   │ └─────┘  │ │  │ │    │    │    │    │     │   │
+//   │           │ └──┴───────────────────────────┘   │
+//   │           │                        [离开]     │
+//   └───────────┴───────────────────────────────────┘
+//   🔄刷新 按钮紧贴网格左侧，垂直对齐第一行商品。
+//   售卖 tab 在网格左侧再显示分类栏（与背包同一套分组/图标/选中态）。
 //   商品格：正方形 112px、间距统一 10px、网格居中不铺满；已售/魔法商店空位 = 空格。
 //   格内仅三要素：顶部小字名称 / 居中图标 / 右下角金币图标+价格（§16.21，无描述无多余文字）。
 //
-// 行为：购买每格仅 1 件；售卖价 = 物品价值；刷新 4/8/12 每周 3 次（用完灰化）；
-//       周一自动刷新；离店本回合禁入；ESC 先关详情弹窗、再关商店（捕获阶段拦截）。
+// 行为：购买每格仅 1 件、不选数量；售卖可自选数量（−/输入/+/最大）；售卖价 = 物品价值；
+//       详情展示词条徽章（与背包/图鉴共用 trait-badge）；刷新 4/8/12 每周 3 次（用完灰化）；
+//       周一自动刷新；离店本回合禁入；「离开」二次确认（灰底白字 → 红底白字 → 再点才走）；
+//       ESC 先关详情弹窗、再关商店（捕获阶段拦截）。
 
 import { EventBus } from '../../core/EventBus.js';
 import { GE } from '../../core/GameEvents.js';
 import { createEl, qs, iconEl } from '../dom.js';
 import { devLog } from '../../core/Logger.js';
 import { ITEMS } from '../../data/items.js';
+import { renderTraitBadges } from '../TraitBadges.js';
 import {
   SHOP_KINDS, getShop, enterShop, leaveShop, buy, sell,
   refreshShop, manualRefreshCost, refreshLeft, isSellable, effectivePrice,
@@ -28,6 +34,18 @@ import {
 
 /** 商品格网格常量（正方形格子 + 统一间距，冒烟用例按此核对） */
 export const SHOP_GRID = { cols: 4, cell: 112, gap: 10 };
+
+/** 售卖分类栏：与背包（InventoryPanel）同一套分组（tier1/tier2 口径） */
+const SELL_CATS = [
+  { id: 'all', label: '总览', icon: '🎒', match: () => true },
+  { id: 'facility', label: '设施', icon: '🏗️', match: (id) => ITEMS[id]?.tier2 === '设施' },
+  { id: 'resource', label: '资源', icon: '🌾', match: (id) => ITEMS[id]?.tier2 === '资源' },
+  { id: 'skill', label: '技能', icon: '✨', match: (id) => ITEMS[id]?.tier2 === '技能' },
+  { id: 'terrain', label: '地形', icon: '🗺️', match: (id) => ITEMS[id]?.tier1 === '地形' },
+  { id: 'item', label: '产物', icon: '🌱', match: (id) => ITEMS[id]?.tier1 === '产物' },
+  { id: 'consum', label: '道具', icon: '🧪', match: (id) => ITEMS[id]?.tier1 === '道具' },
+  { id: 'misc', label: '杂物', icon: '📦', match: (id) => ITEMS[id]?.tier1 === '杂物' },
+];
 
 /** 商人立绘占位（美术未接入：iconEl 预留 PNG 入口，先回退大号 emoji + 对话框） */
 const MERCHANT = {
@@ -51,11 +69,18 @@ export class ShopPanel {
     this.tab = 'buy';          // 'buy' | 'sell'
     this.visible = false;
     this.gridEl = null;
-    this.gridWrapEl = null;
+    this.gridWrapEl = null;    // 滚动/居中容器（保留旧字段名，冒烟用例引用）
+    this.contentEl = null;
+    this.stageEl = null;       // 刷新按钮 + 商品网格
+    this.catRailEl = null;     // 售卖分类栏（仅售卖 tab 显示）
+    this.sellCat = 0;          // 售卖分类索引（默认总览）
     this.detailEl = null;
     this.refreshBtn = null;
-    this.tabBtns = [];         // [售卖, 购买]
+    this.tabBtns = [];         // [购买, 售卖]
     this.leaveBtn = null;
+    this._leaveArmed = false;  // 「离开」二次确认：首次点击只变红不离开
+    this._sellQty = 1;
+    this._sellMax = 1;
     this._escHandler = null;
   }
 
@@ -74,6 +99,10 @@ export class ShopPanel {
         color: '#3a2e20',
       },
       parent: qs('body'),
+    });
+    // 任意点击（含卡片外遮罩；「离开」按钮自身会 stopPropagation）都取消离开的二次确认
+    this.root.addEventListener('click', () => {
+      if (this._leaveArmed) this._setLeaveArmed(false);
     });
     this._subscribe();
     this._bindEsc();
@@ -138,10 +167,12 @@ export class ShopPanel {
     if (!this.visible) return;
     leaveShop(this.gs, this.tileIdx);
     this.visible = false;
+    this._leaveArmed = false;
     this.root.style.display = 'none';
     this.root.innerHTML = '';
     this.cardEl = null;
     this.detailEl = null;
+    this.stageEl = null;
     this.tileIdx = -1;
     EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'shop' });
     devLog.info('[ShopPanel] close');
@@ -173,7 +204,6 @@ export class ShopPanel {
     this.cardEl = card;
 
     this._renderMerchant(card);
-    this._renderRefreshBtn(card);
 
     // §16.20「右上角 ❌」：先关弹窗，再关商店页面回主界面
     const closeBtn = createEl('button', {
@@ -200,14 +230,36 @@ export class ShopPanel {
     });
     this._renderHeader(right);
 
-    // 网格容器：购买 3 行居中；售卖条目不定 → 顶对齐 + 滚动
-    this.gridWrapEl = createEl('div', {
+    // 内容区：售卖 tab 左侧为分类栏；刷新按钮与商品网格放在同一行
+    this.contentEl = createEl('div', {
       style: {
-        flex: '1', minHeight: '0',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flex: '1', minWidth: '0', minHeight: '0',
+        display: 'flex', gap: '10px',
       },
       parent: right,
     });
+
+    this.catRailEl = createEl('div', {
+      class: ['shop-cat-rail'],
+      style: { display: 'none' },
+      parent: this.contentEl,
+    });
+
+    // 网格容器：购买 3 行居中；售卖条目不定 → 顶对齐 + 滚动
+    this.gridWrapEl = createEl('div', {
+      style: {
+        flex: '1', minWidth: '0', minHeight: '0',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      },
+      parent: this.contentEl,
+    });
+
+    // 刷新按钮 + 商品网格：刷新按钮位于第一行第一个商品的左侧（§16.21 新位置）
+    this.stageEl = createEl('div', {
+      style: { display: 'flex', alignItems: 'flex-start', gap: '10px', flexShrink: '0' },
+      parent: this.gridWrapEl,
+    });
+    this._renderRefreshBtn();
 
     // 正方形格子：固定 112px 列宽 = 行高，间距统一 10px（不随屏幕拉伸）
     this.gridEl = createEl('div', {
@@ -217,7 +269,7 @@ export class ShopPanel {
         gridAutoRows: `${SHOP_GRID.cell}px`,
         gap: `${SHOP_GRID.gap}px`,
       },
-      parent: this.gridWrapEl,
+      parent: this.stageEl,
     });
 
     const foot = createEl('div', {
@@ -228,13 +280,17 @@ export class ShopPanel {
       text: '离开',
       style: {
         padding: '8px 34px', borderRadius: '10px', border: '2px solid #3a3a3a',
-        background: 'linear-gradient(135deg,#ffd5d5,#f3a3a3)', cursor: 'pointer',
-        fontWeight: '800', fontSize: '15px', color: '#5a2020',
+        background: '#9a9488', cursor: 'pointer',
+        fontWeight: '800', fontSize: '15px', color: '#fff',
         boxShadow: '0 3px 8px rgba(0,0,0,0.18)',
       },
       parent: foot,
     });
-    this.leaveBtn.onclick = () => this.close();
+    this.leaveBtn.onclick = (e) => {
+      e?.stopPropagation?.();
+      if (this._leaveArmed) this.close();
+      else this._setLeaveArmed(true);
+    };
 
     this._renderGrid();
   }
@@ -273,19 +329,19 @@ export class ShopPanel {
     createEl('div', { text: m.line, style: { opacity: '0.9' }, parent: dlg });
   }
 
-  /** 刷新按钮：悬浮在立绘右上方（左右两栏交界附近，§16.21）；文案仅「刷新 + 价格」，用完灰化 */
-  _renderRefreshBtn(card) {
+  /** 刷新按钮：位于第一行第一个商品的左侧（§16.21）；文案仅「刷新 + 价格」，用完灰化 */
+  _renderRefreshBtn() {
     this.refreshBtn = createEl('button', {
       style: {
-        position: 'absolute', left: '33.333%', top: '14px',
-        transform: 'translateX(-50%)', zIndex: '10',
+        // 与第一行商品格垂直居中对齐（格高 112 → 下移约 40）
+        alignSelf: 'flex-start', marginTop: '40px', flexShrink: '0',
         display: 'flex', alignItems: 'center', gap: '6px',
         padding: '6px 14px', borderRadius: '999px', cursor: 'pointer',
         border: '2px solid #3a3a3a', background: '#fffbe6',
         fontSize: '13px', fontWeight: '800', color: '#3a2e20', whiteSpace: 'nowrap',
         boxShadow: '0 3px 10px rgba(0,0,0,0.25)',
       },
-      parent: card,
+      parent: this.stageEl,
     });
     this.refreshBtn.onclick = () => {
       const res = refreshShop(this.gs, this.tileIdx);
@@ -294,7 +350,19 @@ export class ShopPanel {
     };
   }
 
-  /** 标题行：右对齐 [售卖][购买] 胶囊切换（§16.21 顺序与文案） */
+  /** 离开按钮二次确认态（§16.21）：灰底白字 ⇄ 红底白字 */
+  _setLeaveArmed(on) {
+    this._leaveArmed = on;
+    if (!this.leaveBtn) return;
+    this.leaveBtn._text = on ? '确认离开？' : '离开';
+    this.leaveBtn.textContent = this.leaveBtn._text;
+    this.leaveBtn.style.background = on
+      ? 'linear-gradient(135deg,#ff7b7b,#d63b3b)'
+      : '#9a9488';
+    this.leaveBtn.style.color = '#fff';
+  }
+
+  /** 标题行：右对齐 [购买][售卖] 胶囊切换（§16.21：两按钮互换位置） */
   _renderHeader(right) {
     const bar = createEl('div', {
       style: {
@@ -305,7 +373,7 @@ export class ShopPanel {
     });
 
     this.tabBtns = [];
-    for (const [key, label] of [['sell', '售卖'], ['buy', '购买']]) {
+    for (const [key, label] of [['buy', '购买'], ['sell', '售卖']]) {
       const active = this.tab === key;
       const btn = createEl('button', {
         text: label,
@@ -350,13 +418,39 @@ export class ShopPanel {
     if (this.tab === 'buy') {
       this.gridWrapEl.style.alignItems = 'center';
       this.gridWrapEl.style.overflowY = 'visible';
+      if (this.catRailEl) this.catRailEl.style.display = 'none';
       this._renderBuyGrid();
     } else {
       this.gridWrapEl.style.alignItems = 'flex-start';
       this.gridWrapEl.style.overflowY = 'auto';
+      if (this.catRailEl) {
+        this.catRailEl.style.display = 'flex';
+        this._renderCatRail();
+      }
       this._renderSellGrid();
     }
     this._renderHeaderState();
+  }
+
+  /** 售卖分类栏：与背包左侧同一套分组 / 图标 / 选中态 */
+  _renderCatRail() {
+    if (!this.catRailEl) return;
+    this.catRailEl.innerHTML = '';
+    SELL_CATS.forEach((cat, i) => {
+      const active = i === this.sellCat;
+      const btn = createEl('button', {
+        class: ['shop-cat-btn', active ? 'active' : ''],
+        attrs: { 'data-cat': cat.id },
+        style: { width: '100%' },
+        parent: this.catRailEl,
+      });
+      createEl('span', { class: ['shop-cat-icon'], text: cat.icon, parent: btn });
+      createEl('span', { class: ['shop-cat-label'], text: cat.label, parent: btn });
+      btn.onclick = () => {
+        this.sellCat = i;
+        this._renderGrid();
+      };
+    });
   }
 
   _cellBase(extra = {}) {
@@ -409,10 +503,12 @@ export class ShopPanel {
   }
 
   _renderSellGrid() {
-    const entries = (this.gs.inventory.items || []).filter((e) => e.qty > 0);
+    const cat = SELL_CATS[this.sellCat] || SELL_CATS[0];
+    const all = (this.gs.inventory.items || []).filter((e) => e.qty > 0);
+    const entries = all.filter((e) => cat.match(e.itemId));
     if (entries.length === 0) {
       createEl('div', {
-        text: '背包是空的',
+        text: all.length === 0 ? '背包是空的' : '该分类下没有物品',
         style: { gridColumn: '1 / -1', padding: '20px', textAlign: 'center', opacity: '0.6' },
         parent: this.gridEl,
       });
@@ -430,15 +526,18 @@ export class ShopPanel {
         mode: 'sell',
         item: { ...def, id: entry.itemId, price },
         value: entry.value,
+        maxQty: entry.qty,
       });
     });
   }
 
   // ────────────────────────────────────────── 详情弹窗
-  _openDetail({ mode, item, slotIdx, value }) {
+  _openDetail({ mode, item, slotIdx, value, maxQty }) {
     this._closeDetail();
     const host = this.cardEl;
     if (!host) return;
+    this._sellQty = 1;
+    this._sellMax = Math.max(1, Number(maxQty) || 1);
 
     const mask = createEl('div', {
       style: {
@@ -472,11 +571,65 @@ export class ShopPanel {
       parent: info,
     });
 
+    // 展示词条徽章：与背包 / 图鉴共用同一个渲染入口与 trait-badge 样式（§16.4）
+    renderTraitBadges(box, ITEMS[item.id]?.traits, { marginBottom: '2px' });
+
     createEl('div', {
       text: (ITEMS[item.id]?.description || item.description || ''),
       style: { fontSize: '12px', lineHeight: '1.55', maxHeight: '108px', overflowY: 'auto', opacity: '0.92', whiteSpace: 'pre-line' },
       parent: box,
     });
+
+    // 售卖数量：- / 输入 / + / 最大；购买不做数量选择（每格仅 1 件，§16.21）
+    if (mode === 'sell') {
+      const qtyRow = createEl('div', {
+        style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' },
+        parent: box,
+      });
+      createEl('span', { text: '出售数量', style: { fontSize: '12.5px', fontWeight: '800' }, parent: qtyRow });
+      const ctrl = createEl('div', { style: { display: 'flex', alignItems: 'center', gap: '4px' }, parent: qtyRow });
+      const qtyInput = createEl('input', {
+        attrs: { type: 'number', min: '1', max: String(this._sellMax), value: '1' },
+        style: {
+          width: '50px', padding: '3px 4px', textAlign: 'center', fontFamily: 'inherit',
+          fontWeight: '800', fontSize: '13px', border: '2px solid #3a3a3a', borderRadius: '6px',
+          background: '#fff', color: '#3a2e20',
+        },
+        parent: ctrl,
+      });
+      const totalEl = createEl('div', {
+        style: { fontSize: '12.5px', fontWeight: '800', color: '#8a5a10', textAlign: 'right' },
+        parent: box,
+      });
+      const clampQty = (n) => Math.min(this._sellMax, Math.max(1, Number.isFinite(n) ? n : 1));
+      const syncQty = () => {
+        qtyInput.value = String(this._sellQty);
+        totalEl.textContent = `合计 🪙 ${(item.price ?? 0) * this._sellQty}`;
+      };
+      const step = (delta) => { this._sellQty = clampQty(this._sellQty + delta); syncQty(); };
+      const mkStep = (text) => {
+        const b = createEl('button', {
+          text,
+          style: {
+            minWidth: '28px', padding: '3px 6px', borderRadius: '6px', border: '2px solid #3a3a3a',
+            background: '#fffbe6', cursor: 'pointer', fontWeight: '800', fontSize: '13px', color: '#3a2e20',
+          },
+          parent: ctrl,
+        });
+        return b;
+      };
+      const minus = mkStep('−');
+      minus.onclick = () => step(-1);
+      qtyInput.oninput = () => {
+        this._sellQty = clampQty(parseInt(qtyInput.value, 10));
+        syncQty();
+      };
+      const plus = mkStep('+');
+      plus.onclick = () => step(1);
+      const maxBtn = mkStep('最大');
+      maxBtn.onclick = () => { this._sellQty = clampQty(this._sellMax); syncQty(); };
+      syncQty();
+    }
 
     const btns = createEl('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: '8px' }, parent: box });
     const cancel = createEl('button', {
@@ -511,7 +664,7 @@ export class ShopPanel {
       ok.onclick = () => {
         const res = mode === 'buy'
           ? buy(this.gs, this.tileIdx, slotIdx)
-          : sell(this.gs, item.id, value !== undefined ? { value } : {});
+          : sell(this.gs, item.id, { ...(value !== undefined ? { value } : {}), qty: this._sellQty });
         if (res.ok) {
           this._closeDetail();
           this._render();

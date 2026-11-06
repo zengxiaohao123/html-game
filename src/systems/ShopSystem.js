@@ -323,25 +323,30 @@ export function buy(gs, tileIdx, slotIdx) {
 }
 
 /**
- * 卖出 1 个物品（价格 = 物品本身价值）
+ * 卖出物品（价格 = 物品本身价值；opts.qty 支持一次卖出多个，默认 1）
  */
 export function sell(gs, itemId, opts = {}) {
+  const qty = Math.max(1, Math.floor(Number(opts.qty) || 1));
   if (!isSellable(itemId)) {
     EventBus.emit(GE.TOAST_SHOW, { text: '🚫 该物品不可出售', duration: 1600 });
     return { ok: false, reason: 'notSellable' };
   }
   const have = InventorySystem.countItem(gs, itemId);
-  if (have < 1) return { ok: false, reason: 'noItem' };
+  if (have < qty) return { ok: false, reason: 'noItem' };
 
-  const removed = InventorySystem.removeItem(gs, itemId, 1, opts.value !== undefined ? { value: opts.value } : {});
-  if (removed < 1) return { ok: false, reason: 'noItem' };
+  const removed = InventorySystem.removeItem(gs, itemId, qty, opts.value !== undefined ? { value: opts.value } : {});
+  if (removed < qty) return { ok: false, reason: 'noItem' };
 
   const value = opts.value ?? ITEMS[itemId]?.value ?? 0;
-  gs.player.gold += value;
-  EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: value });
-  EventBus.emit(GE.TOAST_SHOW, { text: `💰 卖出 ${ITEMS[itemId]?.name || itemId}（+${value}）`, duration: 1500 });
-  devLog.info('[Shop] sell', itemId, 'value=', value);
-  return { ok: true, value };
+  const total = value * qty;
+  gs.player.gold += total;
+  EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: total });
+  EventBus.emit(GE.TOAST_SHOW, {
+    text: `💰 卖出 ${ITEMS[itemId]?.name || itemId}${qty > 1 ? ` ×${qty}` : ''}（+${total}）`,
+    duration: 1500,
+  });
+  devLog.info('[Shop] sell', itemId, 'qty=', qty, 'value=', value);
+  return { ok: true, value, qty, total };
 }
 
 /** 每周一：刷新场上所有商店（外部由 DaySystem 调用） */

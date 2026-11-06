@@ -1202,14 +1202,9 @@ const ResourceMagicShop = {
   internalNote: '每日至多放置 1 个；场上上限 2；首次刷新免费 = 本次进入无论第几次刷新均 0 金币，但正常消耗刷新次数',
 
   register() {
-    // §11.2 进入：踏上【魔法商店】即进入，与商店独立；「离开后本回合不可再进入」由
-    // ShopSystem.enterShop 的 leftAtTurn 检查执行 —— 与商店一致，无每日限次（§11.1 同规则）
-    HookDispatcher.register('onEnter', ({ gs, tileIdx }) => {
-      if (!isMine(gs, tileIdx, this.id)) return;
-      EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'magicShop', tileIdx });
-      devLog.info('[magicShop] onEnter → open magic shop panel, tile', tileIdx);
-    }, this);
-
+    // §11.2 / §16.4 / §16.22：踩格不自动进入魔法商店，与普通商店同一套交互 ——
+    // 由信息区「地块内容」tab 的功能选项「进入魔法商店」点击进入。
+    // 「离开后本回合不可再进入」由 ShopSystem.enterShop 的 leftAtTurn 检查执行。
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
       const tile = gs.map.outerTiles[tileIdx];
       if (!tile || tile.contentId !== this.id) return;

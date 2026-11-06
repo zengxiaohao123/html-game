@@ -63,6 +63,47 @@
   font-weight: 700;
 }
 
+/* ── 商店·售卖分类栏（与背包 tab 同一套分组与选中态） ── */
+.shop-cat-rail {
+  flex-direction: column;
+  gap: 6px;
+  width: 76px;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
+.shop-cat-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border: 2px solid #b8a888;
+  border-radius: 10px;
+  background-color: rgba(255, 255, 255, 0.55);
+  color: #7b6a56;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color 0.12s, color 0.12s;
+}
+
+.shop-cat-btn:hover {
+  background-color: #ffe9a8;
+}
+
+.shop-cat-btn.active {
+  background-color: #f7d674;
+  color: #3a2e20;
+  font-weight: 700;
+}
+
+.shop-cat-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
 /* ── 物品网格（背包 tab 内容） ── */
 .item-grid {
   display: grid;
