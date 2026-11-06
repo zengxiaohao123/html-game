@@ -1,8 +1,9 @@
 // tools/check-text.mjs
 // 玩家可见文案逐字校验：data/*.js 的 description 必须与物品库 / 设计文档原文逐字一致。
-// 同时校验：备注（note）0 外露、显性词条（traits）0 混入正文、语义分行生效。
-// 用法：node tools/check-text.mjs
+// 同时校验：备注（note）0 外露、显性词条（traits）0 混入正文、语义分行生效，
+// 以及 InfoPanel 不另抄一份写死描述（必须取数据层 + pre-line 渲染）。
 
+import { readFileSync } from 'node:fs';
 import { ITEMS } from '../src/data/items.js';
 import { SKILLS, SPIRITS } from '../src/data/characters.js';
 import { TALENTS } from '../src/data/talents.js';
@@ -114,6 +115,35 @@ for (const [label, text] of multiline) {
   checked++;
   if (!text.includes(NL)) errors.push(`[未分行] ${label}`);
 }
+
+// ── 6. InfoPanel 不得另抄写死描述：地形/技能/状态/精灵必须取数据层，且按 \n 渲染 ──
+const infoSrc = readFileSync(new URL('../src/ui/InfoPanel.js', import.meta.url), 'utf8');
+const infoForbidden = [
+  'TERRAIN_DESCRIPTIONS',
+  '无地形：可在此放置设施 / 资源 / 技能',
+  '草地：10 草元素量，生物可啃食，部分设施产出加成',
+  '水面：10 水元素量，不阻碍移动，相邻稻田 +2 稻草',
+  '冰面：10 冰元素量，徒步进入会被迫向前滑行（载具不受影响）',
+];
+for (const s of infoForbidden) {
+  checked++;
+  if (infoSrc.includes(s)) errors.push(`[InfoPanel 写死文案] ${s}`);
+}
+const infoNeeds = [
+  ["from '../data/terrains.js'", 'InfoPanel 未从 terrains.js 取地形数据'],
+  ["from '../data/items.js'", 'InfoPanel 未从 items.js 取词条/显性词条'],
+  ["ITEMS[contentId]?.traits", 'InfoPanel 未接显性词条徽章'],
+];
+for (const [needle, msg] of infoNeeds) {
+  checked++;
+  if (!infoSrc.includes(needle)) errors.push(`[InfoPanel 数据源缺失] ${msg}`);
+}
+checked++;
+const preLineCount = (infoSrc.match(/whiteSpace: 'pre-line'/g) || []).length;
+if (preLineCount < 4) errors.push(`[InfoPanel 未分行] pre-line 仅 ${preLineCount} 处`);
+checked++;
+const splitCount = (infoSrc.match(/\.split\('\\n'\)/g) || []).length;
+if (splitCount < 2) errors.push(`[InfoPanel 未分行] 描述未按 \\n 拆分（仅 ${splitCount} 处）`);
 
 // ── 输出 ──
 if (errors.length) {

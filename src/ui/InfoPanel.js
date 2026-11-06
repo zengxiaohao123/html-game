@@ -28,26 +28,16 @@ import { getCreatureDef } from '../data/creatures.js';
 import { syncPumpkin } from '../systems/PassiveItemSystem.js';
 import { POTIONS } from '../data/potions.js';
 import { getBuff } from '../data/buffs.js';
+import { ITEMS } from '../data/items.js';
+import { getTerrain, normalizeTerrain } from '../data/terrains.js';
 import { createEl, qs, iconEl } from './dom.js';
 
 /** 滑入/滑出 transform（§16.4：面板用 top/bottom 双锚点固定高度，只做横向滑入滑出） */
 const SLIDE_IN_TRANSFORM = 'translate(0, 0)';
 const SLIDE_OUT_TRANSFORM = 'translate(calc(100% + 60px), 0)';
 
-const TERRAIN_DESCRIPTIONS = {
-  terrain_none:      '无地形：可在此放置设施 / 资源 / 技能',
-  terrain_grass:     '草地：10 草元素量，生物可啃食，部分设施产出加成',
-  terrain_water:     '水面：10 水元素量，不阻碍移动，相邻稻田 +2 稻草',
-  terrain_ice:       '冰面：10 冰元素量，徒步进入会被迫向前滑行（载具不受影响）',
-  // 旧 id 别名（兼容旧存档）
-  none:  '无地形：可在此放置设施 / 资源 / 技能',
-  grass: '草地：10 草元素量',
-  water: '水面：10 水元素量',
-  mud:   '无地形',
-};
-
 /** 地形 id 归一化（旧存档里可能是 'none' / 'grass'） */
-const normTerrain = (v) => (!v ? 'terrain_none' : (TERRAIN_DESCRIPTIONS[v] ? (v.startsWith('terrain_') ? v : 'terrain_' + v) : 'terrain_none'));
+const normTerrain = (v) => normalizeTerrain(v);
 
 import { SHOP_KINDS } from '../systems/ShopSystem.js';
 
@@ -311,7 +301,10 @@ export class InfoPanel {
         const sk = SKILLS[contentId];
         iconNode = iconEl('ui', contentId, { def: sk, fallback: sk?.emoji || '⚡', size: '32px' });
         name = sk?.name || contentId;
-        descriptions = sk?.description ? [sk.description] : ['（词条未配置）'];
+        // 描述逐字来自物品库（SKILLS 已引用 ITEMS），按数据里的 \n 分行
+        descriptions = sk?.description
+          ? String(sk.description).split('\n').filter(Boolean)
+          : ['（词条未配置）'];
       } else {
         const group = contentId.startsWith('resource_') ? 'resources' : 'facilities';
         const def = getDef(contentId);
@@ -326,18 +319,30 @@ export class InfoPanel {
           : ['（词条未配置）'];
       }
     } else {
-      // 空地：显示地形（含"无地形"）
+      // 空地：显示地形（含"无地形"），名称与描述逐字来自物品库（terrains.js → ITEMS）
       const tId = normTerrain(tile.terrain);
+      const tDef = getTerrain(tId);
       iconNode = iconEl('terrains', tId, {
         size: '32px',
         fallback: Assets.getEmoji('terrains', tile.terrain || 'terrain_none'),
       });
-      name = (TERRAIN_DESCRIPTIONS[tile.terrain || 'terrain_none'] || '空地').split('：')[0];
-      descriptions = [TERRAIN_DESCRIPTIONS[tile.terrain || 'terrain_none'] || '可在此建造设施'];
+      name = tDef.name;
+      descriptions = [tDef.description];
     }
 
     titleRow.appendChild(iconNode);
     createEl('span', { text: name, parent: titleRow });
+
+    // 显性词条（【永恒】【唯一】等）：与背包/图鉴同一套徽章样式，不混入描述正文
+    const contentTraits = contentId ? (ITEMS[contentId]?.traits || []) : [];
+    if (contentTraits.length) {
+      const traitRow = createEl('div', {
+        class: 'trait-badge-row',
+        style: { marginBottom: '8px' },
+        parent: this.bodyWrap,
+      });
+      contentTraits.forEach((t) => createEl('span', { class: 'trait-badge', text: t, parent: traitRow }));
+    }
 
     // 地形提示
     if (tile.terrain && normTerrain(tile.terrain) !== 'terrain_none') {
@@ -350,7 +355,7 @@ export class InfoPanel {
         fallback: Assets.getEmoji('terrains', tile.terrain),
       }));
       // 第 10 批：显示中文地形名（不再露出原始 id）
-      const tName = (TERRAIN_DESCRIPTIONS[tile.terrain] || '').split('：')[0] || tile.terrain;
+      const tName = getTerrain(tile.terrain).name;
       createEl('span', { text: `地形：${tName}`, parent: tRow });
     }
 
@@ -944,6 +949,7 @@ export class InfoPanel {
               padding: '8px 10px', background: 'rgba(255,255,255,0.8)',
               borderLeft: '3px solid #e8a900', borderRadius: '4px',
               fontSize: '12px', color: '#3a2e20', lineHeight: '1.6', marginBottom: '6px',
+              whiteSpace: 'pre-line',
             },
             text: `${skillObj.emoji} ${skillObj.name}\n${skillObj.description || ''}`,
             parent: this.bodyWrap,
@@ -1100,6 +1106,7 @@ export class InfoPanel {
   _renderStateTab(tile, gs) {
     // 1) 地形属于状态的一种（含"无地形"）
     const tId = normTerrain(tile.terrain);
+    const tDef = getTerrain(tId);
     const terrainRow = createEl('div', { class: ['state-row'], parent: this.bodyWrap });
     terrainRow.appendChild(iconEl('terrains', tId, {
       size: '20px',
@@ -1107,7 +1114,7 @@ export class InfoPanel {
     }));
     createEl('span', {
       class: ['state-name'],
-      text: TERRAIN_DESCRIPTIONS[tile.terrain || 'terrain_none'] || '无地形：可在此放置设施 / 资源 / 技能',
+      text: `${tDef.name}：${tDef.description}`,
       parent: terrainRow,
     });
 
@@ -1135,6 +1142,7 @@ export class InfoPanel {
       }));
       createEl('span', {
         class: ['state-name'],
+        style: { whiteSpace: 'pre-line' },
         text: `${def?.name || p.itemId}：${def?.description || '（无描述）'}`,
         parent: row,
       });
@@ -1196,7 +1204,7 @@ export class InfoPanel {
         ? `（剩 ${b.remainingDays} 天）`
         : (b.remainingTurns !== undefined ? `（剩 ${b.remainingTurns} 回合）` : '');
       createEl('div', {
-        style: { fontSize: '13px', color: '#3a2e20', padding: '4px 0', borderTop: '1px dashed #d4c4a4' },
+        style: { fontSize: '13px', color: '#3a2e20', padding: '4px 0', borderTop: '1px dashed #d4c4a4', whiteSpace: 'pre-line' },
         text: `${def?.emoji || '❓'} ${def?.name || b.id}${remain}：${def?.description || ''}`,
         parent: this.bodyWrap,
       });
@@ -1233,7 +1241,7 @@ export class InfoPanel {
         style: {
           padding: '6px 8px', marginTop: '4px', marginBottom: '8px',
           background: 'rgba(255, 240, 180, 0.6)', borderLeft: '3px solid #e8a900',
-          borderRadius: '4px', fontSize: '12px', color: '#5a4a3a', lineHeight: '1.5',
+          borderRadius: '4px', fontSize: '12px', color: '#5a4a3a', lineHeight: '1.5', whiteSpace: 'pre-line',
         },
         text: `${spiritEmoji} ${spiritName} 的效果：${spirit.description}`,
         parent: this.bodyWrap,
@@ -1548,7 +1556,7 @@ export class InfoPanel {
             ? `（剩 ${b.remainingDays} 天）`
             : (b.remainingTurns !== undefined ? `（剩 ${b.remainingTurns} 回合）` : '');
           createEl('div', {
-            style: { fontSize: '13px', color: '#3a2e20', padding: '4px 0', borderBottom: '1px dashed #d4c4a4' },
+            style: { fontSize: '13px', color: '#3a2e20', padding: '4px 0', borderBottom: '1px dashed #d4c4a4', whiteSpace: 'pre-line' },
             text: `${bDef?.emoji || '❓'} ${bDef?.name || b.id}${remain}：${bDef?.description || ''}`,
             parent: this.bodyWrap,
           });
