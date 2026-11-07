@@ -2,15 +2,18 @@
 // Phase 4 —— 公共 Panel 模板工厂
 // 所有 Panel 的外观严格对齐 InventoryPanel（panel-card + 92vw×86vh + 奶油白 + 关闭按钮 ✖）
 // 避免每个 Panel 自己发明 inline style
+//
+// UI 简化（2026-11）：面板不再渲染页面标题行（「🎒 背包（B）」「🚚 载具」这类文字 + 图标 +
+// 快捷键提示）——玩家不需要被提醒这是哪个页面。关闭按钮 ✖ 浮动在面板右上角（绝对定位、
+// 不参与流式布局），面板外框尺寸保持不变，原本标题行占用的整块垂直空间全部还给内容区。
 
 import { EventBus } from '../../core/EventBus.js';
 import { GE } from '../../core/GameEvents.js';
 import { createEl, qs } from '../dom.js';
 
 /**
- * 创建一个标准 Panel 容器：mask + panel-card + header（标题 + ✖）+ body + ESC 关闭
+ * 创建一个标准 Panel 容器：mask + panel-card + 右上角 ✖ + body（无标题行）+ ESC 关闭
  * @param {object} opts
- *   - title: string          头部大标题（左上）
  *   - panelKey: string       用于 GE.UI_PANEL_CLOSE 的 panel key（'role' | 'team' | 'forge' | ...）
  *   - width: string          默认 'min(92vw, 880px)'
  *   - height: string         默认 'min(86vh, 700px)'
@@ -18,11 +21,10 @@ import { createEl, qs } from '../dom.js';
  *   - onCloseRequest():      可选；✖ / 遮罩点击 / ESC 的关闭请求先交给调用方裁决
  *                            （如二级界面打开时先关二级），不调用则默认直接 hide()
  *   - defaultClose: boolean  默认 true，ESC 关闭 + 遮罩点击关闭
- * @returns {object} { root, bodyEl, show(), hide(), toggle() }
+ * @returns {object} { root, panel, bodyEl, show(), hide(), toggle(), visible }
  */
 export function createStandardPanel(opts = {}) {
   const {
-    title = '未命名面板',
     panelKey = '',
     width = 'min(92vw, 880px)',
     height = 'min(86vh, 700px)',
@@ -46,6 +48,7 @@ export function createStandardPanel(opts = {}) {
     class: ['panel-card'],
     style: {
       width, maxWidth: width, height, maxHeight: height,
+      position: 'relative',
       background: 'linear-gradient(135deg, #fffbf0 0%, #fff3c4 100%)',
       border: '3px solid #3a3a3a',
       borderRadius: '16px',
@@ -58,24 +61,13 @@ export function createStandardPanel(opts = {}) {
     parent: mask,
   });
 
-  // header：左上标题 + 右上 ✖
-  const header = createEl('div', {
-    class: ['inventory-header'],
-    style: {
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      borderBottom: '3px solid #3a3a3a', paddingBottom: '8px', marginBottom: '4px', flexShrink: 0,
-    },
-    parent: panel,
-  });
-  createEl('div', {
-    style: { fontSize: '20px', fontWeight: '800', color: '#3a2e20', letterSpacing: '1px' },
-    text: title, parent: header,
-  });
+  // 右上角 ✖：绝对定位，不占流；内容区（body）因此直接贴到面板顶部，吃满标题行腾出的空间
   const closeBtn = createEl('button', {
     class: ['inventory-close'],
     text: '✖',
-    parent: header,
+    parent: panel,
     style: {
+      position: 'absolute', top: '8px', right: '8px', zIndex: '2',
       width: '34px', height: '34px',
       border: '2px solid #3a3a3a', borderRadius: '8px',
       background: '#fffbe6', cursor: 'pointer',

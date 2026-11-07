@@ -27,7 +27,6 @@ export class TaskPanel {
 
   mount() {
     this.helper = createStandardPanel({
-      title: '📋 任务（J）',
       panelKey: 'task',
       width: 'min(92vw, 720px)',
       height: 'min(86vh, 640px)',
@@ -38,7 +37,8 @@ export class TaskPanel {
 
   _build(body) {
     // ⚠️ 严格 2 tab：日常任务 / 核心任务（第 10 批：统一基准 .tab-bar/.tab-btn，点击即更新高亮）
-    this.tabsRow = createEl('div', { class: ['tab-bar'], parent: body });
+    // 右上角 ✖ 浮在面板角上：tab 条右侧留出按钮宽度，避免首个内容行被遮住 / 点不到
+    this.tabsRow = createEl('div', { class: ['tab-bar'], style: { paddingRight: '44px' }, parent: body });
     this.tabBtns = ['daily', 'core'].map((k) => {
       const label = k === 'daily' ? '🌞 日常任务' : '🏆 核心任务';
       return createEl('button', {

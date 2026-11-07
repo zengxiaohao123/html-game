@@ -39,7 +39,6 @@ export class VehiclePanel {
 
   mount() {
     this.helper = createStandardPanel({
-      title: '🚗 载具（T）',
       panelKey: 'vehicle',
       width: 'min(92vw, 960px)',
       height: 'min(88vh, 720px)',
@@ -53,7 +52,8 @@ export class VehiclePanel {
     this.statusEl = createEl('div', {
       style: {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px 10px',
-        padding: '8px 12px', background: 'rgba(255,255,255,0.62)',
+        // 右上角 ✖ 浮在面板角上：状态行右侧留出按钮宽度，提示文字不被遮挡
+        padding: '8px 44px 8px 12px', background: 'rgba(255,255,255,0.62)',
         border: '2px solid #e6dcc4', borderRadius: '10px', flexShrink: '0',
       },
       parent: body,

@@ -43,7 +43,6 @@ export class CodexPanel {
 
   mount() {
     this.helper = createStandardPanel({
-      title: '📖 图鉴（K）',
       panelKey: 'codex',
       width: 'min(92vw, 900px)',
       height: 'min(86vh, 720px)',
@@ -54,7 +53,8 @@ export class CodexPanel {
 
   _build(body) {
     // tab 切换（第 10 批：统一基准 .tab-bar/.tab-btn，点击即更新高亮）
-    this.tabsRow = createEl('div', { class: ['tab-bar'], parent: body });
+    // 右上角 ✖ 浮在面板角上：tab 条右侧留出按钮宽度，避免首个内容行被遮住 / 点不到
+    this.tabsRow = createEl('div', { class: ['tab-bar'], style: { paddingRight: '44px' }, parent: body });
     this.tabBtns = TABS.map((t) => createEl('button', {
       class: this.activeTab === t.id ? ['tab-btn', 'active'] : ['tab-btn'],
       text: t.label, parent: this.tabsRow,

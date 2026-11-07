@@ -32,7 +32,6 @@ export class RolePanel {
 
   mount() {
     this.helper = createStandardPanel({
-      title: '👤 角色页面（C）',
       panelKey: 'role',
       width: '100vw',   // §16.11：全屏
       height: '100vh',

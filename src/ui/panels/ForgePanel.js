@@ -57,7 +57,6 @@ export class ForgePanel {
 
   mount() {
     this.helper = createStandardPanel({
-      title: '⚒️ 合成（F）',
       panelKey: 'forge',
       width: 'min(92vw, 820px)',
       height: 'min(86vh, 680px)',
@@ -68,7 +67,8 @@ export class ForgePanel {
 
   _build(body) {
     // 顶部 tab
-    this.tabBarEl = createEl('div', { class: 'tab-bar', parent: body });
+    // 右上角 ✖ 浮在面板角上：tab 条右侧留出按钮宽度，避免首个内容行被遮住 / 点不到
+    this.tabBarEl = createEl('div', { class: 'tab-bar', style: { paddingRight: '44px' }, parent: body });
     TABS.forEach((t, i) => {
       this.tabBtns.push(createEl('button', {
         class: ['tab-btn', i === 0 ? 'active' : ''],

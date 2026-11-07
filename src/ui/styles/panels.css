@@ -175,18 +175,6 @@
   gap: 10px;
 }
 
-.inventory-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.inventory-title {
-  font-size: 22px;
-  font-weight: 700;
-  color: #3a2e20;
-}
-
 .inventory-close {
   width: 30px;
   height: 30px;
@@ -862,20 +850,6 @@
   flex-direction: column;
   gap: 6px;
   overflow: hidden;
-}
-
-.inventory-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-shrink: 0;
-  padding: 0 2px;
-}
-
-.inventory-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: #3a2e20;
 }
 
 .inventory-close {

@@ -60,19 +60,9 @@ export class SettingsPanel {
       parent: this.mask,
     });
 
-    // ══ 标题栏 ══
-    createEl('div', {
-      style: {
-        fontSize: '20px',
-        fontWeight: '800',
-        color: '#2a2a2a',
-        textAlign: 'center',
-        marginBottom: '20px',
-        letterSpacing: '2px',
-      },
-      text: '⚙️ 设 置',
-      parent: this.panel,
-    });
+    // 页面标题行已删除（不再提示「⚙️ 设 置」）；关闭入口仍保留：
+    // 底部「✖️ 关 闭」按钮 + 遮罩点击 + ESC（GameDirector.handleESC）
+    // 标题行腾出的高度由存档槽位卡片吸收，面板外框高度保持不变。
 
     // ══ 存档槽位分区标题 ══
     const sectionHeader = createEl('div', {
@@ -176,7 +166,8 @@ export class SettingsPanel {
       const card = createEl('div', {
         style: {
           position: 'relative',
-          padding: '10px 8px',
+          // 原标题行高度（约 44px）分摊到两行槽位卡（每行 +22px），外框高度不变、内容区更宽松
+          padding: '21px 8px',
           background: used ? (isAuto ? '#fff6c0' : 'rgba(255,255,255,0.9)') : '#f0f0f0',
           border: '2px solid ' + (used ? '#b8a888' : '#ccc'),
           borderRadius: '10px',

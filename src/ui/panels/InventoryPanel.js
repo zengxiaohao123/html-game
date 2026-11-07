@@ -62,14 +62,15 @@ export class InventoryPanel {
 
     this.panel = createEl('div', {
       class: ['panel-card', 'inventory-panel'],
+      style: { position: 'relative' },
       parent: this.mask,
     });
 
-    // Header
-    const header = createEl('div', { class: 'inventory-header', parent: this.panel });
-    createEl('div', { class: 'inventory-title', text: '🎒 背包（B）', parent: header });
+    // 右上角 ✖（绝对定位、不占流）：删除标题行后保留唯一关闭控件；
+    // 原本标题行占用的整块高度全部还给 .inv-body（面板外框尺寸不变）
     createEl('button', {
-      class: 'inventory-close', text: '✖', parent: header,
+      class: 'inventory-close', text: '✖', parent: this.panel,
+      style: { position: 'absolute', top: '6px', right: '8px', zIndex: '2' },
       onclick: () => this.hide(),
     });
 

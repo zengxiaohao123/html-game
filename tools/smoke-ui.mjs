@@ -2817,5 +2817,105 @@ head_('§17 UI 通用实时契约：直改数据 → 零额外操作 → 界面�
 }
 
 // ════════════════════════════════════════════════════════════
+// §18 UI 简化：功能页面删除标题行
+//   断言：不再存在标题节点 / 外框尺寸与改动前一致 / 内容区吃满标题行腾出的空间 /
+//         面板仍可正常关闭（✖ 在右上角、ESC、底部关闭按钮）
+// ════════════════════════════════════════════════════════════
+head_('§18 功能页面删除标题行：无标题节点 / 外框不变 / 内容区吃满 / 仍可关闭');
+{
+  // 旧标题文案（含图标与快捷键提示）不得再出现在任何面板里
+  const OLD_TITLES = ['背包（B）', '载具（T）', '编队页面（L）', '角色页面（C）',
+    '任务（J）', '合成（F）', '图鉴（K）', '⚙️ 设 置'];
+  const titleNodesOf = (root) => findAll(root, (el) => (
+    (el._classes && (el._classes.has('inventory-header') || el._classes.has('inventory-title'))
+      || OLD_TITLES.some((t) => (el._text || '').includes(t))
+  )));
+
+  // 先把所有面板关掉，逐页做「打开 → 校验结构 → 点 ✖ 关闭」
+  ['inventory', 'role', 'team', 'forge', 'vehicle', 'task', 'codex', 'settings', 'shop', 'info']
+    .forEach((panel) => EventBus.emit(GE.UI_PANEL_CLOSE, { panel }));
+
+  // 标准面板：尺寸参数与改动前完全一致
+  const STANDARD_PANELS = [
+    ['任务', 'task', () => taskPanel.helper, 'min(92vw, 720px)', 'min(86vh, 640px)'],
+    ['载具', 'vehicle', () => vehiclePanel.helper, 'min(92vw, 960px)', 'min(88vh, 720px)'],
+    ['角色', 'role', () => rolePanel.helper, '100vw', '100vh'],
+    ['编队', 'team', () => teamPanel.helper, '100vw', '100vh'],
+    ['合成', 'forge', () => forgePanel.helper, 'min(92vw, 820px)', 'min(86vh, 680px)'],
+    ['图鉴', 'codex', () => codexPanel.helper, 'min(92vw, 900px)', 'min(86vh, 720px)'],
+  ];
+  for (const [name, key, getHelper, w, h] of STANDARD_PANELS) {
+    EventBus.emit(GE.UI_PANEL_OPEN, { panel: key });
+    const helper = getHelper();
+    assert(helper?.visible === true, `${name}：OPEN 后可见`);
+    assert(titleNodesOf(helper.root).length === 0,
+      `${name}：不存在标题节点（无标题行 / 无快捷键提示）`,
+      titleNodesOf(helper.root).map((el) => el._text || el.className));
+    assert(helper.panel.style.width === w && helper.panel.style.height === h,
+      `${name}：外框尺寸与改动前一致`, { w: helper.panel.style.width, h: helper.panel.style.height });
+    // 内容区：面板只有「✖ + body」两个子节点，✖ 绝对定位不占流 → body 直接贴到面板内边距，
+    // 原本标题行（按钮 34 + 下内边距 8 + 下外边距 4 + 分隔线 3 + 间距 12）占的高度全部归内容区
+    const closeBtn = findAll(helper.panel, (el) => el.tagName === 'BUTTON'
+      && el._classes && el._classes.has('inventory-close'))[0];
+    assert(!!closeBtn && closeBtn.style.position === 'absolute'
+      && closeBtn.style.top === '8px' && closeBtn.style.right === '8px',
+      `${name}：✖ 保留在面板右上角且不占流`, closeBtn && closeBtn.style);
+    const inFlow = helper.panel.children.filter((c) => c !== closeBtn);
+    assert(inFlow.length === 1 && inFlow[0] === helper.bodyEl && helper.bodyEl.style.flex === '1',
+      `${name}：内容区成为唯一在流子节点并 flex:1（顶部无标题占位，高度吃满）`,
+      { children: helper.panel.children.length });
+    closeBtn.click();
+    assert(helper.visible === false, `${name}：点右上角 ✖ 面板正常关闭`);
+  }
+
+  // 背包：自定义 header（.inventory-header / .inventory-title）已删除，✖ 浮动在右上角
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'inventory' });
+  assert(inventoryPanel.visible === true, '背包：OPEN 后可见');
+  assert(titleNodesOf(inventoryPanel.mask).length === 0, '背包：不存在标题节点',
+    titleNodesOf(inventoryPanel.mask).map((el) => el._text || el.className));
+  assert(inventoryPanel.panel.style.width === undefined && inventoryPanel.panel.style.height === undefined,
+    '背包：外框尺寸仍由 .inventory-panel 样式决定（未改动）');
+  const invBody = findAll(inventoryPanel.panel, (el) => el._classes && el._classes.has('inv-body'))[0];
+  const invClose = findAll(inventoryPanel.panel, (el) => el.tagName === 'BUTTON'
+    && el._classes && el._classes.has('inventory-close'))[0];
+  assert(!!invBody && invBody === inventoryPanel.panel.children.find((c) => c !== invClose),
+    '背包：内容区（inv-body）成为唯一在流子节点（标题行高度已归还）');
+  assert(!!invClose && invClose.style.position === 'absolute'
+    && invClose.style.top === '6px' && invClose.style.right === '8px',
+    '背包：✖ 保留在面板右上角且不占流', invClose && invClose.style);
+  invClose.click();
+  assert(inventoryPanel.visible === false, '背包：点右上角 ✖ 面板正常关闭');
+
+  // 设置：标题行已删，宽度/最大高度/内边距不变，腾出的高度由槽位卡吸收（卡片更高）
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'settings' });
+  assert(settingsPanel.visible === true, '设置：OPEN 后可见');
+  assert(titleNodesOf(settingsPanel.panel).length === 0, '设置：不存在标题节点',
+    titleNodesOf(settingsPanel.panel).map((el) => el._text || el.className));
+  assert(settingsPanel.panel.style.width === 'min(680px, 94vw)'
+    && settingsPanel.panel.style.maxHeight === '88vh'
+    && settingsPanel.panel.style.padding === '28px 30px 20px 30px',
+    '设置：外框尺寸与改动前一致',
+    { w: settingsPanel.panel.style.width, h: settingsPanel.panel.style.maxHeight, p: settingsPanel.panel.style.padding });
+  const slotCards = findAll(settingsPanel.slotsGrid, (el) => el.parentNode === settingsPanel.slotsGrid);
+  assert(slotCards.length === 8 && slotCards.every((c) => c.style.padding === '21px 8px'),
+    '设置：内容区（8 张槽位卡）加高以吃满标题行腾出的空间',
+    { cards: slotCards.length, pad: slotCards[0] && slotCards[0].style.padding });
+  const settingsClose = buttonsWithText(settingsPanel.panel, '关 闭')[0];
+  assert(!!settingsClose, '设置：底部「关闭」控件仍存在');
+  settingsClose.click();
+  assert(settingsPanel.visible === false, '设置：底部「关闭」按钮可关闭面板');
+
+  // ESC 关闭：✖/遮罩之外的最后保证（标准面板 helper 注册的 window keydown）
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'task' });
+  assert(taskPanel.helper?.visible === true, '任务：重开后可见（验证 ESC 关闭入口）');
+  window.dispatchEvent({ type: 'keydown', key: 'Escape' });
+  assert(taskPanel.helper?.visible === false, '任务：ESC 仍可关闭面板（玩家不会被困）');
+
+  // 商店：本就没有同形态文字标题（顶部只有 购买/售卖 tab 与右上 ✖），无需改动
+  const shopTexts = findAll(shopPanel.root, (el) => OLD_TITLES.some((t) => (el._text || '').includes(t)));
+  assert(shopTexts.length === 0, '商店：无同形态文字标题（仅 tab 与右上 ✖，不涉及删除）');
+}
+
+// ════════════════════════════════════════════════════════════
 console.log(`\nsmoke-ui 结果：${pass} 通过 / ${fail} 失败（共 ${pass + fail}）`);
 process.exit(fail > 0 ? 1 : 0);

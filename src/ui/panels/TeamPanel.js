@@ -39,7 +39,6 @@ export class TeamPanel {
 
   mount() {
     this.helper = createStandardPanel({
-      title: '👥 编队页面（L）',
       panelKey: 'team',
       width: '100vw',   // §16.12：全屏
       height: '100vh',
