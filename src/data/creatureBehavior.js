@@ -3,11 +3,13 @@
 //
 // 状态机（每只生物独立维护）：
 //   Idle（静止）  stateLeft 倒计时归零 ──► Walk
-//   Walk（行走）  到达 targetPos / 撞栅栏边 / 安全超时 ──► Idle
+//   Walk（行走）  到达 targetPos / 安全超时 ──► 按 chainWalkChance 决定「马上再走一段」或 Idle
 //   Idle 时长按 shortPauseChance 二选一：短停（刚走完喘口气）或长站（真正站着不动）
 //
-// 参考：星露谷放出鸡舍的鸡 —— 白天在舍附近小范围活动，多数时间站着/啄食，
-//       偶尔短距离走一两步再停；本作没有昼夜与天气对生物的影响，故只取「停下是常态」这一观感。
+// 观感目标（2026-11-07 用户裁定）：
+//   生物「大部分时间在缓慢连续地走动，只是偶尔停下来」，而不是「站着为主、偶尔挪一下」。
+//   允许连续多段位移后再停（chainWalkChance）；撞栅栏边必须重选出真正能产生位移的方向，
+//   任何时刻都不允许长时间停在 Walk 状态却零位移（见 systems/CreatureSystem.js stepWalk）。
 //
 // 单位约定：
 //   距离 = 格（1 格边长 = 1 米）
@@ -15,85 +17,119 @@
 //   角度 = 弧度
 //
 // 调参顺序建议：
-//   1) idleMinS / idleMaxS  —— 控制「停多久」，越大越懒
-//   2) walkDistMin/Max      —— 控制「一次走多远」
-//   3) shortPauseChance     —— 控制走完是否只停一下又继续（越大越「碎步」）
-//   4) longWalkChance       —— 控制「偶尔朝随机方向走一段」的频率
+//   1) walkDistMin/Max、longWalkChance —— 控制「一次走多远、走多久」
+//   2) idleMinS / idleMaxS           —— 控制「停下站多久」
+//   3) chainWalkChance               —— 控制「走完是否立刻接下一段（连续移动感）」
+//   4) shortPauseChance              —— 控制「短停 vs 长站」比例
+//   5) maxTurnRate                   —— 转向灵敏度（只影响转弯观感，不影响卡墙安全）
 
 /** 通用默认值（物种未覆盖时使用） */
 export const DEFAULT_BEHAVIOR = Object.freeze({
-  idleMinS: 5,
-  idleMaxS: 12,
-  shortPauseChance: 0.4,
-  shortPauseMinS: 0.4,
-  shortPauseMaxS: 1.2,
-  walkDistMin: 0.25,
-  walkDistMax: 0.8,
-  longWalkChance: 0.12,
-  longWalkDistMin: 1.2,
-  longWalkDistMax: 2.2,
+  idleMinS: 1.6,
+  idleMaxS: 4.4,
+  shortPauseChance: 0.5,
+  shortPauseMinS: 0.45,
+  shortPauseMaxS: 1.3,
+  walkDistMin: 0.5,
+  walkDistMax: 1.1,
+  longWalkChance: 0.3,
+  longWalkDistMin: 1.4,
+  longWalkDistMax: 2.6,
+  chainWalkChance: 0.35,
   walkAngleJitter: 1.0,
   maxTurnRate: 2.0,
   idleTurnChance: 0.3,
   idleTurnMaxRad: 0.6,
   arriveEps: 0.05,
+  // 撞墙后的即时重决策（§2.3）：
+  //   新方向必须保证沿该方向 wallFreeDistance 格内不碰任何一面栅栏，
+  //   wallFreeDistance = max(wallFreeMinDist, wallFreeHorizonS / speedPerTile)。
+  wallFreeHorizonS: 1.5,   // 按当前速度至少能连续走 1.5s 而不撞墙
+  wallFreeMinDist: 0.5,    // 且不少于 0.5 格
+  wallHitIdleChance: 0.22, // 撞墙后二选一：进 Idle 的概率（其余换成可行新方向）
+  wallFailExtraIdleS: 1.5, // 采样不到可行方向时，每次连续失败额外延长的静止秒数（最多叠加 3 次）
+  // 窄栏加成：合法圆心区可用跨度小于 narrowPenRefSpan 时按比例缩短 Idle（下限 minScale），
+  // 保证 1×1 栅栏（跨度 0.5 格）里也「以走为主」而不是站着不动。
+  narrowPenRefSpan: 1.5,
+  narrowPenIdleMinScale: 0.55,
 });
 
-/** 小鸡：体型轻、最活（停得短、走得勤、转向快） */
+/** 小鸡：体型轻、最活（停得最短、走得最勤、转向最快） */
 export const CHICK_BEHAVIOR = Object.freeze({
-  idleMinS: 4,
-  idleMaxS: 9,
+  idleMinS: 1.3,
+  idleMaxS: 3.6,
   shortPauseChance: 0.5,
-  shortPauseMinS: 0.35,
-  shortPauseMaxS: 1.0,
-  walkDistMin: 0.2,
-  walkDistMax: 0.6,
-  longWalkChance: 0.18,
+  shortPauseMinS: 0.4,
+  shortPauseMaxS: 1.2,
+  walkDistMin: 0.4,
+  walkDistMax: 0.9,
+  longWalkChance: 0.25,
   longWalkDistMin: 1.2,
-  longWalkDistMax: 2.2,
+  longWalkDistMax: 2.4,
+  chainWalkChance: 0.3,
   walkAngleJitter: 1.2,
-  maxTurnRate: 3.0,
+  maxTurnRate: 3.2,
   idleTurnChance: 0.45,
   idleTurnMaxRad: 0.9,
   arriveEps: 0.05,
+  wallFreeHorizonS: 1.5,
+  wallFreeMinDist: 0.5,
+  wallHitIdleChance: 0.16,
+  wallFailExtraIdleS: 1.5,
+  narrowPenRefSpan: 1.5,
+  narrowPenIdleMinScale: 0.55,
 });
 
 /** 成鸡：步态更沉、站得更久、转向更慢 */
 export const CHICKEN_BEHAVIOR = Object.freeze({
-  idleMinS: 7,
-  idleMaxS: 16,
-  shortPauseChance: 0.4,
-  shortPauseMinS: 0.5,
-  shortPauseMaxS: 1.5,
-  walkDistMin: 0.25,
-  walkDistMax: 0.8,
-  longWalkChance: 0.12,
+  idleMinS: 2.4,
+  idleMaxS: 6.0,
+  shortPauseChance: 0.45,
+  shortPauseMinS: 0.6,
+  shortPauseMaxS: 1.8,
+  walkDistMin: 0.5,
+  walkDistMax: 1.0,
+  longWalkChance: 0.28,
   longWalkDistMin: 1.5,
   longWalkDistMax: 2.8,
+  chainWalkChance: 0.25,
   walkAngleJitter: 1.0,
-  maxTurnRate: 2.0,
+  maxTurnRate: 2.4,
   idleTurnChance: 0.3,
   idleTurnMaxRad: 0.6,
   arriveEps: 0.05,
+  wallFreeHorizonS: 1.5,
+  wallFreeMinDist: 0.5,
+  wallHitIdleChance: 0.22,
+  wallFailExtraIdleS: 1.5,
+  narrowPenRefSpan: 1.5,
+  narrowPenIdleMinScale: 0.55,
 });
 
 /** 史莱姆：动得最少、走得最短、转向最迟钝 */
 export const SLIME_BEHAVIOR = Object.freeze({
-  idleMinS: 9,
-  idleMaxS: 22,
-  shortPauseChance: 0.22,
-  shortPauseMinS: 0.6,
-  shortPauseMaxS: 1.8,
-  walkDistMin: 0.15,
-  walkDistMax: 0.45,
-  longWalkChance: 0.05,
+  idleMinS: 4.0,
+  idleMaxS: 9.5,
+  shortPauseChance: 0.4,
+  shortPauseMinS: 0.9,
+  shortPauseMaxS: 2.4,
+  walkDistMin: 0.35,
+  walkDistMax: 0.8,
+  longWalkChance: 0.18,
   longWalkDistMin: 1.0,
-  longWalkDistMax: 1.6,
+  longWalkDistMax: 1.8,
+  chainWalkChance: 0.18,
   walkAngleJitter: 0.6,
-  maxTurnRate: 1.1,
+  maxTurnRate: 1.3,
   idleTurnChance: 0.15,
   idleTurnMaxRad: 0.35,
   arriveEps: 0.05,
+  wallFreeHorizonS: 1.5,
+  wallFreeMinDist: 0.5,
+  wallHitIdleChance: 0.3,
+  wallFailExtraIdleS: 1.5,
+  narrowPenRefSpan: 1.5,
+  narrowPenIdleMinScale: 0.55,
 });
 
 /**

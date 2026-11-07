@@ -9,10 +9,13 @@
 // 运动模型（设计文档 §2.3 / §18.3）：
 //   - pos 连续逻辑坐标（判定权威），renderPos 渲染插值位置；
 //   - speedPerTile = 秒/格（3~6 秒/格），dir = 弧度（任意方向）；
-//   - 走走停停状态机（Idle ⇄ Walk）：停下来是常态（长站数秒~十几秒），
-//     行走为短距离踱步，偶尔朝随机方向走一段；所有时长/距离/转向参数见
+//   - 走走停停状态机（Idle ⇄ Walk）：大部分时间连续缓慢走动、偶尔停下；
+//     到达后可按 chainWalkChance 连续走多段再停；所有时长/距离/转向参数见
 //     src/data/creatureBehavior.js（逻辑层不写死数值）；
 //   - 只裁剪栅栏边界（圆心 + 半径不出栅栏），生物之间不碰撞、不分离、允许重叠。
+//   - 撞边安全（2026-11-07）：目标点用射线可达距离（绝不落在界外/不可达），
+//     被墙完全挡住时当步重选「朝合法区内部」的方向并立即产生位移；
+//     任何时刻都不允许停在 Walk 状态却零位移（真被完全挡住则转 Idle）。
 //
 // 容量 & 超载惩罚（§13.2，2026-11-04 裁决）：
 //   友善超载 → 2 天后 友善类收益归 0（wheat/rice/strawberry/pea/henhouse 产蛋）
@@ -258,64 +261,187 @@ function ensureBehaviorState(creature, profile) {
   }
 }
 
+/** 沿 angle 方向在合法矩形内还能走多远（射线到边界的距离；已贴边朝外 → 0） */
+function roomAlong(x, y, angle, inner) {
+  const dx = Math.cos(angle);
+  const dy = Math.sin(angle);
+  let t = Infinity;
+  if (dx > 1e-9) t = Math.min(t, (inner.x1 - x) / dx);
+  else if (dx < -1e-9) t = Math.min(t, (inner.x0 - x) / dx);
+  if (dy > 1e-9) t = Math.min(t, (inner.y1 - y) / dy);
+  else if (dy < -1e-9) t = Math.min(t, (inner.y0 - y) / dy);
+  if (!Number.isFinite(t)) t = 0;
+  return Math.max(0, t);
+}
+
+/** 朝合法区中心的精确方向（从边界出发时，该射线必穿过整个合法区） */
+function towardCenterAngle(creature, inner) {
+  const cx = (inner.x0 + inner.x1) / 2;
+  const cy = (inner.y0 + inner.y1) / 2;
+  const a = Math.atan2(cy - creature.pos.y, cx - creature.pos.x);
+  return Number.isFinite(a) ? normalizeAngle(a) : rand(0, Math.PI * 2);
+}
+
+/** 朝合法区内部的兜底方向（保底带朝内法向分量，不会被墙再次挡住） */
+function inwardAngle(creature, inner) {
+  return normalizeAngle(towardCenterAngle(creature, inner) + rand(-0.35, 0.35));
+}
+
 /**
- * 挑一个行走目标点。
+ * 「撞墙后新方向必须无墙可走的最小距离」（§2.3）：
+ *   max(wallFreeMinDist, wallFreeHorizonS / speedPerTile)
+ * 即「按当前速度至少能连续走 wallFreeHorizonS 秒而不碰到任何一面栅栏」。
+ * @param {object} profile
+ * @param {number} secondsPerTile 秒/格
+ */
+export function wallFreeDistanceOf(profile, secondsPerTile) {
+  const horizonS = Number.isFinite(profile?.wallFreeHorizonS) ? profile.wallFreeHorizonS : 1.5;
+  const minDist = Number.isFinite(profile?.wallFreeMinDist) ? profile.wallFreeMinDist : 0.5;
+  const spt = Number.isFinite(secondsPerTile) && secondsPerTile > 0 ? secondsPerTile : 1;
+  return Math.max(minDist, horizonS / spt);
+}
+
+/**
+ * 撞墙后的即时重决策（在撞墙的同一个逻辑步内调用，二选一由调用方抽取 Idle 概率）：
+ *   - 在任意弧度上采样（先试「朝合法区中心」，再均匀全角度采样），只保留
+ *     「沿该方向至少 wallFreeThreshold 格内不会碰到任何一面栅栏」的方向；
+ *   - 有可行方向 → 返回 { angle, dist }（dist 同时不超过该方向可达距离）；
+ *   - 一个可行方向都没有 → 返回 null（调用方必须进 Idle，不得原地反复尝试）。
+ */
+function decideAfterWallHit(creature, profile, inner) {
+  const threshold = wallFreeDistanceOf(profile, secondsPerTileOf(creature));
+  const want = Math.random() < profile.longWalkChance
+    ? rand(profile.longWalkDistMin, profile.longWalkDistMax)
+    : rand(profile.walkDistMin, profile.walkDistMax);
+
+  // 候选：① 精确朝合法区中心；② 以随机相位均匀铺满 2π（任意弧度，不限上下左右）
+  const candidates = [towardCenterAngle(creature, inner)];
+  const offset = rand(0, Math.PI * 2);
+  const SAMPLES = 24;
+  for (let i = 0; i < SAMPLES; i++) {
+    candidates.push(normalizeAngle(offset + (i / SAMPLES) * Math.PI * 2));
+  }
+
+  const usable = [];
+  for (const angle of candidates) {
+    const room = roomAlong(creature.pos.x, creature.pos.y, angle, inner);
+    if (room < threshold) continue;
+    usable.push({ angle, dist: Math.min(want, room) });
+  }
+  if (usable.length === 0) return null;
+  return usable[Math.floor(rand(0, usable.length)) % usable.length];
+}
+
+/**
+ * 挑一个行走目标点（保证可达、且实际位移 >= minStep）。
  *   常规：沿当前朝向 ± walkAngleJitter 的方向走 walkDist 距离（保持方向连贯）；
  *   远走：longWalkChance 命中时全随机方向 + longWalkDist 距离（「偶尔朝随机方向走一段」）。
- * 目标点夹回栅栏合法区；若贴墙导致走不动，换方向重试。
- * @returns {{x:number, y:number, dist:number}}
+ * 距离取 min(期望距离, 该方向到边界的可达距离)：目标点永远在合法区内、永远可达，
+ * 不会出现「目标点全在界外 / 目标夹到墙上导致实际走不动」。
+ * @returns {{x:number, y:number, dist:number, angle:number}}
  */
 function pickWalkTarget(creature, profile, inner) {
   const isLong = Math.random() < profile.longWalkChance;
-  const dist = isLong
+  const want = isLong
     ? rand(profile.longWalkDistMin, profile.longWalkDistMax)
     : rand(profile.walkDistMin, profile.walkDistMax);
+  // 一步太小会退化成「原地挪一下」，这种方向直接淘汰（合法区最窄 0.5 格，必有可达方向）
+  const minStep = Math.max(profile.arriveEps, 0.15);
   const baseDir = Number.isFinite(creature.dir) ? creature.dir : rand(0, Math.PI * 2);
-  const angle = isLong
-    ? rand(0, Math.PI * 2)
-    : baseDir + (Math.random() * 2 - 1) * profile.walkAngleJitter;
+  const smallJitter = () => baseDir + (Math.random() * 2 - 1) * profile.walkAngleJitter;
 
-  const minMove = Math.max(profile.arriveEps, 0.08);
-  let x = clamp(creature.pos.x + Math.cos(angle) * dist, inner.x0, inner.x1);
-  let y = clamp(creature.pos.y + Math.sin(angle) * dist, inner.y0, inner.y1);
-  if (Math.hypot(x - creature.pos.x, y - creature.pos.y) >= minMove) {
-    return { x, y, dist };
+  // 候选：① 沿当前朝向（保持连贯）；② 偏一点；③ 全随机换向（避免贴墙时只朝一个方向抽签）
+  const candidates = [];
+  candidates.push(isLong ? rand(0, Math.PI * 2) : smallJitter());
+  for (let i = 0; i < 8; i++) candidates.push(rand(0, Math.PI * 2));
+
+  for (const angle of candidates) {
+    const room = roomAlong(creature.pos.x, creature.pos.y, angle, inner);
+    if (room < minStep) continue;
+    const dist = Math.min(want, room);
+    return {
+      x: creature.pos.x + Math.cos(angle) * dist,
+      y: creature.pos.y + Math.sin(angle) * dist,
+      dist,
+      angle,
+    };
   }
 
-  // 贴边且朝墙外：换方向重试（最多 6 次）
-  for (let i = 0; i < 6; i++) {
-    const a = rand(0, Math.PI * 2);
-    const cx = clamp(creature.pos.x + Math.cos(a) * dist, inner.x0, inner.x1);
-    const cy = clamp(creature.pos.y + Math.sin(a) * dist, inner.y0, inner.y1);
-    if (Math.hypot(cx - creature.pos.x, cy - creature.pos.y) >= minMove) {
-      return { x: cx, y: cy, dist };
-    }
-  }
-  // 极小栅栏：指向合法区中心（仍走不动时由到达判定结束本次行走）
-  return { x: (inner.x0 + inner.x1) / 2, y: (inner.y0 + inner.y1) / 2, dist };
+  // 极小栅栏 / 贴角：指向合法区中心（合法区宽度 > minStep 时必定可达）
+  const angle = inwardAngle(creature, inner);
+  const room = roomAlong(creature.pos.x, creature.pos.y, angle, inner);
+  const dist = Math.min(want, Math.max(room, 0));
+  return {
+    x: creature.pos.x + Math.cos(angle) * dist,
+    y: creature.pos.y + Math.sin(angle) * dist,
+    dist,
+    angle,
+  };
+}
+
+/**
+ * 窄栏加成：合法圆心区可用跨度越小，Idle 越短。
+ * 1×1 栅栏跨度只有 0.5 格，若 Idle 仍按大栏时长，观感会退化成「站着不动」；
+ * 这里按 span / narrowPenRefSpan 线性缩短（下限 narrowPenIdleMinScale）。
+ */
+function idleDurationScale(profile, inner) {
+  if (!inner) return 1;
+  const span = Math.min(inner.x1 - inner.x0, inner.y1 - inner.y0);
+  const ref = Number.isFinite(profile.narrowPenRefSpan) && profile.narrowPenRefSpan > 0
+    ? profile.narrowPenRefSpan
+    : 1.5;
+  const minScale = Number.isFinite(profile.narrowPenIdleMinScale)
+    ? profile.narrowPenIdleMinScale
+    : 1;
+  return clamp(span / ref, minScale, 1);
 }
 
 /** 进入长站/短停：真正静止（pos 不动），期间可能小幅转头 */
-function beginIdle(creature, profile) {
+function beginIdle(creature, profile, inner = null) {
   creature.behaviorState = 'idle';
   creature.targetPos = null;
   const isShortPause = Math.random() < profile.shortPauseChance;
-  const duration = isShortPause
+  const duration = (isShortPause
     ? rand(profile.shortPauseMinS, profile.shortPauseMaxS)
-    : rand(profile.idleMinS, profile.idleMaxS);
+    : rand(profile.idleMinS, profile.idleMaxS)) * idleDurationScale(profile, inner);
   creature.stateLeft = duration;
   // 静止期间安排一次小幅转头（不产生位移；圆形不渲染朝向，因此无 DOM 更新）
   creature.idleTurnLeft = rand(0.6, Math.min(3.0, Math.max(0.8, duration)));
 }
 
-/** 进入行走：挑目标点并设置安全超时（撞栅栏边会提前结束） */
+/** 进入行走：挑目标点并设置安全超时（撞边由 stepWalk 当步纠正，不会提前空转） */
 function beginWalk(gs, creature, profile) {
   const inner = fenceInner(gs, creatureRadius(creature));
   const pick = pickWalkTarget(creature, profile, inner);
   creature.behaviorState = 'walk';
   creature.targetPos = { x: pick.x, y: pick.y };
-  creature.stateLeft = pick.dist * secondsPerTileOf(creature) * 1.5 + 1;
+  creature.stateLeft = pick.dist * secondsPerTileOf(creature) * 1.6 + 0.8;
   creature.idleTurnLeft = 0;
+}
+
+/**
+ * 结束一段行走：按 chainWalkChance 立刻接下一段（连续移动观感），否则进 Idle。
+ * 一「停」之前平均连续走 1/(1-chainWalkChance) 段。
+ */
+function finishWalk(gs, creature, profile) {
+  const chain = Number.isFinite(profile.chainWalkChance) ? profile.chainWalkChance : 0;
+  if (chain > 0 && Math.random() < chain) {
+    beginWalk(gs, creature, profile);
+    return;
+  }
+  beginIdle(creature, profile, fenceInner(gs, creatureRadius(creature)));
+}
+
+/** 沿当前 dir 走一步（夹回合法区）；返回是否撞边与本次实际位移 */
+function moveAlongDir(creature, inner, dist) {
+  const bx = creature.pos.x;
+  const by = creature.pos.y;
+  const nx = bx + Math.cos(creature.dir) * dist;
+  const ny = by + Math.sin(creature.dir) * dist;
+  creature.pos.x = clamp(nx, inner.x0, inner.x1);
+  creature.pos.y = clamp(ny, inner.y0, inner.y1);
+  const hit = nx < inner.x0 || nx > inner.x1 || ny < inner.y0 || ny > inner.y1;
+  return { hit, moved: Math.hypot(creature.pos.x - bx, creature.pos.y - by) };
 }
 
 /** Idle 一步：倒计时 + 偶尔小幅转头；归零后出发 */
@@ -336,9 +462,23 @@ function stepIdle(gs, creature, profile, dtSec) {
   if (creature.stateLeft <= 0) beginWalk(gs, creature, profile);
 }
 
+/** 位移后的地块归属 / 啃草结算（返回是否触发地块内容变化） */
+function applyTerrainChange(gs, creature, beforeX, beforeY) {
+  if (Math.abs(creature.pos.x - beforeX) + Math.abs(creature.pos.y - beforeY) <= 0) return false;
+  const newTile = syncPrimaryFenceTile(gs, creature);
+  return !!(newTile && consumeGrassOnEnter(gs, creature, newTile));
+}
+
 /**
  * Walk 一步：平滑转向 + 连续积分（速度 = speedPerTile 秒/格）。
- * 结束条件：到达目标 / 撞栅栏边 / 安全超时 → 回到 Idle。
+ * 结束条件：到达目标 / 安全超时 → finishWalk（可能立刻接下一段行走）。
+ * 撞墙策略（2026-11-07 修复卡墙 + 用户补充裁定）：
+ *   一旦撞到**任何一面**栅栏，就在**同一个逻辑步内立即重决策一次**（不先走完当前段、
+ *   不继续尝试原方向），二选一：
+ *     ① Idle —— 按 idle 参数正常停一会儿（无可行方向时必选此项，并额外延长一点静止）；
+ *     ② 换向 —— 新方向必须满足「沿该方向 wallFreeThreshold 格内不碰任何一面栅栏」，
+ *        并在同一逻辑步内沿新方向产生真实位移。
+ *   撞墙那一刻 pos 已被夹回合法区，圆心绝不穿出栅栏；绝不允许 Walk 状态零位移。
  * @returns {boolean} 是否因进入草格而触发地块内容变化
  */
 function stepWalk(gs, creature, profile, dtSec) {
@@ -350,12 +490,15 @@ function stepWalk(gs, creature, profile, dtSec) {
   const toTargetX = creature.targetPos.x - creature.pos.x;
   const toTargetY = creature.targetPos.y - creature.pos.y;
   if (Math.hypot(toTargetX, toTargetY) <= profile.arriveEps) {
-    beginIdle(creature, profile);
-    return false;
+    finishWalk(gs, creature, profile);
+    // 连续行走：同一逻辑步内直接开始下一段，不留下「Walk 状态零位移」的空步
+    if (creature.behaviorState !== 'walk' || !creature.targetPos) return false;
   }
 
   // 平滑转向（角速度上限 → 不会瞬间反向抖动）
-  const desired = Math.atan2(toTargetY, toTargetX);
+  const nextTargetX = creature.targetPos.x - creature.pos.x;
+  const nextTargetY = creature.targetPos.y - creature.pos.y;
+  const desired = Math.atan2(nextTargetY, nextTargetX);
   creature.dir = turnToward(
     Number.isFinite(creature.dir) ? creature.dir : desired,
     desired,
@@ -366,27 +509,55 @@ function stepWalk(gs, creature, profile, dtSec) {
   const inner = fenceInner(gs, creatureRadius(creature));
   const beforeX = creature.pos.x;
   const beforeY = creature.pos.y;
-  const rawX = beforeX + Math.cos(creature.dir) * dist;
-  const rawY = beforeY + Math.sin(creature.dir) * dist;
-  creature.pos.x = clamp(rawX, inner.x0, inner.x1);
-  creature.pos.y = clamp(rawY, inner.y0, inner.y1);
-  creature.stateLeft -= dtSec;
+  const step = moveAlongDir(creature, inner, dist);
 
-  // 撞到栅栏边（本次位移本会越界）→ 原地停下，回到 Idle（下次重新挑方向）
-  const hitWall = rawX < inner.x0 || rawX > inner.x1 || rawY < inner.y0 || rawY > inner.y1;
+  let ended = false;
 
-  let changed = false;
-  if (Math.abs(creature.pos.x - beforeX) + Math.abs(creature.pos.y - beforeY) > 0) {
-    const newTile = syncPrimaryFenceTile(gs, creature);
-    if (newTile && consumeGrassOnEnter(gs, creature, newTile)) changed = true;
+  if (step.hit) {
+    // ── 撞墙：同一逻辑步内立即重决策（Idle 或 换向） ──
+    creature.wallHits = (creature.wallHits || 0) + 1;
+    const decision = decideAfterWallHit(creature, profile, inner);
+    const idleChance = Number.isFinite(profile.wallHitIdleChance) ? profile.wallHitIdleChance : 0;
+
+    if (!decision || Math.random() < idleChance) {
+      if (!decision) {
+        // 采样不到任何「短时间不再撞墙」的方向 → 兜底 Idle，并随连续失败次数延长静止
+        creature.wallFailStreak = (creature.wallFailStreak || 0) + 1;
+      } else {
+        creature.wallFailStreak = 0;
+      }
+      creature.lastWallDecision = 'idle';
+      beginIdle(creature, profile, inner);
+      if (!decision) {
+        const extraS = Number.isFinite(profile.wallFailExtraIdleS) ? profile.wallFailExtraIdleS : 0;
+        creature.stateLeft += Math.min(3, creature.wallFailStreak) * extraS;
+      }
+      ended = true;
+    } else {
+      // 换向：新方向已通过「wallFreeThreshold 格内不碰任何一面栅栏」预测校验
+      creature.wallFailStreak = 0;
+      creature.lastWallDecision = 'walk';
+      creature.dir = decision.angle;
+      creature.targetPos = {
+        x: creature.pos.x + Math.cos(decision.angle) * decision.dist,
+        y: creature.pos.y + Math.sin(decision.angle) * decision.dist,
+      };
+      creature.stateLeft = decision.dist * secondsPerTileOf(creature) * 1.6 + 0.8;
+      // 同一逻辑步内沿新方向继续位移（保证撞墙步也不出现「Walk 零位移」）
+      moveAlongDir(creature, inner, dist);
+    }
   }
+
+  creature.stateLeft -= dtSec;
+  const changed = applyTerrainChange(gs, creature, beforeX, beforeY);
+  if (ended) return changed;
 
   const arrived = Math.hypot(
     creature.targetPos.x - creature.pos.x,
     creature.targetPos.y - creature.pos.y,
   ) <= profile.arriveEps;
-  if (hitWall || arrived || creature.stateLeft <= 0) {
-    beginIdle(creature, profile);
+  if (arrived || creature.stateLeft <= 0) {
+    finishWalk(gs, creature, profile);
   }
   return changed;
 }
@@ -701,7 +872,7 @@ function growUpChick(gs, chick) {
     chick.speedPerTile = adultDef.speedPerTile;
   }
   // 行为参数按 kind 运行期查表（kind 已变为 chicken），这里重置状态并错峰长站
-  beginIdle(chick, getBehaviorProfile('chicken'));
+  beginIdle(chick, getBehaviorProfile('chicken'), fenceInner(gs, creatureRadius(chick)));
   // 半径 1/6 → 0.25 后圆可能越界：把圆心夹回栅栏合法区域（遗留问题本轮修掉）
   clampCreatureToFence(gs, chick);
 }

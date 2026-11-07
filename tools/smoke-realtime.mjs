@@ -184,8 +184,15 @@ head('4. 边界裁剪：圆心 + 半径不出栅栏（pos 与 renderPos 都夹�
   const gs = mkMap(5); // 栅栏 [1,4]²，chicken r=0.25 → 合法圆心 [1.25,3.75]
   const c = addStraightCreature(gs, { pos: { x: 3.9, y: 2.5 }, dir: 0, speed: 3 });
   const clock = new RealtimeClock(() => gs);
-  clock.advance(200); // 一步 0.0667 格 → 越界被夹到 3.75
-  check(c.pos.x === 3.75, '右边界一步内被夹回 x=3.75（圆心+半径=4）', c.pos.x);
+  clock.advance(200); // 一步 0.0667 格 → 越界立刻被夹回；撞墙当步会立即重决策
+  check(c.pos.x <= 3.75 + 1e-9, '右边界一步内被夹回（圆心+半径不超出 x=4）', c.pos.x);
+  check(c.pos.x >= 1.25 - 1e-9 && c.pos.y >= 1.25 - 1e-9 && c.pos.y <= 3.75 + 1e-9,
+    '撞墙步圆心落在合法区内（不穿出栅栏）', c.pos);
+  if (c.lastWallDecision === 'walk') {
+    check(c.pos.x < 3.75 - 1e-9, '换向重决策在同一逻辑步内已产生向内的真实位移', c.pos.x);
+  } else {
+    check(c.pos.x === 3.75, '选择 Idle 时圆心停回边界（不穿墙、零位移属合法停机）', c.pos.x);
+  }
 
   const gs2 = mkMap(5);
   const c2 = addStraightCreature(gs2, { pos: { x: 1.3, y: 1.3 }, dir: Math.PI, speed: 3 });
