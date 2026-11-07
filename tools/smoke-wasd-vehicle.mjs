@@ -1,11 +1,10 @@
 // tools/smoke-wasd-vehicle.mjs —— WASD 走 1 格的载具判定回归测试
 //
 // 设计文档 v0.5 §7「WASD 在载具允许时等价于使用载具」：
-//   装载载具后，若载具规则允许落到身边 1 格，WASD 这 1 格按载具移动结算：
-//     - 消耗 1 次载具使用次数；
-//     - 走载具统一流程（最短模拟路径 1 格、效果层只结算终点）；
-//     - 发 MOVE { byVehicle:true } → 触发载具联动（连携技【移形】入队）。
-//   未装载 / 载具不允许该格 / 次数耗尽已卸下 → 徒步语义：不扣次数、不触发载具联动。
+//   未装备载具            → WASD 按徒步跋涉正常走；
+//   装备载具且允许这 1 格 → 按载具移动结算（次数 -1、只结算终点、MOVE byVehicle → 移形联动）；
+//   装备载具但不允许这格  → 本次 WASD 整体拦截：不移动、不扣行动力、不推进回合、不记冷却、
+//                          不扣次数、不卸下载具、无任何提示/事件/钩子。
 //
 // 用法：node tools/smoke-wasd-vehicle.mjs
 
@@ -32,7 +31,18 @@ const head = (m) => console.log('\n— ' + m + ' —');
 const SHIFT_SKILL_ID = 'skill_link_shift';
 const SHIFT_TILE_IDX = 3;
 
-// 记录最近一次 MOVE 事件（校验 byVehicle / 路径长度）
+// 事件 / 钩子观测器（校验「无事件广播、无联动」）
+const seen = { move: [], toast: [], blocked: [], hooks: [] };
+EventBus.on(GE.MOVE, (p) => seen.move.push(p));
+EventBus.on(GE.TOAST_SHOW, (p) => seen.toast.push(p));
+EventBus.on(GE.MOVE_BLOCKED, (p) => seen.blocked.push(p));
+HookDispatcher.register('onPass', ({ tileIdx }) => seen.hooks.push(`pass:${tileIdx}`));
+HookDispatcher.register('onEnter', ({ tileIdx }) => seen.hooks.push(`enter:${tileIdx}`));
+HookDispatcher.register('onMoveEnd', ({ distance }) => seen.hooks.push(`moveEnd:${distance}`));
+const resetSeen = () => {
+  seen.move.length = 0; seen.toast.length = 0; seen.blocked.length = 0; seen.hooks.length = 0;
+  lastMove = null;
+};
 let lastMove = null;
 EventBus.on(GE.MOVE, (p) => { lastMove = p; });
 
@@ -62,7 +72,7 @@ function fresh() {
   gs.team.dailyDistanceMoved = 0;
   gs.creatures.length = 0;
   gs.uiState.lastMoveAt = 0;
-  lastMove = null;
+  resetSeen();
   director.gs = gs;
   return gs;
 }
@@ -83,6 +93,30 @@ const queueHasShift = (gs) => gs.linkSkillQueue.some(
   (e) => e.skillId === SHIFT_SKILL_ID && e.key === `${SHIFT_TILE_IDX}|${SHIFT_SKILL_ID}`,
 );
 const resetCooldown = (gs) => { gs.uiState.lastMoveAt = 0; };
+
+/** 状态快照（用于「整体拦截」时逐项比对不变） */
+const snapshot = (gs) => JSON.stringify({
+  x: gs.player.x,
+  stamina: gs.player.stamina,
+  turn: gs.turn,
+  dailyDistanceMoved: gs.team.dailyDistanceMoved,
+  lastMoveAt: gs.uiState.lastMoveAt,
+  queueLen: gs.linkSkillQueue.length,
+  current: gs.vehicle.current,
+  available: gs.vehicle.available,
+  visited: gs.player.visitedTodayIdx,
+});
+
+/** 断言一次 WASD 被整体拦截（位置/数值/载具/事件全部不变） */
+function assertBlocked(gs, before, dest, label) {
+  assert(dest === null, `${label}：director.move 返回 null`, dest);
+  assert(snapshot(gs) === before, `${label}：位置/行动力/回合/次数/装备/冷却全不变`, snapshot(gs));
+  assert(seen.move.length === 0, `${label}：无 GE.MOVE 广播`, seen.move.length);
+  assert(seen.toast.length === 0, `${label}：无 Toast 提示`, seen.toast.length);
+  assert(seen.blocked.length === 0, `${label}：无 MOVE_BLOCKED 广播`, seen.blocked.length);
+  assert(seen.hooks.length === 0, `${label}：无任何移动钩子`, seen.hooks);
+  assert(!queueHasShift(gs), `${label}：未解锁移形`, gs.linkSkillQueue);
+}
 
 // ── 1. 载具允许这 1 格：WASD 按「使用载具」结算 ──
 head('载具允许 1 格：WASD → 次数 -1 + 移形解锁');
@@ -105,13 +139,15 @@ head('载具允许 1 格：WASD → 次数 -1 + 移形解锁');
   assert(gs.turn === turnBefore + 1, '载具移动只推进 1 回合', [turnBefore, gs.turn]);
   assert(gs.team.dailyDistanceMoved === 1, '移形今日移动距离 +1', gs.team.dailyDistanceMoved);
   assert(gs.player.stamina === staminaBefore - 1, '载具移动照常扣 1 行动力', gs.player.stamina);
+  assert(gs.uiState.lastMoveAt > 0, '载具移动记录移动冷却', gs.uiState.lastMoveAt);
 }
 
-// ── 2. 无载具：WASD 徒步，不触发载具联动 ──
-head('无载具（徒步）：WASD 不扣次数、不解锁移形');
+// ── 2. 无载具：WASD 徒步正常移动 ──
+head('无载具（徒步）：正常移动、正常扣行动力与回合');
 {
   const gs = fresh();
   placeShift(gs);
+  const staminaBefore = gs.player.stamina;
   const turnBefore = gs.turn;
   const dest = director.move('right');
 
@@ -121,29 +157,50 @@ head('无载具（徒步）：WASD 不扣次数、不解锁移形');
   assert(!lastMove?.byVehicle, 'MOVE 事件不带 byVehicle', lastMove);
   assert(lastMove?.distance === 1, '徒步路径长度 = 1', lastMove?.distance);
   assert(gs.turn === turnBefore + 1, '徒步只推进 1 回合', [turnBefore, gs.turn]);
+  assert(gs.player.stamina === staminaBefore - 1, '徒步扣 1 行动力', gs.player.stamina);
   assert(gs.team.dailyDistanceMoved === 1, '徒步同样累计移形距离', gs.team.dailyDistanceMoved);
 }
 
-// ── 3. 载具不允许该格：按徒步处理、不扣次数、不解锁 ──
-head('载具不允许该格：回落徒步语义');
+// ── 3. 载具不允许（地形/落点限制）：整体拦截 ──
+head('地形/落点限制（拖拉机 landFilter）：整键拦截');
 {
   const gs = fresh();
   placeShift(gs);
   // 拖拉机：line + landFilter tier2=设施；idx 1 是空地 → 载具不允许落该格
-  equip(gs, 'vehicle_tractor', 1);
-  const turnBefore = gs.turn;
+  equip(gs, 'vehicle_tractor', 2);
+  resetSeen();
+  const before = snapshot(gs);
   const dest = director.move('right');
-
-  assert(dest === 1 && gs.player.x === 1, '按徒步落到 idx 1', gs.player.x);
-  assert(gs.vehicle.current?.usageLeft === 1, '未扣载具次数', gs.vehicle.current?.usageLeft);
-  assert(!queueHasShift(gs), '未触发移形', gs.linkSkillQueue);
-  assert(!lastMove?.byVehicle, 'MOVE 事件不带 byVehicle', lastMove);
-  assert(gs.turn === turnBefore + 1, '徒步只推进 1 回合', [turnBefore, gs.turn]);
-  assert(gs.team.dailyDistanceMoved === 1, '徒步累计移形距离 +1', gs.team.dailyDistanceMoved);
+  assertBlocked(gs, before, dest, '拖拉机落在空地');
 }
 
-// ── 4. 次数耗尽：再次 WASD 回到徒步语义 ──
-head('次数耗尽后：WASD 不再扣次数、不再解锁');
+// ── 4. 载具不允许（边界/射程无合法落点）：整体拦截 ──
+head('方向越界（无相邻格）：整键拦截');
+{
+  const gs = fresh();
+  placeShift(gs);
+  gs.player.x = 2; // 右上：再往右越界，没有相邻外圈格
+  equip(gs, 'vehicle_wheel', 2); // 方向型，射程 2
+  resetSeen();
+  const before = snapshot(gs);
+  const dest = director.move('right');
+  assertBlocked(gs, before, dest, '轮子朝边界');
+}
+
+// ── 5. 随机型载具（momo 图腾）不接受 WASD 指定落点：整体拦截 ──
+head('随机型载具不接受 WASD 指定目标：整键拦截');
+{
+  const gs = fresh();
+  placeShift(gs);
+  equip(gs, 'vehicle_totem_momo', 1);
+  resetSeen();
+  const before = snapshot(gs);
+  const dest = director.move('right');
+  assertBlocked(gs, before, dest, 'momo 图腾');
+}
+
+// ── 6. 次数耗尽：再次 WASD 回到徒步语义（无载具）──
+head('次数耗尽后：WASD 回到徒步语义');
 {
   const gs = fresh();
   placeShift(gs);
@@ -152,11 +209,13 @@ head('次数耗尽后：WASD 不再扣次数、不再解锁');
   director.move('right'); // 载具移动 → 次数 -1 → 自动卸下
   assert(gs.player.x === 1 && gs.vehicle.current === null, '用完 1 次自动卸下、落到 idx 1',
     [gs.player.x, gs.vehicle.current]);
-  assert(queueHasShift(gs), '本次载具移动仍解锁移形（剩余次数此前未耗尽）', gs.linkSkillQueue);
+  assert(queueHasShift(gs), '本次载具移动仍解锁移形（次数此前未耗尽）', gs.linkSkillQueue);
 
   // 清空本次窗口与冷却，再按一次 WASD，验证纯徒步语义
   gs.linkSkillQueue.length = 0;
   resetCooldown(gs);
+  resetSeen();
+  const staminaBefore = gs.player.stamina;
   const turnBefore = gs.turn;
   const dest = director.move('right');
 
@@ -166,34 +225,19 @@ head('次数耗尽后：WASD 不再扣次数、不再解锁');
   assert(!queueHasShift(gs), '次数耗尽后不再解锁移形', gs.linkSkillQueue);
   assert(!lastMove?.byVehicle, 'MOVE 事件不带 byVehicle', lastMove);
   assert(gs.turn === turnBefore + 1, '徒步只推进 1 回合', [turnBefore, gs.turn]);
+  assert(gs.player.stamina === staminaBefore - 1, '徒步扣 1 行动力', gs.player.stamina);
 }
 
-// ── 5. 随机型载具（momo 图腾）：WASD 不指定落点，按徒步处理 ──
-head('随机型载具不接受 WASD 指定目标');
-{
-  const gs = fresh();
-  placeShift(gs);
-  equip(gs, 'vehicle_totem_momo', 1);
-  const dest = director.move('right');
-
-  assert(dest === 1 && gs.player.x === 1, '按徒步落到 idx 1', gs.player.x);
-  assert(gs.vehicle.current?.usageLeft === 1, '未扣随机载具次数', gs.vehicle.current?.usageLeft);
-  assert(!queueHasShift(gs), '未触发移形', gs.linkSkillQueue);
-  assert(!lastMove?.byVehicle, 'MOVE 事件不带 byVehicle', lastMove);
-}
-
-// ── 6. 载具移动的路径模拟只用于判定/长度，不结算沿途地块效果（既有规则回归）──
+// ── 7. 载具移动的路径模拟只用于判定/长度，不结算中间格（既有规则回归）──
 head('载具 WASD 1 格：模拟路径不结算中间格');
 {
   const gs = fresh();
   placeShift(gs);
   equip(gs, 'vehicle_flying_carpet', 3); // any，无 landFilter
-  const fired = [];
-  HookDispatcher.register('onPass', ({ tileIdx }) => fired.push(`pass:${tileIdx}`));
-  HookDispatcher.register('onEnter', ({ tileIdx }) => fired.push(`enter:${tileIdx}`));
+  resetSeen();
   MovementSystem.moveStep(gs, 'right');
-  assert(fired.join('|') === 'pass:1|enter:1', '1 格载具移动：仅终点经过 + 进入', fired);
-  HookDispatcher.clearAll();
+  assert(seen.hooks.join('|') === 'pass:1|enter:1|moveEnd:1',
+    '1 格载具移动：仅终点经过 + 进入 + 一次移动后钩子', seen.hooks);
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);

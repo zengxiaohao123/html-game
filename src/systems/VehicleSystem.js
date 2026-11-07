@@ -408,21 +408,38 @@ export function useOnce(gs) {
 }
 
 /**
- * WASD 走 1 格时，当前是否按「使用载具」结算：
- * 装载了载具，且该载具规则允许落到这一格（landFilter / 同方向 / 同行列 / 射程都参与判定）。
- * 随机型载具（movePattern='random'，如 momo 图腾）的落点由系统自选，
- * 不接受 WASD 指定目标，因此按徒步跋涉处理。
+ * WASD 走 1 格的载具判定结果（三态，禁止用同一个 falsy 混同「无载具」与「载具不允许」）：
+ *   'noVehicle' —— 未装备载具 → 按徒步跋涉走
+ *   'allowed'   —— 装备载具且该载具规则允许落到这 1 格 → 按使用载具结算
+ *   'blocked'   —— 装备载具但该载具不允许这 1 格 → 直接阻止本次 WASD（不移动、无任何联动）
+ */
+export const VEHICLE_STEP_STATUS = {
+  NO_VEHICLE: 'noVehicle',
+  ALLOWED: 'allowed',
+  BLOCKED: 'blocked',
+};
+
+/**
+ * 判定「WASD 走 1 格」的载具语义。
  * @param {object} gs
  * @param {number} targetIdx 相邻目标格
- * @returns {boolean}
+ * @returns {{ status: 'noVehicle'|'allowed'|'blocked', reason?: string, def?: object }}
  */
 export function canUseVehicleForStep(gs, targetIdx) {
   ensureVehicleState(gs);
   const cur = gs.vehicle.current;
-  if (!cur) return false;
+  if (!cur) return { status: VEHICLE_STEP_STATUS.NO_VEHICLE, reason: 'noVehicle' };
+
   const def = VEHICLES[cur.vehicleId];
-  if (!def || def.movePattern === 'random') return false;
-  return canVehicleReach(gs, targetIdx).ok;
+  if (!def) return { status: VEHICLE_STEP_STATUS.BLOCKED, reason: 'unknown' };
+  // 随机型载具（momo 图腾）的落点由系统自选，不接受 WASD 指定目标
+  if (def.movePattern === 'random') {
+    return { status: VEHICLE_STEP_STATUS.BLOCKED, reason: 'randomNoWASD', def };
+  }
+
+  const reach = canVehicleReach(gs, targetIdx);
+  if (reach.ok) return { status: VEHICLE_STEP_STATUS.ALLOWED, def };
+  return { status: VEHICLE_STEP_STATUS.BLOCKED, reason: reach.reason, def };
 }
 
 /**
@@ -501,5 +518,6 @@ export const VehicleSystem = {
   useOnce,
   canVehicleReach,
   canUseVehicleForStep,
+  VEHICLE_STEP_STATUS,
   onDayStart,
 };

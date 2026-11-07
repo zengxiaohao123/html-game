@@ -14,8 +14,9 @@
 //     滑行不额外扣行动力；每滑过一格都触发【经过时】，终点触发【进入时】。
 //     使用载具移动不受滑行影响（走 VehicleSystem，不经过这里的滑行逻辑）。
 //   - WASD 与「前往」共用同一条「1 格移动」入口 moveStep：
-//     若装载的载具规则允许落到相邻这一格，则按「使用载具」结算（VehicleSystem.tryMove），
-//     消耗次数并派生 byVehicle 事件（移形等联动）；否则按徒步跋涉结算。
+//     未装备载具 → 徒步跋涉；载具规则允许落到相邻这一格 → 按「使用载具」结算
+//     （VehicleSystem.tryMove，消耗次数并派生 byVehicle 事件 / 移形等联动）；
+//     装备载具但该载具不允许这 1 格 → 整体拦截本次按键（不移动、不发事件、不改变任何状态）。
 //   - 【移动后】hook：走完整段路径后触发一次，params.distance = 本次走过的格数
 //     （蒲公英田地按这个提升价值，蹁跹天赋按这个回血）。
 
@@ -74,46 +75,61 @@ function markVisited(gs, idx) {
  * 尝试移动玩家
  * @param {object} gs 全局状态（会被直接修改）
  * @param {string} direction 'up' | 'right' | 'down' | 'left'
- * @returns {{ ok: boolean, finalIdx: number|null, byVehicle: boolean }}
- *   移动成功时 finalIdx 为最终停留格 idx；失败时 ok=false。
+ * @returns {{ ok: boolean, finalIdx: number|null, byVehicle: boolean, blocked: boolean }}
+ *   移动成功时 finalIdx 为最终停留格 idx。
+ *   blocked=true 表示「装备了载具但该载具不允许这 1 格」→ 本次按键整体拦截：
+ *   不移动、不扣行动力、不推进回合、不触发冷却、不消耗次数、不卸下载具、不发任何事件。
  *   byVehicle=true 表示本次按「使用载具」结算（已由 VehicleSystem 发 MOVE/byVehicle 等事件）。
  */
 export function moveStep(gs, direction) {
   const dirIdx = Direction.dirToIndex(direction);
   if (dirIdx === -1) {
     devLog.warn('[MovementSystem] 非法方向:', direction);
-    return { ok: false, finalIdx: null, byVehicle: false };
+    return { ok: false, finalIdx: null, byVehicle: false, blocked: false };
   }
 
   const fromIdx = gs.player.x;
   // 「走 1 格」的目标格：只看相邻一格（不含冰面滑行 —— 滑行是徒步专属的地形位移）
   const stepIdx = Distance.outerNeighbors(gs.map, fromIdx)[dirIdx];
+  // 载具三态判定：无载具 / 允许（按载具结算）/ 不允许（整体拦截）
+  const vehicleStep = VehicleSystem.canUseVehicleForStep(gs, stepIdx);
+
   if (stepIdx === null || stepIdx === undefined) {
+    // 该方向没有相邻格（边界/栅栏内侧）：装备载具时同样按「载具不允许」静默拦截
+    if (vehicleStep.status !== VehicleSystem.VEHICLE_STEP_STATUS.NO_VEHICLE) {
+      devLog.info('[MovementSystem] 载具不允许该方向，按键拦截:', direction);
+      return { ok: false, finalIdx: null, byVehicle: false, blocked: true };
+    }
     devLog.info('[MovementSystem] 方向', direction, '不可通行');
     EventBus.emit(GE.MOVE_BLOCKED, { direction, currentIdx: fromIdx });
-    return { ok: false, finalIdx: null, byVehicle: false };
+    return { ok: false, finalIdx: null, byVehicle: false, blocked: false };
   }
 
-  // 载具优先：装载的载具规则允许落到这 1 格时，WASD 这 1 格等价于「使用载具」
-  // 收敛到 VehicleSystem.tryMove 的统一载具流程（消耗次数 / 唯一终点结算 /
-  // MOVE { byVehicle:true } → 移形等联动），失败则回落到徒步语义。
-  if (VehicleSystem.canUseVehicleForStep(gs, stepIdx)) {
+  // 装备了载具但该载具不允许这 1 格 → 直接阻止本次 WASD（无提示、无联动、不改变任何状态）
+  if (vehicleStep.status === VehicleSystem.VEHICLE_STEP_STATUS.BLOCKED) {
+    devLog.info('[MovementSystem] 载具不允许该格，按键拦截:', vehicleStep.reason);
+    return { ok: false, finalIdx: null, byVehicle: false, blocked: true };
+  }
+
+  // 载具允许：收敛到 VehicleSystem.tryMove 的统一载具流程
+  // （消耗次数 / 唯一终点结算 / MOVE { byVehicle:true } → 移形等联动）
+  if (vehicleStep.status === VehicleSystem.VEHICLE_STEP_STATUS.ALLOWED) {
     const r = VehicleSystem.tryMove(gs, { targetIdx: stepIdx, wasdStep: true });
     if (r.ok) {
       devLog.info('[MovementSystem] WASD 载具移动成功:', fromIdx, '→', r.finalIdx);
-      return { ok: true, finalIdx: r.finalIdx, byVehicle: true };
+      return { ok: true, finalIdx: r.finalIdx, byVehicle: true, blocked: false };
     }
-    // 冷却期间的载具移动被忽略时不得回落徒步（否则等于绕过冷却）
-    if (r.reason === 'cooldown') return { ok: false, finalIdx: null, byVehicle: false };
-    devLog.info('[MovementSystem] WASD 载具移动失败，回落徒步:', r.reason);
+    // 载具已装备时不做徒步兜底（否则等于绕过载具规则）；按整体拦截处理
+    devLog.info('[MovementSystem] WASD 载具移动未生效，按键拦截:', r.reason);
+    return { ok: false, finalIdx: null, byVehicle: false, blocked: true };
   }
 
-  // 徒步：WASD 走 1 步；冰面会额外滑行（滑行不额外扣行动力）
+  // 徒步：未装备载具，WASD 走 1 步；冰面会额外滑行（滑行不额外扣行动力）
   const path = resolvePath(gs, dirIdx);
   if (path.length === 0) {
     devLog.info('[MovementSystem] 方向', direction, '不可通行');
     EventBus.emit(GE.MOVE_BLOCKED, { direction, currentIdx: gs.player.x });
-    return { ok: false, finalIdx: null, byVehicle: false };
+    return { ok: false, finalIdx: null, byVehicle: false, blocked: false };
   }
 
   const finalIdx = path[path.length - 1];
@@ -176,7 +192,7 @@ export function moveStep(gs, direction) {
     EventBus.emit(GE.TOAST_SHOW, { text: `🧊 冰面滑行 ${distance} 格`, duration: 1200 });
   }
   devLog.info('[MovementSystem] 移动成功:', fromIdx, '→', finalIdx, direction, 'distance=', distance);
-  return { ok: true, finalIdx, byVehicle: false };
+  return { ok: true, finalIdx, byVehicle: false, blocked: false };
 }
 
 /**

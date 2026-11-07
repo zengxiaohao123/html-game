@@ -292,7 +292,7 @@ export class GameDirector {
    * 1 格移动统一走 MovementSystem.moveStep：
    * 载具规则允许落到该相邻格时按「使用载具」结算（VehicleSystem.tryMove 已发 MOVE/byVehicle，
    * 回合推进 / 【移动后】hook / 移形由下面的 GE.MOVE 订阅完成），这里不再重复推进；
-   * 否则按徒步跋涉推进回合。
+   * 装备载具但该载具不允许该格时整键拦截（什么都不做）；未装备载具时按徒步跋涉推进回合。
    * @param {string} direction 'up' | 'right' | 'down' | 'left'
    * @returns {number|null} 成功返回最终停留格 idx，失败返回 null
    */
@@ -303,6 +303,11 @@ export class GameDirector {
       return null;
     }
     const result = MovementSystem.moveStep(this.gs, direction);
+    if (result.blocked) {
+      // 装备了载具但该载具不允许这 1 格：本次 WASD 整体拦截
+      // 不移动、不扣行动力、不推进回合、不记冷却、不发 MOVE / 任何事件
+      return null;
+    }
     if (!result.ok) return null;
 
     if (result.byVehicle) {
