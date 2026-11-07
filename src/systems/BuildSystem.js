@@ -34,28 +34,60 @@ const PLACE_LIMITED = {
   resource_magic_shop: { perDay: 1, onField: 2 },
 };
 
+/** 模式常量（探索 / 建造） */
+export const GAME_MODE = {
+  EXPLORE: 'explore',
+  BUILD: 'build',
+};
+
+/**
+ * 模式切换的唯一写入点（集中式入口）。
+ * 规则（设计文档 v0.5 §16.14）：打开任何页面/面板都不得改变当前模式；
+ * 玩家侧只有「建造图标按钮」与「Tab 快捷键」两条切换途径。
+ * source 仅用于日志追溯（'ui' = 玩家操作；'story' = 剧情/事件预留入口）。
+ * @returns {boolean} 是否真的发生了模式变更
+ */
+function applyMode(gs, mode, source = 'ui') {
+  if (!gs) return false;
+  const nextBuild = mode === GAME_MODE.BUILD;
+  if (gs.buildMode === nextBuild) return false;
+  gs.buildMode = nextBuild;
+  if (typeof document !== 'undefined') document.body.style.cursor = nextBuild ? 'crosshair' : '';
+  EventBus.emit(GE.UI_MODE_CHANGE, { mode: nextBuild ? GAME_MODE.BUILD : GAME_MODE.EXPLORE });
+  EventBus.emit(GE.TOAST_SHOW, {
+    text: nextBuild ? '🛠️ 进入建造模式' : '🚶 进入探索模式',
+    duration: 1500,
+  });
+  devLog.info(`[Build] applyMode → ${nextBuild ? GAME_MODE.BUILD : GAME_MODE.EXPLORE} (source=${source})`);
+  return true;
+}
+
 /**
  * 进入建造模式（幂等：已在建造模式则静默返回）
+ * 调用方仅限：建造图标按钮（FuncBar）与 Tab 快捷键（InputManager）
  */
 export function enterBuildMode(gs) {
-  if (gs.buildMode) return;
-  gs.buildMode = true;
-  if (typeof document !== 'undefined') document.body.style.cursor = 'crosshair';
-  EventBus.emit(GE.UI_MODE_CHANGE, { mode: 'build' });
-  EventBus.emit(GE.TOAST_SHOW, { text: '🛠️ 进入建造模式', duration: 1500 });
-  devLog.info('[Build] enterBuildMode');
+  return applyMode(gs, GAME_MODE.BUILD, 'ui');
 }
 
 /**
  * 退出建造模式（幂等：已在探索模式则静默返回）
+ * 调用方仅限：建造图标按钮（FuncBar）与 Tab 快捷键（InputManager）
  */
 export function exitBuildMode(gs) {
-  if (!gs.buildMode) return;
-  gs.buildMode = false;
-  if (typeof document !== 'undefined') document.body.style.cursor = '';
-  EventBus.emit(GE.UI_MODE_CHANGE, { mode: 'explore' });
-  EventBus.emit(GE.TOAST_SHOW, { text: '🚶 进入探索模式', duration: 1500 });
-  devLog.info('[Build] exitBuildMode');
+  return applyMode(gs, GAME_MODE.EXPLORE, 'ui');
+}
+
+/**
+ * 【预留】重要剧情 / 事件强制切换模式的集中入口。
+ * 目前设计文档只声明规则、没有任何剧本这样设计，因此**不得在 src 内接入或触发**；
+ * 未来剧情系统需要时调用此函数即可（Story 侧不要直接改 gs.buildMode）。
+ * @param {object} gs
+ * @param {'explore'|'build'} mode
+ * @returns {boolean}
+ */
+export function forceModeByStory(gs, mode) {
+  return applyMode(gs, mode, 'story');
 }
 
 /** 统计场上某种内容的数量 */
@@ -304,8 +336,10 @@ export function autoRemoveSkillsOutsideTeam(gs) {
 }
 
 export const BuildSystem = {
+  GAME_MODE,
   enterBuildMode,
   exitBuildMode,
+  forceModeByStory,
   placeContent,
   placeTerrain,
   placeFenceTerrain,

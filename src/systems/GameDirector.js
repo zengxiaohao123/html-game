@@ -19,7 +19,7 @@ import { CreatureSystem } from './CreatureSystem.js';
 import { MovementSystem } from './MovementSystem.js';
 import { TurnSystem } from './TurnSystem.js';
 import { SleepSystem } from './SleepSystem.js';
-import { exitBuildMode, autoRemoveSkillsOutsideTeam } from './BuildSystem.js';
+import { autoRemoveSkillsOutsideTeam } from './BuildSystem.js';
 import { SkillSystem } from './SkillSystem.js';
 import { InventorySystem } from './InventorySystem.js';
 import { TalentSystem } from './TalentSystem.js';
@@ -137,8 +137,8 @@ export class GameDirector {
       // 'magicShop' 与 'shop' 是同一个商店面板（§16.22），栈内统一记作 'shop'
       const key = panel === 'magicShop' ? 'shop' : panel;
 
-      // §16.14：打开其他任何界面 → 退出建造模式
-      if (this.gs?.buildMode) exitBuildMode(this.gs);
+      // §16.14：打开任何界面都**不改变**当前模式（探索/建造均保持），
+      // 模式切换只允许「建造图标按钮」与「Tab」两条途径（BuildSystem.applyMode）。
 
       // §16.20：按其他界面快捷键 → 立即关闭当前界面，再打开新界面
       // §16.21 例外：商店已打开时，其他界面叠在商店之上（保留商店，关闭叠层回商店）
@@ -368,12 +368,7 @@ export class GameDirector {
    * 二级子面板（如 TeamPanel 的快捷编队）由各 Panel 内部自行关闭
    */
   handleESC() {
-    // §16.14：建造模式下 ESC 只退出建造模式（不得打开设置面板）
-    if (this.gs?.buildMode) {
-      exitBuildMode(this.gs);
-      devLog.info('[GameDirector] ESC → 退出建造模式');
-      return;
-    }
+    // §16.14：ESC 不是模式切换途径（只切建造图标 / Tab），此处只处理面板层级
     // SettingsPanel 打开时：直接关闭它，不经过 openPanels 栈
     // （SettingsPanel 通过 GE.UI_PANEL_OPEN/CLOSE 自己管理 visible，不在 openPanels 里）
     if (this.settingsPanel?.visible) {
