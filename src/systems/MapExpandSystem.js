@@ -19,10 +19,20 @@
 //        列扩建：栅栏向左锚定，新增一列栅栏插在原最右栅栏列之后、原最右外圈列之左；
 //        行扩建：新增一行栅栏插在顶行之下；原栅栏内容整体下移 1 行。
 //   3. 外圈下标会整体变化 → 玩家位置、连携技实例键（tileIdx|skillId）、连携队列、
-//      UI 选中格全部重映射；栅栏内生物行扩建时 pos.y +1（世界坐标原点随顶行上移）。
+//      UI 选中格、今日已访问格、生物归属 sourceTileIdx 全部重映射；栅栏内生物行扩建时
+//      pos.y +1（世界坐标原点随顶行上移），主格缓存 row/col 同步重算。
 //   4. 扩建是「当天内的世界变化」：不写日初基线，只在睡觉/跨日采集点随实时状态入档；
 //      当天回档时地图尺寸与扩建道具一起回到本日开始时。
 //   5. 新外圈与新栅栏内地块共用 §4 的 50/40/10 地形抽取；初始 3×3 已有栅栏格不回溯。
+//   6. 对外契约（供其它系统重映射自己的裸索引引用）：
+//        expandMapInPlace 返回值与 GE.MAP_EXPANDED payload 都带 `idxMap`（旧外圈 idx → 新 idx）
+//        与 `remap`：
+//          remap.outerIdx / outerIdxInv      外圈 idx 旧→新 / 新→旧（Map）
+//          remap.fenceIdx / fenceIdxInv      栅栏线性 idx 旧→新 / 新→旧（Map）
+//          remap.fenceRow / fenceCol         栅栏行 / 列 旧→新（Map）
+//          remap.addedOuterIdx / addedFenceIdx  本次新增格的索引（number[]）
+//          remap.before / after              扩建前后尺寸（含栅栏行列数）
+//        也可通过 getLastExpandRemap() 查询最近一次扩建的映射。
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
@@ -36,6 +46,21 @@ export const EXPAND_AXIS = {
   LENGTH: 'length',   // I 型：列数 +1
   WIDTH: 'width',     // II 型：行数 +1
 };
+
+/** 最近一次扩建的索引映射（供订阅方查询；不写存档） */
+let lastExpandRemap = null;
+/** 扩建时为旧存档生物补的稳定地块 uid 序号（与 CreatureSystem 的 fac_* 前缀区分，避免冲突） */
+let tileUidSeq = 1;
+
+/**
+ * 查询最近一次扩建的旧→新索引映射
+ * @returns {null|{axis:string, before:object, after:object, outerIdx:Map, outerIdxInv:Map,
+ *   fenceIdx:Map, fenceIdxInv:Map, fenceRow:Map, fenceCol:Map,
+ *   addedOuterIdx:number[], addedFenceIdx:number[]}}
+ */
+export function getLastExpandRemap() {
+  return lastExpandRemap;
+}
 
 /** 新外圈地块（与 createInitialState 的地块 schema 一致） */
 function createOuterTile(idx) {
@@ -67,6 +92,13 @@ function xyKey(x, y) {
   return `${x},${y}`;
 }
 
+/** 旧→新索引映射的反向表（供订阅方双向校验 / 反查） */
+function invertMap(m) {
+  const inv = new Map();
+  for (const [oldIdx, newIdx] of m) inv.set(newIdx, oldIdx);
+  return inv;
+}
+
 /** 把形如 `tileIdx|skillId` 的键集合整体迁移到新下标 */
 function remapKeyedObject(src, idxMap) {
   if (!src || typeof src !== 'object' || Array.isArray(src)) return src;
@@ -89,7 +121,8 @@ function remapKeyedObject(src, idxMap) {
  * 对单个 gs / 基线对象执行扩建（原地修改）
  * @param {object} gs 目标状态（含 map / player / creatures / uiState / linkSkill*）
  * @param {'length'|'width'} axis
- * @returns {{ok:boolean, before:{rows:number,cols:number}, after:{rows:number,cols:number}, playerFollowed:boolean}}
+ * @returns {{ok:boolean, before:{rows:number,cols:number}, after:{rows:number,cols:number},
+ *   playerFollowed:boolean, idxMap:Map, remap:object}}
  */
 export function expandMapInPlace(gs, axis) {
   const map = gs?.map;
@@ -119,6 +152,7 @@ export function expandMapInPlace(gs, axis) {
   // ── 2. 重建外圈（按新 idx 顺序）──
   const newOuter = [];
   const idxMap = new Map(); // 旧 envelope idx → 新 idx
+  const addedOuterIdx = []; // 本次新建的外圈格（旧索引里不存在）
   const totalNew = 2 * newRows + 2 * newCols - 4;
   for (let idx = 0; idx < totalNew; idx++) {
     const { x, y } = outerIdxToXY(newDims, idx);
@@ -140,41 +174,55 @@ export function expandMapInPlace(gs, axis) {
       tile.idx = idx;
     } else {
       tile = createOuterTile(idx);
+      addedOuterIdx.push(idx);
     }
     newOuter.push(tile);
   }
 
-  // ── 3. 重建栅栏 ──
+  // ── 3. 重建栅栏（同时产出 fenceIdx / row / col 的旧→新映射）──
   const newFence = [];
-  if (isLength) {
-    // 原栅栏列不动，新增一列插在最后（栅栏原点 (1,1) 不变）
-    for (let r = 0; r < newFDims.rows; r++) {
-      for (let c = 0; c < newFDims.cols; c++) {
-        const oldTile = c < oldFDims.cols ? map.fence[r * oldFDims.cols + c] : null;
-        if (oldTile) {
-          oldTile.row = r;
-          oldTile.col = c;
-          newFence.push(oldTile);
-        } else {
-          newFence.push(createFenceTile(r, c));
-        }
-      }
-    }
-  } else {
-    // 原栅栏整体下移 1 行，新增一行插在顶行（第 1 行）之下
-    for (let r = 0; r < newFDims.rows; r++) {
-      for (let c = 0; c < newFDims.cols; c++) {
-        const oldTile = r >= 1 ? map.fence[(r - 1) * oldFDims.cols + c] : null;
-        if (oldTile) {
-          oldTile.row = r;
-          oldTile.col = c;
-          newFence.push(oldTile);
-        } else {
-          newFence.push(createFenceTile(r, c));
-        }
+  const fenceIdxMap = new Map();
+  const fenceRowMap = new Map();
+  const fenceColMap = new Map();
+  const addedFenceIdx = [];
+  for (let r = 0; r < newFDims.rows; r++) {
+    for (let c = 0; c < newFDims.cols; c++) {
+      const newFenceIdx = r * newFDims.cols + c;
+      // 列扩建：原栅栏列不动，新增一列插在最后（栅栏原点 (1,1) 不变）
+      // 行扩建：原栅栏整体下移 1 行，新增一行插在顶行（第 1 行）之下
+      const oldTile = isLength
+        ? (c < oldFDims.cols ? map.fence[r * oldFDims.cols + c] : null)
+        : (r >= 1 ? map.fence[(r - 1) * oldFDims.cols + c] : null);
+      if (oldTile) {
+        const oldRow = Number.isInteger(oldTile.row) ? oldTile.row : (isLength ? r : r - 1);
+        const oldCol = Number.isInteger(oldTile.col) ? oldTile.col : c;
+        fenceIdxMap.set(oldRow * oldFDims.cols + oldCol, newFenceIdx);
+        if (!fenceRowMap.has(oldRow)) fenceRowMap.set(oldRow, r);
+        if (!fenceColMap.has(oldCol)) fenceColMap.set(oldCol, c);
+        oldTile.row = r;
+        oldTile.col = c;
+        newFence.push(oldTile);
+      } else {
+        addedFenceIdx.push(newFenceIdx);
+        newFence.push(createFenceTile(r, c));
       }
     }
   }
+
+  const remap = {
+    axis,
+    before: { rows: oldRows, cols: oldCols, fenceRows: oldFDims.rows, fenceCols: oldFDims.cols },
+    after: { rows: newRows, cols: newCols, fenceRows: newFDims.rows, fenceCols: newFDims.cols },
+    outerIdx: idxMap,
+    outerIdxInv: invertMap(idxMap),
+    fenceIdx: fenceIdxMap,
+    fenceIdxInv: invertMap(fenceIdxMap),
+    fenceRow: fenceRowMap,
+    fenceCol: fenceColMap,
+    addedOuterIdx,
+    addedFenceIdx,
+  };
+  lastExpandRemap = remap;
 
   // ── 4. 更新 map 尺寸 ──
   map.rows = newRows;
@@ -198,28 +246,36 @@ export function expandMapInPlace(gs, axis) {
       player.x = nextIdx;
     }
   }
+  // 今日已访问格（载具「优先未访问」等按裸索引存）
+  if (player && Array.isArray(player.visitedTodayIdx)) {
+    player.visitedTodayIdx = player.visitedTodayIdx
+      .map((i) => (Number.isInteger(i) && idxMap.has(i) ? idxMap.get(i) : null))
+      .filter((i) => i !== null);
+  }
 
-  // ── 6. 栅栏内生物：行扩建时世界原点随顶行上移，pos 整体 +1 行 ──
+  // ── 6. 栅栏内生物：行扩建时世界原点随顶行上移，pos 整体 +1 行；重建主格缓存 ──
   if (!isLength && Array.isArray(gs.creatures)) {
     for (const c of gs.creatures) {
-      for (const p of [c.pos, c.renderPos, c.targetPos]) {
+      for (const p of [c.pos, c.renderPos, c.targetPos, c.renderFrom]) {
         if (p && Number.isFinite(p.y)) p.y += 1;
       }
     }
-    // 栅栏地块对象整体下移，缓存的生物引用仍自洽；清空后按新 pos 重建更稳
+    // 栅栏格缓存以生物 id 保存（与 CreatureSystem 口径一致），按新坐标重建；
+    // 收纳在设施内（housed）的生物不占栅栏格缓存。
     for (const f of newFence) f.creatures = [];
     for (const c of gs.creatures) {
-      const cell = {
-        row: Math.floor(c.pos.y) - FENCE_ORIGIN_Y,
-        col: Math.floor(c.pos.x) - FENCE_ORIGIN_X,
-      };
-      if (cell.row >= 0 && cell.row < newFDims.rows && cell.col >= 0 && cell.col < newFDims.cols) {
-        newFence[cell.row * newFDims.cols + cell.col].creatures.push(c);
-      }
+      if (!c || c.housed) continue;
+      if (!c.pos || !Number.isFinite(c.pos.x) || !Number.isFinite(c.pos.y)) continue;
+      const row = Math.floor(c.pos.y) - FENCE_ORIGIN_Y;
+      const col = Math.floor(c.pos.x) - FENCE_ORIGIN_X;
+      if (row < 0 || row >= newFDims.rows || col < 0 || col >= newFDims.cols) continue;
+      c.row = row;
+      c.col = col;
+      newFence[row * newFDims.cols + col].creatures.push(c.id);
     }
   }
 
-  // ── 7. 依赖外圈下标的键重映射 ──
+  // ── 7. 依赖外圈下标的键 / 归属重映射 ──
   gs.linkSkillCounters = remapKeyedObject(gs.linkSkillCounters, idxMap);
   gs.linkSkillCooldowns = remapKeyedObject(gs.linkSkillCooldowns, idxMap);
   if (Array.isArray(gs.linkSkillQueue)) {
@@ -239,6 +295,22 @@ export function expandMapInPlace(gs, axis) {
     const sel = gs.uiState.selectedTileIdx;
     gs.uiState.selectedTileIdx = idxMap.has(sel) ? idxMap.get(sel) : null;
   }
+  // 生物归属（鸡舍/史莱姆屋按 sourceTileIdx 判归属）：索引跟随地块走；
+  // 同时补稳定 uid，消费方（CreatureSystem）优先按 uid 归属，天然免疫后续扩建，
+  // 也避免订阅方对同一份映射做二次重映射。
+  if (Array.isArray(gs.creatures)) {
+    for (const c of gs.creatures) {
+      if (!c || !Number.isInteger(c.sourceTileIdx)) continue;
+      const next = idxMap.get(c.sourceTileIdx);
+      if (next === undefined) continue;
+      c.sourceTileIdx = next;
+      const tile = newOuter[next];
+      if (tile) {
+        if (!tile.uid) tile.uid = `tile_exp_${tileUidSeq++}`;
+        c.sourceTileUid = tile.uid;
+      }
+    }
+  }
 
   return {
     ok: true,
@@ -246,6 +318,8 @@ export function expandMapInPlace(gs, axis) {
     before: { rows: oldRows, cols: oldCols },
     after: { rows: newRows, cols: newCols },
     playerFollowed,
+    idxMap,
+    remap,
   };
 }
 
@@ -265,9 +339,19 @@ export function expandMap(gs, axis) {
 
   EventBus.emit(GE.MAP_EXPANDED, {
     gs, axis, rows: result.after.rows, cols: result.after.cols,
+    before: result.before, after: result.after,
+    // 与订阅方约定的键名：旧外圈 idx → 新外圈 idx（Map）
+    idxMap: result.remap.outerIdx,
+    // 完整映射：外圈 / 栅栏 idx / 栅栏 row·col + 新增格列表
+    remap: result.remap,
   });
   devLog.info('[MapExpand]', axis, `→ ${result.after.cols}列 × ${result.after.rows}行`);
   return result;
 }
 
-export const MapExpandSystem = { expandMap, expandMapInPlace, EXPAND_AXIS };
+export const MapExpandSystem = {
+  expandMap,
+  expandMapInPlace,
+  getLastExpandRemap,
+  EXPAND_AXIS,
+};

@@ -12,6 +12,8 @@
 //   X8 背包数量扣减 + 无目标直接使用；描述与物品库逐字一致
 //   X9 回档/跨日：扩建受日初基线约束（尺寸与道具一起回滚 / 跨日保留）
 //   X10 栅栏内地形：扩建新格随机地形、地形可放置进栅栏、设施/技能仍不可
+//   X11 索引重映射：映射表 API（外圈/栅栏 idx、row·col）双向一致；设施所在格、
+//       归属生物 sourceTileIdx、放置技能键、UI 选中格、今日已访问格、载具所在格随地块搬家
 //
 // 用法：node tools/smoke-expand.mjs
 
@@ -38,6 +40,10 @@ const { STARTER_ITEMS } = await import('../src/data/starterPack.js');
 const { TERRAINS } = await import('../src/data/terrains.js');
 const { SKILLS } = await import('../src/data/characters.js');
 const { BuildSystem } = await import('../src/systems/BuildSystem.js');
+const { getLastExpandRemap } = await import('../src/systems/MapExpandSystem.js');
+const { CreatureSystem } = await import('../src/systems/CreatureSystem.js');
+const { EventBus } = await import('../src/core/EventBus.js');
+const { GE } = await import('../src/core/GameEvents.js');
 
 let pass = 0, fail = 0;
 function check(cond, msg, extra) {
@@ -109,6 +115,56 @@ function verifyGeometry(gs, label) {
 
   const px = gs.player.x;
   check(Number.isInteger(px) && px >= 0 && px < total, `${label} 玩家下标在外圈范围内`, px);
+}
+
+/** 校验旧→新映射：键域完整、旧→新唯一、新索引合法、正反映射双向一致、新增格与旧格不重叠 */
+function checkRemapBijection(rm, label) {
+  const outerOld = 2 * rm.before.rows + 2 * rm.before.cols - 4;
+  const outerNew = 2 * rm.after.rows + 2 * rm.after.cols - 4;
+  const fenceOld = rm.before.fenceRows * rm.before.fenceCols;
+  const fenceNew = rm.after.fenceRows * rm.after.fenceCols;
+
+  check(rm.outerIdx.size === outerOld, `${label} 外圈映射覆盖全部旧格`, rm.outerIdx.size);
+  let keysOk = true;
+  for (let i = 0; i < outerOld; i++) if (!rm.outerIdx.has(i)) keysOk = false;
+  check(keysOk, `${label} 外圈映射键域 = 0..${outerOld - 1} 无遗漏`);
+
+  const vals = new Set(rm.outerIdx.values());
+  check(vals.size === outerOld, `${label} 外圈映射旧→新唯一（无重复目标）`, vals.size);
+  check([...vals].every((v) => Number.isInteger(v) && v >= 0 && v < outerNew),
+    `${label} 外圈新索引全部落在合法范围`);
+  let invOk = true;
+  for (const [o, n] of rm.outerIdx) if (rm.outerIdxInv.get(n) !== o) invOk = false;
+  check(invOk && rm.outerIdxInv.size === outerOld, `${label} 外圈映射正反双向一致`);
+
+  check(rm.fenceIdx.size === fenceOld, `${label} 栅栏映射覆盖全部旧格`, rm.fenceIdx.size);
+  let fKeysOk = true;
+  for (let i = 0; i < fenceOld; i++) if (!rm.fenceIdx.has(i)) fKeysOk = false;
+  check(fKeysOk, `${label} 栅栏映射键域 = 0..${fenceOld - 1} 无遗漏`);
+  const fVals = new Set(rm.fenceIdx.values());
+  check(fVals.size === fenceOld, `${label} 栅栏映射旧→新唯一（无重复目标）`, fVals.size);
+  check([...fVals].every((v) => Number.isInteger(v) && v >= 0 && v < fenceNew),
+    `${label} 栅栏新索引全部落在合法范围`);
+  let fInvOk = true;
+  for (const [o, n] of rm.fenceIdx) if (rm.fenceIdxInv.get(n) !== o) fInvOk = false;
+  check(fInvOk && rm.fenceIdxInv.size === fenceOld, `${label} 栅栏映射正反双向一致`);
+
+  let rowOk = true;
+  for (let r = 0; r < rm.before.fenceRows; r++) if (!rm.fenceRow.has(r)) rowOk = false;
+  check(rowOk, `${label} 栅栏 row 映射覆盖全部旧行`);
+  let colOk = true;
+  for (let c = 0; c < rm.before.fenceCols; c++) if (!rm.fenceCol.has(c)) colOk = false;
+  check(colOk, `${label} 栅栏 col 映射覆盖全部旧列`);
+
+  check(rm.addedOuterIdx.length + rm.outerIdx.size === outerNew,
+    `${label} 旧格 + 新增外圈格 = 新总数`,
+    { added: rm.addedOuterIdx.length, mapped: rm.outerIdx.size, outerNew });
+  check(rm.addedFenceIdx.length + rm.fenceIdx.size === fenceNew,
+    `${label} 旧格 + 新增栅栏格 = 新总数`,
+    { added: rm.addedFenceIdx.length, mapped: rm.fenceIdx.size, fenceNew });
+  check([...vals].every((v) => !rm.addedOuterIdx.includes(v))
+    && [...fVals].every((v) => !rm.addedFenceIdx.includes(v)),
+    `${label} 新增格与被搬运的旧格索引不重叠`);
 }
 
 const VALID_TERRAIN = new Set(['terrain_none', 'terrain_grass', 'terrain_water', 'terrain_ice']);
@@ -368,6 +424,94 @@ head('X10 栅栏内地形放置');
   InventorySystem.addItem(gs, 'terrain_grass', 1);
   const r3 = BuildSystem.placeFenceTerrain(gs, 0, 0, 'terrain_grass');
   check(r3.ok && gs.map.fence[0].terrain === 'terrain_grass', '初始栅栏格同样允许地形覆盖');
+}
+
+head('X11 索引重映射与引用随地块搬家');
+{
+  // A. I 型：设施、放置技能、归属生物、UI 状态、今日已访问格都按裸索引保存
+  const gs = createInitialState();
+  const skillId = Object.keys(SKILLS)[0];
+  gs.map.outerTiles[2].contentId = 'facility_henhouse';
+  gs.map.outerTiles[2].contentState = { doorOpen: true };
+  gs.map.outerTiles[3].contentId = skillId;
+  gs.creatures.push({
+    id: 'owned', kind: 'chick', hp: 10,
+    pos: { x: 1.5, y: 1.5 }, renderPos: { x: 1.5, y: 1.5 }, targetPos: null,
+    sourceTileIdx: 2,
+  });
+  gs.creatures.push({
+    id: 'wild', kind: 'chick', hp: 5,
+    pos: { x: 1.5, y: 1.5 }, renderPos: { x: 1.5, y: 1.5 },
+    sourceTileIdx: null,
+  });
+  gs.linkSkillCounters = { [`${3}|${skillId}`]: { count: 1 } };
+  gs.linkSkillCooldowns = { [`${3}|${skillId}`]: 2 };
+  gs.linkSkillQueue = [{ key: `${3}|${skillId}`, tileIdx: 3, skillId }];
+  gs.uiState.selectedTileIdx = 3;
+  gs.player.visitedTodayIdx = [2, 5];
+  gs.player.x = 2;
+  gs.vehicle.current = { instanceId: 1, vehicleId: 'vehicle_wheel', usageLeft: 3 };
+
+  let evt = null;
+  EventBus.once(GE.MAP_EXPANDED, (p) => { evt = p; });
+  check(useItem(gs, ID_LEN).ok, 'I 型扩建（重映射用例）');
+  check(!!evt && evt.idxMap instanceof Map && evt.remap && evt.remap.fenceIdx instanceof Map,
+    'GE.MAP_EXPANDED 携带 idxMap（外圈 Map）与 remap（栅栏 idx / row·col）');
+  check(getLastExpandRemap() === evt.remap, 'getLastExpandRemap() 返回同一次扩建映射');
+
+  const rm = evt.remap;
+  check(rm.outerIdx.get(2) === 3 && rm.outerIdxInv.get(3) === 2, '外圈映射 idx2 → idx3（旧→新 & 新→旧）');
+  check(gs.map.outerTiles[3].contentId === 'facility_henhouse', '设施所在格扩建后仍指向原设施');
+  check(gs.player.x === 3, '玩家/载具所在格随设施地块一起搬家');
+  check(gs.vehicle.current?.instanceId === 1 && gs.vehicle.current.usageLeft === 3,
+    '载具状态不因扩建丢失（当前位置跟随玩家格）');
+  check(gs.creatures.find((c) => c.id === 'owned').sourceTileIdx === 3,
+    '鸡舍归属生物 sourceTileIdx 重映射（不再被判为野生）');
+  check(gs.creatures.find((c) => c.id === 'owned').sourceTileUid === gs.map.outerTiles[3].uid
+    && !!gs.map.outerTiles[3].uid, '归属生物同时记录稳定地块 uid');
+  check(gs.creatures.find((c) => c.id === 'wild').sourceTileIdx === null, '野生生物归属保持 null');
+  check(CreatureSystem.facilityOwnedCreatures(gs, 3).length === 1, '扩建后按设施格仍能查到归属生物');
+  check(CreatureSystem.setFacilityDoorOpen(gs, 3, false).ok, '扩建后鸡舍开关门仍生效');
+  check(CreatureSystem.facilityOwnedCreatures(gs, 3).length === 1
+    && CreatureSystem.isFacilityDoorOpen(gs, 3) === false, '关门后归属生物仍归属该设施');
+
+  check(gs.map.outerTiles[4].contentId === skillId, '技能卡随所在格搬到新索引（idx3 → idx4）');
+  check(gs.linkSkillCounters[`${4}|${skillId}`] && !gs.linkSkillCounters[`${3}|${skillId}`],
+    '连携计数键 tileIdx 重映射');
+  check(gs.linkSkillCooldowns[`${4}|${skillId}`] === 2, '连携冷却键 tileIdx 重映射');
+  check(gs.linkSkillQueue[0].tileIdx === 4 && gs.linkSkillQueue[0].key === `${4}|${skillId}`,
+    '连携队列 tileIdx/key 重映射');
+  check(gs.uiState.selectedTileIdx === 4, 'UI 选中格重映射');
+  check(gs.player.visitedTodayIdx.join(',') === '3,7', '今日已访问格（裸索引数组）整体重映射',
+    gs.player.visitedTodayIdx);
+  checkRemapBijection(rm, 'I 型');
+
+  // B. II 型：顶行不动，y≥1 下移；栅栏行 +1，设施与归属生物同步下移
+  const gs2 = createInitialState();
+  gs2.map.outerTiles[7].contentId = 'facility_slimehouse';
+  gs2.map.outerTiles[7].contentState = { doorOpen: true };
+  gs2.creatures.push({
+    id: 'owned2', kind: 'slime_fire', hp: 10,
+    pos: { x: 1.5, y: 1.5 }, renderPos: { x: 1.5, y: 1.5 }, targetPos: null,
+    sourceTileIdx: 7,
+  });
+  gs2.player.x = 7;
+  check(useItem(gs2, ID_WID).ok, 'II 型扩建（重映射用例）');
+  const rm2 = getLastExpandRemap();
+  check(rm2.outerIdx.get(0) === 0, 'II 型：原顶行外圈格原地不动（idx0 → idx0）');
+  check(rm2.outerIdx.get(7) === 8 && rm2.outerIdxInv.get(8) === 7, 'II 型：左列 y=1 → y=2（idx7 → idx8）');
+  check(gs2.map.outerTiles[8].contentId === 'facility_slimehouse', 'II 型：设施所在格仍指向原设施');
+  check(gs2.creatures[0].sourceTileIdx === 8, 'II 型：归属生物 sourceTileIdx 重映射');
+  check(gs2.player.x === 8, 'II 型：玩家跟随被搬地块');
+  check(rm2.fenceIdx.get(0) === 1, 'II 型：栅栏格 (0,0) → (1,0)，fenceIdx 0 → 1');
+  check(rm2.fenceRow.get(0) === 1 && rm2.fenceCol.get(0) === 0, 'II 型：栅栏 row +1 / col 不变');
+  check(rm2.addedFenceIdx.includes(0), 'II 型：新增栅栏顶行列入 addedFenceIdx');
+  check(gs2.creatures[0].row === 1 && gs2.creatures[0].col === 0, 'II 型：生物主格缓存 row/col 同步 +1 行');
+  const cache = gs2.map.fence[1].creatures;
+  check(cache.length === 1 && cache[0] === 'owned2' && typeof cache[0] === 'string',
+    'II 型：栅栏缓存存生物 id（与 CreatureSystem 口径一致）');
+  check(CreatureSystem.facilityOwnedCreatures(gs2, 8).length === 1, 'II 型：扩建后仍按设施格查到归属生物');
+  checkRemapBijection(rm2, 'II 型');
 }
 
 console.log(`\n════ 扩建冒烟：${pass} 通过 / ${fail} 失败 ════`);

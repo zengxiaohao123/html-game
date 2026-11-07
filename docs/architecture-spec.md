@@ -163,7 +163,7 @@ export const GE = {
   FENCE_TILE_UPDATED: 'fence:tile_updated', // 栅栏内地块状态变化（地形放置等）
   TILE_CLICKED: 'tile:clicked',
   TERRAIN_DEPLETED: 'terrain:depleted',
-  MAP_EXPANDED: 'map:expanded',         // 农场扩建完成（payload: {gs}），UI 需全量重排
+  MAP_EXPANDED: 'map:expanded',         // 农场扩建完成（payload: {gs, axis, rows, cols, idxMap, remap}），UI 需全量重排
   
   // —— 背包/放置 ——
   INVENTORY_CHANGE: 'inventory:change',
@@ -240,8 +240,19 @@ snapshotGeometry(gs)                    // 冻结逻辑圆位置/半径的快照
 ```js
 // src/systems/MapExpandSystem.js
 EXPAND_AXIS = { LENGTH: 'length', WIDTH: 'width' }   // 长度=列数+1，宽度=行数+1
-expandMapInPlace(gs, axis)   // 原地扩建，返回 { ok, axis, before:{rows,cols}, after:{rows,cols}, idxMap }
-expandMap(gs, axis)          // 在 expandMapInPlace 之上同步日初基线并广播 GE.MAP_EXPANDED
+expandMapInPlace(gs, axis)   // 原地扩建，返回 { ok, axis, before, after, playerFollowed, idxMap, remap }
+expandMap(gs, axis)          // 同步容量上限并广播 GE.MAP_EXPANDED（不写日初基线）
+getLastExpandRemap()         // 最近一次扩建的旧→新映射（只读查询，不入存档）
+
+// remap 形状（expandMapInPlace 返回值与 GE.MAP_EXPANDED payload.remap 同构）
+{
+  axis, before: {rows, cols, fenceRows, fenceCols}, after: {…},
+  outerIdx:  Map<旧外圈 idx, 新外圈 idx>,  outerIdxInv: Map<新, 旧>,
+  fenceIdx:  Map<旧栅栏线性 idx, 新>,       fenceIdxInv: Map<新, 旧>,
+  fenceRow:  Map<旧栅栏 row, 新 row>,       fenceCol: Map<旧 col, 新 col>,
+  addedOuterIdx: number[],                  addedFenceIdx: number[],
+}
+// 便捷键：payload.idxMap === payload.remap.outerIdx（旧外圈 idx → 新 idx）
 ```
 
 **实现口径（权威，对应设计文档 §2.1.1）**：
@@ -250,7 +261,8 @@ expandMap(gs, axis)          // 在 expandMapInPlace 之上同步日初基线并
 - **I 型（列 +1）**：原最右列（`x = cols-1`）整体右移 1 格到 `x = cols`，腾空的 `x = cols-1` 生成新列——上下端为外圈格，中间为栅栏格；`fenceCols + 1`，新栅栏列追加在末尾。
 - **II 型（行 +1）**：原最上行（`y = 0`）保持，`y ≥ 1` 整体下移 1 行（`y → y+1`），腾空的 `y = 1` 生成新行——左右端为外圈格，中间为栅栏格；`fenceRows + 1`（旧行下移、新行插在最前），栅栏格行索引 `+1`。
 - **跟随规则**：角色恰好站在被移动地块上时随之平移（`player.x/y` 同步重算），该位移**不视为移动**，不触发任何技能/地块效果。
-- **内容保留与索引重映射**：重建 `map.outerTiles` 时按新的环形顺序排布，并产出 `idxMap`（旧外圈 idx → 新外圈 idx）；同时重映射 `player` 坐标、`creatures[].pos/renderPos/targetPos`、`fence[].creatures` 缓存、`linkSkillCounters` / `linkSkillCooldowns` 的 `tileIdx|skillId` 键、连携队列的 `tileIdx`/`key`、`uiState.selectedTileIdx`。地块 `tile.idx` 全部改写为新 idx。
+- **内容保留与索引重映射**：重建 `map.outerTiles` 时按新的环形顺序排布，地块对象（含 `contentId / contentState / terrain / states / dailyFlags`，即设施、资源、技能卡、地形与商店状态）随「同一块地」搬到新 idx；并产出完整 `remap`（外圈 `outerIdx`、栅栏 `fenceIdx`、栅栏 `fenceRow/fenceCol`，含反向表与新增格列表，见上）。扩建同时重映射扩建自己持有的裸索引引用：`player.x`（角色/载具所在格，跟随不视为移动）、`player.visitedTodayIdx`、`creatures[].pos/renderPos/targetPos/renderFrom` 与主格缓存 `row/col`（II 型世界原点下移 1 行）、`fence[].creatures` 缓存（统一存生物 id）、`linkSkillCounters` / `linkSkillCooldowns` 的 `tileIdx|skillId` 键、连携队列的 `tileIdx`/`key`、`uiState.selectedTileIdx`、生物归属 `creatures[].sourceTileIdx`。
+- **归属稳定化（配合 CreatureSystem）**：重映射 `sourceTileIdx` 时同步补 `sourceTileUid`（= 目标地块 `tile.uid`，缺失则生成 `tile_exp_*`）；消费方优先按 uid 判归属，因此扩建后鸡舍/史莱姆屋的归属生物不会退化成野生，且订阅方不会对同一份映射二次重映射。其它系统按裸索引保存位置的引用（如 UI 面板的 `currentTileIdx/currentFenceIdx`）应订阅 `GE.MAP_EXPANDED` 并使用 `payload.remap` 自行重映射，扩建侧不改其文件。
 - **地形**：新外圈格与新增栅栏格都走 §4 地形权重（50/40/10）掷骰并写入 `terrainAmount`；初始 3×3 已有的栅栏格保持 `terrain_none`，不回溯。
 - **无上限、无消耗**：不设扩建次数硬上限（受地图可容纳格数与性能约束），不消耗行动力/体力、无冷却。物品数量扣减由 `UseItemSystem` 的通用道具扣减逻辑完成。
 - **存档关系**：扩建属于「当天内的世界变化」，`expandMap` **不写日初基线**；只在正常采集点（`SleepSystem.sleep` 末尾 `DayBaseline.capture`）随实时状态入档。跨日后尺寸保留、道具数量按已用数量入档；当天回档（读档回本日开始时）时尺寸与扩建道具一起复原。`map.rows/cols/fenceRows/fenceCols` 随存档序列化，读档后正确恢复。
