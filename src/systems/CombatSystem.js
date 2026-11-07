@@ -138,17 +138,7 @@ export function calculateDamage(opts) {
   }
   if (weakenedStrength > 0) rawDamage *= (1 - weakenedStrength);
 
-  // ── 4. 蓄力（defender 身上 —— BUG-4 修复路径） ──
-  if (defender && Array.isArray(defender.activeBuffs)) {
-    const chargeIdx = defender.activeBuffs.findIndex(b => b.id === 'charge');
-    if (chargeIdx >= 0) {
-      rawDamage *= 2;
-      defender.activeBuffs.splice(chargeIdx, 1);
-      EventBus.emit(GE.BUFF_REMOVED, { buffId: 'charge', target: defender });
-    }
-  }
-
-  // ── 5. 暴击判定（realDamage 不走暴击） ──
+  // ── 4. 暴击判定（realDamage 不走暴击） ──
   let isCrit = false;
   if (!realDamage) {
     let critRate = BASE_CRIT_RATE + talentCritRateBonus;
@@ -185,14 +175,14 @@ export function calculateDamage(opts) {
     }
   }
 
-  // ── 6. 真实伤害不受后续修正 ──
+  // ── 5. 真实伤害不受后续修正 ──
   if (realDamage) {
     rawDamage = Math.max(0, Math.floor(rawDamage));
     applyDamage(defender, rawDamage, { isReal: true, element: dmgElement });
     return { rawDamage, finalDamage: rawDamage, dodged: false, immune: false, isCrit: false, finalElement: dmgElement };
   }
 
-  // ── 7. 闪避（多个来源乘算） ──
+  // ── 6. 闪避（多个来源乘算） ──
   let totalDodgeRate = 1; // 乘算初始 1（100% 不闪避）
   let hasDodgeSource = false;
 
@@ -229,7 +219,7 @@ export function calculateDamage(opts) {
     }
   }
 
-  // ── 8. 防御方易伤 ── §15：同名效果取最高，不叠加
+  // ── 7. 防御方易伤 ── §15：同名效果取最高，不叠加
   let vulnerableStrength = 0;
   for (const b of (defender.activeBuffs || [])) {
     if (b.id !== 'vulnerable') continue;
@@ -240,7 +230,7 @@ export function calculateDamage(opts) {
   let finalDamage = rawDamage * (1 + vulnerableStrength);
   finalDamage = Math.max(0, Math.floor(finalDamage));
 
-  // ── 8.5 涅槃 death immunity ──
+  // ── 7.5 涅槃 death immunity ──
   // 仅当受击者就是玩家本人时判定：玩家攻击生物时 player 是攻击方，
   // 若用「对生物的最终伤害 >= 玩家当前生命」判定，会在玩家低血量时
   // 误触发涅槃并吞掉本次攻击伤害（表现为攻击无效）。
@@ -266,10 +256,10 @@ export function calculateDamage(opts) {
     }
   }
 
-  // ── 9. 应用伤害 ──
+  // ── 8. 应用伤害 ──
   applyDamage(defender, finalDamage, { isReal: false, element: dmgElement });
 
-  // ── 10. 天赋 recordElementDamage ──
+  // ── 9. 天赋 recordElementDamage ──
   if (gs && dmgElement && dmgElement !== 'physical') {
     TalentSystem.recordElementDamage(gs, dmgElement);
     // LinkSkill 解耦：emit ELEMENT_DAMAGE_APPLIED —— 由 LinkSkillSystem 订阅处理风起/汲取
@@ -281,7 +271,7 @@ export function calculateDamage(opts) {
     });
   }
 
-  // ── 11. 生命归 0 惩罚（§5.4，如果最终还是打到 0） ──
+  // ── 10. 生命归 0 惩罚（§5.4，如果最终还是打到 0） ──
   if (defender === player && player.hp <= 0 && !opts._skipDeathPenalty) {
     applyDeathPenalty(gs, player);
   }
