@@ -46,6 +46,11 @@ export class GameDirector {
     this.panelRefs = {};
     /** 已注册的 EventBus listener 标记（防止 start() 重复注册） */
     this._listenersRegistered = false;
+    /**
+     * 进入游戏场景回调（由 main.js 注入）：只有「新的游戏」与「读档成功」才会触发。
+     * @type {((gs: object, mode: 'new' | 'load') => void) | null}
+     */
+    this.onEnterGame = null;
   }
 
   /**
@@ -173,11 +178,18 @@ export class GameDirector {
    */
   startNewGame() {
     this.openPanels = [];
-    resetMoveCooldown(this.gs);
     // 先关闭所有已开的 Panel（逐个发 CLOSE 事件让 UI 清理）
     // 不发 STATE_RESET —— 某些订阅者（MapView 等）会解构 {gs}，但 start() 之前 gs 是 null
     // start() 末尾会发 BOOT 事件，所有 UI 模块都会收到并初始化
     this.start();
+    this._notifyEnterGame('new');
+  }
+
+  /** 进入游戏场景（挂地图 / HUD）。只有新游戏与读档成功会调用。 */
+  _notifyEnterGame(mode) {
+    if (typeof this.onEnterGame === 'function' && this.gs) {
+      this.onEnterGame(this.gs, mode);
+    }
   }
 
   /**
@@ -265,6 +277,9 @@ export class GameDirector {
     }
     migrateGS(loadedGs);  // ← 迁移：补全旧存档缺失字段 + 旧实时档归一化为日初基线
 
+    // 直接读档（未经过新开局）时也必须先注册中央接线（MOVE / TEAM_CHANGE / 面板栈）
+    this._registerOnce();
+
     // 载入的就是「本日开始」基线：冻结一份作为当前基线，再装回运行时（清演出/窗口/墙钟）
     this.baseline = DayBaseline.capture(loadedGs);
     DayBaseline.setCurrent(this.baseline);
@@ -282,6 +297,7 @@ export class GameDirector {
     resetMoveCooldown(this.gs);
     this.pruneOpenPanels('loadGame');
     devLog.info('[GameDirector.loadGame] 读档成功 day=', this.gs.day);
+    this._notifyEnterGame('load');
     return true;
   }
 

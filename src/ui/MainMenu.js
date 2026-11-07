@@ -29,7 +29,7 @@ export class MainMenu {
         position: 'fixed',
         inset: '0',
         background: 'linear-gradient(180deg, #87CEEB 0%, #B0E0E6 40%, #FFEFD5 100%)',
-        zIndex: 99999,
+        zIndex: 5900,   // 高于游戏 HUD（80/5600），低于面板（6000）与弹窗（9000）：主菜单上可叠面板
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -87,7 +87,7 @@ export class MainMenu {
       text: '新的游戏',
       parent: this.mask,
       onclick: () => {
-        this.hide();
+        // 隐藏主菜单只能由「真正进入游戏」触发（GameDirector.onEnterGame → director.mainMenu.hide）
         if (typeof this.director?.startNewGame === 'function') {
           this.director.startNewGame();
         } else {
@@ -102,8 +102,7 @@ export class MainMenu {
       text: '读取存档',
       parent: this.mask,
       onclick: () => {
-        this.hide();
-        // 打开 SettingsPanel 的存档槽（slot 1~8）
+        // 主菜单内打开存读档页面；只有选中存档并读档成功才会进入主地图
         EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'settings' });
       },
     });
@@ -114,7 +113,7 @@ export class MainMenu {
       text: '图鉴',
       parent: this.mask,
       onclick: () => {
-        this.hide();
+        // 图鉴以面板形式叠在主菜单上，不进入主地图
         EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'codex' });
       },
     });
