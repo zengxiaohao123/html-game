@@ -237,7 +237,8 @@ new RealtimeClock(getGs)       // 每个需要时读当前 GS（读档/重开后
 clock.start() / stop()         // 唯一一个 40ms 驱动定时器
 clock.advance(realDtMs)        // 浏览器由驱动调用；测试可直接传入任意 dt
 clock.runSettlement(gs, fn)    // 毫秒级同步结算栈：取 snapshotGeometry 并冻结逻辑积分
-clock.onStep(fn)               // 订阅 200ms 逻辑步（连携窗口 UI 进度条用），返回退订函数
+clock.onStep(fn)               // 订阅 200ms 逻辑步，返回退订函数
+clock.onFrame(fn)              // 订阅 40ms 渲染帧（视觉表现用，结算栈内也触发），返回退订函数
 clock.settling                 // 是否在同步结算栈内
 getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 ```
@@ -246,7 +247,8 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 
 - **只允许一个逻辑定时器**：`RealtimeClock` 的 40ms 驱动。真实 dt 进入累加器，按 `200ms` 切片执行逻辑步；不足一步的余量留到下一帧（所以 0.5s 实测位移约有 0~1 步的残差）。
 - **逻辑步顺序（设计文档 §18.3）**：① 连携窗口过期 `pruneExpired` → ② 条件扫描 `periodicConditionScan` → ③ 生物连续积分 `stepCreatures` → ④ 移动后的地块效果（啃草）→ ⑤ 一次性广播（仅地块内容真的变化时 emit `TILE_UPDATED`，逐帧移动本身不广播）。
-- **已合并的旧定时器**：`GameDirector` 的 1000ms 连携轮询、`CreatureSystem` 的 1000/2000ms 生物移动、`LinkSkillUI` 的 200ms 进度计时器全部移除。连携窗口 UI 改为 `clock.onStep()` 订阅；8 秒窗口仍由 `LinkSkillSystem` 用 `Date.now()` 判定，`WINDOW_MS = 8000` 与到期事件（`triggered:false`）不变。
+- **已合并的旧定时器**：`GameDirector` 的 1000ms 连携轮询、`CreatureSystem` 的 1000/2000ms 生物移动、`LinkSkillUI` 的 200ms 进度计时器全部移除。连携窗口 UI 改为 `clock.onFrame()` 订阅，每帧推进外圈计时环；8 秒窗口仍由 `LinkSkillSystem` 用 `Date.now()` 判定，`WINDOW_MS = 8000` 与到期事件（`triggered:false`）不变。
+- **连携窗口计时环实现（`src/ui/LinkSkillUI.js`）**：窗口外圈用 SVG `<circle>` 画白色圆环（`stroke-dasharray` 长度 = 剩余比例 × 周长，`rotate(-90°)` 从 12 点钟起画），只有队列第一位计时、弧长在 8 秒内按逆时针回收，排队条目恒为满圈；圆环绝对定位于 72px 窗口之外（90×90 画布，不影响窗口内部 flex 布局）。该更新只读 `expireAtMs` 与 `Date.now()`，不改队列、冷却、解锁与到期逻辑。
 - **渲染插值**：`advance()` 无论是否结算都调用 `CreatureSystem.advanceCreatureRendering(gs, dt)` 推进 `renderPos`；`MapView` 的 rAF 只读 `renderPos` 画像素，不写逻辑位置。
 - **结算冻结边界**：`runSettlement` 必须同步调用，`settling` 只存在于毫秒级结算栈内；禁止延长到动画、飞字、淡出、面板打开期间。演出各自消费自己的快照，不持有 settle 锁。
 - **运动模型（走走停停状态机）**：每只生物维护 `behaviorState = 'idle' | 'walk'`。

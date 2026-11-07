@@ -89,6 +89,7 @@ globalThis.document = {
   body,
   head,
   createElement: (t) => new FakeEl(t),
+  createElementNS: (ns, t) => new FakeEl(t),
   addEventListener: (t, fn) => { (docListeners[t] ??= []).push(fn); },
   removeEventListener: (t, fn) => { const a = docListeners[t]; if (a) { const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1); } },
   querySelector: (sel) => {
@@ -1734,7 +1735,8 @@ head_('第 12 批：弹窗连点重入 / ESC 归弹窗 / drop 复位拖拽标记
 head_('第 13 批 波 2：UI 修复验证（门控 / 信息区 / 商店 / 建造 / 编队 / 连携 / 出货箱）');
 {
   const { HookDispatcher } = await import('../src/core/HookDispatcher.js');
-  const { LinkSkillSystem } = await import('../src/systems/LinkSkillSystem.js');
+  const { LinkSkillSystem, WINDOW_MS } = await import('../src/systems/LinkSkillSystem.js');
+  const { getRealtimeClock } = await import('../src/systems/RealtimeClock.js');
   const { DialogBox } = await import('../src/ui/DialogBox.js');
 
   // ── S-01 / S-02 / M-01：界面打开时 WASD / 空格 / 数字键失效（§16.20） ──
@@ -1892,6 +1894,87 @@ head_('第 13 批 波 2：UI 修复验证（门控 / 信息区 / 商店 / 建造
   delete gs.linkSkillCooldowns['2|skill_link_yumo_drain'];
   delete gs.linkSkillCooldowns['3|skill_link_luyouyou_rise_wind'];
   gs.team.groups[0].roles = savedRolesM9;
+
+  // ── 连携窗口圆形计时环：队首从满圈逆时针消减到 0 → 窗口消失（§12.5 / §16.18） ──
+  {
+    const realDateNow = Date.now;
+    let fakeNow = realDateNow();
+    Date.now = () => fakeNow;
+    const tR1 = gs.map.outerTiles[2], tR2 = gs.map.outerTiles[3];
+    const savedR1 = { id: tR1.contentId, st: tR1.contentState };
+    const savedR2 = { id: tR2.contentId, st: tR2.contentState };
+    const savedRolesRing = (gs.team.groups[0].roles || []).slice();
+    try {
+      const clock = getRealtimeClock(() => gs);
+      const C = 2 * Math.PI * 42;
+      const ringLen = (i) => parseFloat(linkSkillUI._rings[i].circle.getAttribute('stroke-dasharray'));
+
+      gs.linkSkillQueue = [];
+      gs.team.groups[0].roles = ['yumo', 'luyouyou'];
+      tR1.contentId = 'skill_link_yumo_drain';
+      LinkSkillSystem.onSkillCardPlaced(gs, 2, 'skill_link_yumo_drain');
+      tR2.contentId = 'skill_link_luyouyou_rise_wind';
+      LinkSkillSystem.onSkillCardPlaced(gs, 3, 'skill_link_luyouyou_rise_wind');
+      LinkSkillSystem.enqueue(gs, { tileIdx: 2, skillId: 'skill_link_yumo_drain' });
+      LinkSkillSystem.enqueue(gs, { tileIdx: 3, skillId: 'skill_link_luyouyou_rise_wind' });
+
+      assert(linkSkillUI._rings.length === 2, '每个连携窗口外圈各有一条圆形计时环', linkSkillUI._rings.length);
+      assert(linkSkillUI._rings[0].circle.getAttribute('stroke') === '#ffffff'
+        && linkSkillUI._rings[0].circle.getAttribute('stroke-width') === '3',
+        '计时环为白色 3px 圆环（SVG 描边）');
+
+      // 排队第二位不计时：满圈
+      fakeNow += 3600;
+      clock.advance(40);
+      assert(Math.abs(ringLen(1) - C) < 1, '排队条目不计时：环保持满圈', ringLen(1));
+
+      // 队首先推进到剩 4 秒：约半圈
+      const head1 = gs.linkSkillQueue[0];
+      head1.expireAtMs = fakeNow + WINDOW_MS / 2;
+      clock.advance(40);
+      const half = ringLen(0);
+      assert(half > C * 0.45 && half < C * 0.55,
+        `队首环按剩余时间递减（剩 4s ≈ 半圈，实测 ${half.toFixed(1)}/${C.toFixed(1)}）`, half);
+
+      // 再过一帧（40ms）：只少一小段，证明逐帧推进而非 200ms 跳一格
+      fakeNow += 40;
+      clock.advance(40);
+      const smooth = half - ringLen(0);
+      assert(smooth > 0.5 && smooth < C * 0.02,
+        '环随渲染帧平滑推进（单帧约减 0.5% 圈）', smooth);
+
+      // 窗口耗尽：环归零 → 逻辑出队、后续前移
+      fakeNow = head1.expireAtMs + 10;
+      linkSkillUI._updateRings();
+      assert(ringLen(0) < 0.1, '队首 8 秒耗尽时环转满一圈归空', ringLen(0));
+      LinkSkillSystem.pruneExpired(gs);
+      assert(gs.linkSkillQueue.length === 1 && gs.linkSkillQueue[0].skillId === 'skill_link_luyouyou_rise_wind',
+        '环归空 → 该窗口出队、后续连携前移', gs.linkSkillQueue.map((e) => e.skillId));
+      assert(linkSkillUI._rings.length === 1 && Math.abs(ringLen(0) - C) < 1,
+        '前移后的新队首重新从满圈开始计时', { count: linkSkillUI._rings.length, len: ringLen(0) });
+
+      // 最后一个窗口也耗尽 → 连携区隐藏
+      const head2 = gs.linkSkillQueue[0];
+      fakeNow = head2.expireAtMs + 10;
+      linkSkillUI._updateRings();
+      LinkSkillSystem.pruneExpired(gs);
+      assert(gs.linkSkillQueue.length === 0 && linkSkillUI.visible === false
+        && linkSkillUI.root.style.display === 'none',
+        '所有窗口耗尽后连携区隐藏（窗口消失）',
+        { q: gs.linkSkillQueue.length, visible: linkSkillUI.visible });
+    } finally {
+      Date.now = realDateNow;
+      gs.linkSkillQueue = [];
+      linkSkillUI._reRender();
+      tR1.contentId = savedR1.id; tR1.contentState = savedR1.st;
+      tR2.contentId = savedR2.id; tR2.contentState = savedR2.st;
+      delete gs.linkSkillCounters['2|skill_link_yumo_drain'];
+      delete gs.linkSkillCounters['3|skill_link_luyouyou_rise_wind'];
+      delete gs.linkSkillCooldowns['2|skill_link_yumo_drain'];
+      delete gs.linkSkillCooldowns['3|skill_link_luyouyou_rise_wind'];
+      gs.team.groups[0].roles = savedRolesRing;
+    }
+  }
 
   // ── M-10：出货箱显示条目实际价值（郁金香随机价） ──
   const outboxBackup = gs.inventory.outbox;

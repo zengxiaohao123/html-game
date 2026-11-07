@@ -39,6 +39,7 @@ export class RealtimeClock {
     this._accumulatorMs = 0;
     this._settlingDepth = 0;
     this._stepListeners = new Set();
+    this._frameListeners = new Set();
   }
 
   get running() {
@@ -102,6 +103,13 @@ export class RealtimeClock {
         try { fn(dt, gs); } catch (e) { devLog.warn('[RealtimeClock] step listener error', e); }
       }
     }
+
+    // 渲染帧监听：每帧推进视觉表现（如连携窗口圆形计时环），不参与逻辑结算
+    if (dt > 0) {
+      for (const fn of this._frameListeners) {
+        try { fn(dt, gs); } catch (e) { devLog.warn('[RealtimeClock] frame listener error', e); }
+      }
+    }
   }
 
   /** 固定 200ms 逻辑步：顺序按设计文档 §18.3 */
@@ -135,7 +143,7 @@ export class RealtimeClock {
 
   /**
    * 订阅逻辑步（每 200ms 一次，结算栈内不触发）。
-   * 连携窗口 UI 进度条用它，替代原来的 200ms 独立定时器。
+   * 用于跟随逻辑状态变化的 UI 刷新（连携窗口的到期判定本身仍在该逻辑步内完成）。
    * @param {(dtMs:number, gs:object)=>void} fn
    * @returns {() => void} 取消订阅
    */
@@ -143,6 +151,18 @@ export class RealtimeClock {
     if (typeof fn !== 'function') return () => {};
     this._stepListeners.add(fn);
     return () => this._stepListeners.delete(fn);
+  }
+
+  /**
+   * 订阅渲染帧（每个 40ms 驱动帧一次，结算栈内也触发）。
+   * 仅供视觉表现（如连携窗口环形计时）平滑推进，不得在此写逻辑状态。
+   * @param {(dtMs:number, gs:object)=>void} fn
+   * @returns {() => void} 取消订阅
+   */
+  onFrame(fn) {
+    if (typeof fn !== 'function') return () => {};
+    this._frameListeners.add(fn);
+    return () => this._frameListeners.delete(fn);
   }
 }
 

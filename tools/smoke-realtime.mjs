@@ -101,9 +101,26 @@ head('1. 时钟结构：单一定时器 / 200ms 逻辑步 / 无第二逻辑 time
   check(!gd.includes('setInterval'), 'GameDirector 不再自建定时器（1000ms 轮询已合并）');
   check(!gd.includes('startRealtimeLoop'), 'GameDirector 不再调用旧生物 1000ms 循环');
   check(!ui.includes('setInterval'), 'LinkSkillUI 不再自建 200ms 定时器（改为时钟订阅）');
+  check(ui.includes('.onFrame('), '连携窗口计时环改为订阅渲染帧 onFrame（逐帧平滑推进）');
+  check(!ui.includes('link-progress'), '旧条形计时条已移除（不与圆环并存两个计时器）');
+  check(typeof RealtimeClock.prototype.onFrame === 'function', 'RealtimeClock 提供渲染帧订阅 onFrame');
   check(!cs.includes('setInterval'), 'CreatureSystem 不再有移动定时器');
   check(rc.split('setInterval').length - 1 === 1, 'RealtimeClock 只有 1 个 setInterval（单一定时器）');
   check(rc.includes('LOGIC_STEP_MS = 200'), '时钟显式声明 200ms 逻辑步');
+}
+
+// ════════════════════════════════════════════════════════════
+head('1b. onFrame：渲染帧订阅（逐帧推进，退订后停止）');
+{
+  const gs = mkMap(5);
+  const clock = new RealtimeClock(() => gs);
+  let frames = 0;
+  const unsub = clock.onFrame(() => { frames += 1; });
+  clock.advance(40);
+  clock.advance(40);
+  unsub();
+  clock.advance(40);
+  check(frames === 2, 'onFrame 每渲染帧触发一次，退订后不再触发', frames);
 }
 
 // ════════════════════════════════════════════════════════════
