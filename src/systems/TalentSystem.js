@@ -141,8 +141,8 @@ export function onDayStart(gs) {
     if (t.effectType === 'item_generation') {
       const chance = t.effectParams?.dailyRandomItemChance ?? 0.4;
       if (Random.chance(chance)) {
-        // 从 ITEMS 里随机一个（简化：随机一个有 value 的非 item_ 前缀？—— 直接随机 item_ 开头的）
-        const pool = Object.keys(ITEMS).filter(id => id.startsWith('item_'));
+        // 从 ITEMS 里随机一个可用物品；载具类物品只能进载具槽，进背包后没有使用入口，排除
+        const pool = Object.keys(ITEMS).filter(id => id.startsWith('item_') && ITEMS[id]?.tier1 !== '载具');
         if (pool.length > 0) {
           const pick = Random.pick(pool);
           InventorySystem.addItem(gs, pick, 1);

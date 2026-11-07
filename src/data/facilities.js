@@ -200,14 +200,12 @@ const FacilityWheat = {
       }
     }, this);
 
-    // onBlessed：祝福发生时立即再触发一次（立即 ×3 产出）
+    // onBlessed：祝福发生时立即再触发一次（立即 ×3 产出；草地不加成，按物品库文案固定 ×3）
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
-      const tile = gs.map.outerTiles[tileIdx];
-      let qty = 3;
-      if (normalizeTerrain(tile.terrain) === 'terrain_grass') qty += 1;
+      const qty = 3;
       InventorySystem.addItem(gs, 'item_wheat', qty);
-      EventBus.emit(GE.TOAST_SHOW, { text: `🌾 祝福 ×3 +${qty} 小麦`, duration: 2000 });
+      EventBus.emit(GE.TOAST_SHOW, { text: `🌾 祝福 +${qty} 小麦`, duration: 2000 });
       devLog.info('[wheat] onBlessed instant +', qty);
     }, this);
   },
@@ -1077,6 +1075,7 @@ const FacilityDandelion = {
       if (!tile || tile.contentId !== this.id) return;
       const st = ensureStored(tile);
       st.dandelionValue = 1;
+      syncPumpkin(gs); // A-12：储存作物数 +1
       EventBus.emit(GE.TILE_UPDATED, { tileIdx });
     }, this);
 
@@ -1124,6 +1123,7 @@ const FacilityGhostGrass = {
       st.ghostValue = 12;
       st.ghostBlessCountToday = 0;
       st.ghostBlessedToday = false;
+      syncPumpkin(gs); // A-12：储存作物数 +1
       EventBus.emit(GE.TILE_UPDATED, { tileIdx });
     }, this);
 
@@ -1141,13 +1141,16 @@ const FacilityGhostGrass = {
       EventBus.emit(GE.TILE_UPDATED, { tileIdx });
     }, this);
 
-    HookDispatcher.register('onDailyStart', ({ gs }) => {
+    HookDispatcher.register('onDailyStart', ({ gs, scopedTileIdx }) => {
+      // 初级肥料只重复「产出类」每日效果：枯萎属于跨日结算，不能让施肥把未祝福的幽怜草直接清掉
+      if (scopedTileIdx !== undefined) return;
       const tiles = gs.map.outerTiles.filter((t) => t.contentId === this.id);
       for (const t of tiles) {
         const st = t.contentState || (t.contentState = {});
         if (st.ghostStored && st.ghostBlessedToday === false) {
           t.contentId = null;
           t.contentState = {};
+          syncPumpkin(gs); // A-12：储存作物数 -1
           EventBus.emit(GE.TOAST_SHOW, { text: '🌙 昨日未受祝福，幽怜草枯萎了', duration: 2000 });
           EventBus.emit(GE.TILE_UPDATED, { tileIdx: t.idx });
         }

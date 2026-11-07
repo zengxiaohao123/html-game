@@ -181,11 +181,12 @@ export function onItemGained(gs, itemId) {
  */
 export function syncPumpkin(gs) {
   if (InventorySystem.countItem(gs, 'collectible_sad_pumpkin') < 1) return;
-  // 简化：储存量取所有田块的 contentState.stored 之和（土豆/草莓/豌豆等）
+  // 场上储存的作物总数：土豆/草莓/豌豆按个数；蒲公英/幽怜草各为独立"储存 1 个作物"
   let stored = 0;
   for (const t of gs.map.outerTiles) {
     const st = t.contentState || {};
-    stored += (st.potatoStored || 0) + (st.strawberryStored || 0) + (st.peaStored || 0);
+    stored += (st.potatoStored || 0) + (st.strawberryStored || 0);
+    stored += (st.peaStored || 0) + (st.dandelionStored ? 1 : 0) + (st.ghostStored ? 1 : 0);
   }
   gs._pumpkin = gs._pumpkin || { stored: 0, hpApplied: 0, atkApplied: 0 };
   const delta = stored - gs._pumpkin.stored;

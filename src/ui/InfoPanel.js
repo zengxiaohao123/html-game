@@ -650,6 +650,7 @@ export class InfoPanel {
               InventorySystem.addItem(gs, 'item_dandelion', 1, { value: cur });
               curTile.contentId = null;
               curTile.contentState = {};
+              syncPumpkin(gs); // A-12：储存作物数 -1
               EventBus.emit(GE.TILE_UPDATED, { tileIdx });
               EventBus.emit(GE.INVENTORY_CHANGE);
               EventBus.emit(GE.TOAST_SHOW, { text: `🌼 采摘成功！获得价值 ${cur} 的蒲公英`, duration: 2000 });
@@ -678,6 +679,7 @@ export class InfoPanel {
               InventorySystem.addItem(gs, 'item_ghost_grass', 1, { value: cur });
               curTile.contentId = null;
               curTile.contentState = {};
+              syncPumpkin(gs); // A-12：储存作物数 -1
               EventBus.emit(GE.TILE_UPDATED, { tileIdx });
               EventBus.emit(GE.INVENTORY_CHANGE);
               EventBus.emit(GE.TOAST_SHOW, { text: `🌙 采摘成功！获得价值 ${cur} 的幽怜草`, duration: 2000 });
