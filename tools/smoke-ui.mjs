@@ -3102,6 +3102,53 @@ head_('§19 HotBar 全类型物品：拖入 / 点击响应 / 建造模式放置'
   window.__gameDirector = prevGameDirector;
 }
 
+head_('§20 生物详情技能：史莱姆【粘液喷吐】逐字取自物品库，无技能生物保持空态');
+{
+  const { getCreatureDef } = await import('../src/data/creatures.js');
+  const { CREATURES_REF } = await import('../src/data/items.js');
+  const bio = CREATURES_REF.find((r) => r.code === 'BIO-003');
+  const slimeDef = getCreatureDef('slime_fire');
+  const expectedSpit = bio.special.replace(/^【[^】]+】/, '');
+  const expectedImmune = bio.feed.replace(/^无需投喂；/, '').replace(/^【[^】]+】/, '');
+
+  assert(slimeDef.skills?.length === 2, `史莱姆技能数据 2 条（实测 ${slimeDef.skills?.length}）`);
+  const spit = slimeDef.skills.find((s) => s.name === '粘液喷吐');
+  assert(spit && spit.description === expectedSpit, '【粘液喷吐】描述与物品库 BIO-003 逐字一致');
+  const immune = slimeDef.skills.find((s) => s.name === '元素免疫');
+  assert(immune && immune.description === expectedImmune, '【元素免疫】描述与物品库 BIO-003 逐字一致');
+  assert(getCreatureDef('slime_rock').skills?.length === 2, '7 个史莱姆变体全部带技能');
+  assert(getCreatureDef('chick').skills === undefined, '小鸡无技能字段（保持空态）');
+
+  // UI：打开史莱姆详情 → 技能子 tab
+  const cell20 = gs.map.fence[0];
+  const savedCreatures20 = cell20.creatures;
+  const savedGs20 = gs.creatures.slice();
+  cell20.creatures = ['t20_slime'];
+  gs.creatures.push({
+    id: 't20_slime', kind: 'slime_fire', hp: 40, maxHp: 40, atk: 10,
+    growth: 0, growthMax: 0, mood: 0, activeBuffs: [],
+  });
+  EventBus.emit(GE.FENCE_TILE_CLICKED, { fenceIdx: 0 });
+  buttonsWithText(infoPanel.root, '单位')[0].click();
+  const slimeCard = findAll(infoPanel.root, (el) => el.tagName === 'DIV'
+    && el.attributes && el.attributes.title === '火史莱姆')[0];
+  assert(!!slimeCard, '栅栏格显示火史莱姆卡片');
+  slimeCard.click();
+  buttonsWithText(infoPanel.root, '技能')[0].click();
+  assert(hasText(infoPanel.root, '【粘液喷吐】'), '技能 tab 显示【粘液喷吐】');
+  assert(hasText(infoPanel.root, spit.description), '技能描述逐字上屏（与物品库一致）');
+  assert(hasText(infoPanel.root, '【元素免疫】'), '被动技能【元素免疫】一并显示');
+  assert(!hasText(infoPanel.root, '暂无技能'), '有技能时不显示空态');
+
+  // 还原
+  cell20.creatures = savedCreatures20;
+  gs.creatures.length = 0;
+  gs.creatures.push(...savedGs20);
+  infoPanel.creatureDetailId = null;
+  infoPanel.selectTile(2);
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+}
+
 // ════════════════════════════════════════════════════════════
 console.log(`\nsmoke-ui 结果：${pass} 通过 / ${fail} 失败（共 ${pass + fail}）`);
 process.exit(fail > 0 ? 1 : 0);

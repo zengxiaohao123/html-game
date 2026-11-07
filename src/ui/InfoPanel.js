@@ -1659,12 +1659,36 @@ export class InfoPanel {
         createEl('span', { class: ['stat-value'], text: value, parent: row });
       }
     } else if (this.creatureSubTab === 'skills') {
-      // 技能：技能名 + 描述（当前生物数据无技能字段 → 空态提示）
-      createEl('div', {
-        style: { padding: '20px 10px', textAlign: 'center', color: '#b0a090', fontSize: '13px', fontStyle: 'italic' },
-        text: '（该生物暂无技能）',
-        parent: this.bodyWrap,
-      });
+      // 技能：名称 + 描述，文案逐字取自物种数据（数据源为物品库「生物（参考）」，不做改写）。
+      // 无技能字段的生物（小鸡 / 鸡）显示空态。
+      const skills = def.skills || [];
+      if (skills.length === 0) {
+        createEl('div', {
+          style: { padding: '20px 10px', textAlign: 'center', color: '#b0a090', fontSize: '13px', fontStyle: 'italic' },
+          text: '（该生物暂无技能）',
+          parent: this.bodyWrap,
+        });
+      } else {
+        for (const s of skills) {
+          const block = createEl('div', {
+            style: {
+              padding: '6px 0', borderBottom: '1px dashed #d4c4a4',
+              display: 'flex', flexDirection: 'column', gap: '4px',
+            },
+            parent: this.bodyWrap,
+          });
+          createEl('div', {
+            style: { fontSize: '14px', fontWeight: '700', color: '#3a2e20' },
+            text: `【${s.name}】`,
+            parent: block,
+          });
+          createEl('div', {
+            style: { fontSize: '13px', color: '#5a4a38', whiteSpace: 'pre-line', lineHeight: '1.6' },
+            text: s.description,
+            parent: block,
+          });
+        }
+      }
     } else {
       // 状态：该「实例」的运行时状态（投喂状态 + buff/debuff），名称/含义取数据层
       const states = getCreatureStates(c);

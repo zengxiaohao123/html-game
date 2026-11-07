@@ -2,6 +2,26 @@
 // Phase 3 —— 生物定义：小鸡 / 鸡 / 史莱姆 7 元素变体
 // 设计文档 §13
 
+import { CREATURES_REF } from './generated/library.js';
+
+/**
+ * 生物技能：名称与描述**逐字取自物品库「生物（参考）」工作表**，只按【技能名】表头切分，
+ * 表头之后的原文原样保留（不缩写、不改写、不补字）。
+ */
+function skillsFromRefTexts(texts) {
+  const out = [];
+  for (const text of texts) {
+    const m = text ? /【([^】]+)】([\s\S]*)/
+      .exec(text) : null;
+    if (m) out.push({ name: m[1], description: m[2].trim() });
+  }
+  return out;
+}
+
+const BIO003_REF = CREATURES_REF.find((r) => r && r.code === 'BIO-003') || null;
+// BIO-003 史莱姆：feed 字段承载【元素免疫】，special 字段承载【粘液喷吐】
+const SLIME_SKILLS = skillsFromRefTexts([BIO003_REF?.feed, BIO003_REF?.special]);
+
 /**
  * 生物分类（capacity 类型）：
  *   friendly —— 友善，小鸡/鸡
@@ -209,6 +229,12 @@ export const SLIME_KINDS = [
   'slime_fire', 'slime_water', 'slime_thunder', 'slime_ice',
   'slime_grass', 'slime_wind', 'slime_rock',
 ];
+
+// 史莱姆 7 变体共用同一组技能（文案来自物品库 BIO-003，见文件顶部 SLIME_SKILLS）
+for (const kind of SLIME_KINDS) {
+  if (CREATURES[kind]) CREATURES[kind].skills = SLIME_SKILLS;
+}
+
 
 export const ALL_CREATURE_IDS = Object.keys(CREATURES);
 
