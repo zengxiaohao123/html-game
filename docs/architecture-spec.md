@@ -232,7 +232,7 @@ snapshotGeometry(gs)                    // 冻结逻辑圆位置/半径的快照
    - 旧存档缺少 `rows/cols/fenceRows/fenceCols` 时，`Distance.mapDimsOf` / `fenceDimsOf` 一律回退 `size` / `fenceRowCols`，按 3×3 正常工作，不崩溃。
    - 索引换算统一走 `Distance.outerIdxToXY` / `outerXYToIdx` / `outerNeighbors`（入参可为 `gs.map` 或 `{rows, cols}`），不允许再传裸 `size`；越界一律返回 `null`，环形邻居不跨圈回绕。
 2. **生物只属于栅栏域**：圆贴边压到外圈框不算位于外圈地块（外圈单位页只显示角色）。`fence[].creatures` 只是「主格」兼容缓存，**几何归属以 `pos` + `radius` 计算**；允许一格多只、允许完全重叠，生成不再要求整格为空（容量仍按分类软上限统计）。
-3. **逻辑位置 vs 渲染位置**：`pos` 是判定权威位置；`renderPos` 是表现层插值位置。结算冻结（主动技能/回合结算）只冻结 `pos`（用 `snapshotGeometry()` 捕获），渲染层继续按 `renderPos` 插值，画面不停。阶段 2 起两者都由 `RealtimeClock` 推进：逻辑步写 `pos`，每个真实帧独立写 `renderPos`（见 §2.5）。
+3. **逻辑位置 vs 渲染位置**：`pos` 是判定权威位置，只由「速度 × 时间」连续积分推进；`renderPos` 是表现层插值位置，只在「上一步 `pos` → 当前 `pos`」之间插值（不独立模拟、不超前）。结算冻结（主动技能/回合结算）只冻结 `pos`（用 `snapshotGeometry()` 捕获），插值在最后一段内收敛后保持不动，画面不漂移、不回拉（见 §2.5）。
 4. **默认索敌（全项目统一）**：任何未明确写索敌对象的技能，一律选**最近的敌人**（圆心到圆心直线距离），即 `nearestCreatureTo(gs, point)` 默认语义（`enemiesOnly: true` + 存活判定）。
 
 ### 2.4.1 MapExpandSystem（农场扩建）
@@ -292,19 +292,22 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 - **逻辑步顺序（设计文档 §18.3）**：① 连携窗口过期 `pruneExpired` → ② 条件扫描 `periodicConditionScan` → ③ 生物连续积分 `stepCreatures` → ④ 移动后的地块效果（啃草）→ ⑤ 一次性广播（仅地块内容真的变化时 emit `TILE_UPDATED`，逐帧移动本身不广播）。
 - **已合并的旧定时器**：`GameDirector` 的 1000ms 连携轮询、`CreatureSystem` 的 1000/2000ms 生物移动、`LinkSkillUI` 的 200ms 进度计时器全部移除。连携窗口 UI 改为 `clock.onFrame()` 订阅，每帧推进外圈计时环；8 秒窗口仍由 `LinkSkillSystem` 用 `Date.now()` 判定，`WINDOW_MS = 8000` 与到期事件（`triggered:false`）不变。
 - **连携窗口计时环实现（`src/ui/LinkSkillUI.js`）**：窗口边界用 SVG `<circle>` 画白色圆环（`stroke-dasharray` 长度 = 剩余比例 × 周长，`rotate(-90°)` 从 12 点钟起画），只有队列第一位计时、弧长在 8 秒内按逆时针回收，排队条目恒为满圈。环画布与 72px 窗口等大（`viewBox 72×72`），白色环宽 6px 画在边界内侧，外径 = 窗口直径、正好压在窗口可视边界上，无外扩无缝隙；窗口底板无外边框并 `overflow:hidden` 裁在环内，序号角标、图标与技能名都收在环内侧。该更新只读 `expireAtMs` 与 `Date.now()`，不改队列、冷却、解锁与到期逻辑。
-- **渲染插值**：`advance()` 无论是否结算都调用 `CreatureSystem.advanceCreatureRendering(gs, dt)` 推进 `renderPos`；`MapView` 的 rAF 只读 `renderPos` 画像素，不写逻辑位置。
+- **渲染插值**：`stepCreatures` 每步把步前的 `pos` 记为 `renderFrom` 并重置 `renderT`；`advanceCreatureRendering(gs, dt)` 只在该步时长内做 `renderFrom → pos` 的线性插值（不再按 `dir` 独立模拟）。`MapView` 的 rAF 只读 `renderPos` 画像素，不写逻辑位置。两个端点都是同一次连续积分的合法位置，因此插值不越界、不漂移、不会在停机时"吸回 pos"；结算栈期间没有新逻辑步，画面停在当前 `pos`（毫秒级，不产生假位移）。
 - **结算冻结边界**：`runSettlement` 必须同步调用，`settling` 只存在于毫秒级结算栈内；禁止延长到动画、飞字、淡出、面板打开期间。演出各自消费自己的快照，不持有 settle 锁。
 - **运动模型（以走为主、偶尔停下的走走停停状态机，2026-11-07 修订）**：每只生物维护 `behaviorState = 'idle' | 'walk'`。
   - `Idle`：**真正静止**（`pos` 完全不变），时长为长站或短停二选一——走完一次后按 `shortPauseChance` 进短停，否则进长站；静止期间可按 `idleTurnChance` 发生一次小幅转头（`idleTurnMaxRad`），不产生位移。60s 采样静止占比目标：小鸡 30~40% / 成鸡 40~50% / 史莱姆 50~60%（Idle 只是"偶尔停一下"，不是常态）。
   - `Walk`：朝 `targetPos` 走，方向为任意弧度，按 `maxTurnRate`（弧度/秒）平滑转向（不会瞬间反向）；速度 `speedPerTile` 单位为**秒/格**（3~6）；到达 `arriveEps` 后按 `chainWalkChance` **立刻接下一段**（连续多段位移后再停）或回 `Idle`；安全超时同样走该分支。
   - 目标点：常规走 `walkDistMin~Max` 格、方向沿当前朝向 ± `walkAngleJitter`；按 `longWalkChance` 偶尔换成全随机方向的 `longWalkDistMin~Max` 长走。距离取 `min(期望距离, 该方向射线到栅栏内边界的可达距离)`——目标永远在合法区内且可达，不再出现"目标夹到墙上、每一步都推不动"。
-  - **撞墙即时重决策（卡墙修复）**：撞到**任何一面**栅栏的**同一个逻辑步内**立即二选一——① 按 `wallHitIdleChance` 进 `Idle`；② 换成满足 `wallFreeDistance = max(wallFreeMinDist 0.5 格, wallFreeHorizonS 1.5s / speedPerTile)` 的新方向，并在同一步内产生真实位移。
+  - **连续速度积分（禁止瞬移 / 禁止吸附，2026-11-07 观感修订）**：实例维护速度向量 `vx/vy`（格/秒）。Walk 每步只做 `pos += v × dt`：`integrateMotion` 沿速度求「到栅栏内边界的时间」，最多走到边界**接触点**即停止，绝不允许越过边界再被 `clamp` 覆盖（那就是肉眼看到的"瞬移/被吸住"）。单步位移恒 ≤ `速度 × 200ms`。
+  - **撞墙真实回弹 + 回弹后重决策**：撞到任一面栅栏的那一步，位置停在边界内侧接触点；速度按法线反射并衰减（法线 × `bounceRestitution`，切向 × `bounceTangentialKeep`），进入 `bounceS` 秒回弹（速度按 `bounceDamping` 指数衰减）。回弹结束（或速度已不可见）后**再做一次**二选一决策——① 按 `wallHitIdleChance` 进 `Idle`；② 换成满足 `wallFreeDistance = max(wallFreeMinDist 0.5 格, wallFreeHorizonS 1.5s / speedPerTile)` 的新方向。
+    - `lastWallDecision`：接触当步为 `'bounce'`，回弹结束后变为 `'idle' | 'walk'`；测试断言要求「每次撞墙必先回弹，且在 bounceS+1 个逻辑步内完成决策」。
     - 候选方向在 0~2π 全角度采样（先试朝合法区中心），不限于上下左右；采样不到可行方向 → 直接进 `Idle`，并按 `wallFailExtraIdleS` 随连续失败次数延长静止（最多叠加 3 次）。
-    - 任何时刻不允许"`Walk` 却零位移"；撞墙瞬间圆心被夹回合法区，绝不穿出栅栏。计数器 `wallHits` / `lastWallDecision` 只用于测试断言，不参与玩法。
+    - 任何时刻不允许"`Walk` 却零位移"；撞墙/回弹全程圆心都在合法区内。计数器 `wallHits` / `lastWallDecision` 只用于测试断言，不参与玩法。
+  - **平滑起步 / 平滑停车**：Walk 的速度大小按 `startAccelS` 从当前值平滑加速到巡航速度（回弹后恢复也走这条路，不瞬跳）；进 `Idle` 时按 `stopDecelS` 线性刹车到 0，刹车期间位置仍连续积分（允许刹停后 `brakeLeft > 0`），不会速度瞬间归零。
   - **窄栏加成**：合法圆心区跨度小于 `narrowPenRefSpan`（1.5 格）时 Idle 按比例缩短（下限 `narrowPenIdleMinScale` 0.55），保证 1×1 栅栏（合法圆心区 0.5×0.5）仍以走为主。
   - **所有时长/距离/转向/概率参数集中在 `src/data/creatureBehavior.js` 的 `BEHAVIOR_PROFILES` 表**（小鸡/成鸡/史莱姆三套预设 + 通用默认），逻辑层不写死数值；实例可用 `behaviorOverride` 临时覆盖（测试/特殊个体）。
   - 只被栅栏边界裁剪（圆心 + 半径不出栅栏），生物之间不碰撞、允许完全重叠。小鸡长大半径 `1/6 → 0.25` 时圆心立即夹回合法区并重置为 `Idle`。
-  - **静止不刷 DOM**：`Idle` 时 `renderPos` 对齐 `pos`，`CreatureView` 缓存上次 `transform` 字符串，位置未变则不写样式（`advanceCreatureRendering` 对 Idle 也直接跳过位移）。
+  - **静止不刷 DOM**：刹停后 `renderPos` 已收敛到 `pos` 并不再变化；`CreatureView` 缓存上次 `transform` 字符串，位置未变则不写样式（逐帧插值只在有逻辑位移的步内产生 5 帧小位移，停下后完全不写）。
 
 ---
 

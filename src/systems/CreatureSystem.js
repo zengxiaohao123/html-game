@@ -14,8 +14,15 @@
 //     src/data/creatureBehavior.js（逻辑层不写死数值）；
 //   - 只裁剪栅栏边界（圆心 + 半径不出栅栏），生物之间不碰撞、不分离、允许重叠。
 //   - 撞边安全（2026-11-07）：目标点用射线可达距离（绝不落在界外/不可达），
-//     被墙完全挡住时当步重选「朝合法区内部」的方向并立即产生位移；
 //     任何时刻都不允许停在 Walk 状态却零位移（真被完全挡住则转 Idle）。
+//   - 连续速度积分（2026-11-07 观感修订，用户裁定）：
+//     ① pos 只按「速度 × 时间」积分推进（vx/vy 单位 格/秒），撞墙也不 override pos：
+//        沿速度走到边界接触点为止，绝不瞬移、绝不被 clamp 吸到边界；
+//     ② renderPos 不再独立模拟，而是对「上一步 pos → 当前 pos」做线性插值，
+//        两个端点同属一次合法积分，因此既平滑、又不会漂移/回拉/被吸附；
+//     ③ 进入 Idle 先按 stopDecelS 线性刹车到 0，再真正静止；起步按 startAccelS 平滑加速；
+//     ④ 撞墙做真实回弹：法线分量以 bounceRestitution 反射、切向按 bounceTangentialKeep 保留，
+//        回弹速度按 bounceDamping 快速衰减，回弹 bounceS 秒后再做撞墙重决策（Idle / 换向）。
 //
 // 容量 & 超载惩罚（§13.2，2026-11-04 裁决）：
 //   友善超载 → 2 天后 友善类收益归 0（wheat/rice/strawberry/pea/henhouse 产蛋）
@@ -104,8 +111,19 @@ export function spawnCreature(gs, kind, opts = {}) {
     stateLeft: Math.random() * getBehaviorProfile(def.kind).idleMaxS,
     targetPos: null,
     idleTurnLeft: rand(0.5, 2.5),
-    // 渲染插值位置：表现层可随帧更新，结算冻结只冻结 pos，不影响这里
+    // 速度向量（格/秒）：pos 只按「速度 × 时间」连续积分（撞墙回弹也走这条路径）；
+    // 生成时是 Idle，速度从 0 起步，由 beginWalk 后的 startAccelS 平滑加速
+    vx: 0,
+    vy: 0,
+    // 渲染插值位置：只在上一步 pos → 当前 pos 之间插值，不再独立模拟（避免漂移/吸附）
     renderPos: { x: pos.x, y: pos.y },
+    renderFrom: { x: pos.x, y: pos.y },
+    renderT: 0,
+    renderDur: 0.2,
+    // 起步加速 / 停车制动 / 撞墙回弹计时（秒）
+    brakeLeft: 0,
+    brakeSpeed0: 0,
+    bounceLeft: 0,
     hp: def.hp,
     maxHp: def.hp,
     atk: def.atk,
@@ -227,6 +245,9 @@ export function clampCreatureToFence(gs, creature) {
     p.x = clamp(p.x, inner.x0, inner.x1);
     p.y = clamp(p.y, inner.y0, inner.y1);
   }
+  // 插值起点同步复位，避免「夹回」之后渲染层把旧位置再插值回来（视觉回拉）
+  creature.renderFrom = { x: creature.pos.x, y: creature.pos.y };
+  creature.renderT = Number.isFinite(creature.renderDur) ? creature.renderDur : 0.2;
   return creature;
 }
 
@@ -239,6 +260,24 @@ export function clampCreatureToFence(gs, creature) {
 function secondsPerTileOf(creature) {
   const v = creature?.speedPerTile;
   return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : defaultSecondsPerTile();
+}
+
+/** 巡航速度（格/秒）= 1 / speedPerTile */
+function cruiseSpeedOf(creature) {
+  return 1 / secondsPerTileOf(creature);
+}
+
+/** 当前速度模长（格/秒） */
+function speedOf(creature) {
+  const vx = Number.isFinite(creature?.vx) ? creature.vx : 0;
+  const vy = Number.isFinite(creature?.vy) ? creature.vy : 0;
+  return Math.hypot(vx, vy);
+}
+
+/** 当前速度方向（弧度）；速度≈0 时保留原 dir */
+function syncHeadingFromVelocity(creature) {
+  if (speedOf(creature) <= 1e-9) return;
+  creature.dir = Math.atan2(creature.vy, creature.vx);
 }
 
 /** 行走态判定；旧实例（无 behaviorState）按阶段 2 语义视为行走 */
@@ -259,6 +298,30 @@ function ensureBehaviorState(creature, profile) {
   if (typeof creature.idleTurnLeft !== 'number' || !Number.isFinite(creature.idleTurnLeft)) {
     creature.idleTurnLeft = rand(0.5, 2.5);
   }
+  // 速度向量：旧实例没有 vx/vy 时按「当前状态 + dir」补齐
+  if (!Number.isFinite(creature.vx) || !Number.isFinite(creature.vy)) {
+    const sp = creature.behaviorState === 'walk' ? cruiseSpeedOf(creature) : 0;
+    const dir = Number.isFinite(creature.dir) ? creature.dir : 0;
+    creature.vx = Math.cos(dir) * sp;
+    creature.vy = Math.sin(dir) * sp;
+  }
+  if (!Number.isFinite(creature.brakeLeft) || creature.brakeLeft < 0) creature.brakeLeft = 0;
+  if (!Number.isFinite(creature.brakeSpeed0)) creature.brakeSpeed0 = 0;
+  if (!Number.isFinite(creature.bounceLeft) || creature.bounceLeft < 0) creature.bounceLeft = 0;
+  if (!creature.renderFrom || !Number.isFinite(creature.renderFrom.x) || !Number.isFinite(creature.renderFrom.y)) {
+    creature.renderFrom = { x: creature.pos.x, y: creature.pos.y };
+  }
+  if (!Number.isFinite(creature.renderT)) creature.renderT = 0;
+  if (!Number.isFinite(creature.renderDur) || creature.renderDur <= 0) creature.renderDur = 0.2;
+}
+
+/** 回弹物理参数（见行为参数表：bounceRestitution / bounceTangentialKeep / bounceDamping） */
+function bouncePhysicsOf(profile) {
+  return {
+    restitution: Number.isFinite(profile?.bounceRestitution) ? profile.bounceRestitution : 0.45,
+    tangential: Number.isFinite(profile?.bounceTangentialKeep) ? profile.bounceTangentialKeep : 0.85,
+    damping: Number.isFinite(profile?.bounceDamping) && profile.bounceDamping > 0 ? profile.bounceDamping : 4,
+  };
 }
 
 /** 沿 angle 方向在合法矩形内还能走多远（射线到边界的距离；已贴边朝外 → 0） */
@@ -396,10 +459,22 @@ function idleDurationScale(profile, inner) {
   return clamp(span / ref, minScale, 1);
 }
 
-/** 进入长站/短停：真正静止（pos 不动），期间可能小幅转头 */
+/**
+ * 进入长站/短停：先按 stopDecelS 平滑刹车到速度 0（位置仍连续积分），再真正静止。
+ * 速度不是瞬间归零 —— 否则视觉上会像「被吸附/急停」。
+ */
 function beginIdle(creature, profile, inner = null) {
   creature.behaviorState = 'idle';
   creature.targetPos = null;
+  creature.bounceLeft = 0;
+  const sp = speedOf(creature);
+  const decelS = Number.isFinite(profile.stopDecelS) && profile.stopDecelS > 0 ? profile.stopDecelS : 0.28;
+  creature.brakeSpeed0 = sp;
+  creature.brakeLeft = sp > 1e-6 ? decelS : 0;
+  if (creature.brakeLeft === 0) {
+    creature.vx = 0;
+    creature.vy = 0;
+  }
   const isShortPause = Math.random() < profile.shortPauseChance;
   const duration = (isShortPause
     ? rand(profile.shortPauseMinS, profile.shortPauseMaxS)
@@ -409,7 +484,7 @@ function beginIdle(creature, profile, inner = null) {
   creature.idleTurnLeft = rand(0.6, Math.min(3.0, Math.max(0.8, duration)));
 }
 
-/** 进入行走：挑目标点并设置安全超时（撞边由 stepWalk 当步纠正，不会提前空转） */
+/** 进入行走：挑目标点并设置安全超时（撞边由 stepWalk 处理，不会提前空转） */
 function beginWalk(gs, creature, profile) {
   const inner = fenceInner(gs, creatureRadius(creature));
   const pick = pickWalkTarget(creature, profile, inner);
@@ -417,6 +492,9 @@ function beginWalk(gs, creature, profile) {
   creature.targetPos = { x: pick.x, y: pick.y };
   creature.stateLeft = pick.dist * secondsPerTileOf(creature) * 1.6 + 0.8;
   creature.idleTurnLeft = 0;
+  // 刹车未结束就重新起步：取消刹车，速度从当前值平滑加速回巡航（不瞬间跳变）
+  creature.brakeLeft = 0;
+  creature.bounceLeft = 0;
 }
 
 /**
@@ -432,20 +510,86 @@ function finishWalk(gs, creature, profile) {
   beginIdle(creature, profile, fenceInner(gs, creatureRadius(creature)));
 }
 
-/** 沿当前 dir 走一步（夹回合法区）；返回是否撞边与本次实际位移 */
-function moveAlongDir(creature, inner, dist) {
-  const bx = creature.pos.x;
-  const by = creature.pos.y;
-  const nx = bx + Math.cos(creature.dir) * dist;
-  const ny = by + Math.sin(creature.dir) * dist;
-  creature.pos.x = clamp(nx, inner.x0, inner.x1);
-  creature.pos.y = clamp(ny, inner.y0, inner.y1);
-  const hit = nx < inner.x0 || nx > inner.x1 || ny < inner.y0 || ny > inner.y1;
-  return { hit, moved: Math.hypot(creature.pos.x - bx, creature.pos.y - by) };
+/**
+ * 按当前速度向量连续积分 dtSec（格/秒 × 秒）。
+ *   位置永远只走到「边界接触点」为止，绝不越过再被 clamp 覆盖 → 无瞬移；
+ *   撞到某一面墙时，法线分量按 restitution 反射、切向按 tangential 保留（真实回弹）。
+ * @returns {boolean} 本步是否发生了撞墙接触
+ */
+function integrateMotion(creature, inner, dtSec, physics) {
+  const restitution = physics?.restitution ?? 0.45;
+  const tangential = physics?.tangential ?? 0.85;
+  let remain = dtSec;
+  let hit = false;
+
+  for (let iter = 0; iter < 3 && remain > 1e-9; iter++) {
+    const vx = Number.isFinite(creature.vx) ? creature.vx : 0;
+    const vy = Number.isFinite(creature.vy) ? creature.vy : 0;
+    if (Math.hypot(vx, vy) <= 1e-12) break;
+
+    const tx = vx > 1e-9 ? (inner.x1 - creature.pos.x) / vx
+      : vx < -1e-9 ? (inner.x0 - creature.pos.x) / vx : Infinity;
+    const ty = vy > 1e-9 ? (inner.y1 - creature.pos.y) / vy
+      : vy < -1e-9 ? (inner.y0 - creature.pos.y) / vy : Infinity;
+    const tHit = Math.min(tx, ty);
+
+    if (tHit >= remain) {
+      creature.pos.x = clamp(creature.pos.x + vx * remain, inner.x0, inner.x1);
+      creature.pos.y = clamp(creature.pos.y + vy * remain, inner.y0, inner.y1);
+      remain = 0;
+      break;
+    }
+
+    // 只走到边界接触点（t 为到达边界所需时间，绝不超过本步剩余时间）
+    const t = Math.max(0, Math.min(tHit, remain));
+    creature.pos.x = clamp(creature.pos.x + vx * t, inner.x0, inner.x1);
+    creature.pos.y = clamp(creature.pos.y + vy * t, inner.y0, inner.y1);
+
+    // 真实回弹：法线分量反转并衰减；只撞单面时另一分量按切向保留率衰减
+    const hitX = tx <= tHit + 1e-9;
+    const hitY = ty <= tHit + 1e-9;
+    let nvx = vx;
+    let nvy = vy;
+    if (hitX) nvx = -vx * restitution;
+    if (hitY) nvy = -vy * restitution;
+    if (hitX && !hitY) nvy = vy * tangential;
+    if (hitY && !hitX) nvx = vx * tangential;
+    creature.vx = nvx;
+    creature.vy = nvy;
+    hit = true;
+    remain -= t;
+    if (t <= 1e-9 && iter === 2) break; // 极端贴角时防止死循环
+  }
+  return hit;
 }
 
-/** Idle 一步：倒计时 + 偶尔小幅转头；归零后出发 */
+/** Idle 一步：平滑刹车（位置仍连续积分）→ 倒计时 + 偶尔小幅转头 → 归零后出发 */
 function stepIdle(gs, creature, profile, dtSec) {
+  // ① 刹车：stopDecelS 内速度线性衰减到 0，位移按平均速度积分（不会一帧内瞬停）
+  if (creature.brakeLeft > 0 && creature.brakeSpeed0 > 1e-6) {
+    const total = Number.isFinite(profile.stopDecelS) && profile.stopDecelS > 0 ? profile.stopDecelS : 0.28;
+    const prevLeft = creature.brakeLeft;
+    const nextLeft = Math.max(0, prevLeft - dtSec);
+    const avgSpeed = creature.brakeSpeed0 * ((prevLeft + nextLeft) / 2) / total;
+    const mag = speedOf(creature);
+    if (avgSpeed > 1e-9 && mag > 1e-9) {
+      const k = avgSpeed / mag;
+      const prevVx = creature.vx;
+      const prevVy = creature.vy;
+      creature.vx = prevVx * k;
+      creature.vy = prevVy * k;
+      integrateMotion(creature, fenceInner(gs, creatureRadius(creature)), dtSec, { restitution: 0, tangential: 1 });
+      creature.vx = prevVx;
+      creature.vy = prevVy;
+    }
+    creature.brakeLeft = nextLeft;
+    if (nextLeft <= 0) {
+      creature.brakeLeft = 0;
+      creature.vx = 0;
+      creature.vy = 0;
+    }
+  }
+
   creature.stateLeft -= dtSec;
 
   if (creature.stateLeft > 0 && profile.idleTurnChance > 0 && profile.idleTurnMaxRad > 0) {
@@ -470,88 +614,126 @@ function applyTerrainChange(gs, creature, beforeX, beforeY) {
 }
 
 /**
- * Walk 一步：平滑转向 + 连续积分（速度 = speedPerTile 秒/格）。
- * 结束条件：到达目标 / 安全超时 → finishWalk（可能立刻接下一段行走）。
- * 撞墙策略（2026-11-07 修复卡墙 + 用户补充裁定）：
- *   一旦撞到**任何一面**栅栏，就在**同一个逻辑步内立即重决策一次**（不先走完当前段、
- *   不继续尝试原方向），二选一：
- *     ① Idle —— 按 idle 参数正常停一会儿（无可行方向时必选此项，并额外延长一点静止）；
- *     ② 换向 —— 新方向必须满足「沿该方向 wallFreeThreshold 格内不碰任何一面栅栏」，
- *        并在同一逻辑步内沿新方向产生真实位移。
- *   撞墙那一刻 pos 已被夹回合法区，圆心绝不穿出栅栏；绝不允许 Walk 状态零位移。
+ * 撞墙接触：进入短暂回弹阶段（速度已在 integrateMotion 内按法线反射并衰减）。
+ * 回弹结束（bounceLeft 归零）后再做「Idle / 换向」重决策。
+ */
+function beginWallBounce(creature, profile) {
+  creature.wallHits = (creature.wallHits || 0) + 1;
+  const bounceS = Number.isFinite(profile.bounceS) && profile.bounceS > 0 ? profile.bounceS : 0.32;
+  creature.bounceLeft = bounceS;
+  creature.lastWallDecision = 'bounce';
+  creature.wallFailStreak = 0;
+  // 回弹期间不因安全超时提前结束这一段行走
+  creature.stateLeft = Math.max(creature.stateLeft || 0, bounceS + 0.4);
+  syncHeadingFromVelocity(creature);
+}
+
+/**
+ * 回弹结束后的一次重决策（用户裁定）：二选一
+ *   ① Idle —— 按 idle 参数正常停一会儿（无可行方向时必选，并额外延长静止）；
+ *   ② 换向 —— 新方向必须满足「wallFreeThreshold 格内不碰任何一面栅栏」。
+ * 任何分支都不允许停在 Walk 状态却零位移。
+ */
+function resolveWallDecision(gs, creature, profile, inner) {
+  const decision = decideAfterWallHit(creature, profile, inner);
+  const idleChance = Number.isFinite(profile.wallHitIdleChance) ? profile.wallHitIdleChance : 0;
+
+  if (!decision || Math.random() < idleChance) {
+    if (!decision) {
+      creature.wallFailStreak = (creature.wallFailStreak || 0) + 1;
+    } else {
+      creature.wallFailStreak = 0;
+    }
+    creature.lastWallDecision = 'idle';
+    beginIdle(creature, profile, inner);
+    if (!decision) {
+      const extraS = Number.isFinite(profile.wallFailExtraIdleS) ? profile.wallFailExtraIdleS : 0;
+      creature.stateLeft += Math.min(3, creature.wallFailStreak) * extraS;
+    }
+    return;
+  }
+
+  creature.wallFailStreak = 0;
+  creature.lastWallDecision = 'walk';
+  creature.dir = decision.angle;
+  creature.targetPos = {
+    x: creature.pos.x + Math.cos(decision.angle) * decision.dist,
+    y: creature.pos.y + Math.sin(decision.angle) * decision.dist,
+  };
+  creature.stateLeft = decision.dist * secondsPerTileOf(creature) * 1.6 + 0.8;
+  // 方向立即对齐新方向；速度大小保留回弹后的衰减值，下一步再平滑加速回巡航（不瞬跳）
+  const sp = speedOf(creature);
+  if (sp > 1e-9) {
+    creature.vx = Math.cos(decision.angle) * sp;
+    creature.vy = Math.sin(decision.angle) * sp;
+  }
+}
+
+/**
+ * Walk 一步：平滑转向 + 按速度连续积分（速度 = 1 / speedPerTile 格每秒）。
+ * 结束条件：到达目标 / 安全超时 → finishWalk（可能立刻接下一段行走，或进 Idle 刹车）。
+ * 撞墙策略（2026-11-07 用户裁定，取代旧「当步硬夹 + 当步重决策」）：
+ *   ① 撞到任一面栅栏 → 位置停在边界接触点（绝不穿出、绝不夹跳），
+ *     速度沿法线反射并快速衰减，进入 bounceS 秒的真实回弹；
+ *   ② 回弹结束后再做一次重决策：Idle 或「wallFreeThreshold 格内不碰任何栅栏」的新方向；
+ *   ③ 回弹与重决策全程都有真实位移，不存在「Walk 状态零位移」。
  * @returns {boolean} 是否因进入草格而触发地块内容变化
  */
 function stepWalk(gs, creature, profile, dtSec) {
+  const inner = fenceInner(gs, creatureRadius(creature));
+  const beforeX = creature.pos.x;
+  const beforeY = creature.pos.y;
+
+  // ── A) 回弹阶段：沿反射后的速度连续积分，速度按 bounceDamping 指数衰减 ──
+  if (creature.bounceLeft > 0) {
+    const physics = bouncePhysicsOf(profile);
+    const decay = Math.exp(-physics.damping * dtSec);
+    creature.vx *= decay;
+    creature.vy *= decay;
+    integrateMotion(creature, inner, dtSec, physics);
+    creature.bounceLeft = Math.max(0, creature.bounceLeft - dtSec);
+    // 回弹速度已衰减到肉眼不可见时也立即重决策，避免「Walk 状态零位移」的空转
+    if (creature.bounceLeft === 0 || speedOf(creature) <= 1e-4) {
+      creature.bounceLeft = 0;
+      resolveWallDecision(gs, creature, profile, inner);
+    }
+    syncHeadingFromVelocity(creature);
+    return applyTerrainChange(gs, creature, beforeX, beforeY);
+  }
+
   if (!creature.targetPos) {
     beginWalk(gs, creature, profile);
     return false;
   }
 
-  const toTargetX = creature.targetPos.x - creature.pos.x;
-  const toTargetY = creature.targetPos.y - creature.pos.y;
-  if (Math.hypot(toTargetX, toTargetY) <= profile.arriveEps) {
-    finishWalk(gs, creature, profile);
-    // 连续行走：同一逻辑步内直接开始下一段，不留下「Walk 状态零位移」的空步
-    if (creature.behaviorState !== 'walk' || !creature.targetPos) return false;
-  }
-
-  // 平滑转向（角速度上限 → 不会瞬间反向抖动）
-  const nextTargetX = creature.targetPos.x - creature.pos.x;
-  const nextTargetY = creature.targetPos.y - creature.pos.y;
-  const desired = Math.atan2(nextTargetY, nextTargetX);
+  // ── B) 平滑转向（角速度上限 → 不会瞬间反向抖动） ──
+  const desired = Math.atan2(
+    creature.targetPos.y - creature.pos.y,
+    creature.targetPos.x - creature.pos.x,
+  );
   creature.dir = turnToward(
     Number.isFinite(creature.dir) ? creature.dir : desired,
     desired,
     profile.maxTurnRate * dtSec,
   );
 
-  const dist = dtSec / secondsPerTileOf(creature);
-  const inner = fenceInner(gs, creatureRadius(creature));
-  const beforeX = creature.pos.x;
-  const beforeY = creature.pos.y;
-  const step = moveAlongDir(creature, inner, dist);
+  // 速度大小：从当前值平滑加速到巡航速度（起步 / 回弹恢复），永不超速
+  const cruise = cruiseSpeedOf(creature);
+  const accelS = Number.isFinite(profile.startAccelS) && profile.startAccelS > 0 ? profile.startAccelS : 0.22;
+  const sp = Math.min(cruise, speedOf(creature) + (cruise / accelS) * dtSec);
+  creature.vx = Math.cos(creature.dir) * sp;
+  creature.vy = Math.sin(creature.dir) * sp;
 
-  let ended = false;
-
-  if (step.hit) {
-    // ── 撞墙：同一逻辑步内立即重决策（Idle 或 换向） ──
-    creature.wallHits = (creature.wallHits || 0) + 1;
-    const decision = decideAfterWallHit(creature, profile, inner);
-    const idleChance = Number.isFinite(profile.wallHitIdleChance) ? profile.wallHitIdleChance : 0;
-
-    if (!decision || Math.random() < idleChance) {
-      if (!decision) {
-        // 采样不到任何「短时间不再撞墙」的方向 → 兜底 Idle，并随连续失败次数延长静止
-        creature.wallFailStreak = (creature.wallFailStreak || 0) + 1;
-      } else {
-        creature.wallFailStreak = 0;
-      }
-      creature.lastWallDecision = 'idle';
-      beginIdle(creature, profile, inner);
-      if (!decision) {
-        const extraS = Number.isFinite(profile.wallFailExtraIdleS) ? profile.wallFailExtraIdleS : 0;
-        creature.stateLeft += Math.min(3, creature.wallFailStreak) * extraS;
-      }
-      ended = true;
-    } else {
-      // 换向：新方向已通过「wallFreeThreshold 格内不碰任何一面栅栏」预测校验
-      creature.wallFailStreak = 0;
-      creature.lastWallDecision = 'walk';
-      creature.dir = decision.angle;
-      creature.targetPos = {
-        x: creature.pos.x + Math.cos(decision.angle) * decision.dist,
-        y: creature.pos.y + Math.sin(decision.angle) * decision.dist,
-      };
-      creature.stateLeft = decision.dist * secondsPerTileOf(creature) * 1.6 + 0.8;
-      // 同一逻辑步内沿新方向继续位移（保证撞墙步也不出现「Walk 零位移」）
-      moveAlongDir(creature, inner, dist);
-    }
-  }
-
+  const hit = integrateMotion(creature, inner, dtSec, bouncePhysicsOf(profile));
   creature.stateLeft -= dtSec;
   const changed = applyTerrainChange(gs, creature, beforeX, beforeY);
-  if (ended) return changed;
 
+  if (hit) {
+    beginWallBounce(creature, profile);
+    return changed;
+  }
+
+  // 到达 / 超时：本步位移已结算完再切换状态（下一段接着走或进 Idle 刹车），不留空步
   const arrived = Math.hypot(
     creature.targetPos.x - creature.pos.x,
     creature.targetPos.y - creature.pos.y,
@@ -620,11 +802,24 @@ export function stepCreatures(gs, dtSec) {
 
     ensureBehaviorState(c, profile);
 
+    // 记录本步起点：渲染层只在这两个合法端点之间插值（渲染位置不独立模拟）
+    const beforeX = c.pos.x;
+    const beforeY = c.pos.y;
+
     if (c.behaviorState === 'idle') {
-      stepIdle(gs, c, profile, dtSec); // 真正静止：pos 不产生任何位移
-      continue;
+      // Idle：刹车阶段仍按速度连续积分（平滑减速），刹停后 pos 完全不动
+      stepIdle(gs, c, profile, dtSec);
+    } else if (stepWalk(gs, c, profile, dtSec)) {
+      tileChanged = true;
     }
-    if (stepWalk(gs, c, profile, dtSec)) tileChanged = true;
+    if (c.pos.x !== beforeX || c.pos.y !== beforeY) {
+      if (c.behaviorState === 'idle' && applyTerrainChange(gs, c, beforeX, beforeY)) tileChanged = true;
+    }
+
+    // 渲染插值起点 = 本步开始时的 pos；renderT 从 0 累加到本步时长
+    c.renderFrom = { x: beforeX, y: beforeY };
+    c.renderT = 0;
+    c.renderDur = dtSec;
   }
 
   // ⑤ 一次性广播：只有地块内容真的变化才发（连续移动本身由渲染层逐帧绘制）
@@ -633,16 +828,16 @@ export function stepCreatures(gs, dtSec) {
 
 /**
  * 每帧推进 renderPos（表现层位置，不参与判定）。
- * - Idle：renderPos 对齐 pos，不发生位移 → CreatureView 不写 DOM（静止不产生无意义更新）；
- * - Walk：与逻辑积分使用同一套速度/方向；结算冻结期间 pos 停下，但本函数照常推进。
+ * 只做「上一步 pos → 当前 pos」的线性插值：
+ *   - 两个端点都是连续积分的合法位置，插值结果天然在合法区内、且不会越过端点；
+ *   - 不再让 renderPos 独立按 dir 模拟 —— 那是「停下/撞墙时被吸回 pos」的根因；
+ *   - 结算冻结期间没有新的逻辑步，插值停在当前 pos（不产生无人结算的「假位移」）。
  * @param {object} gs
  * @param {number} dtSec 真实帧时长（秒）
  */
 export function advanceCreatureRendering(gs, dtSec) {
   if (!gs || !Array.isArray(gs.creatures) || dtSec <= 0) return;
-  const stepSec = Math.min(0.1, dtSec); // 单帧最多 100ms，避免切后台瞬移
-  const fence = fenceRect(gs);
-  if (fence.x1 <= fence.x0) return;
+  const frameSec = Math.min(0.1, dtSec); // 单帧最多 100ms，切后台回来不跳一大段
 
   for (const c of gs.creatures) {
     if (!c || c.hp <= 0) continue;
@@ -650,22 +845,17 @@ export function advanceCreatureRendering(gs, dtSec) {
       c.renderPos = { x: c.pos?.x ?? 0, y: c.pos?.y ?? 0 };
       continue;
     }
-    if (c.behaviorState === 'idle') {
-      if (c.pos && Number.isFinite(c.pos.x) && Number.isFinite(c.pos.y)) {
-        c.renderPos.x = c.pos.x;
-        c.renderPos.y = c.pos.y;
-      }
-      continue;
-    }
-    const r = creatureRadius(c);
-    const dist = stepSec / secondsPerTileOf(c);
-    const dir = Number.isFinite(c.dir) ? c.dir : 0;
-    const inner = {
-      x0: fence.x0 + r, x1: fence.x1 - r,
-      y0: fence.y0 + r, y1: fence.y1 - r,
-    };
-    c.renderPos.x = clamp(c.renderPos.x + Math.cos(dir) * dist, inner.x0, inner.x1);
-    c.renderPos.y = clamp(c.renderPos.y + Math.sin(dir) * dist, inner.y0, inner.y1);
+    if (!c.pos || !Number.isFinite(c.pos.x) || !Number.isFinite(c.pos.y)) continue;
+
+    const dur = Number.isFinite(c.renderDur) && c.renderDur > 0 ? c.renderDur : 0.2;
+    const from = c.renderFrom && Number.isFinite(c.renderFrom.x) && Number.isFinite(c.renderFrom.y)
+      ? c.renderFrom
+      : c.pos;
+    const prevT = Number.isFinite(c.renderT) ? c.renderT : dur;
+    c.renderT = Math.min(dur, prevT + frameSec);
+    const t = dur > 0 ? c.renderT / dur : 1;
+    c.renderPos.x = from.x + (c.pos.x - from.x) * t;
+    c.renderPos.y = from.y + (c.pos.y - from.y) * t;
   }
 }
 

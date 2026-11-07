@@ -182,17 +182,23 @@ head('3. 速度区间与方向：3~6 秒/格、任意弧度');
 head('4. 边界裁剪：圆心 + 半径不出栅栏（pos 与 renderPos 都夹）');
 {
   const gs = mkMap(5); // 栅栏 [1,4]²，chicken r=0.25 → 合法圆心 [1.25,3.75]
-  const c = addStraightCreature(gs, { pos: { x: 3.9, y: 2.5 }, dir: 0, speed: 3 });
+  const c = addStraightCreature(gs, { pos: { x: 3.7, y: 2.5 }, dir: 0, speed: 3 });
   const clock = new RealtimeClock(() => gs);
-  clock.advance(200); // 一步 0.0667 格 → 越界立刻被夹回；撞墙当步会立即重决策
-  check(c.pos.x <= 3.75 + 1e-9, '右边界一步内被夹回（圆心+半径不超出 x=4）', c.pos.x);
+  clock.advance(200); // 一步 0.0667 格：走到 x=3.75 接触点后沿法线回弹（不 clamp 跳变）
+  check(c.pos.x <= 3.75 + 1e-9, '撞墙后圆心不超过右边界（圆心+半径不超出 x=4）', c.pos.x);
   check(c.pos.x >= 1.25 - 1e-9 && c.pos.y >= 1.25 - 1e-9 && c.pos.y <= 3.75 + 1e-9,
     '撞墙步圆心落在合法区内（不穿出栅栏）', c.pos);
-  if (c.lastWallDecision === 'walk') {
-    check(c.pos.x < 3.75 - 1e-9, '换向重决策在同一逻辑步内已产生向内的真实位移', c.pos.x);
-  } else {
-    check(c.pos.x === 3.75, '选择 Idle 时圆心停回边界（不穿墙、零位移属合法停机）', c.pos.x);
-  }
+  check(c.lastWallDecision === 'bounce' && c.bounceLeft > 0,
+    '撞墙当步进入真实回弹（不是被夹住/直接吸住）', { decision: c.lastWallDecision, bounceLeft: c.bounceLeft });
+  check(c.vx < 0 && Math.abs(c.vx) <= 1 / c.speedPerTile * 0.6 + 1e-9,
+    '回弹速度法向反转（朝内）且明显衰减（有反弹感）', { vx: c.vx, dir: c.dir });
+
+  // 回弹结束后必须落到「Idle 或 换向」二选一
+  for (let i = 0; i < 4 && c.lastWallDecision === 'bounce'; i++) clock.advance(200);
+  check(c.lastWallDecision === 'idle' || c.lastWallDecision === 'walk',
+    '回弹结束后完成撞墙重决策（Idle / 换向）', c.lastWallDecision);
+  check(c.pos.x >= 1.25 - 1e-9 && c.pos.x <= 3.75 + 1e-9,
+    '回弹+重决策后仍在合法区内', c.pos);
 
   const gs2 = mkMap(5);
   const c2 = addStraightCreature(gs2, { pos: { x: 1.3, y: 1.3 }, dir: Math.PI, speed: 3 });
@@ -246,7 +252,7 @@ head('6. 重叠生物：完全重叠仍各自保留（不碰撞、不吞并）')
 }
 
 // ════════════════════════════════════════════════════════════
-head('7. 结算冻结：pos 不动、renderPos 继续、快照不可变');
+head('7. 结算冻结：pos 不动、renderPos 只插值不越界、快照不可变');
 {
   const gs = mkMap(5);
   const c = addStraightCreature(gs, { pos: { x: 1.8, y: 2.5 }, dir: 0, speed: 4.2 });
@@ -268,7 +274,11 @@ head('7. 结算冻结：pos 不动、renderPos 继续、快照不可变');
     froze = c.pos.x === posBefore.x && c.pos.y === posBefore.y;
     check(clock.settling === true, '结算栈内 settling=true（仅毫秒级同步栈）');
     check(froze, '结算期间逻辑 pos 不推进', c.pos);
-    check(c.renderPos.x > renderBefore.x, '结算期间 renderPos 继续推进（画面不停）', c.renderPos);
+    check(c.renderPos.x >= renderBefore.x - 1e-9, '结算期间 renderPos 不回退、不抖动（无回拉/吸附）',
+      { before: renderBefore, now: c.renderPos });
+    check(c.renderPos.x <= posBefore.x + 1e-9,
+      '结算期间 renderPos 不越过逻辑 pos（只插值，不产生无人结算的假位移）',
+      { render: c.renderPos.x, pos: posBefore.x });
     check(snap.creatures[0].x === posBefore.x && snap.creatures[0].y === posBefore.y,
       '判定读取的是结算开始时的不可变快照', { x: snap.creatures[0].x, y: snap.creatures[0].y });
   });

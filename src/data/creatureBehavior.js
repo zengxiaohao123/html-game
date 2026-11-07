@@ -52,12 +52,21 @@ export const DEFAULT_BEHAVIOR = Object.freeze({
   // 保证 1×1 栅栏（跨度 0.5 格）里也「以走为主」而不是站着不动。
   narrowPenRefSpan: 1.5,
   narrowPenIdleMinScale: 0.55,
+  // 连续速度物理（§2.3）：起步加速 / 停车刹车 / 撞墙回弹。
+  //   位置只按「速度 × 时间」积分，禁止瞬移；进 Idle 用 stopDecelS 线性减速到 0；
+  //   撞墙沿法线反射（bounceRestitution）并按 bounceDamping 衰减，回弹 bounceS 秒后再重决策。
+  startAccelS: 0.22,        // 0 → 巡航速度的加速时间
+  stopDecelS: 0.28,         // 进 Idle 的刹车时间（速度线性降到 0）
+  bounceS: 0.32,            // 撞墙回弹持续时间（结束后才做 Idle / 换向决策）
+  bounceRestitution: 0.45,  // 法线分量反射系数（越大弹得越明显）
+  bounceTangentialKeep: 0.85,// 切向分量保留率（沿墙滑行的摩擦）
+  bounceDamping: 4.0,       // 回弹速度指数衰减率（1/秒）
 });
 
 /** 小鸡：体型轻、最活（停得最短、走得最勤、转向最快） */
 export const CHICK_BEHAVIOR = Object.freeze({
-  idleMinS: 1.3,
-  idleMaxS: 3.6,
+  idleMinS: 1.8,
+  idleMaxS: 3.9,
   shortPauseChance: 0.5,
   shortPauseMinS: 0.4,
   shortPauseMaxS: 1.2,
@@ -66,7 +75,7 @@ export const CHICK_BEHAVIOR = Object.freeze({
   longWalkChance: 0.25,
   longWalkDistMin: 1.2,
   longWalkDistMax: 2.4,
-  chainWalkChance: 0.3,
+  chainWalkChance: 0.16,
   walkAngleJitter: 1.2,
   maxTurnRate: 3.2,
   idleTurnChance: 0.45,
@@ -78,12 +87,18 @@ export const CHICK_BEHAVIOR = Object.freeze({
   wallFailExtraIdleS: 1.5,
   narrowPenRefSpan: 1.5,
   narrowPenIdleMinScale: 0.55,
+  startAccelS: 0.18,
+  stopDecelS: 0.24,
+  bounceS: 0.28,
+  bounceRestitution: 0.5,   // 小鸡轻，弹得最明显
+  bounceTangentialKeep: 0.85,
+  bounceDamping: 4.5,
 });
 
 /** 成鸡：步态更沉、站得更久、转向更慢 */
 export const CHICKEN_BEHAVIOR = Object.freeze({
-  idleMinS: 2.4,
-  idleMaxS: 6.0,
+  idleMinS: 2.9,
+  idleMaxS: 6.8,
   shortPauseChance: 0.45,
   shortPauseMinS: 0.6,
   shortPauseMaxS: 1.8,
@@ -92,7 +107,7 @@ export const CHICKEN_BEHAVIOR = Object.freeze({
   longWalkChance: 0.28,
   longWalkDistMin: 1.5,
   longWalkDistMax: 2.8,
-  chainWalkChance: 0.25,
+  chainWalkChance: 0.16,
   walkAngleJitter: 1.0,
   maxTurnRate: 2.4,
   idleTurnChance: 0.3,
@@ -104,6 +119,12 @@ export const CHICKEN_BEHAVIOR = Object.freeze({
   wallFailExtraIdleS: 1.5,
   narrowPenRefSpan: 1.5,
   narrowPenIdleMinScale: 0.55,
+  startAccelS: 0.24,
+  stopDecelS: 0.3,
+  bounceS: 0.32,
+  bounceRestitution: 0.42,  // 成鸡更沉，回弹弱于小鸡
+  bounceTangentialKeep: 0.85,
+  bounceDamping: 4.0,
 });
 
 /** 史莱姆：动得最少、走得最短、转向最迟钝 */
@@ -130,6 +151,12 @@ export const SLIME_BEHAVIOR = Object.freeze({
   wallFailExtraIdleS: 1.5,
   narrowPenRefSpan: 1.5,
   narrowPenIdleMinScale: 0.55,
+  startAccelS: 0.3,
+  stopDecelS: 0.34,
+  bounceS: 0.36,
+  bounceRestitution: 0.36,  // 史莱姆黏重，回弹最弱
+  bounceTangentialKeep: 0.88,
+  bounceDamping: 3.6,
 });
 
 /**

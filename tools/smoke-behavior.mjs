@@ -1,15 +1,18 @@
 // tools/smoke-behavior.mjs —— 生物「走走停停」行为 + 撞墙安全冒烟
 // 用法：node tools/smoke-behavior.mjs
 //
-// 验收口径（用户 2026-11-07 裁定）：
+// 验收口径（用户 2026-11-07 裁定，含「吸附/瞬移」观感修订）：
 //   1) 以走为主、偶尔停下：60s 平均静止占比 小鸡 30~40% / 成鸡 40~50% / 史莱姆 50~60%
 //      （单次 Idle 明显缩短、单次 Walk 变长，允许连续多段位移后再停）
-//   2) 撞墙后**同一逻辑步内**立即重决策：Idle 或 换成「wallFreeThreshold 格内不碰任何栅栏」的方向
-//   3) 任何时刻不存在「Walk 状态却连续零位移」；无可行方向 → Idle（带额外静止）
-//   4) 1×1 栅栏（合法圆心区仅 0.5×0.5）60s 内仍有足够次数的位移，不卡死
-//   5) 撞墙那一刻圆心不出栅栏；边界裁剪与重叠仍成立
-//   6) 静止的生物不写 DOM
-//   7) 全量冒烟 0 失败由 npm/全部脚本统一验证（本文件自身 0 失败）
+//   2) 连续速度积分：pos 只按「速度 × 时间」推进，任意逻辑步位移 <= 速度 × 步长；
+//      renderPos 只插值于「上一步 pos → 当前 pos」之间，不独立模拟、不被吸附、不瞬移
+//   3) 撞墙 = 真实回弹：位置停在边界内侧（不穿出），速度法线反射并衰减，
+//      回弹 bounceS 秒后再重决策（Idle 或「wallFreeThreshold 格内不碰任何栅栏」的方向）
+//   4) 进入 Idle 平滑减速：速度按 stopDecelS 线性降到 0，不允许瞬间归零
+//   5) 任何时刻不存在「Walk 状态却连续零位移」；无可行方向 → Idle（带额外静止）
+//   6) 1×1 栅栏（合法圆心区仅 0.5×0.5）60s 内仍有足够次数的位移，不卡死
+//   7) 撞墙/回弹全程圆心不出栅栏；边界裁剪、重叠、静止不写 DOM 仍成立
+//   8) 全量冒烟 0 失败由 npm/全部脚本统一验证（本文件自身 0 失败）
 
 // ── 最小 DOM 桩（必须在 import src 模块前装好） ──
 class FakeEl {
@@ -150,7 +153,19 @@ function innerRectOf(gs, creature) {
   return { x0: f.x0 + r, x1: f.x1 - r, y0: f.y0 + r, y1: f.y1 - r };
 }
 
-/** 沿 angle 方向在合法矩形内可走的距离（射线到边界） */
+/** 角差归一化到 (-π, π]，用于比较撞墙前后的朝向变化 */
+function normAngle(a) {
+  let x = a % (Math.PI * 2);
+  if (x > Math.PI) x -= Math.PI * 2;
+  if (x <= -Math.PI) x += Math.PI * 2;
+  return x;
+}
+
+/** 当前速度模长（格/秒） */
+function speedOf(c) {
+  return Math.hypot(Number.isFinite(c?.vx) ? c.vx : 0, Number.isFinite(c?.vy) ? c.vy : 0);
+}
+
 function roomAlong(x, y, angle, inner) {
   const dx = Math.cos(angle);
   const dy = Math.sin(angle);
@@ -164,8 +179,10 @@ function roomAlong(x, y, angle, inner) {
 }
 
 /**
- * 跑一段逻辑时间，逐步采样位移、状态与撞墙决策。
- * @returns {{gs, c, samples, idleRatio, longestIdleSteps, transitions, walkRuns, wall}}
+ * 跑一段逻辑时间，逐步采样位移、状态与「撞墙 → 回弹 → 重决策」链路。
+ * 用户 2026-11-07 裁定：撞墙先真实回弹（位置停在边界内侧、速度法线反射并衰减），
+ * 回弹 bounceS 后再决定 Idle / 换向；全程禁止瞬移与 Walk 零位移。
+ * @returns {{gs, c, samples, idleRatio, longestIdleSteps, transitions, walkRuns, wall, maxStepDisp, idleEntryRatios}}
  */
 function simulate(kind, seconds, seed, override = null, opts = {}) {
   const { size = 5, startPos = null, dir = 0 } = opts;
@@ -179,25 +196,45 @@ function simulate(kind, seconds, seed, override = null, opts = {}) {
   const profile = override ? { ...getBehaviorProfile(kind), ...override } : getBehaviorProfile(kind);
   const threshold = wallFreeDistanceOf(profile, c.speedPerTile);
   const stepLen = 0.2 / c.speedPerTile;
+  const cruise = 1 / c.speedPerTile;
+  // 回弹 + 重决策的最大允许步数（bounceS 秒 + 1 个逻辑步的余量）
+  const maxDecideSteps = Math.ceil((profile.bounceS ?? 0.32) / 0.2) + 1;
 
   const origRandom = Math.random;
   Math.random = makeRng(seed);
   const samples = [];
-  const wall = { hits: 0, badDecision: 0, badRoom: 0, outOfBounds: 0, walkZeroSteps: 0, maxWalkZeroRun: 0, idleDecisions: 0, walkDecisions: 0 };
+  const wall = {
+    hits: 0, bounceSteps: 0, badBounce: 0, badDecision: 0, badRoom: 0,
+    outOfBounds: 0, walkZeroSteps: 0, maxWalkZeroRun: 0,
+    idleDecisions: 0, walkDecisions: 0, unresolved: 0, maxDecisionDelay: 0,
+  };
+  const idleEntryRatios = [];
   let walkZeroRun = 0;
+  let pending = false;
+  let pendingSteps = 0;
+  let pendingIdleFrom = null;
+  let pendingIdleSpeed = 0;
+  let pendingIdleEdge = 0;
+  let maxStepDisp = 0;
+  let overspeedSteps = 0;
   try {
     const steps = Math.round(seconds / 0.2);
     for (let i = 0; i < steps; i++) {
       const beforeX = c.pos.x;
       const beforeY = c.pos.y;
+      const dirBefore = Number.isFinite(c.dir) ? c.dir : 0;
       const wasWalk = c.behaviorState === 'walk';
       const hitsBefore = c.wallHits || 0;
+      const pendingBefore = pending;
       CreatureSystem.stepCreatures(gs, 0.2);
-      const moved = Math.hypot(c.pos.x - beforeX, c.pos.y - beforeY) > 1e-12;
 
-      // ── Walk 状态零位移检测 ──
-      // 只统计「本步零位移且仍是 Walk」的真卡住样本；
-      // 撞墙当步被判定为 Idle 的零位移是合法停机（状态已在同一步切换，不属于卡在 Walk）。
+      const disp = Math.hypot(c.pos.x - beforeX, c.pos.y - beforeY);
+      const moved = disp > 1e-12;
+      maxStepDisp = Math.max(maxStepDisp, disp);
+      // 连续速度积分：单逻辑步位移 <= 巡航速度 × 步长（撞墙反射/刹车只会更慢）
+      if (disp > cruise * 0.2 * 1.02 + 1e-9) overspeedSteps++;
+
+      // ── Walk 状态零位移检测（合法停机必须在同一步切走状态） ──
       if (wasWalk && !moved && c.behaviorState === 'walk') {
         wall.walkZeroSteps++;
         walkZeroRun++;
@@ -212,21 +249,53 @@ function simulate(kind, seconds, seed, override = null, opts = {}) {
         wall.outOfBounds++;
       }
 
-      // ── 撞墙后的同一逻辑步重决策校验 ──
+      // ── 撞墙：同一逻辑步内必须进入回弹（速度沿法线反射 → 朝向发生反转） ──
       if ((c.wallHits || 0) > hitsBefore) {
         wall.hits++;
-        if (c.lastWallDecision === 'idle') {
-          wall.idleDecisions++;
-          if (c.behaviorState !== 'idle' || c.targetPos !== null) wall.badDecision++;
-        } else if (c.lastWallDecision === 'walk') {
-          wall.walkDecisions++;
-          if (c.behaviorState !== 'walk' || !c.targetPos) wall.badDecision++;
-          // 决策点在撞墙后的边界；本步已沿新方向走了 stepLen
-          const room = roomAlong(c.pos.x, c.pos.y, c.dir, inner) + stepLen;
-          if (room < threshold - 1e-6) wall.badRoom++;
-        } else {
-          wall.badDecision++;
+        const turned = Math.abs(normAngle(c.dir - dirBefore));
+        if (c.lastWallDecision !== 'bounce' || !(c.bounceLeft > 0) || turned < 1e-6) wall.badBounce++;
+        pending = true;
+        pendingSteps = 0;
+      } else if (pendingBefore) {
+        pendingSteps++;
+        if (c.lastWallDecision !== 'bounce') {
+          // 回弹结束 → 本次重决策（Idle 或 换向）已落地
+          pending = false;
+          wall.maxDecisionDelay = Math.max(wall.maxDecisionDelay, pendingSteps);
+          if (pendingSteps > maxDecideSteps) wall.unresolved++;
+          if (c.lastWallDecision === 'idle') {
+            wall.idleDecisions++;
+            if (c.behaviorState !== 'idle' || c.targetPos !== null) wall.badDecision++;
+          } else if (c.lastWallDecision === 'walk') {
+            wall.walkDecisions++;
+            if (c.behaviorState !== 'walk' || !c.targetPos) wall.badDecision++;
+            // 决策点在回弹终点；新方向必须满足「阈值内不碰任何栅栏」
+            if (roomAlong(c.pos.x, c.pos.y, c.dir, inner) < threshold - 1e-6) wall.badRoom++;
+          } else {
+            wall.badDecision++;
+          }
+        } else if (pendingSteps > maxDecideSteps + 2) {
+          wall.unresolved++;
+          pending = false;
         }
+      }
+      if (c.bounceLeft > 0) wall.bounceSteps++;
+
+      // ── 进入 Idle 的减速连续性：记录「最后行走步位移 / 首个 Idle 步位移」 ──
+      if (wasWalk && c.behaviorState === 'idle') {
+        pendingIdleFrom = disp;
+        pendingIdleSpeed = speedOf(c); // beginIdle 后的刹车初速
+        pendingIdleEdge = Math.min(
+          c.pos.x - inner.x0, inner.x1 - c.pos.x,
+          c.pos.y - inner.y0, inner.y1 - c.pos.y,
+        ); // 离栅栏边界距离：太近时刹车会被边界截断，需排除
+      } else if (pendingIdleFrom !== null && !wasWalk) {
+        idleEntryRatios.push({
+          lastWalk: pendingIdleFrom, firstIdle: disp,
+          brakeFrom: pendingIdleSpeed, edge: pendingIdleEdge,
+        });
+        pendingIdleFrom = null;
+        pendingIdleSpeed = 0;
       }
 
       samples.push({
@@ -275,6 +344,10 @@ function simulate(kind, seconds, seed, override = null, opts = {}) {
     walkRuns,
     wall,
     threshold,
+    maxStepDisp,
+    overspeedSteps,
+    idleEntryRatios,
+    stepLen,
   };
 }
 
@@ -370,16 +443,17 @@ head('4. 以走为主：60s 平均静止占比落在目标区间（每物种 10 
     for (let i = 0; i < 10; i++) {
       const r = simulate(kind, 60, 1000 + i * 7919);
       sum += r.idleRatio;
-      zero += r.wall.walkZeroSteps;
-      bad += r.wall.badDecision + r.wall.badRoom + r.wall.outOfBounds;
+      zero += r.wall.walkZeroSteps + r.overspeedSteps;
+      bad += r.wall.badDecision + r.wall.badRoom + r.wall.badBounce +
+        r.wall.unresolved + r.wall.outOfBounds;
     }
     avg[kind] = sum / 10;
     console.log(`  · ${kind}: 10 次 60s 平均静止 ${(avg[kind] * 100).toFixed(1)}%（目标 ${t.range[0] * 100}~${t.range[1] * 100}%）`);
     check(avg[kind] >= t.range[0] - t.tol && avg[kind] <= t.range[1] + t.tol,
       `${kind}: 60s 平均静止占比落在 ${(t.range[0] * 100)}~${(t.range[1] * 100)}% ±5pp（以走为主、偶尔停）`,
       avg[kind]);
-    check(zero === 0, `${kind}: 60s 内不存在「Walk 状态零位移」样本`, zero);
-    check(bad === 0, `${kind}: 撞墙重决策/阈值/边界均无异常`, bad);
+    check(zero === 0, `${kind}: 60s 内无「Walk 零位移」也无超速瞬移步`, zero);
+    check(bad === 0, `${kind}: 撞墙回弹/重决策/阈值/边界均无异常`, bad);
   }
   check(avg.slime_grass > avg.chicken && avg.chicken > avg.chick,
     '静止占比：史莱姆 > 成鸡 > 小鸡（物种差异保留）', avg);
@@ -402,6 +476,10 @@ head('5. 600s 长采样：静止占比上限 / 最长连续静止上限 / 卡墙
     check(r.wall.walkZeroSteps === 0, `${kind}: 600s 内 Walk 状态零位移步 = 0`, r.wall.walkZeroSteps);
     check(r.wall.maxWalkZeroRun === 0, `${kind}: 最长「Walk 零位移」连续步数 = 0`, r.wall.maxWalkZeroRun);
     check(r.walkRuns.length >= 20, `${kind}: 行走段 >= 20 次（不是站着为主）`, r.walkRuns.length);
+    check(r.overspeedSteps === 0, `${kind}: 600s 内无超速瞬移步（单步位移 <= 速度×步长）`, {
+      overspeedSteps: r.overspeedSteps,
+      maxStepDisp: r.maxStepDisp,
+    });
   }
 }
 
@@ -427,8 +505,12 @@ head('7. 行走距离受参数约束；偶尔远走');
   };
   const r = simulate('chick', 120, 555, shortProfile);
   const maxWalk = Math.max(...r.walkRuns, 0);
-  console.log(`  · 固定 0.3 格短走：最大单段位移 ${maxWalk.toFixed(3)} 格（${r.walkRuns.length} 段）`);
-  check(maxWalk <= 0.3 + 0.12, '常规行走单段位移 <= walkDistMax + 到达容差', maxWalk);
+  // 允许：1 个逻辑步的到点余量 + 进 Idle 的刹车滑行距离（stopDecelS 内线性减速，平均半速）
+  const glide = 0.5 * (1 / CREATURES.chick.speedPerTile) *
+    (getBehaviorProfile('chick').stopDecelS || 0.28);
+  const walkTol = 0.3 + r.stepLen + glide + 0.05;
+  console.log(`  · 固定 0.3 格短走：最大单段位移 ${maxWalk.toFixed(3)} 格（${r.walkRuns.length} 段，容差 ${walkTol.toFixed(3)}）`);
+  check(maxWalk <= walkTol, '常规行走单段位移 <= walkDistMax + 到达余量 + 刹车滑行', maxWalk);
   check(r.walkRuns.length >= 8, '短走频繁发生（不会站着为主）', r.walkRuns.length);
 
   const longProfile = {
@@ -505,19 +587,24 @@ head('9. 静止的生物不产生 DOM 更新；移动时才写 transform');
 }
 
 // ════════════════════════════════════════════════════════════
-head('10. 撞墙即时重决策：同一步完成 / 方向阈值 / 200 次压力 / 无可行→Idle');
+head('10. 撞墙回弹 → 延迟重决策：方向阈值 / 200 次压力 / 无可行→Idle');
 {
-  // 10.1 同一步内完成重决策 + 新方向满足「阈值内不碰任何栅栏」
+  // 10.1 真实回弹 + 回弹结束后完成重决策 + 新方向满足「阈值内不碰任何栅栏」
   for (const kind of ['chick', 'chicken', 'slime_grass']) {
-    const r = simulate(kind, 240, 24680, null, { size: 3, startPos: { x: 1.7, y: 1.7 }, dir: 0 });
-    check(r.wall.hits > 0, `${kind}: 1×1 栅栏内确实发生撞墙（可验证重决策）`, r.wall.hits);
-    check(r.wall.badDecision === 0, `${kind}: 每次撞墙都在同一逻辑步内完成 Idle/Walk 重决策`, r.wall.badDecision);
+    const r = simulate(kind, 240, 24680, null, { size: 3, startPos: { x: 1.55, y: 1.55 }, dir: 0 });
+    check(r.wall.hits > 0, `${kind}: 1×1 栅栏内确实发生撞墙（可验证回弹）`, r.wall.hits);
+    check(r.wall.badBounce === 0, `${kind}: 每次撞墙都在同一逻辑步内进入回弹（方向反转、停在边界内侧）`,
+      { hits: r.wall.hits, badBounce: r.wall.badBounce });
+    check(r.wall.badDecision === 0 && r.wall.unresolved === 0,
+      `${kind}: 回弹结束（<= bounceS+1 步）后必定完成 Idle/Walk 重决策`,
+      { badDecision: r.wall.badDecision, unresolved: r.wall.unresolved, maxDelay: r.wall.maxDecisionDelay });
     check(r.wall.badRoom === 0, `${kind}: 每次换向的新方向都满足「${r.threshold.toFixed(2)} 格内不碰任何栅栏」`, r.wall.badRoom);
-    check(r.wall.outOfBounds === 0, `${kind}: 撞墙那一刻圆心始终在合法区内（不穿出栅栏）`, r.wall.outOfBounds);
+    check(r.wall.outOfBounds === 0, `${kind}: 撞墙/回弹全程圆心始终在合法区内（不穿出栅栏）`, r.wall.outOfBounds);
     check(r.wall.walkZeroSteps === 0, `${kind}: 240s 内不存在 Walk 零位移步`, r.wall.walkZeroSteps);
+    check(r.overspeedSteps === 0, `${kind}: 240s 内无超速瞬移步`, r.overspeedSteps);
   }
 
-  // 10.2 连续 200 次撞边压力测试：不抖动、不选回朝墙方向、位置不越界
+  // 10.2 连续 200 次撞边压力测试：每次必回弹、必定重决策、不抖动、不选回朝墙方向
   for (const kind of ['chick', 'chicken', 'slime_grass']) {
     const gs = mkMap(3);
     const r = G.creatureRadius({ kind, radius: CREATURES[kind].radius });
@@ -525,51 +612,78 @@ head('10. 撞墙即时重决策：同一步完成 / 方向阈值 / 200 次压力
     const c = addCreature(gs, { kind, pos: { x: inner.x1, y: inner.y0 }, dir: 0, state: 'walk' });
     const profile = getBehaviorProfile(kind);
     const threshold = wallFreeDistanceOf(profile, c.speedPerTile);
-    const stepLen = 0.2 / c.speedPerTile;
+    const cruise = 1 / c.speedPerTile;
+    const maxDecideSteps = Math.ceil((profile.bounceS ?? 0.32) / 0.2) + 1;
     const origRandom = Math.random;
     Math.random = makeRng(424242);
     let bad = 0;
     let badRoom = 0;
+    let badBounce = 0;
+    let unresolved = 0;
     let idleCount = 0;
     let walkCount = 0;
+    let maxFrameDisp = 0;
     try {
       for (let i = 0; i < 200; i++) {
-        // 极端场景：每次都贴右墙 + 朝墙内 + 当前段目标在墙外
+        // 每次从「贴右墙、速度朝墙外、目标在墙外」重新开始，模拟最坏边界
         c.pos.x = inner.x1;
         c.pos.y = inner.y0;
         c.dir = 0;
+        c.vx = cruise;
+        c.vy = 0;
         c.behaviorState = 'walk';
         c.targetPos = { x: inner.x1 + 5, y: inner.y0 };
         c.stateLeft = 1e9;
-        const hitsBefore = c.wallHits || 0;
-        CreatureSystem.stepCreatures(gs, 0.2);
-
-        if ((c.wallHits || 0) <= hitsBefore) bad++;
-        if (c.lastWallDecision === 'idle') {
-          idleCount++;
-          if (c.behaviorState !== 'idle' || c.targetPos !== null) bad++;
-        } else if (c.lastWallDecision === 'walk') {
-          walkCount++;
-          if (c.behaviorState !== 'walk' || !c.targetPos) bad++;
-          const room = roomAlong(c.pos.x, c.pos.y, c.dir, inner) + stepLen;
-          if (room < threshold - 1e-6) badRoom++;
-        } else {
-          bad++;
+        c.bounceLeft = 0;
+        c.brakeLeft = 0;
+        c.lastWallDecision = null;
+        let lastHits = c.wallHits || 0;
+        let decided = null;
+        let bounced = false;
+        let bounceSteps = 0;
+        for (let k = 0; k < maxDecideSteps + 2 && !decided; k++) {
+          const bx = c.pos.x;
+          const by = c.pos.y;
+          CreatureSystem.stepCreatures(gs, 0.2);
+          maxFrameDisp = Math.max(maxFrameDisp, Math.hypot(c.pos.x - bx, c.pos.y - by));
+          if (!(c.pos.x >= inner.x0 - 1e-9 && c.pos.x <= inner.x1 + 1e-9 &&
+                c.pos.y >= inner.y0 - 1e-9 && c.pos.y <= inner.y1 + 1e-9)) bad++;
+          if ((c.wallHits || 0) > lastHits) {
+            // 只在「新发生的撞墙」当步校验回弹（同一次撞墙后续步仍处于回弹阶段）
+            if (c.lastWallDecision === 'bounce' && c.bounceLeft > 0) bounced = true;
+            else badBounce++;
+            lastHits = c.wallHits;
+          }
+          if (c.bounceLeft > 0) bounceSteps++;
+          if (c.lastWallDecision === 'idle') {
+            decided = 'idle';
+            idleCount++;
+            if (c.behaviorState !== 'idle' || c.targetPos !== null) bad++;
+          } else if (c.lastWallDecision === 'walk') {
+            decided = 'walk';
+            walkCount++;
+            if (c.behaviorState !== 'walk' || !c.targetPos) bad++;
+            if (roomAlong(c.pos.x, c.pos.y, c.dir, inner) < threshold - 1e-6) badRoom++;
+          }
         }
-        if (!(c.pos.x >= inner.x0 - 1e-12 && c.pos.x <= inner.x1 + 1e-12 &&
-              c.pos.y >= inner.y0 - 1e-12 && c.pos.y <= inner.y1 + 1e-12)) bad++;
+        if (!decided) unresolved++;
+        if (!bounced) badBounce++;
       }
     } finally {
       Math.random = origRandom;
     }
     console.log(`  · ${kind}: 200 次撞墙 → Idle ${idleCount} 次 / 换向 ${walkCount} 次`);
-    check(bad === 0, `${kind}: 200 次连续撞墙均完成重决策且不越界（无抖动空转）`, bad);
+    check(bad === 0, `${kind}: 200 次连续撞墙均不越界且决策状态自洽`, bad);
+    check(badBounce === 0, `${kind}: 200 次撞墙每次都先出现真实回弹`, badBounce);
+    check(unresolved === 0, `${kind}: 200 次撞墙都在 bounceS+1 步内完成重决策（无空转）`, unresolved);
     check(idleCount + walkCount === 200, `${kind}: 200 次撞墙都是二选一（Idle 或 换向）`, idleCount + walkCount);
     check(walkCount > 0, `${kind}: 仍有一定比例换向离开（不是每次都只会站住）`, walkCount);
     check(badRoom === 0, `${kind}: 200 次换向中没有一次选回朝墙方向（无「撞墙→又朝墙」抖动）`, badRoom);
+    check(maxFrameDisp <= cruise * 0.2 * 1.02 + 1e-9,
+      `${kind}: 回弹压力下每步位移仍 <= 速度×步长（无瞬移）`, maxFrameDisp);
   }
 
-  // 10.3 采样不到任何可行方向 → 直接 Idle（带额外静止），绝不留 Walk 零位移
+  // 10.3 采样不到任何可行方向 → 回弹后必 Idle（带额外静止），绝不留 Walk 零位移
   {
     const gs = mkMap(3); // 1×1 栅栏合法区 0.5×0.5，把阈值抬到 10 格 → 必然无可行方向
     const inner = { x0: 1.25, x1: 1.75, y0: 1.25, y1: 1.75 };
@@ -579,14 +693,21 @@ head('10. 撞墙即时重决策：同一步完成 / 方向阈值 / 200 次压力
     });
     c.targetPos = { x: inner.x1 + 5, y: 1.5 };
     c.stateLeft = 0.2;
-    const px = c.pos.x;
-    CreatureSystem.stepCreatures(gs, 0.2);
+    const profile = getBehaviorProfile('chicken');
+    const maxDecideSteps = Math.ceil((profile.bounceS ?? 0.32) / 0.2) + 1;
+    let steps = 0;
+    while (c.lastWallDecision !== 'idle' && steps < maxDecideSteps + 1) {
+      CreatureSystem.stepCreatures(gs, 0.2);
+      steps++;
+    }
     check(c.wallHits === 1, '无可行方向场景已识别为撞墙', c.wallHits);
+    check(steps <= maxDecideSteps && c.bounceLeft === 0, '先完成短暂回弹，再进入重决策', steps);
     check(c.behaviorState === 'idle' && c.targetPos === null,
-      '无可行方向 → 立即进入 Idle（不停在 Walk 状态零位移）', { state: c.behaviorState, target: c.targetPos });
+      '无可行方向 → 回弹后进入 Idle（不停在 Walk 状态零位移）', { state: c.behaviorState, target: c.targetPos });
     check(c.stateLeft > 0 && c.wallFailStreak === 1,
       '兜底 Idle 带额外静止（wallFailExtraIdleS）', { stateLeft: c.stateLeft, streak: c.wallFailStreak });
-    check(c.pos.x === px && c.pos.x <= inner.x1 + 1e-9, '撞墙步位置夹回合法区', c.pos);
+    check(c.pos.x >= inner.x0 - 1e-9 && c.pos.x <= inner.x1 + 1e-9,
+      '撞墙/回弹全程圆心停在合法区内（不穿墙、不被夹跳）', c.pos);
 
     // 恢复可行阈值后，下一段行走必须恢复（不会永久卡在 Idle）
     c.behaviorOverride = { wallFreeMinDist: 0.5 };
@@ -613,6 +734,83 @@ head('11. 1×1 栅栏（合法圆心区 0.5×0.5）：60s 内仍有足够次数�
     check(r.wall.outOfBounds === 0, `${kind}: 1×1 栅栏内圆心始终合法`, r.wall.outOfBounds);
     check(r.wall.walkZeroSteps === 0, `${kind}: 1×1 栅栏内无 Walk 零位移`, r.wall.walkZeroSteps);
     check(r.longestIdleSteps * 0.2 <= 11.0, `${kind}: 1×1 栅栏内最长静止 <= 11s（无卡墙式长静止）`, r.longestIdleSteps * 0.2);
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+head('12. 渲染连续：renderPos 逐帧位移受速度约束（不会「被吸附」）');
+{
+  // 12.1 逻辑层：进 Idle 前后速度平滑衰减（不瞬间归零）
+  for (const [kind, seed] of [['chick', 12345], ['chicken', 23456], ['slime_grass', 34567]]) {
+    const r = simulate(kind, 600, seed);
+    // 刹车语义：首步 Idle 位移应约等于「刹车初速」下的平均速度位移（而不是瞬间归零）
+    //   线性减速 dt=0.2s、stopDecelS≈0.24~0.34 → 首步平均速度 = brakeFrom × 0.58~0.71
+    // 距栅栏 > 一个刹车行程的样本才不会被边界截断，用它们校验「不是瞬间归零」
+    const abrupt = r.idleEntryRatios.filter(e =>
+      e.brakeFrom > 1e-6 && e.edge >= e.brakeFrom * 0.2 &&
+      e.firstIdle < e.brakeFrom * 0.2 * 0.3 - 1e-9);
+    const glided = r.idleEntryRatios.filter(e => e.firstIdle > 1e-6).length;
+    console.log(`  · ${kind}: Idle 减速样本 ${r.idleEntryRatios.length} 个（有可见滑行 ${glided} 个）`);
+    check(abrupt.length === 0, `${kind}: 进入 Idle 逐步减速，无速度瞬间归零（无吸附感）`,
+      abrupt.slice(0, 2));
+    check(glided >= Math.min(5, r.idleEntryRatios.length), `${kind}: 多数停机都保留了刹车滑行位移`, {
+      total: r.idleEntryRatios.length, glided,
+    });
+  }
+
+  // 12.2 渲染层：40ms 真实帧，逐帧位移 <= 速度 × 帧长；renderPos 不超前 pos 一步以上
+  for (const kind of ['chick', 'chicken', 'slime_grass']) {
+    const gs = mkMap(3);
+    const c = addCreature(gs, { kind, pos: { x: 1.5, y: 1.5 }, state: 'idle', stateLeft: 0 });
+    const clock = new RealtimeClock(() => gs);
+    const inner = innerRectOf(gs, c);
+    const cruise = 1 / c.speedPerTile;
+    const frameLimit = cruise * 0.04 * 1.05 + 1e-9;
+    const stepLen = cruise * 0.2;
+    let maxFrameDisp = 0;
+    let maxLag = 0;
+    let outOfRange = 0;
+    let idleDriftFrames = 0;
+    let idleStillFrames = 0;
+    let stopFrames = 0;
+    let prev = { ...c.renderPos };
+    const origRandom = Math.random;
+    Math.random = makeRng(97531);
+    try {
+      for (let i = 0; i < 2500; i++) { // 2500 帧 × 40ms = 100s（含 1×1 栅栏反复撞墙）
+        clock.advance(40);
+        const disp = Math.hypot(c.renderPos.x - prev.x, c.renderPos.y - prev.y);
+        if (disp > maxFrameDisp) maxFrameDisp = disp;
+        const lag = Math.hypot(c.renderPos.x - c.pos.x, c.renderPos.y - c.pos.y);
+        if (lag > maxLag) maxLag = lag;
+        if (!(c.renderPos.x >= inner.x0 - 1e-9 && c.renderPos.x <= inner.x1 + 1e-9 &&
+              c.renderPos.y >= inner.y0 - 1e-9 && c.renderPos.y <= inner.y1 + 1e-9)) outOfRange++;
+        // 刹停后允许 1 个逻辑步（5 帧）把最后一段插值播完；之后必须完全静止
+        if (c.behaviorState === 'idle' && c.brakeLeft <= 0) {
+          idleStillFrames++;
+          stopFrames++;
+          if (stopFrames > 6 && disp > 1e-9) idleDriftFrames++;
+        } else {
+          stopFrames = 0;
+        }
+        prev = { x: c.renderPos.x, y: c.renderPos.y };
+      }
+    } finally {
+      Math.random = origRandom;
+    }
+    console.log(`  · ${kind}: 最大单帧位移 ${maxFrameDisp.toFixed(4)} / 上限 ${frameLimit.toFixed(4)}，` +
+      `最大插值滞后 ${maxLag.toFixed(4)} / ${stepLen.toFixed(4)}`);
+    check(maxFrameDisp <= frameLimit, `${kind}: 任意渲染帧位移 <= 速度×帧长（逐帧连续、无瞬移）`, {
+      maxFrameDisp, frameLimit,
+    });
+    check(maxLag <= stepLen + 1e-9, `${kind}: renderPos 只落后 pos 至多 1 个逻辑步（不超前、不漂移）`, {
+      maxLag, stepLen,
+    });
+    check(outOfRange === 0, `${kind}: 渲染帧位置始终在合法区内`, outOfRange);
+    check(idleStillFrames > 0 && idleDriftFrames === 0,
+      `${kind}: 刹停后的 Idle 帧 renderPos 完全静止（不被吸附/不漂移）`, {
+        idleStillFrames, idleDriftFrames,
+      });
   }
 }
 
