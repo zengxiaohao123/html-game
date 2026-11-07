@@ -32,7 +32,7 @@ import {
   entriesNearPoint,
   instanceAnchor,
   playerAnchor,
-  circleTileRefs,
+  circleTargetsOf,
   lineTileRefs,
   tileTargetsOf,
   registerDamage,
@@ -466,16 +466,15 @@ export function resolveLinkSkill(gs, skill, ctx = {}) {
       if (counter) counter.count = Math.max(0, currentCount - tierCost);
       devLog.info('[LinkSkill] 焚灭 tier', tier, 'consume', tierCost, 'remaining', counter ? counter.count : 0);
 
-      // C-2（SKL-L-002）：tile 型 —— 锚点 = 目标**中心点**，枚举地块中心距 ≤ radius 的格子
-      // 半径 0.4 → 仅同格（相邻格中心距 = 1）；半径 1.5 → 含对角（√2 ≈ 1.414）
+      // C-2（SKL-L-002）：tile 型 —— 锚点 = 目标**中心点**，半径按米计（1 格边长 = 1 米），
+      // 命中 = 锚点圆与生物碰撞圆重叠（§12.3，不绑定地块枚举）
       const targetEntry = (ctx.targetCreatureId
         ? settlement.snapshot.creatures.find(e => e.id === ctx.targetCreatureId)
         : null) || selectNearestEnemies(settlement.snapshot, anchor, { count: 1 })[0];
       if (!targetEntry) break;
-      const nearTiles = circleTileRefs(gs, { x: targetEntry.x, y: targetEntry.y }, radius);
-      const targets = tileTargetsOf(settlement, skill, nearTiles);
+      const targets = circleTargetsOf(settlement, skill, { x: targetEntry.x, y: targetEntry.y }, radius);
       register(targets, { multiplier, key: skill.id });
-      devLog.info('[LinkSkill] 焚灭 tier', tier, '半径', radius, '命中格', nearTiles.length, '目标', targets.length);
+      devLog.info('[LinkSkill] 焚灭 tier', tier, '半径', radius, '目标', targets.length);
       break;
     }
 

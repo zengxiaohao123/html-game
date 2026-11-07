@@ -17,9 +17,13 @@
 //   · 参照点：主动技能 = 技能所在地块中心；连携技 = 连携技实例所在地块中心。
 //   · 左右方位 = 比较中心点 x，不得退化为"目标所在格的左/右邻格"。
 //   · 范围 = 圆-圆接触：圆心距 <= 半径 + 该生物半径（圆半径取 areaRadius）。
+//   · 长度单位统一为「米」，1 格边长 = 1 米；areaRadius / tier1Radius 等数值即米数。
 //
-// 地块枚举口径：circle / line 都以**地块中心点**到锚点（线段）的距离判定，
-//   与 §2.8「焚灭 1.5 含对角（√2 ≈ 1.414）」的举例一致；0.3 / 0.4 因此只覆盖锚点所在格。
+// 命中口径按形状分两类：
+//   · circle：以锚点（生物连续中心）为圆心、半径按米计，**不枚举地块**，
+//     与生物碰撞圆重叠即命中（斜对角格里的生物只要圆伸进来同样命中）。
+//   · line / row / column / rowColumn：仍按**地块集合**判定
+//     （地块中心点到线段距离，或锚点所在行/列），再按碰撞框取格内生物。
 
 import { SKILLS } from '../data/characters.js';
 import {
@@ -342,7 +346,9 @@ export function distancePointToSegment(px, py, ax, ay, bx, by) {
 }
 
 /**
- * 圆形范围覆盖的栅栏格：地块**中心点**到锚点距离 <= radius（§2.8 / 焚灭 1.5 含对角）
+ * 圆形范围覆盖的栅栏格：地块**中心点**到锚点距离 <= radius（单位：米）
+ * 注意：circle 型技能的**命中**走 `circleTargetsOf`（圆-圆重叠），不经过本函数；
+ * 这里保留给地块口径查询与几何自检使用。
  * @param {object} gs
  * @param {{x:number,y:number}} anchor
  * @param {number} radius
@@ -455,6 +461,25 @@ export function tileTargetsOf(settlement, skill, tileRefs) {
   return creaturesInTiles(settlement.snapshot, tileRefs).filter(e => allowed.has(e.id));
 }
 
+/**
+ * circle 型范围命中：以锚点为圆心、半径按米计（1 格边长 = 1 米），与生物碰撞圆重叠即命中
+ * （圆心距 ≤ areaRadius + 该生物 radius，取等命中）。
+ * **不枚举地块**：斜对角格里的生物只要碰撞圆伸进半径圆，同样命中；
+ * 快照条目按生物实例唯一，同一生物不会重复出现，批次键再做二次兜底。
+ * @param {object} settlement
+ * @param {object} skill tile 型技能（areaShape = 'circle'）
+ * @param {{x:number,y:number}} anchorPoint 锚点（生物连续中心 / 技能格中心）
+ * @param {number|null} radiusOverride 覆盖技能声明的半径（焚灭按档位取 tier1/tier2 半径）
+ */
+export function circleTargetsOf(settlement, skill, anchorPoint, radiusOverride = null) {
+  if (!anchorPoint) return [];
+  const radius = radiusOverride == null ? (skill?.areaRadius ?? 0) : radiusOverride;
+  return entriesNearPoint(settlement.snapshot, anchorPoint, radius, {
+    targetCategory: skill?.targetCategory ?? null,
+    friendlyAsEnemyToday: settlement.friendlyAsEnemyToday,
+  });
+}
+
 // ────────────────────────────────────────────────────────────
 // 意图登记（统一入口，技能分支只描述"打给谁、倍率、buff"）
 // ────────────────────────────────────────────────────────────
@@ -516,6 +541,7 @@ export const SkillResolve = {
   lineTileRefs,
   tileRefsForSkill,
   tileTargetsOf,
+  circleTargetsOf,
   registerDamage,
   registerBuff,
 };

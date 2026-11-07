@@ -33,6 +33,7 @@ import {
   playerAnchor,
   tileRefsForSkill,
   tileTargetsOf,
+  circleTargetsOf,
   registerDamage,
 } from './SkillResolve.js';
 
@@ -68,7 +69,7 @@ export function triggerSkillByHook(hookType, params) {
   // cooldown 检查：按技能卡（skillId）独立 —— §12.3 技能卡位置被移动时冷却保留
   // 例外：爆炸狂欢（SKL-A-008）【受祝福时】即使冷却中也触发并刷新冷却
   const cdKey = `skill_${skillDef.id}`;
-  const refreshOnBless = hookType === 'onBlessed' && skillDef.extraEffect?.onBlessedRefreshCooldown;
+  const refreshOnBless = hookType === 'onBlessed' && skillDef.onBlessedRefreshCooldown;
   if (!refreshOnBless && gs.skillCooldowns[cdKey] && gs.skillCooldowns[cdKey] > 0) return;
 
   // 连携技不走普通 hook 触发（它们是实时窗口按键触发的）
@@ -154,17 +155,24 @@ function fireOneSkill(gs, skill, primaryEntries, cdKey, hookName = 'onEnter', ti
   // ── 结算：只产出意图，判重 / 应用 / 死亡全部交给批次与死亡队列 ──
   let hitCount = 0;
   if (judgeMode === 'tile') {
-    // tile 型：锚点格 → 地块集合 → 碰撞框取生物（跨格按实例去重）→ 同一批次
-    const tiles = tileRefsForSkill(gs, skill, {
-      skillTileIdx: tileIdx,
-      ...tileAnchorParams(gs, skill, anchor, primaryEntry),
-    });
-    const entries = tileTargetsOf(settlement, skill, tiles);
+    // tile 型：circle 走圆-圆重叠；row / column / rowColumn / line 走地块集合 + 碰撞框
+    const anchorParams = tileAnchorParams(gs, skill, anchor, primaryEntry);
+    let entries;
+    let rangeDesc;
+    if (skill.areaShape === 'circle') {
+      // §12.3：半径按米计（1 格边长 = 1 米），命中 = 锚点圆与生物碰撞圆重叠（不绑定地块枚举）
+      entries = circleTargetsOf(settlement, skill, anchorParams.anchorPoint);
+      rangeDesc = `半径 ${skill.areaRadius} 圆`;
+    } else {
+      const tiles = tileRefsForSkill(gs, skill, { skillTileIdx: tileIdx, ...anchorParams });
+      entries = tileTargetsOf(settlement, skill, tiles);
+      rangeDesc = `${tiles.length} 格`;
+    }
     if (multiplier > 0) {
       registerDamage(settlement, entries, { multiplier, element: skill.element, hits, key: skill.id });
     }
     hitCount = entries.length;
-    devLog.info('[SkillSystem]', skill.name, 'tile 结算', tiles.length, '格 →', entries.length, '名目标');
+    devLog.info('[SkillSystem]', skill.name, 'tile 结算', rangeDesc, '→', entries.length, '名目标');
   } else {
     // target 型：主目标集合已由 selectSkillTargets 按中心点距离 / 随机选出
     for (const entry of primaryEntries) {
@@ -195,7 +203,7 @@ function fireOneSkill(gs, skill, primaryEntries, cdKey, hookName = 'onEnter', ti
     gs.skillCooldowns[cdKey] = skill.cooldown;
   }
   // 爆炸狂欢（SKL-A-008）：【受祝福时】立即刷新冷却
-  if (cdKey && eff?.type === 'aoe_radius' && eff.onBlessedRefreshCooldown && hookName === 'onBlessed') {
+  if (cdKey && skill.onBlessedRefreshCooldown && hookName === 'onBlessed') {
     delete gs.skillCooldowns[cdKey];
     devLog.info('[SkillSystem] 爆炸狂欢【受祝福时】冷却已刷新');
   }
@@ -297,10 +305,6 @@ function applySkillExtraEffects(gs, skill, target, hookName = 'onEnter', phase =
       break;
     case 'damage_modifier_self':
       // 已在伤害前结算（gs.team.allWishesActive）
-      break;
-    case 'aoe_radius':
-    case 'line_row_column':
-      // 特殊结算路径已处理
       break;
   }
 }

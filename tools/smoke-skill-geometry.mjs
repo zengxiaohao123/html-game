@@ -5,7 +5,7 @@
 //   1) tile 流水线：行/列技能命中跨两格的生物只受一次伤害
 //   2) 两格同时命中同一生物：伤害不叠加（EffectBatch 键保证）
 //   3) 相邻两格各一只生物：两只都命中
-//   4) 地块枚举：circle 1 → 十字 5 格；circle 0.4 → 仅同格；circle 1.5 → 含对角 9 格；line 半宽 0.5
+//   4) circle 型范围 = 圆-圆重叠（半径按米，不枚举地块）；row/column/rowColumn/line 仍按地块集合
 //   5) target 流水线：最近敌人选择；距离并列按栅栏格下标升序
 //   6) 方位判定用生物中心点 x（不是格索引）
 //   7) 结算中途死亡：后续分组不再结算、掉落只结算一次、二次 flush 不重复
@@ -40,10 +40,9 @@ import {
   selectSkillTargets,
   orderByDistance,
   isSourceLeftOfTarget,
-  circleTileRefs,
+  circleTargetsOf,
   lineTileRefs,
   rowColumnTileRefs,
-  tileRefsForSkill,
   tileTargetsOf,
   registerDamage,
 } from '../src/systems/SkillResolve.js';
@@ -170,24 +169,52 @@ head('3. 相邻两格各一只生物：两只都命中');
   check(calls.length === 2, '共 2 次结算', calls.length);
 }
 
-head('4. 地块枚举口径（circle / line）');
+head('4. circle 型范围：圆-圆重叠（半径按米，不枚举地块）');
 
 {
   const gs = mkGS();
-  const anchor = { x: 2.5, y: 2.5 }; // (1,1) 格中心
-  check(circleTileRefs(gs, anchor, 0.4).length === 1, 'circle 0.4 → 仅同格（§2.8 焚灭一段）');
-  check(circleTileRefs(gs, anchor, 1).length === 5, 'circle 1 → 十字 5 格（对角 √2 > 1）');
-  check(circleTileRefs(gs, anchor, 1.5).length === 9, 'circle 1.5 → 含对角 9 格（√2 ≈ 1.414）');
-  check(lineTileRefs(gs, { x: 1.5, y: 2.5 }, { x: 3.5, y: 2.5 }, 0.5).length === 3, 'line 半宽 0.5 → 中线 3 格');
+  const anchor = { x: 2.5, y: 2.5 }; // 锚点 = 生物连续中心（位于 (1,1) 格心）
+  // 斜对角格 (2,2)、碰撞圆伸进半径圆 → 命中：dist = √(0.85²+0.85²) ≈ 1.202 ≤ 1 + 0.25
+  const diagNear = addCreature(gs, 'creature_20', 3.35, 3.35, { radius: 0.25 });
+  // 斜对角格远端、圆完全不接触 → 不命中：dist = √2 ≈ 1.414 > 1.25
+  const diagFar = addCreature(gs, 'creature_21', 3.5, 3.5, { radius: 0.25 });
+  // 同格邻位 → 命中
+  const sameTile = addCreature(gs, 'creature_22', 2.9, 2.5, { radius: 0.25 });
+  // 边界取等：dist = 1.25 = 半径 1 + 生物半径 0.25 → 命中（与"重叠"一致）
+  const boundaryIn = addCreature(gs, 'creature_23', 3.75, 2.5, { radius: 0.25 });
+  // 边界外：dist = 1.3 > 1.25 → 不命中
+  const boundaryOut = addCreature(gs, 'creature_24', 3.8, 2.5, { radius: 0.25 });
 
-  const tiles = tileRefsForSkill(gs, SKILLS.skill_link_xiayang_annihilate, {
-    skillTileIdx: 14, anchorPoint: anchor,
-  });
-  check(tiles.length === 9, 'skillRefsForSkill：焚灭声明半径 1.5 → 9 格', tiles.length);
-  const blast = tileRefsForSkill(gs, SKILLS.skill_xiayang_blast_carnival, {
-    skillTileIdx: 14, anchorPoint: anchor,
-  });
-  check(blast.length === 5, 'skillRefsForSkill：爆炸狂欢半径 1 → 5 格', blast.length);
+  const settlement = createSettlement(gs, {});
+  const hits = circleTargetsOf(settlement, SKILLS.skill_xiayang_blast_carnival, anchor);
+  check(hits.length === 3
+    && hits.some(e => e.id === diagNear.id)
+    && hits.some(e => e.id === sameTile.id)
+    && hits.some(e => e.id === boundaryIn.id),
+  '圆心距 ≤ 半径 + 生物半径：斜对角近端 / 同格 / 边界取等都命中', hits.map(h => h.id));
+  check(!hits.some(e => e.id === diagFar.id), '斜对角远端、圆完全不接触 → 不命中');
+  check(!hits.some(e => e.id === boundaryOut.id), '圆心距恰超阈值 → 不命中');
+
+  const calls = [];
+  const s2 = createSettlement(gs, { resolveDamage: fakeResolver(calls) });
+  const twice = circleTargetsOf(s2, SKILLS.skill_xiayang_blast_carnival, anchor);
+  registerDamage(s2, twice, { multiplier: 1.5, element: 'fire', key: 'blast-a' });
+  registerDamage(s2, twice, { multiplier: 1.5, element: 'fire', key: 'blast-a' }); // 同 key 重复登记
+  const { summary } = commitSettlement(s2);
+  check(summary.damages.length === 3, '同一生物同时压多格 / 重复登记只结算一次', summary.damages.length);
+  check(calls.length === 3, '命中数量 3（不因多格重复结算）', calls.length);
+  check(calls.every(c => c.dmg === 15), '爆炸狂欢伤害倍率 1.5（atk 10 → 15）', calls.map(c => c.dmg));
+
+  check(lineTileRefs(gs, { x: 1.5, y: 2.5 }, { x: 3.5, y: 2.5 }, 0.5).length === 3,
+    'row / column / line 仍按地块集合（线带半宽 0.5 米 → 中线 3 格）');
+  check(SKILLS.skill_xiayang_blast_carnival.areaRadius === 1, '爆炸狂欢 areaRadius 数值未改（1 米）');
+  check(SKILLS.skill_xiayang_blast_carnival.damageMultiplier === 1.5, '爆炸狂欢伤害倍率未改（150%）');
+  check(SKILLS.skill_xiayang_blast_carnival.extraEffect === undefined, 'aoe_radius 死配置已删除');
+  check(SKILLS.skill_xiayang_blast_carnival.onBlessedRefreshCooldown === true, '受祝福刷新冷却标志保留');
+  check(SKILLS.skill_xiayang_blast_carnival.description.includes('半径 1 米'),
+    '玩家可见描述为「半径 1 米」');
+  check(SKILLS.skill_xiayang_blast_carnival.description.includes('半径 1 格') === false,
+    '玩家可见描述不再出现「半径 1 格」');
 }
 
 head('5. target 流水线：最近敌人 + 并列次级排序');

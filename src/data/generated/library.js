@@ -1467,7 +1467,7 @@ export const ITEMS = {
   "stackMax": 999,
   "stackByValue": false,
   "sources": "获得角色时自动获得；获得对应技能石时自动习得（技能石获得即习得，无需使用）",
-  "notes": "小范围半径 0.3（以敌人位置为中心）"
+  "notes": "小范围半径 0.3 米（以敌人位置为中心）"
 },
   skill_xiayang_inspire_lv1: {
   "id": "skill_xiayang_inspire_lv1",
@@ -1603,7 +1603,7 @@ export const ITEMS = {
   "value": 1,
   "valueMode": "固定值",
   "traits": [],
-  "description": "• 【进入时】对 1 名敌人造成 150% 攻击力大范围火元素伤害（半径 1 格）\n• 冷却：7 回合\n• 【受祝福时】立即刷新冷却",
+  "description": "• 【进入时】对 1 名敌人造成 150% 攻击力大范围火元素伤害（半径 1 米）\n• 冷却：7 回合\n• 【受祝福时】立即刷新冷却",
   "triggers": [
     "进入时",
     "受祝福时"
@@ -1802,7 +1802,7 @@ export const ITEMS = {
   "value": 1,
   "valueMode": "固定值",
   "traits": [],
-  "description": "• 【连携技】每次使用夏阳技能计数 +1。计数达 3 用一段，达 7 用二段\n• 一段：140% 攻击力小范围火伤（半径 0.4），计数 -3\n• 二段：260% 攻击力超大范围火伤（半径 1.5），计数 -7\n• 【每一日开始时】清空计数",
+  "description": "• 【连携技】每次使用夏阳技能计数 +1。计数达 3 用一段，达 7 用二段\n• 一段：140% 攻击力小范围火伤（半径 0.4 米），计数 -3\n• 二段：260% 攻击力超大范围火伤（半径 1.5 米），计数 -7\n• 【每一日开始时】清空计数",
   "triggers": [
     "连携技（实时窗口 8 秒，按 E）"
   ],
@@ -1895,7 +1895,7 @@ export const ITEMS = {
   "stackMax": 999,
   "stackByValue": false,
   "sources": "获得角色时自动获得；获得对应技能石时自动习得（技能石获得即习得，无需使用）",
-  "notes": "每次弹射在当前目标半径 0.3 格内随机 1 名敌人（含自身），允许重复"
+  "notes": "每次弹射在当前目标半径 0.3 米内随机 1 名敌人（含自身），允许重复"
 },
   skill_link_luyouyou_rise_wind: {
   "id": "skill_link_luyouyou_rise_wind",

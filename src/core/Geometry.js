@@ -26,7 +26,7 @@ import { getCreatureDef } from '../data/creatures.js';
 export const FENCE_ORIGIN_X = 1;
 export const FENCE_ORIGIN_Y = 1;
 
-/** 无据可依时的生物半径（格）；设计文档 §2.2 基准 */
+/** 无据可依时的生物半径（米）；设计文档 §2.2 基准（1 格边长 = 1 米） */
 export const DEFAULT_CREATURE_RADIUS = 0.25;
 
 /** 每格像素上限/下限（UI 反算用；3×3 在常规窗口下仍是 80px） */
@@ -253,7 +253,7 @@ export function computeTilePx({ availW, availH, size, maxTilePx = MAX_TILE_PX, m
 // ────────────────────────────────────────────────────────────
 
 /**
- * 生物半径（格）：实例 radius 优先，其次生物定义，最后 0.25（待定口径）
+ * 生物半径（米；1 格边长 = 1 米）：实例 radius 优先，其次生物定义，最后 0.25（待定口径）
  * @param {object|string} creatureOrKind
  */
 export function creatureRadius(creatureOrKind) {

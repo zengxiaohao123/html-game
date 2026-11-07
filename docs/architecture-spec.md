@@ -297,7 +297,7 @@ export const createInitialState = () => ({
   
   // === 生物 ===
   creatures: [],               // 生物实例：{ id, kind, row, col, hp, atk, growth, mood, stage, element,
-                               //   radius,                            // 圆半径（格），小鸡 1/6 / 鸡·史莱姆 0.25
+                               //   radius,                            // 圆半径（米，1 格边长 = 1 米），小鸡 1/6 / 鸡·史莱姆 0.25
                                //   pos: {x, y},                       // 连续逻辑坐标（判定权威；可任意小数）
                                //   renderPos: {x, y},                 // 渲染插值位置（表现层写，不参与判定）
                                //   dir,                               // 朝向弧度（任意方向，非四方向）
@@ -487,7 +487,9 @@ import { createSettlement, commitSettlement, registerDamage } from '../systems/S
 
 const settlement = createSettlement(gs, { skillId, instanceKey, phase, roleId, attackerRoleId });
 // settlement = { snapshot, batch, deathQueue, friendlyAsEnemyToday, committed }
-const targets = tileTargetsOf(settlement, skill, tileRefs);   // 只读 snapshot
+const targets = skill.areaShape === 'circle'
+  ? circleTargetsOf(settlement, skill, anchorPoint)           // 圆-圆重叠（只读 snapshot）
+  : tileTargetsOf(settlement, skill, tileRefs);               // 地块集合 + 碰撞框（只读 snapshot）
 registerDamage(settlement, targets, { multiplier, element, hits, key });
 commitSettlement(settlement);   // batch.commit() → deathQueue.flush()
 ```
@@ -499,17 +501,20 @@ commitSettlement(settlement);   // batch.commit() → deathQueue.flush()
 
 ### 8.3 tile 流水线
 
-`枚举地块 → creaturesInTiles(snapshot, refs) → 按实例去重 → 全部登记进同一个 EffectBatch → commit → flush`
+`tile` 型按形状分两种命中口径；命中集合最终都登记进同一个 EffectBatch → commit → flush。
 
-| 形状 | 枚举口径 |
+| 形状 | 命中口径 |
 |---|---|
-| `circle` | 地块**中心点**到锚点（目标 / 技能格中心）距离 ≤ `areaRadius` |
-| `rowColumn` | 技能所在外圈格 → 栅栏行 + 列；贴外圈时越界轴自动略去 |
-| `line` | 地块中心点到线段（玩家格中心 → 锁定目标中心）距离 ≤ `areaRadius`（半宽） |
+| `circle` | **圆-圆重叠**：`dist(锚点, 生物中心) ≤ areaRadius + 该生物 radius`（取等命中，单位：米）。锚点为生物时取其**连续中心点**，不吸附格心；**不枚举地块**，斜对角格里的生物只要碰撞圆伸进半径圆同样命中，圆完全不接触则不命中 |
+| `rowColumn` | 技能所在外圈格 → 栅栏行 + 列；贴外圈时越界轴自动略去；再按碰撞框取格内生物 |
+| `row` / `column` | 锚点所在行 / 列的地块集合；再按碰撞框取格内生物 |
+| `line` | 地块中心点到线段（玩家格中心 → 锁定目标中心）距离 ≤ `areaRadius`（线带半宽，单位：米）；再按碰撞框取格内生物 |
 
-跨两格生物只登记一次（`creaturesInTiles` 按实例去重）；同一生物被多个受影响格命中由 `EffectBatch` 键二次兜底，不叠伤害。
+长度单位统一为**米**（1 格边长 = 1 米），`areaRadius` / `tier1Radius` / `tier2Radius` 的数值即米数。
 
-口径变化（相对旧实现）：`circle 1` 按圆面积覆盖为十字 5 格（旧为方形 9 格）；`开拓 0.3` 按文档补齐为同格范围。
+`circle` 型命中集合由快照条目保证按生物实例唯一；`row / column / rowColumn / line` 的跨两格生物由 `creaturesInTiles` 按实例去重；`EffectBatch` 键对两类都做二次兜底，不叠伤害。
+
+口径变化（相对旧实现）：`circle` 不再按格枚举，改为圆-圆重叠（爆炸狂欢半径 1 米，贴边的斜对角生物也可能命中）；`开拓 0.3 米` 同样走圆-圆重叠。
 
 ### 8.4 target 流水线
 
@@ -530,4 +535,4 @@ commitSettlement(settlement);   // batch.commit() → deathQueue.flush()
 
 ### 8.6 验收
 
-`node tools/smoke-skill-geometry.mjs`：73 条断言，覆盖行/列跨两格只结算一次、两格命中不叠加、相邻两格各一只都命中、circle / line 地块枚举、最近敌人与并列次序、方位按中心点 x、批次中途死亡后续分组跳过 + 掉落一次、`SkillSystem` / `LinkSkillSystem` / 回合 tick 三条真实接线、judgeMode 全覆盖（20 = 15 + 5）与非法定义抛错。
+`node tools/smoke-skill-geometry.mjs`：80 条断言，覆盖行/列跨两格只结算一次、两格命中不叠加、相邻两格各一只都命中、circle 圆-圆重叠（斜对角近端命中 / 远端不命中 / 边界取等命中 / 多格不重复）、line 与行列车仍按地块集合、最近敌人与并列次序、方位按中心点 x、批次中途死亡后续分组跳过 + 掉落一次、`SkillSystem` / `LinkSkillSystem` / 回合 tick 三条真实接线、judgeMode 全覆盖（20 = 15 + 5）与非法定义抛错、爆炸狂欢参数锁定（倍率 1.5 / 命中 3 / areaRadius 1 / 死配置已删 / 文案为「半径 1 米」）。

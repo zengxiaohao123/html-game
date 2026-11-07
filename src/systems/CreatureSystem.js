@@ -94,7 +94,7 @@ export function spawnCreature(gs, kind, opts = {}) {
     // primary 格：兼容既有栅格逻辑与 fence[].creatures 缓存（几何归属见 Geometry.creatureTileRefs）
     row: tile.row,
     col: tile.col,
-    // 连续坐标（判定权威位置）与半径（格）
+    // 连续坐标（判定权威位置）与半径（米；1 格边长 = 1 米）
     pos,
     radius,
     // 运动：dir = 弧度（任意方向）；speedPerTile = 秒/格；闲逛目标点 + 停顿/重取计时
@@ -148,7 +148,7 @@ function pickFenceSpawnTile(gs) {
   return Random.pick(fence);
 }
 
-/** 在格内取一个圆不越出该格的合法中心点（半径以格计，连续坐标） */
+/** 在格内取一个圆不越出该格的合法中心点（半径以米计，1 格边长 = 1 米，连续坐标） */
 function randomPointInRect(rect, radius) {
   const inset = Math.min(Math.max(0, radius), 0.5);
   const x0 = rect.x0 + inset;

@@ -137,12 +137,12 @@ export const SKILLS = {
     roleId: 'yumo',
     element: 'physical',
     damageMultiplier: 0.6,
-    // §2.8：混合型（先选 1 名再小范围 0.3）→ tile 流，锚点 = 目标中心
-    // 旧实现只做了"消耗地形加伤"，0.3 范围未实现；本轮按文档补齐
+    // §2.8：混合型（先选 1 名再小范围）→ tile 流，锚点 = 目标连续中心
+    // 半径 0.3 米（1 格边长 = 1 米）：与生物碰撞圆重叠即命中
     judgeMode: 'tile',
     anchor: 'target',
     areaShape: 'circle',
-    areaRadius: 0.3,
+    areaRadius: 0.3,         // 单位：米
     hooks: { onEnter: true, onPass: false, onBlessed: true },
     range: 1,
     cooldown: 3,
@@ -309,22 +309,18 @@ export const SKILLS = {
     roleId: 'xiayang',
     element: 'fire',
     damageMultiplier: 1.5,
-    // §2.8：混合型（先选 1 名再 1 格圆形范围）→ tile 流，锚点 = 目标中心
-    // 注意：圆形半径 1 按"地块中心距"枚举，只覆盖十字 5 格（旧实现是方形 3×3=9 格）
+    // §2.8：混合型（先选 1 名再小范围）→ tile 流，锚点 = 目标连续中心
+    // 半径 1 米（1 格边长 = 1 米）：圆形范围，与生物碰撞圆重叠即命中（不绑定地块枚举）
     judgeMode: 'tile',
     anchor: 'target',
     areaShape: 'circle',
-    areaRadius: 1,
+    areaRadius: 1,           // 单位：米
     hooks: { onEnter: true, onPass: false, onBlessed: true },
     range: 1,
     cooldown: 7,
     isLinkSkill: false,
     targetCategory: 'danger_extreme',
-    extraEffect: {
-      type: 'aoe_radius',
-      radius: 1,                       // 半径 1 格大范围
-      onBlessedRefreshCooldown: true,  // 【受祝福时】立即刷新冷却
-    },
+    onBlessedRefreshCooldown: true,  // 【受祝福时】立即刷新冷却（SkillSystem 读取）
     description: ITEMS.skill_xiayang_blast_carnival.description,
   },
 
@@ -373,10 +369,6 @@ export const SKILLS = {
     cooldown: 0,
     isLinkSkill: false,
     targetCategory: 'danger_extreme',
-    extraEffect: {
-      type: 'line_row_column',
-      // 对该地块所在行以及所在列的所有敌人造成伤害
-    },
     description: ITEMS.skill_zongheng.description,
   },
 
@@ -456,9 +448,9 @@ export const SKILLS = {
       countPerTierUse: 3,               // 计数达 3 用一段，计数 -3
       countPerTierTwo: 7,               // 计数达 7 用二段，计数 -7
       tier1Multiplier: 1.4,
-      tier1Radius: 0.4,                 // 小范围半径 0.4
+      tier1Radius: 0.4,                 // 小范围半径 0.4 米
       tier2Multiplier: 2.6,
-      tier2Radius: 1.5,                 // 超大范围半径 1.5
+      tier2Radius: 1.5,                 // 超大范围半径 1.5 米
       clearOnDayStart: true,            // 【每一日开始时】清空计数
     },
     description: ITEMS.skill_link_xiayang_annihilate.description,
@@ -499,11 +491,11 @@ export const SKILLS = {
     roleId: 'luyouyou',
     element: 'wind',
     damageMultiplier: 0.8,
-    // §2.8：线带型 → tile 流，锚点 = 玩家+目标（玩家格中心 → 随机锁定目标中心），半宽 0.5
+    // §2.8：线带型 → tile 流，锚点 = 玩家+目标（玩家格中心 → 随机锁定目标中心），半宽 0.5 米
     judgeMode: 'tile',
     anchor: 'player+target',
     areaShape: 'line',
-    areaRadius: 0.5,          // 线带半宽（沿用现状 0.5）
+    areaRadius: 0.5,          // 线带半宽 0.5 米（单位：米）
     hooks: { onEnter: false, onPass: false, onBlessed: false },
     range: 1,
     cooldown: 5,
@@ -525,7 +517,7 @@ export const SKILLS = {
     roleId: 'luyouyou',
     element: 'physical',
     damageMultiplier: 0.2,   // 每次弹射 20%
-    // §2.8：弹射 3 次 → target 流（以当前目标为锚点、0.3 接触半径内随机）
+    // §2.8：弹射 3 次 → target 流（以当前目标为锚点、0.3 米接触半径内随机）
     judgeMode: 'target',
     hooks: { onEnter: false, onPass: false, onBlessed: false },
     range: 1,
@@ -535,12 +527,12 @@ export const SKILLS = {
     extraEffect: {
       type: 'bounce_arrow',
       bounceCount: 3,                  // 弹射 3 次
-      bounceRadius: 0.3,               // 每次弹射以当前目标为中心半径 0.3 格内随机 1 名敌人（含目标自身）
+      bounceRadius: 0.3,               // 每次弹射以当前目标为中心半径 0.3 米内随机 1 名敌人（含目标自身）
       allowRepeat: true,               // 允许重复弹射
       clearCountAfterUse: true,        // 随后清空计数
     },
     description: ITEMS.skill_link_luyouyou_hunt.description,
-    note: '每次弹射以当前目标为中心半径 0.3 格内随机 1 名敌人（含目标自身）为新目标，允许重复弹射。',
+    note: '每次弹射以当前目标为中心半径 0.3 米内随机 1 名敌人（含目标自身）为新目标，允许重复弹射。',
   },
 
   skill_link_luyouyou_rise_wind: {
