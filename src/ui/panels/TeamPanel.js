@@ -334,10 +334,10 @@ export class TeamPanel {
     this._renderQuick();
   }
 
-  // 换人是否实质改变（角色集合忽略顺序 + 精灵）
+  // 换人是否实质改变（角色顺序也算改变：1 号位决定通用技能归属者）
   _sameComposition(rolesA, spiritA, rolesB, spiritB) {
-    const a = [...(rolesA || [])].filter(r => r).sort();
-    const b = [...(rolesB || [])].filter(r => r).sort();
+    const a = [...(rolesA || [])].filter(r => r);
+    const b = [...(rolesB || [])].filter(r => r);
     return JSON.stringify(a) === JSON.stringify(b) && (spiritA || null) === (spiritB || null);
   }
 
@@ -347,7 +347,7 @@ export class TeamPanel {
     const newRoles = this._quickRoles.slice();
     const newSpirit = this._quickSpiritId;
 
-    // 唯一例外：新队伍与原队伍完全相同（允许顺序不同）→ 不算修改
+    // 唯一例外：新队伍与原队伍完全相同（含 1 号位顺序）→ 不算修改
     if (this._sameComposition(newRoles, newSpirit, g.roles, g.spirit)) {
       EventBus.emit(GE.TOAST_SHOW, { text: '编队未发生变化', duration: 1200 });
       this._closeQuick();

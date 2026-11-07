@@ -18,7 +18,7 @@ import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { HookDispatcher } from '../core/HookDispatcher.js';
 import { devLog } from '../core/Logger.js';
-import { SKILLS } from '../data/characters.js';
+import { SKILLS, resolveSkillOwnerId } from '../data/characters.js';
 import { FACTION, factionOf, isHostileTo } from '../data/factions.js';
 import { CombatSystem } from './CombatSystem.js';
 import { TalentSystem } from './TalentSystem.js';
@@ -86,12 +86,14 @@ export function triggerSkillByHook(hookType, params) {
   if (skillDef.isLinkSkill) return;
 
   // §3.2 ⑦c / §3.6：一次结算一份快照 —— 本技能本次触发的判定几何只读这份
+  // §9.1：通用技能（roleId: null）的归属者 = 当前队伍 1 号位角色
+  const ownerRoleId = resolveSkillOwnerId(gs, skillDef);
   const settlement = createSettlement(gs, {
     skillId: skillDef.id,
     instanceKey: `tile:${tileIdx}`,
     phase: hookType,
-    roleId: skillDef.roleId,
-    attackerRoleId: skillDef.roleId,
+    roleId: ownerRoleId,
+    attackerRoleId: ownerRoleId,
   });
   const judgeMode = judgeModeOf(skillDef);
   const anchor = skillTileAnchor(gs, tileIdx);
@@ -143,10 +145,12 @@ function fireOneSkill(gs, skill, primaryEntries, cdKey, hookName = 'onEnter', ti
   const primaryLive = primaryEntry ? liveById(gs, primaryEntry.id) : null;
   const displayTarget = primaryLive || primaryEntry;
   devLog.info('[SkillSystem] fire', skill.name, '→', displayTarget?.kind, '(hp', displayTarget?.hp, '/', displayTarget?.maxHp, ') x', primaryEntries.length);
-  EventBus.emit(GE.SKILL_TRIGGERED, { skillId: skill.id, roleId: skill.roleId, targetKind: displayTarget?.kind ?? null });
+  // §9.1：通用技能归属当前队伍 1 号位，事件里的 roleId 也按归属者广播
+  const ownerRoleId = resolveSkillOwnerId(gs, skill);
+  EventBus.emit(GE.SKILL_TRIGGERED, { skillId: skill.id, roleId: ownerRoleId, targetKind: displayTarget?.kind ?? null });
   // §16.3：主动技能在其所在地块结算 → UI 层据此做地块红色瞬时高亮（纯视觉，不参与结算）
   if (typeof tileIdx === 'number') {
-    EventBus.emit(GE.SKILL_USED_ON_TILE, { tileIdx, skillId: skill.id, roleId: skill.roleId });
+    EventBus.emit(GE.SKILL_USED_ON_TILE, { tileIdx, skillId: skill.id, roleId: ownerRoleId });
   }
 
   const eff = skill.extraEffect;
@@ -218,7 +222,7 @@ function fireOneSkill(gs, skill, primaryEntries, cdKey, hookName = 'onEnter', ti
     gs.skillCooldowns[cdKey] = skill.cooldown;
   }
   if (!skill.isLinkSkill) {
-    LinkSkillSystem.onSkillFired(gs, { roleId: skill.roleId, skillId: skill.id, skill, target: displayTarget });
+    LinkSkillSystem.onSkillFired(gs, { roleId: ownerRoleId, skillId: skill.id, skill, target: displayTarget });
   }
 }
 

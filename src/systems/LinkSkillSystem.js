@@ -19,7 +19,7 @@
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
-import { getSkill, SKILLS } from '../data/characters.js';
+import { getSkill, SKILLS, resolveSkillOwnerId } from '../data/characters.js';
 import { FACTION, factionOf, isHostileTo } from '../data/factions.js';
 import {
   createSettlement,
@@ -420,13 +420,15 @@ export function resolveLinkSkill(gs, skill, ctx = {}) {
   EventBus.emit(GE.TOAST_SHOW, { text: `💥 连携技：${skill.name}！`, duration: 1500 });
 
   // §3.2 ⑦c / §3.6：一次结算一份快照 —— 本次连携技的判定几何只读这份
+  // §9.1：通用连携技（移形，roleId: null）的归属者 = 当前队伍 1 号位角色
   const judgeMode = judgeModeOf(skill);
+  const ownerRoleId = resolveSkillOwnerId(gs, skill);
   const settlement = createSettlement(gs, {
     skillId: skill.id,
     instanceKey: ctx.instanceKey || `link:${skill.id}`,
     phase: 'link',
-    roleId: skill.roleId,
-    attackerRoleId: skill.roleId,
+    roleId: ownerRoleId,
+    attackerRoleId: ownerRoleId,
   });
   const anchor = linkAnchorOf(gs, ctx);
   const eff = skill.extraEffect || {};

@@ -7,7 +7,7 @@ import { EventBus } from '../../core/EventBus.js';
 import { GE } from '../../core/GameEvents.js';
 import { ITEMS } from '../../data/items.js';
 import { TALENTS } from '../../data/talents.js';
-import { SKILLS, CHARACTERS } from '../../data/characters.js';
+import { SKILLS, CHARACTERS, getLeadRoleId } from '../../data/characters.js';
 import { COLLECTIBLES } from '../../data/collectibles.js';
 import { createStandardPanel } from './_panelHelper.js';
 import { createEl, iconEl } from '../dom.js';
@@ -89,6 +89,20 @@ export class CodexPanel {
     // （开新面板关旧面板由 GameDirector 中央发 UI_PANEL_CLOSE 处理）
     EventBus.on(GE.UI_PANEL_OPEN, ({ panel }) => { if (panel === 'codex') this.show(); });
     EventBus.on(GE.UI_PANEL_CLOSE, ({ panel }) => { if (panel === 'codex' && this.helper?.visible) this.helper.hide(); });
+    // 通用技能归属随 1 号位实时变化 → 图鉴打开时立即重绘
+    EventBus.on(GE.TEAM_CHANGE, () => { if (this.helper?.visible) this._refresh(); });
+  }
+
+  /** 技能归属文案：专属技能显示角色；通用技能显示当前 1 号位 */
+  _skillOwnerText(sk) {
+    if (sk.roleId) {
+      const role = CHARACTERS[sk.roleId];
+      return role ? `${role.emoji} ${role.name}` : '—';
+    }
+    if (sk.roleId !== null) return '—';
+    const lead = getLeadRoleId(this.director?.gs);
+    const role = lead ? CHARACTERS[lead] : null;
+    return role ? `通用 · 当前归属：${role.emoji} ${role.name}` : '通用 · 当前归属：—';
   }
 
   show() { this.helper?.show(); this._refresh(); }
@@ -129,14 +143,13 @@ export class CodexPanel {
       });
     } else if (this.activeTab === 'skills') {
       this._listEntries(Object.values(SKILLS), (sk) => {
-        const role = sk.roleId ? CHARACTERS[sk.roleId] : null;
         return {
           emoji: sk.emoji,
           name: sk.name + (sk.isLinkSkill ? ' ⚡' : ''),
           id: sk.id,
           group: 'ui',
           def: sk,
-          sub: role ? `${role.emoji} ${role.name}` : (sk.roleId === null ? '通用' : ''),
+          sub: this._skillOwnerText(sk),
           rarity: null,
         };
       });
@@ -272,9 +285,8 @@ export class CodexPanel {
   }
 
   _detailSkill(sk) {
-    const role = sk.roleId ? CHARACTERS[sk.roleId] : null;
     const rows = [
-      ['所属角色', role ? `${role.emoji} ${role.name}` : (sk.roleId === null ? '通用' : '—')],
+      ['所属角色', this._skillOwnerText(sk)],
       ['元素', sk.element || '—'],
       ['伤害倍率', sk.damageMultiplier != null ? `×${sk.damageMultiplier}` : '—'],
       ['冷却', sk.cooldown != null ? `${sk.cooldown} 回合` : '—'],

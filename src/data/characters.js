@@ -597,3 +597,21 @@ export function getSkill(id) {
 export function getSkillsByRole(roleId) {
   return Object.values(SKILLS).filter(s => s.roleId === roleId);
 }
+
+/**
+ * 当前启用队伍的 1 号位角色 id（通用技能的默认归属者）。
+ * 队伍为空时返回 null。
+ */
+export function getLeadRoleId(gs) {
+  const idx = gs?.team?.activeGroup ?? 0;
+  const roles = gs?.team?.groups?.[idx]?.roles || [];
+  return roles.find((r) => r) || null;
+}
+
+/**
+ * 技能归属者：专属技能用技能自身的 roleId；
+ * 通用技能（roleId: null）归属当前队伍 1 号位。
+ */
+export function resolveSkillOwnerId(gs, skillDef) {
+  return skillDef?.roleId ?? getLeadRoleId(gs);
+}

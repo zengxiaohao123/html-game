@@ -76,7 +76,8 @@ export class EffectBatch {
     this.phase = opts.phase ?? 'default';
     this.atk = typeof opts.atk === 'number' ? opts.atk : (gs?.player?.atk ?? 0);
     this.player = opts.player ?? (gs?.player ?? null);
-    this.roleId = opts.roleId ?? opts.sourceSkillId ?? null;
+    // 归属者由调用方显式解析（通用技能 = 当前队伍 1 号位）；绝不用技能 id 冒充角色 id
+    this.roleId = opts.roleId ?? null;
     this.attackerRoleId = opts.attackerRoleId ?? opts.roleId ?? null;
     this._deathQueue = opts.deathQueue ?? null;
     this._resolveDamage = opts.resolveDamage ?? CombatSystem.calculateDamage;

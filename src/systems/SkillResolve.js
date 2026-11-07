@@ -25,7 +25,7 @@
 //   · line / row / column / rowColumn：仍按**地块集合**判定
 //     （地块中心点到线段距离，或锚点所在行/列），再按碰撞框取格内生物。
 
-import { SKILLS } from '../data/characters.js';
+import { SKILLS, resolveSkillOwnerId } from '../data/characters.js';
 import { FACTION, factionOf, isHostileTo } from '../data/factions.js';
 import {
   FENCE_ORIGIN_X,
@@ -138,14 +138,17 @@ export function validateSkillJudgeModes(skills = SKILLS) {
 export function createSettlement(gs, opts = {}) {
   const snapshot = snapshotGeometry(gs);
   const deathQueue = opts.deathQueue || new PendingDeathQueue(gs);
+  // §9.1：未显式给出归属者时按技能解析 —— 通用技能（roleId: null）= 当前队伍 1 号位
+  const skillDef = opts.skillId ? SKILLS[opts.skillId] : null;
+  const ownerRoleId = opts.roleId ?? (skillDef ? resolveSkillOwnerId(gs, skillDef) : null);
   const batch = new EffectBatch(gs, {
     sourceSkillId: opts.skillId ?? null,
     instanceKey: opts.instanceKey,
     phase: opts.phase ?? 'default',
     atk: opts.atk ?? (gs?.player?.atk ?? 0),
     player: opts.player ?? (gs?.player ?? null),
-    roleId: opts.roleId ?? opts.skillId ?? null,
-    attackerRoleId: opts.attackerRoleId ?? opts.roleId ?? null,
+    roleId: ownerRoleId,
+    attackerRoleId: opts.attackerRoleId ?? ownerRoleId,
     deathQueue,
     resolveDamage: opts.resolveDamage,
     applyBuff: opts.applyBuff,
