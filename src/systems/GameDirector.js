@@ -14,6 +14,8 @@ import { migrateGS } from '../state/migrate.js';
 import { DayBaseline } from '../state/DayBaseline.js';
 import { devLog } from '../core/Logger.js';
 import { registerFacilities } from '../data/facilities.js';
+import { SLIME_KINDS } from '../data/creatures.js';
+import { CreatureSystem } from './CreatureSystem.js';
 import { MovementSystem } from './MovementSystem.js';
 import { TurnSystem } from './TurnSystem.js';
 import { SleepSystem } from './SleepSystem.js';
@@ -27,6 +29,8 @@ import { canMoveNow, markMoved, resetMoveCooldown } from './MoveCooldown.js';
 
 /** 初始小麦田放置的格 idx（Phase 1 演示用） */
 const INITIAL_WHEAT_TILE_IDX = 2; // 右上位置
+/** 新开局演示生物数（§18.9：3 只随机史莱姆，真实生物并占容量；读档不注入） */
+export const INITIAL_SLIME_COUNT = 3;
 
 export class GameDirector {
   constructor() {
@@ -220,6 +224,17 @@ export class GameDirector {
       InventorySystem.addItem(this.gs, it.id, it.qty);
     }
     devLog.info('[GameDirector] 初始化背包物品 ✓');
+
+    // 6.5 新开局演示生物：3 只随机史莱姆（§18.9）
+    //     真实调用 spawnCreature → 占容量、可移动/可战斗，不是装饰；
+    //     只在 start()（新开局）注入，loadGame 读档不注入。
+    const slimePool = SLIME_KINDS.slice();
+    for (let i = 0; i < INITIAL_SLIME_COUNT; i++) {
+      const pickIdx = Math.floor(Math.random() * slimePool.length);
+      const kind = slimePool.splice(pickIdx, 1)[0];
+      CreatureSystem.spawnCreature(this.gs, kind);
+    }
+    devLog.info(`[GameDirector] 新开局注入 ${INITIAL_SLIME_COUNT} 只史莱姆 ✓`);
 
     // 6. 广播 BOOT 事件（UI 模块会收到）
     EventBus.emit(GE.BOOT, { gs: this.gs });

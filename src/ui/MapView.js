@@ -14,7 +14,7 @@ import { normalizeTerrain } from '../data/terrains.js';
 import { BuildSystem } from '../systems/BuildSystem.js';
 import { ItemTargeting } from '../systems/ItemTargeting.js';
 import { SKILLS } from '../data/characters.js';
-import { getCreatureDef } from '../data/creatures.js';
+import { CreatureView } from './CreatureView.js';
 import * as Geometry from '../core/Geometry.js';
 import { createEl, qs, iconEl } from './dom.js';
 
@@ -35,8 +35,7 @@ export class MapView {
     this.tileSize = BASE_TILE_PX;
     // 生物层：按 renderPos 逐帧绘制，节点缓存、只更新 transform（不每帧重建 DOM）
     this.creatureLayer = null;
-    this.creatureEls = new Map();   // creatureId → DOM 节点
-    this._creatureSizes = new Map(); // creatureId → 上次直径 px
+    this.creatureView = null;       // 纯色圆形表现层（节点缓存）
     this._creatureRafId = null;
     this._rafSyncProbe = false;
     // §16.3 视角缩放/拖拽平移（纯视觉，不影响数值；点击命中仍走 tile 自身事件）
@@ -525,6 +524,7 @@ export class MapView {
       },
       parent: this.root,
     });
+    this.creatureView = new CreatureView(this.creatureLayer);
   }
 
   _startCreatureLoop() {
@@ -544,59 +544,8 @@ export class MapView {
 
   /** 按 renderPos 逐帧画所有生物；完全重叠的两只各自保留独立节点 */
   _paintCreatures() {
-    const gs = this.gs;
-    if (!gs || !this.creatureLayer || !Array.isArray(gs.creatures)) return;
-    const ts = this.tileSize;
-    const alive = new Set();
-
-    for (const c of gs.creatures) {
-      if (!c || c.hp <= 0) continue;
-      alive.add(c.id);
-
-      let el = this.creatureEls.get(c.id);
-      // 种类变化（小鸡长大）时重建图标，其余情况只更新 transform
-      if (el && el.__kind !== c.kind) {
-        el.remove();
-        this.creatureEls.delete(c.id);
-        this._creatureSizes.delete(c.id);
-        el = null;
-      }
-      if (!el) {
-        const def = getCreatureDef?.(c.kind);
-        el = iconEl('creatures', c.kind, {
-          def,
-          cls: 'map-creature',
-          size: '14px',
-          fallback: def?.emoji || '🐾',
-          style: {
-            position: 'absolute', left: '0px', top: '0px',
-            pointerEvents: 'none', willChange: 'transform',
-          },
-        });
-        el.__kind = c.kind;
-        this.creatureLayer.appendChild(el);
-        this.creatureEls.set(c.id, el);
-      }
-
-      const circle = Geometry.creatureRenderCircle(c);
-      const dPx = Math.max(6, Math.round(circle.r * 2 * ts));
-      if (this._creatureSizes.get(c.id) !== dPx) {
-        el.style.width = `${dPx}px`;
-        el.style.height = `${dPx}px`;
-        el.style.fontSize = `${Math.round(dPx * 0.72)}px`;
-        this._creatureSizes.set(c.id, dPx);
-      }
-      // 逻辑坐标 × 每格像素 + 容器原点（layer 原点即地图容器原点）
-      el.style.transform = `translate(${circle.x * ts}px, ${circle.y * ts}px) translate(-50%, -50%)`;
-    }
-
-    // 清理已死亡 / 被移除 / 换局后不存在的生物节点
-    for (const [id, el] of this.creatureEls) {
-      if (alive.has(id)) continue;
-      el.remove();
-      this.creatureEls.delete(id);
-      this._creatureSizes.delete(id);
-    }
+    if (!this.creatureView) return;
+    this.creatureView.paint(this.gs, this.tileSize);
   }
 
   /** 指向模式的浮动提示条 */
