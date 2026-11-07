@@ -225,37 +225,8 @@ export class MapView {
     // 层级 2：地形背景层（约 95% 面积，铺满格子内部；不得占用右下角标志位）
     tileEl.appendChild(this._terrainLayer(normalizeTerrain(tile.terrain), ratio));
 
-    if (tile.contentId) {
-      // 按 contentId 前缀选 group（facility_ → facilities, resource_ → resources, skill_ → characters.SKILLS）
-      let group = 'facilities';
-      let def = null;
-      let fallback = null;
-      if (tile.contentId.startsWith('resource_')) {
-        group = 'resources';
-        fallback = Assets.getEmoji('resources', tile.contentId);
-      } else if (tile.contentId.startsWith('skill_')) {
-        group = 'items';
-        def = SKILLS?.[tile.contentId] || null;
-        fallback = def?.emoji || null;
-      }
-      if (!fallback) {
-        fallback = Assets.getEmoji('facilities', tile.contentId);
-      }
-      tileEl.appendChild(iconEl(group, tile.contentId, {
-        def,
-        fallback,
-        size: `${Math.round(40 * ratio)}px`,
-        cls: 'tile-content',
-        style: {
-          position: 'relative',
-          zIndex: '2',
-          filter: 'drop-shadow(0 2px 1px rgba(0,0,0,0.3))',
-        },
-      }));
-    }
-
-    // 层级 5：放置型道具标志（数据驱动；右下角起沿底边向左排列）
-    this._renderPlacedItemFlags(tileEl, tile, box, ratio);
+    // 层级 3/5：内容图标 + 放置型道具标志（内容相关子节点，可单独局部刷新）
+    this._renderCellContent(tileEl, tile, box, ratio);
 
     // 玩家当前位置特殊标记
     if (gs.player.x === tile.idx) {
@@ -526,6 +497,70 @@ export class MapView {
     }
   }
 
+  /** 渲染内容相关子节点（内容图标 + 放置型道具标志）；重复调用即局部刷新，不动地形层 */
+  _renderCellContent(tileEl, cell, box, ratio) {
+    if (!tileEl) return;
+    (tileEl.children || []).slice().forEach((child) => {
+      if (child?.classList?.contains('tile-content') || child?.classList?.contains('tile-flags')) {
+        if (child.parentNode) child.parentNode.removeChild(child);
+      }
+    });
+
+    if (cell?.contentId) {
+      // 按 contentId 前缀选 group（facility_ → facilities, resource_ → resources, skill_ → characters.SKILLS）
+      let group = 'facilities';
+      let def = null;
+      let fallback = null;
+      if (cell.contentId.startsWith('resource_')) {
+        group = 'resources';
+        fallback = Assets.getEmoji('resources', cell.contentId);
+      } else if (cell.contentId.startsWith('skill_')) {
+        group = 'items';
+        def = SKILLS?.[cell.contentId] || null;
+        fallback = def?.emoji || null;
+      }
+      if (!fallback) {
+        fallback = Assets.getEmoji('facilities', cell.contentId);
+      }
+      tileEl.appendChild(iconEl(group, cell.contentId, {
+        def,
+        fallback,
+        size: `${Math.round(40 * ratio)}px`,
+        cls: 'tile-content',
+        style: {
+          position: 'absolute',
+          left: '50%',
+          top: '50%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: '2',
+          filter: 'drop-shadow(0 2px 1px rgba(0,0,0,0.3))',
+        },
+      }));
+    }
+
+    this._renderPlacedItemFlags(tileEl, cell || {}, box, ratio);
+  }
+
+  /** 外圈地块内容变化 → 只刷新该格内容/标志子节点 */
+  _refreshOuterContent(tileIdx) {
+    const gs = this.gs;
+    const tile = gs?.map?.outerTiles?.[tileIdx];
+    const tileEl = this.tileEls.get(tileIdx);
+    if (!tile || !tileEl) return;
+    const box = this._pxRect(Geometry.tileRect(gs, Geometry.outerTileRef(tileIdx)));
+    this._renderCellContent(tileEl, tile, box, this._tileRatio);
+    this._updateBuildModeTileClass(tileEl, tile, gs);
+  }
+
+  /** 栅栏格内容变化 → 只刷新该格内容/标志子节点 */
+  _refreshFenceContent(fenceIdx) {
+    const cell = this.gs?.map?.fence?.[fenceIdx];
+    const tileEl = this.fenceTileEls.get(fenceIdx);
+    if (!cell || !tileEl) return;
+    const width = parseFloat(tileEl.style.width) || this.tileSize;
+    this._renderCellContent(tileEl, cell, { width }, this._tileRatio);
+  }
+
   _terrainColor(terrainValue) {
     switch (normalizeTerrain(terrainValue)) {
       case 'terrain_grass': return '#a8e6a1';
@@ -600,6 +635,9 @@ export class MapView {
         if (cell && fenceTerrain !== 'terrain_none') {
           tileEl.appendChild(this._terrainLayer(fenceTerrain, ratio));
         }
+
+        // 内容相关子节点（栅栏格与地块同一口径；当前无栅栏内容数据时不显示）
+        this._renderCellContent(tileEl, cell, { width: cellRect.width }, ratio);
 
         // 生物不再按 fence[].creatures 主格缓存画在格子里：
         // 统一由 creatureLayer 按 renderPos 逐帧绘制（见 _paintCreatures）。
@@ -796,11 +834,26 @@ export class MapView {
       }
     });
 
+    // 内容变化（放置/拆除/放置型道具）：只刷新该格内容图标与标志层，不重建整格
+    EventBus.on(GE.TILE_CONTENT_CHANGED, (payload = {}) => {
+      if (!this.gs) return;
+      const { tileIdx, fenceIdx } = payload;
+      if (tileIdx !== undefined && tileIdx !== null) {
+        this._refreshOuterContent(tileIdx);
+        // 复用既有广播让信息区/高亮/任务同步；contentOnly 防止 MapView 重建整格
+        EventBus.emit(GE.TILE_UPDATED, { tileIdx, contentOnly: true });
+      }
+      if (fenceIdx !== undefined && fenceIdx !== null) {
+        this._refreshFenceContent(fenceIdx);
+        EventBus.emit(GE.FENCE_TILE_UPDATED, { ...payload });
+      }
+    });
+
     // TILE_UPDATED
     EventBus.on(GE.TILE_UPDATED, (payload = {}) => {
       const { tileIdx } = payload;
       if (!this.gs) return;
-      if (payload.terrainOnly) return;   // 地形层已就地刷新，禁止重建整格/整图
+      if (payload.terrainOnly || payload.contentOnly) return;   // 已就地刷新，禁止重建整格/整图
       this._syncFenceTerrainLayers();   // 无索引广播（生物吃草）也即时更新栅栏地形
       if (tileIdx !== undefined && tileIdx !== null) {
         const tile = this.gs.map.outerTiles[tileIdx];

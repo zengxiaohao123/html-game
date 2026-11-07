@@ -188,7 +188,7 @@ export function useItem(gs, itemId, opts = {}) {
       }
       tile.contentState.placedItems.push({ itemId, placedDay: gs.day });
       consumed = false;  // A-11：§14.2 放置型「被放置到地块后持续生效，道具不消失」—— 放置后仍留在背包
-      EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+      EventBus.emit(GE.TILE_CONTENT_CHANGED, { tileIdx });
       EventBus.emit(GE.TOAST_SHOW, { text: `📦 已放置 ${ITEMS[itemId]?.name || itemId}`, duration: 1600 });
       break;
     }

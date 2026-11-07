@@ -359,6 +359,96 @@ head_('§16.3b 地形变化实时刷新：只更新该格地形背景层，不�
   EventBus.emit(GE.TILE_TERRAIN_CHANGED, { tileIdx });
 }
 
+head_('§16.3c 地块内容放置/移除即时刷新（不移动、不做其它操作）');
+{
+  const tileIdx = 5;
+  const otherIdx = 6;
+  const tile = gs.map.outerTiles[tileIdx];
+  const saved = { contentId: tile.contentId, contentState: tile.contentState, buildMode: gs.buildMode };
+
+  const { placeContent, clearContent, enterBuildMode, exitBuildMode } = await import('../src/systems/BuildSystem.js');
+  const { useItem } = await import('../src/systems/UseItemSystem.js');
+  const { InventorySystem } = await import('../src/systems/InventorySystem.js');
+  const iconsOf = (idx) => findAll(mapView.tileEls.get(idx),
+    (el) => el._classes && el._classes.has('tile-content'));
+  const flagsOf2 = (idx) => findAll(mapView.tileEls.get(idx),
+    (el) => el._classes && el._classes.has('tile-flag'));
+
+  tile.contentId = null;
+  tile.contentState = {};
+  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+  const otherEl = mapView.tileEls.get(otherIdx);
+  const tileElRef = mapView.tileEls.get(tileIdx);
+  const terrainRef = findAll(tileElRef, (el) => el._classes && el._classes.has('tile-terrain-bg'))[0];
+
+  // 放置型道具：真实写入点
+  InventorySystem.addItem(gs, 'item_trap', 1);
+  useItem(gs, 'item_trap', { tileIdx });
+  assert(flagsOf2(tileIdx).length === 1, '放置陷阱后立即出现标志（无需移动）');
+  assert(mapView.tileEls.get(tileIdx) === tileElRef, '放置道具未重建整格 DOM');
+  assert(findAll(tileElRef, (el) => el._classes && el._classes.has('tile-terrain-bg'))[0] === terrainRef,
+    '放置道具未重建地形层');
+
+  // 设施建造：真实写入点
+  InventorySystem.addItem(gs, 'facility_wheat', 1);
+  placeContent(gs, tileIdx, 'facility_wheat');
+  const contentIcon = iconsOf(tileIdx)[0];
+  assert(contentIcon?.getAttribute('data-icon-id') === 'facility_wheat',
+    '设施建造后立即出现对应内容图标（无需移动）');
+  assert(mapView.tileEls.get(tileIdx) === tileElRef, '设施建造未重建整格 DOM');
+
+  // 拆除
+  if (gs.buildMode !== true) enterBuildMode(gs);
+  clearContent(gs, tileIdx);
+  assert(iconsOf(tileIdx).length === 0, '设施拆除后内容图标立即消失（无需移动）');
+
+  // 技能卡放置
+  InventorySystem.addItem(gs, 'skill_yumo_slash', 1);
+  placeContent(gs, tileIdx, 'skill_yumo_slash');
+  assert(iconsOf(tileIdx)[0]?.getAttribute('data-icon-id') === 'skill_yumo_slash',
+    '技能卡放置后立即出现内容图标（无需移动）');
+  clearContent(gs, tileIdx);
+
+  // 【放置时】词条在事件前完成：野生种子变身 → UI 直接显示最终内容
+  InventorySystem.addItem(gs, 'facility_wild_seed', 1);
+  placeContent(gs, tileIdx, 'facility_wild_seed');
+  const finalId = tile.contentId;
+  assert(finalId && finalId !== 'facility_wild_seed', '野生种子放置后立即变身（数据）', finalId);
+  assert(iconsOf(tileIdx)[0]?.getAttribute('data-icon-id') === finalId,
+    '野生种子变身结果立即反映到地图图标（无需移动）', { finalId });
+  clearContent(gs, tileIdx);
+
+  // 栅栏格内容变化：同样只刷新该格内容子节点
+  if (gs.map.fence?.length > 0) {
+    const fIdx = 0;
+    const fCell = gs.map.fence[fIdx];
+    const fEl = mapView.fenceTileEls.get(fIdx);
+    const fTerrain = findAll(fEl, (el) => el._classes && el._classes.has('tile-terrain-bg'))[0];
+    const fSaved = { contentId: fCell.contentId, contentState: fCell.contentState };
+    fCell.contentId = 'facility_wheat';
+    fCell.contentState = {};
+    EventBus.emit(GE.TILE_CONTENT_CHANGED, { fenceIdx: fIdx });
+    assert(findAll(fEl, (el) => el._classes && el._classes.has('tile-content')).length === 1,
+      '栅栏格内容放置后立即出现内容图标（无需移动）');
+    assert(mapView.fenceTileEls.get(fIdx) === fEl
+      && findAll(fEl, (el) => el._classes && el._classes.has('tile-terrain-bg'))[0] === fTerrain,
+      '栅栏格内容变化未重建整格/地形层');
+    fCell.contentId = null;
+    fCell.contentState = {};
+    EventBus.emit(GE.TILE_CONTENT_CHANGED, { fenceIdx: fIdx });
+    assert(findAll(fEl, (el) => el._classes && el._classes.has('tile-content')).length === 0,
+      '栅栏格内容移除后图标立即消失（无需移动）');
+    fCell.contentId = fSaved.contentId;
+    fCell.contentState = fSaved.contentState;
+  }
+
+  assert(mapView.tileEls.get(otherIdx) === otherEl, '内容变化未重建其它格 DOM');
+  tile.contentId = saved.contentId;
+  tile.contentState = saved.contentState;
+  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+  if (saved.buildMode !== true) exitBuildMode(gs);
+}
+
 head_('§16.6 SpiritArea：只显示精灵图标（无名字文字）');
 {
   const icons = findAll(spiritArea.root, (el) => el.getAttribute && el.getAttribute('data-icon-id'));

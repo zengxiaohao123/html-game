@@ -268,12 +268,12 @@ export function placeContent(gs, tileIdx, contentId) {
     LinkSkillSystem.onSkillCardPlaced(gs, tileIdx, contentId);
   }
 
-  EventBus.emit(GE.TILE_UPDATED, { tileIdx, newContentId: contentId, oldContentId });
+  // 【放置时】词条（野生种子变身、蒲公英/幽怜草初始化）——必须先跑，UI 才能拿到最终内容
+  HookDispatcher.fire('onPlace', { gs, tileIdx, contentId });
+
+  EventBus.emit(GE.TILE_CONTENT_CHANGED, { tileIdx, newContentId: contentId, oldContentId });
   EventBus.emit(GE.INVENTORY_CHANGE, { type: 'place', tileIdx, contentId, oldContentId });
   EventBus.emit(GE.TOAST_SHOW, { text: `🛠️ 放置 ${ITEMS[contentId]?.name || contentId}`, duration: 1500 });
-
-  // 【放置时】词条（野生种子变身、蒲公英/幽怜草初始化）
-  HookDispatcher.fire('onPlace', { gs, tileIdx, contentId });
 
   devLog.info('[Build] placeContent tile', tileIdx, ':', oldContentId, '→', contentId, '(inventory -1)');
   return { ok: true };
@@ -301,7 +301,7 @@ export function clearContent(gs, tileIdx) {
     devLog.info('[Build] skill card returned to inventory on clear:', removedId);
   }
 
-  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+  EventBus.emit(GE.TILE_CONTENT_CHANGED, { tileIdx });
   EventBus.emit(GE.INVENTORY_CHANGE, { type: 'clear', tileIdx, contentId: removedId });
   return { ok: true };
 }
@@ -326,7 +326,7 @@ export function autoRemoveSkillsOutsideTeam(gs) {
     LinkSkillSystem.onSkillCardRemoved(gs, tileIdx, contentId);
     InventorySystem.addItem(gs, contentId, 1);
     removed++;
-    EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+    EventBus.emit(GE.TILE_CONTENT_CHANGED, { tileIdx });
     EventBus.emit(GE.INVENTORY_CHANGE, { type: 'clear', tileIdx, contentId });
     devLog.info('[Build] 角色离队 → 自动拆除技能卡', contentId, 'tile', tileIdx);
   });
