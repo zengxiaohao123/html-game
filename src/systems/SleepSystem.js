@@ -35,7 +35,10 @@ export function sleep(gs, isAuto = false) {
 
   // 0.1 B-14：心力交瘁快照必须在任何睡觉增益 hook 之前捕获
   //     （§15：debuff 期间所有睡觉增益失效 —— 皇家枕头 onSleepStart / 艾草 onSleep 同样失效）
-  const wasExhausted = gs.activeBuffs.some(b => b.id === TurnSystem.BUFF_EXHAUSTED);
+  //     判定同时覆盖「行动力 < 0」：祈福动画期间允许睡觉，此时 advanceTurn 还没跑，
+  //     buff 尚未挂上，但按 §15 已经属于心力交瘁，不能吃到任何睡觉增益。
+  const wasExhausted = gs.activeBuffs.some(b => b.id === TurnSystem.BUFF_EXHAUSTED)
+    || gs.player.stamina < 0;
 
   // 0. Agent 3：天赋 活力满满 onSleep（换日前 fire）—— 心力交瘁时失效
   //    返回值是「数值直接增加」的行动力，必须在换日三步的第 ③ 步结算（可超上限）
