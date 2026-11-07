@@ -35,6 +35,8 @@ export const CREATURES = {
     radius: 1 / 6,
     // 连续移动（§2.3）：秒/格，合法区间 3~6；小鸡体型最轻 → 取最快 3.0 秒/格（待美术/手感细调）
     speedPerTile: 3.0,
+    // 以草为食：栅栏内走到草地消耗 1 草元素量即可达成当日「已投喂」（§13.3）
+    feedByGrass: true,
     drops: [{ itemId: 'item_raw_meat', qty: 1 }], // BIO-001 击败掉落：生肉 ×1
   },
   chicken: {
@@ -55,6 +57,8 @@ export const CREATURES = {
     radius: 0.25,
     // 秒/格：成鸡体型更大、步态更沉 → 4.2 秒/格（区间内取值，待手感细调）
     speedPerTile: 4.2,
+    // 以草为食：栅栏内走到草地消耗 1 草元素量即可达成当日「已投喂」（§13.3）
+    feedByGrass: true,
     drops: [{ itemId: 'item_raw_meat', qty: 3 }], // BIO-002 击败掉落：生肉 ×3
   },
 

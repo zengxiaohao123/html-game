@@ -310,7 +310,8 @@ export function creatureTileRefs(gs, creature) {
 // ────────────────────────────────────────────────────────────
 
 function isAlive(c) {
-  return !!c && c.hp > 0 && !c.dead;
+  // 收纳入设施（鸡舍/史莱姆屋关门）的生物不在栅栏空间参与任何查询/命中
+  return !!c && c.hp > 0 && !c.dead && !c.housed;
 }
 
 function snapshotCircleEntry(entry) {

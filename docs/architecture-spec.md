@@ -289,7 +289,7 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 **时钟结构（单一定时器）**：
 
 - **只允许一个逻辑定时器**：`RealtimeClock` 的 40ms 驱动。真实 dt 进入累加器，按 `200ms` 切片执行逻辑步；不足一步的余量留到下一帧（所以 0.5s 实测位移约有 0~1 步的残差）。
-- **逻辑步顺序（设计文档 §18.3）**：① 连携窗口过期 `pruneExpired` → ② 条件扫描 `periodicConditionScan` → ③ 生物连续积分 `stepCreatures` → ④ 移动后的地块效果（啃草）→ ⑤ 一次性广播（仅地块内容真的变化时 emit `TILE_UPDATED`，逐帧移动本身不广播）。
+- **逻辑步顺序（设计文档 §18.3）**：① 连携窗口过期 `pruneExpired` → ② 条件扫描 `periodicConditionScan` → ③ 生物连续积分 `stepCreatures` → ④ 移动后的地块效果（啃草）→ ⑤ 一次性广播（仅地块内容真的变化时 emit `TILE_UPDATED`，逐帧移动本身不广播；地形被啃空时另行 emit 带索引的 `TILE_TERRAIN_CHANGED`）。
 - **已合并的旧定时器**：`GameDirector` 的 1000ms 连携轮询、`CreatureSystem` 的 1000/2000ms 生物移动、`LinkSkillUI` 的 200ms 进度计时器全部移除。连携窗口 UI 改为 `clock.onFrame()` 订阅，每帧推进外圈计时环；8 秒窗口仍由 `LinkSkillSystem` 用 `Date.now()` 判定，`WINDOW_MS = 8000` 与到期事件（`triggered:false`）不变。
 - **连携窗口计时环实现（`src/ui/LinkSkillUI.js`）**：窗口边界用 SVG `<circle>` 画白色圆环（`stroke-dasharray` 长度 = 剩余比例 × 周长，`rotate(-90°)` 从 12 点钟起画），只有队列第一位计时、弧长在 8 秒内按逆时针回收，排队条目恒为满圈。环画布与 72px 窗口等大（`viewBox 72×72`），白色环宽 6px 画在边界内侧，外径 = 窗口直径、正好压在窗口可视边界上，无外扩无缝隙；窗口底板无外边框并 `overflow:hidden` 裁在环内，序号角标、图标与技能名都收在环内侧。该更新只读 `expireAtMs` 与 `Date.now()`，不改队列、冷却、解锁与到期逻辑。
 - **渲染插值**：`stepCreatures` 每步把步前的 `pos` 记为 `renderFrom` 并重置 `renderT`；`advanceCreatureRendering(gs, dt)` 只在该步时长内做 `renderFrom → pos` 的线性插值（不再按 `dir` 独立模拟）。`MapView` 的 rAF 只读 `renderPos` 画像素，不写逻辑位置。两个端点都是同一次连续积分的合法位置，因此插值不越界、不漂移、不会在停机时"吸回 pos"；结算栈期间没有新逻辑步，画面停在当前 `pos`（毫秒级，不产生假位移）。
@@ -308,6 +308,13 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
   - **所有时长/距离/转向/概率参数集中在 `src/data/creatureBehavior.js` 的 `BEHAVIOR_PROFILES` 表**（小鸡/成鸡/史莱姆三套预设 + 通用默认），逻辑层不写死数值；实例可用 `behaviorOverride` 临时覆盖（测试/特殊个体）。
   - 只被栅栏边界裁剪（圆心 + 半径不出栅栏），生物之间不碰撞、允许完全重叠。小鸡长大半径 `1/6 → 0.25` 时圆心立即夹回合法区并重置为 `Idle`。
   - **静止不刷 DOM**：刹停后 `renderPos` 已收敛到 `pos` 并不再变化；`CreatureView` 缓存上次 `transform` 字符串，位置未变则不写样式（逐帧插值只在有逻辑位移的步内产生 5 帧小位移，停下后完全不写）。
+
+**放牧进食与设施开关门（2026-11-07）**：
+
+- **每日草消耗上限**：`consumeGrassOnEnter(gs, creature, fenceCell)` 用实例字段 `grassFedDay` 记录当日已消耗的日号，每只生物每日至多扣 1 点草元素量（`GRASS_ELEMENTS_PER_CREATURE_PER_DAY`），当日达成后直接返回 `false`，跨日自动重置；扣减直接改 `fence[].terrainAmount`，不走背包。数据字段 `feedByGrass`（小鸡 / 鸡）决定啃草是否置 `grazedForFeed`；其他生物只受每日上限约束。元素量归零时地形写 `terrain_none`，并 emit `TILE_TERRAIN_CHANGED { row, col, fenceIdx }` + `FENCE_TILE_UPDATED`，MapView 只就地重绘该格地形背景，不再依赖无索引 `TILE_UPDATED` 兜底。
+- **归属键**：`creature.sourceTileIdx` = 设施实例所在外圈格 idx（0 也是合法值，判断用 `!== null`）。鸡舍、史莱姆屋生成时必须写入；`facilityOwnedCreatures(gs, tileIdx)` 按此返回归属活体，与物种无关。狩猎等野生来源保持 `sourceTileIdx = null`。
+- **开关门**：`setFacilityDoorOpen(gs, tileIdx, open)`（仅 `DOOR_FACILITIES`：鸡舍 / 史莱姆屋）。关门对归属生物置 `housed=true`、移出 `fence[].creatures` 缓存、速度与行为状态清零；开门随机放回 `fenceInner(gs, radius)` 合法区并重建主格缓存。`stepCreatures` / `advanceCreatureRendering` / `CreatureView.paint` / `Geometry.isAlive` 全部跳过 `housed`，所以收纳生物不可见、不移动、不参与空间查询与命中；`gs.creatures` 不删，容量统计（`countByCategory`）与归属不变。门状态存于 `tile.contentState.doorOpen`（缺省视为开门）。开关门不消耗行动力、不占回合。
+- **关门期间新生成**：`spawnCreature` 末尾检查来源设施 `doorOpen === false` 时直接 `housed`（如史莱姆屋每日生成），不再落进栅栏可见区。
 
 ---
 
@@ -333,23 +340,29 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 
 > 对应设计文档 §7「WASD 在载具允许时等价于使用载具」。只收敛「走 1 格」的执行路径，不改载具数值。
 
-- **唯一 1 格入口**：`MovementSystem.moveStep(gs, direction)` → `{ ok, finalIdx, byVehicle }`；
+- **唯一 1 格入口**：`MovementSystem.moveStep(gs, direction)` → `{ ok, finalIdx, byVehicle, blocked }`；
   `MovementSystem.move(gs, direction)` 仅作兼容包装（返回 `finalIdx | null`）。`GameDirector.move` 使用 `moveStep`。
   - 点击相邻格「前往」（无载具）仍换算方向后走 `director.move`，与 WASD 同一条入口。
-- **载具判定插入点**：`moveStep` 先取相邻 1 格 `stepIdx`（不含冰面滑行的多格路径），再调
-  `VehicleSystem.canUseVehicleForStep(gs, stepIdx)`：
-  - 装载了载具，且 `canVehicleReach` 允许落该格（同方向 / 同行列 / 射程 / `landFilter` 全部参与）→ 走
+- **载具三态判定**：`moveStep` 先取相邻 1 格 `stepIdx`（不含冰面滑行的多格路径），再调
+  `VehicleSystem.canUseVehicleForStep(gs, stepIdx)` → `{ status: 'noVehicle' | 'allowed' | 'blocked', reason }`。
+  **禁止用同一个 falsy 混同「无载具 → 徒步」与「载具不允许 → 拦截」**：
+  - `noVehicle`：未装备载具（含次数耗尽自动卸下 / 主动卸下）→ 徒步正常结算；
+  - `allowed`：`canVehicleReach` 允许落该格（同方向 / 同行列 / 射程 / `landFilter` 全部参与）→
     `VehicleSystem.tryMove(gs, { targetIdx: stepIdx, wasdStep: true })`，`byVehicle: true`；
-  - 随机型载具（`movePattern='random'`）的落点由系统选定，不接受 WASD 指定目标 → 按徒步处理。
+  - `blocked`：已装备载具但不允许这 1 格（`landFilter` / 随机型 `movePattern='random'` /
+    该方向无相邻格 / tryMove 未生效）→ `blocked: true`，`GameDirector.move` 收到后直接返回 `null`：
+    不移动、不扣行动力、不推进回合、不记冷却、不扣次数、不卸载、不发 `MOVE` / `MOVE_BLOCKED` / `TOAST`、
+    不触发任何钩子。
 - **载具结算口径不变**：`wasdStep` 只把目标固定为这一格，后续仍走原有的路径模拟（本场景即最短路径 1 格）、
   `landOk`、消耗 1 次使用、终点 `firePassHookAt` + `fireEnterHooks`、`MOVE { byVehicle:true, distance, path }`。
   模拟路径只用于【经过时】判定与路径长度，不触发沿途地块/状态效果。
 - **回合只推进一次**：`byVehicle` 的回合推进、`onMoveEnd`、天赋、`LinkSkillSystem.onVehicleMoved`（移形）
   全在原 `GE.MOVE` 订阅里完成；`GameDirector.move` 见到 `byVehicle` 直接返回，不再重复 `advanceTurn`。
-- **徒步语义**：未装载载具、载具不允许该格、次数耗尽已自动卸下时，`moveStep` 回落徒步：不消耗载具次数、
-  不发 `byVehicle`，因此不触发任何载具联动。
-- **验收**：`node tools/smoke-wasd-vehicle.mjs`（载具 1 格 → 次数 -1 + 移形解锁；徒步 → 不解锁；
-  载具不允许 → 徒步、不扣次数、不解锁；次数耗尽后 → 徒步语义）。
+- **徒步语义**：仅 `noVehicle`（未装载 / 次数耗尽已卸下 / 主动卸下）时 `moveStep` 走徒步：
+  正常扣行动力、推进回合、发不带 `byVehicle` 的 `MOVE`；载具相关联动一律不触发。
+  `blocked` 不做徒步兜底，整键拦截。
+- **验收**：`node tools/smoke-wasd-vehicle.mjs`（载具 1 格 → 次数 -1 + 移形解锁；徒步 → 正常移动但不解锁；
+  地形/落点限制、方向越界、随机型载具 → 位置/行动力/回合/次数/装备全不变且无事件无提示；次数耗尽后 → 徒步语义）。
 
 ---
 

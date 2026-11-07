@@ -56,6 +56,29 @@ import {
 let _nextCreatureId = 1;
 export function resetCreatureIdCounter() { _nextCreatureId = 1; }
 
+// ── 门禁设施（鸡舍 / 史莱姆屋）：开门 / 关门只作用于「归属该设施实例」的生物 ──
+export const DOOR_FACILITIES = new Set(['facility_henhouse', 'facility_slimehouse']);
+
+/**
+ * 放养进食通用规则（§13.3）：
+ * 每只生物每日至多消耗 1 草元素量（1 次 = 地块元素量 -1，不走背包），
+ * 达成后当天不再消耗。按实例记账（`grassFedDay`），不按物种写死。
+ */
+export const GRASS_ELEMENTS_PER_CREATURE_PER_DAY = 1;
+
+/**
+ * 某设施实例归属的生物（归属键 = `sourceTileIdx`，与物种无关）。
+ * 野生生物（狩猎等来源）`sourceTileIdx === null`，永远不在此列表内。
+ * @returns {object[]}
+ */
+export function facilityOwnedCreatures(gs, tileIdx, { aliveOnly = true } = {}) {
+  if (!Array.isArray(gs?.creatures) || tileIdx === null || tileIdx === undefined) return [];
+  return gs.creatures.filter(c => {
+    if (!c || c.sourceTileIdx !== tileIdx) return false;
+    return aliveOnly ? (c.hp > 0 && !c.dead) : true;
+  });
+}
+
 // ── 运动参数 ──
 /** 秒/格 合法区间（设计文档 §2.3：3~6 秒走 1 格） */
 export const MIN_SECONDS_PER_TILE = 3;
@@ -144,6 +167,14 @@ export function spawnCreature(gs, kind, opts = {}) {
   gs.creatures.push(creature);
   tile.creatures = tile.creatures || [];
   tile.creatures.push(creature.id);
+
+  // 设施门关闭时新生成的归属生物直接收纳（不可见、不移动，但仍计入容量）
+  if (creature.sourceTileIdx !== null) {
+    const src = gs.map?.outerTiles?.[creature.sourceTileIdx];
+    if (src && DOOR_FACILITIES.has(src.contentId) && (src.contentState || {}).doorOpen === false) {
+      putCreatureIntoHouse(gs, creature);
+    }
+  }
 
   // 更新容量计数（超出也允许生成，warn 由 dailyTick 报）
   // A-7：【当生物增加时】词条（玉米田 FAC-011）—— 任何来源的生成都算"生物增加"
@@ -768,17 +799,134 @@ function syncPrimaryFenceTile(gs, creature) {
   return newTile;
 }
 
-/** 进入草地形时消耗 1 草元素量（§13.3 放牧路径） */
-function consumeGrassOnEnter(gs, creature, newTile) {
-  if (!newTile) return false;
+/**
+ * 进入草地形时消耗草元素量（§13.3 放牧路径）。
+ * 通用规则：每只生物每日至多消耗 GRASS_ELEMENTS_PER_CREATURE_PER_DAY（1 元素量），
+ * 达成后当天不再消耗（按实例 `grassFedDay` 记账，不按物种写死）。
+ * 消耗直接扣地块元素量，不走背包库存。
+ * @returns {boolean} 本次是否实际发生了消耗
+ */
+export function consumeGrassOnEnter(gs, creature, newTile) {
+  if (!newTile || !creature) return false;
   if (normalizeTerrain(newTile.terrain) !== 'terrain_grass' || (newTile.terrainAmount ?? 0) <= 0) return false;
-  newTile.terrainAmount -= 1;
-  if (creature.kind === 'chick' || creature.kind === 'chicken') creature.grazedForFeed = true;
+  // 当日已经满足进食条件（日初吃过储存饲料 / 当天已啃过一次草）：不再多吃
+  if (creature.lastFed === true) return false;
+  if (creature.grassFedDay === gs.day) return false;
+  const amount = Math.max(1, GRASS_ELEMENTS_PER_CREATURE_PER_DAY);
+  const eaten = Math.min(amount, newTile.terrainAmount);
+  newTile.terrainAmount -= eaten;
+  creature.grassFedDay = gs.day;
+  const def = getCreatureDef(creature.kind);
+  // 只有以草为食的生物才因此达成「已投喂」条件；其他生物只受每日消耗上限约束
+  if (def?.feedByGrass) creature.grazedForFeed = true;
   if (newTile.terrainAmount <= 0) {
     newTile.terrain = 'terrain_none';
-    EventBus.emit(GE.TILE_UPDATED);
+    // 栅栏内地块地形变化：带索引广播，MapView 只就地重绘这一格的地形背景
+    // （不再依赖不带索引的 TILE_UPDATED 兜底）
+    const fDims = fenceDimsOf(gs);
+    const row = newTile.row;
+    const col = newTile.col;
+    const fenceIdx = row * fDims.cols + col;
+    EventBus.emit(GE.TILE_TERRAIN_CHANGED, { row, col, fenceIdx });
+    EventBus.emit(GE.FENCE_TILE_UPDATED, { row, col, fenceIdx });
   }
   return true;
+}
+
+// ────────────────────────────────────────────────────────────
+// 设施开门 / 关门（鸡舍、史莱姆屋）
+//   归属键：creature.sourceTileIdx === 设施所在外圈格 idx（0 也算合法 idx，需用 !== null 判断）。
+//   关门 → housed=true：移出栅栏格缓存、冻结移动/行为/渲染，但仍留在 gs.creatures（容量照常占用）。
+//   开门 → 随机放回栅栏圆心合法区（不越出栅栏），恢复移动与渲染。
+//   野生生物（sourceTileIdx === null）永远不受影响。
+// ────────────────────────────────────────────────────────────
+
+/** 把生物移出栅栏格缓存（不改变 pos，只切归属缓存） */
+function removeCreatureFromFenceCache(gs, creature) {
+  const oldTile = gs.map?.fence?.find(t => t.row === creature.row && t.col === creature.col);
+  if (oldTile?.creatures) {
+    oldTile.creatures = oldTile.creatures.filter(id => id !== creature.id);
+  }
+}
+
+/** 关门：生物收入设施（不可见、不移动），容量与归属不变 */
+function putCreatureIntoHouse(gs, creature) {
+  if (!creature) return;
+  creature.housed = true;
+  creature.vx = 0;
+  creature.vy = 0;
+  creature.targetPos = null;
+  creature.behaviorState = 'idle';
+  creature.stateLeft = 0;
+  creature.bounceLeft = 0;
+  creature.brakeLeft = 0;
+  creature.brakeSpeed0 = 0;
+  removeCreatureFromFenceCache(gs, creature);
+}
+
+/** 开门：随机放到栅栏内的合法位置，并恢复主格缓存与渲染/移动状态 */
+function releaseCreatureFromHouse(gs, creature) {
+  if (!creature) return;
+  const fDims = fenceDimsOf(gs);
+  const inner = fenceInner(gs, creatureRadius(creature));
+  creature.housed = false;
+  if (fDims.rows > 0 && fDims.cols > 0 && inner.x1 >= inner.x0 && inner.y1 >= inner.y0) {
+    creature.pos = {
+      x: inner.x0 + Math.random() * (inner.x1 - inner.x0),
+      y: inner.y0 + Math.random() * (inner.y1 - inner.y0),
+    };
+    creature.renderPos = { x: creature.pos.x, y: creature.pos.y };
+    creature.renderFrom = { x: creature.pos.x, y: creature.pos.y };
+    creature.renderT = Number.isFinite(creature.renderDur) ? creature.renderDur : 0.2;
+    // 主格缓存从非法旧状态重置后再同步
+    creature.row = -1;
+    creature.col = -1;
+    syncPrimaryFenceTile(gs, creature);
+  }
+  creature.vx = 0;
+  creature.vy = 0;
+  creature.targetPos = null;
+  creature.behaviorState = 'idle';
+  creature.stateLeft = rand(0.3, 1.0);
+  creature.bounceLeft = 0;
+  creature.brakeLeft = 0;
+  creature.brakeSpeed0 = 0;
+  creature.dir = randomDirection();
+  creature.lastMoveTs = Date.now();
+}
+
+/**
+ * 设置门禁设施开/关门状态，并把该设施归属的全部生物收纳 / 放回栅栏。
+ * 不消耗行动力、不占回合（设计文档未规定消耗）。
+ * @param {object} gs
+ * @param {number} tileIdx 设施所在外圈格 idx
+ * @param {boolean} open true=开门，false=关门
+ * @returns {{ok:boolean, open?:boolean, count?:number, reason?:string}}
+ */
+export function setFacilityDoorOpen(gs, tileIdx, open) {
+  const tile = gs?.map?.outerTiles?.[tileIdx];
+  if (!tile) return { ok: false, reason: 'noTile' };
+  if (!DOOR_FACILITIES.has(tile.contentId)) return { ok: false, reason: 'notDoorFacility' };
+  const next = !!open;
+  if (!tile.contentState) tile.contentState = {};
+  const wasOpen = tile.contentState.doorOpen !== false;
+  const owned = facilityOwnedCreatures(gs, tileIdx);
+  // 门本来就开着再点开门：不重复搬运生物
+  if (next && wasOpen) return { ok: true, open: true, count: owned.length };
+  for (const c of owned) {
+    if (next) releaseCreatureFromHouse(gs, c);
+    else putCreatureIntoHouse(gs, c);
+  }
+  tile.contentState.doorOpen = next;
+  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+  return { ok: true, open: next, count: owned.length };
+}
+
+/** 该设施当前是否开门（缺省视为开门，与初始状态一致） */
+export function isFacilityDoorOpen(gs, tileIdx) {
+  const tile = gs?.map?.outerTiles?.[tileIdx];
+  if (!tile) return true;
+  return (tile.contentState || {}).doorOpen !== false;
 }
 
 /**
@@ -795,6 +943,7 @@ export function stepCreatures(gs, dtSec) {
 
   for (const c of gs.creatures) {
     if (!c || c.hp <= 0) continue;
+    if (c.housed) continue; // 收纳入设施：不参与移动
     if (!c.pos || !Number.isFinite(c.pos.x) || !Number.isFinite(c.pos.y)) continue;
     const profile = resolveBehavior(c);
     const inner = fenceInner(gs, creatureRadius(c));
@@ -841,6 +990,7 @@ export function advanceCreatureRendering(gs, dtSec) {
 
   for (const c of gs.creatures) {
     if (!c || c.hp <= 0) continue;
+    if (c.housed) continue; // 收纳入设施：渲染位置冻结
     if (!c.renderPos || !Number.isFinite(c.renderPos.x) || !Number.isFinite(c.renderPos.y)) {
       c.renderPos = { x: c.pos?.x ?? 0, y: c.pos?.y ?? 0 };
       continue;
@@ -1239,4 +1389,9 @@ export const CreatureSystem = {
   depositHenhouseFeed,
   withdrawHenhouseFeed,
   resetCreatureIdCounter,
+  consumeGrassOnEnter,
+  setFacilityDoorOpen,
+  isFacilityDoorOpen,
+  facilityOwnedCreatures,
+  DOOR_FACILITIES,
 };

@@ -17,7 +17,12 @@ import { Distance } from '../core/Distance.js';
 import { BlessSystem, BLESS_STAMINA_COST, BLESS_GOLD_COST } from '../systems/BlessSystem.js';
 import { InventorySystem } from '../systems/InventorySystem.js';
 import { getDef, huntCreature } from '../data/facilities.js';
-import { depositHenhouseFeed } from '../systems/CreatureSystem.js';
+import {
+  depositHenhouseFeed,
+  setFacilityDoorOpen,
+  facilityOwnedCreatures,
+  DOOR_FACILITIES,
+} from '../systems/CreatureSystem.js';
 import { SKILLS } from '../data/characters.js';
 import { SPIRITS } from '../data/characters.js';
 import { CHARACTERS } from '../data/characters.js';
@@ -248,7 +253,13 @@ export class InfoPanel {
       if (tile) {
         tabs.push({ label: '地块内容', render: 'content' });
         if (this._tileHasState(tile)) tabs.push({ label: '状态', render: 'state' });
-        if (gs?.player?.x === tile.idx) tabs.push({ label: '单位', render: 'unit' });
+        // 外圈有单位：玩家在此格；或此格门禁设施归属的生物（含已收纳，仍需可查看）
+        const ownedHere = DOOR_FACILITIES.has(tile.contentId)
+          ? facilityOwnedCreatures(gs, tile.idx).length
+          : 0;
+        if (gs?.player?.x === tile.idx || ownedHere > 0) {
+          tabs.push({ label: '单位', render: 'unit' });
+        }
       }
     }
 
@@ -684,7 +695,6 @@ export class InfoPanel {
           const stored = tile.contentState?.eggStored ?? 0;
           const storedGolden = tile.contentState?.eggStoredGolden ?? 0;
           const storedTotal = stored + storedGolden;
-          const doorOpen = tile.contentState?.doorOpen ?? true;
           if (onTile) {
             createEl('div', {
               style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
@@ -806,47 +816,14 @@ export class InfoPanel {
               parent: this.bodyWrap,
             });
           }
-          // 随时可点：开门/关门
-          createEl('button', {
-            class: 'action-btn',
-            style: { width: '100%', fontSize: '13px', background: '#e0e0ff' },
-            text: doorOpen ? '🚪 关门（限制鸡舍生物活动范围）' : '🚪 开门（鸡舍生物可自由活动）',
-            parent: this.bodyWrap,
-            onclick: () => {
-              const curTile = gs.map.outerTiles[tileIdx];
-              const cs = curTile.contentState || (curTile.contentState = {});
-              cs.doorOpen = !cs.doorOpen;
-              EventBus.emit(GE.TILE_UPDATED, { tileIdx });
-              EventBus.emit(GE.TOAST_SHOW, {
-                text: cs.doorOpen ? '🚪 鸡舍门已打开' : '🚪 鸡舍门已关闭',
-                duration: 1500,
-              });
-              this._renderBody();
-            },
-          });
+          // 随时可点：开门/关门（真实收纳 / 放回，不消耗行动力、不占回合）
+          this._renderDoorControl(tile, gs, { name: '鸡舍' });
           break;
         }
 
         case 'facility_slimehouse': {
-          // 🟢 史莱姆屋：随时显示开门/关门
-          const doorOpen = tile.contentState?.doorOpen ?? true;
-          createEl('button', {
-            class: 'action-btn',
-            style: { width: '100%', fontSize: '13px', background: '#c0f0c0' },
-            text: doorOpen ? '🚪 关门（限制史莱姆活动范围）' : '🚪 开门（史莱姆可自由活动）',
-            parent: this.bodyWrap,
-            onclick: () => {
-              const curTile = gs.map.outerTiles[tileIdx];
-              const cs = curTile.contentState || (curTile.contentState = {});
-              cs.doorOpen = !cs.doorOpen;
-              EventBus.emit(GE.TILE_UPDATED, { tileIdx });
-              EventBus.emit(GE.TOAST_SHOW, {
-                text: cs.doorOpen ? '🚪 史莱姆屋门已打开' : '🚪 史莱姆屋门已关闭',
-                duration: 1500,
-              });
-              this._renderBody();
-            },
-          });
+          // 🟢 史莱姆屋：随时显示开门/关门（逻辑同鸡舍）
+          this._renderDoorControl(tile, gs, { name: '史莱姆屋' });
           break;
         }
 
@@ -1225,7 +1202,71 @@ export class InfoPanel {
   // Tab —— 单位（外圈：该格上的余默状态；总是显示，空态给提示）
   // ════════════════════════════════════════════════════════════
   _renderUnitTab(tile, gs) {
+    const owned = DOOR_FACILITIES.has(tile.contentId)
+      ? facilityOwnedCreatures(gs, tile.idx)
+      : [];
+    const ownedIds = owned.map(c => c.id);
+
+    // 生物详情页：从所属生物列表进入；关门收纳后仍可查看
+    if (this.creatureDetailId) {
+      const c = owned.find(x => x.id === this.creatureDetailId);
+      if (c) {
+        this._renderCreatureDetail(c, gs);
+        return;
+      }
+      this.creatureDetailId = null;
+    }
+
     const isPlayerHere = gs.player?.x === tile.idx;
+
+    if (isPlayerHere) {
+      const header = createEl('div', {
+        style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px', fontWeight: '700', color: '#3a2e20', marginBottom: '10px' },
+        parent: this.bodyWrap,
+      });
+      header.appendChild(iconEl('ui', 'player', {
+        def: CHARACTERS?.yumo, fallback: CHARACTERS?.yumo?.emoji || '🧑‍🎤', size: '24px',
+      }));
+      createEl('span', { text: '余默', parent: header });
+
+      const p = gs.player;
+      const stats = [
+        ['❤️ 生命',   `${p.hp} / ${p.maxHp}`],
+        ['⚔️ 攻击',   `${p.atk}`],
+        ['🔷 行动力', `${p.stamina} / ${p.maxStamina}`],
+        ['🪙 金币',   `${p.gold}`],
+        ['🕐 回合计',  `${gs.turn}`],
+        ['📅 天数',    `${gs.day}`],
+      ];
+      for (const [label, value] of stats) {
+        const row = createEl('div', { class: ['player-info-row'], parent: this.bodyWrap });
+        createEl('span', { class: ['stat-label'], text: label, parent: row });
+        createEl('span', { class: ['stat-value'], text: value, parent: row });
+      }
+
+      // 当前状态（数值属性之外的 buff / debuff），每条一行文字
+      const buffs = gs.activeBuffs || [];
+      for (const b of buffs) {
+        const def = getBuff(b.id);
+        const remain = (b.remainingDays !== undefined && b.remainingDays !== null)
+          ? `（剩 ${b.remainingDays} 天）`
+          : (b.remainingTurns !== undefined ? `（剩 ${b.remainingTurns} 回合）` : '');
+        createEl('div', {
+          style: { fontSize: '13px', color: '#3a2e20', padding: '4px 0', borderTop: '1px dashed #d4c4a4', whiteSpace: 'pre-line' },
+          text: `${def?.emoji || '❓'} ${def?.name || b.id}${remain}：${def?.description || ''}`,
+          parent: this.bodyWrap,
+        });
+      }
+    }
+
+    // 门禁设施归属的生物（含关门后已收纳的），与物种无关
+    if (owned.length > 0) {
+      this._renderCreatureCards(ownedIds, gs, {
+        title: `🏠 所属生物（${owned.length}）· 点击查看详情`,
+        marginTop: isPlayerHere ? '12px' : '0',
+      });
+      return;
+    }
 
     if (!isPlayerHere) {
       createEl('div', {
@@ -1233,46 +1274,100 @@ export class InfoPanel {
         text: '（该地块上无单位）',
         parent: this.bodyWrap,
       });
-      return;
     }
+  }
 
-    const header = createEl('div', {
-      style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px', fontWeight: '700', color: '#3a2e20', marginBottom: '10px' },
-      parent: this.bodyWrap,
-    });
-    header.appendChild(iconEl('ui', 'player', {
-      def: CHARACTERS?.yumo, fallback: CHARACTERS?.yumo?.emoji || '🧑‍🎤', size: '24px',
-    }));
-    createEl('span', { text: '余默', parent: header });
-
-    const p = gs.player;
-    const stats = [
-      ['❤️ 生命',   `${p.hp} / ${p.maxHp}`],
-      ['⚔️ 攻击',   `${p.atk}`],
-      ['🔷 行动力', `${p.stamina} / ${p.maxStamina}`],
-      ['🪙 金币',   `${p.gold}`],
-      ['🕐 回合计',  `${gs.turn}`],
-      ['📅 天数',    `${gs.day}`],
-    ];
-    for (const [label, value] of stats) {
-      const row = createEl('div', { class: ['player-info-row'], parent: this.bodyWrap });
-      createEl('span', { class: ['stat-label'], text: label, parent: row });
-      createEl('span', { class: ['stat-value'], text: value, parent: row });
-    }
-
-    // 当前状态（数值属性之外的 buff / debuff），每条一行文字
-    const buffs = gs.activeBuffs || [];
-    for (const b of buffs) {
-      const def = getBuff(b.id);
-      const remain = (b.remainingDays !== undefined && b.remainingDays !== null)
-        ? `（剩 ${b.remainingDays} 天）`
-        : (b.remainingTurns !== undefined ? `（剩 ${b.remainingTurns} 回合）` : '');
+  /** 生物头像 + 血条网格（栅栏地块 / 设施所属生物共用） */
+  _renderCreatureCards(creatureIds, gs, { title = '', marginTop = '0' } = {}) {
+    if (title) {
       createEl('div', {
-        style: { fontSize: '13px', color: '#3a2e20', padding: '4px 0', borderTop: '1px dashed #d4c4a4', whiteSpace: 'pre-line' },
-        text: `${def?.emoji || '❓'} ${def?.name || b.id}${remain}：${def?.description || ''}`,
+        style: { fontSize: '13px', fontWeight: '700', color: '#3a2e20', marginBottom: '8px', marginTop },
+        text: title,
         parent: this.bodyWrap,
       });
     }
+    const grid = createEl('div', {
+      style: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))',
+        gap: '8px',
+      },
+      parent: this.bodyWrap,
+    });
+
+    for (const id of creatureIds) {
+      const c = gs.creatures?.find(x => x.id === id);
+      if (!c) continue;
+      const def = getCreatureDef?.(c.kind) || {};
+      const card = createEl('div', {
+        style: {
+          padding: '8px 6px',
+          border: '2px solid #d4c4a4', borderRadius: '8px',
+          backgroundColor: 'rgba(255,250,230,0.6)',
+          textAlign: 'center', cursor: 'pointer',
+        },
+        attrs: { title: def.name || c.kind },
+        parent: grid,
+        onclick: () => {
+          this.creatureDetailId = c.id;
+          this.creatureSubTab = 'stats';
+          this._renderBody();
+        },
+      });
+      card.appendChild(iconEl('creatures', c.kind, {
+        def, size: '36px', fallback: def.emoji || '🐾',
+      }));
+      const maxHp = c.maxHp || c.hp || 1;
+      const pct = Math.max(0, Math.min(100, Math.round(((c.hp ?? 0) / maxHp) * 100)));
+      const barOuter = createEl('div', {
+        style: {
+          width: '100%', height: '6px', marginTop: '6px',
+          background: '#e0d5c0', borderRadius: '3px', overflow: 'hidden',
+        },
+        parent: card,
+      });
+      createEl('div', {
+        style: {
+          width: `${pct}%`, height: '100%',
+          background: pct > 50 ? '#7cb342' : (pct > 25 ? '#e8a900' : '#c0392b'),
+        },
+        parent: barOuter,
+      });
+    }
+  }
+
+  /**
+   * 开门 / 关门控件（鸡舍、史莱姆屋共用）：
+   * 关门把归属生物收进设施（不可见、不移动，仍占容量、仍可在「单位」查看）；
+   * 开门把归属生物随机放回栅栏内合法位置。野生生物（sourceTileIdx 为空）不受影响。
+   */
+  _renderDoorControl(tile, gs, { name }) {
+    const owned = facilityOwnedCreatures(gs, tile.idx);
+    const doorOpen = (tile.contentState || {}).doorOpen !== false;
+    createEl('div', {
+      style: { fontSize: '12px', color: '#666', margin: '2px 0 6px' },
+      text: doorOpen
+        ? `🚪 门已打开 · 所属生物 ${owned.length} 只`
+        : `🏠 门已关闭 · 已收纳 ${owned.length} 只`,
+      parent: this.bodyWrap,
+    });
+    createEl('button', {
+      class: 'action-btn',
+      style: { width: '100%', fontSize: '13px', background: doorOpen ? '#e0e0ff' : '#c0f0c0' },
+      text: doorOpen ? `🚪 关门（${name}生物回到屋内）` : `🚪 开门（${name}生物放回栅栏）`,
+      parent: this.bodyWrap,
+      onclick: () => {
+        const r = setFacilityDoorOpen(gs, tile.idx, !doorOpen);
+        if (!r.ok) return;
+        EventBus.emit(GE.TOAST_SHOW, {
+          text: r.open
+            ? `🚪 ${name}门已打开，${r.count} 只生物放回栅栏`
+            : `🚪 ${name}门已关闭，已收纳 ${r.count} 只`,
+          duration: 1500,
+        });
+        this._renderBody();
+      },
+    });
   }
 
   // ════════════════════════════════════════════════════════════
@@ -1471,62 +1566,9 @@ export class InfoPanel {
       return;
     }
 
-    createEl('div', {
-      style: { fontSize: '13px', fontWeight: '700', color: '#3a2e20', marginBottom: '8px' },
-      text: `生物列表（${creatureIds.length}）· 点击查看详情`,
-      parent: this.bodyWrap,
+    this._renderCreatureCards(creatureIds, gs, {
+      title: `生物列表（${creatureIds.length}）· 点击查看详情`,
     });
-
-    const grid = createEl('div', {
-      style: {
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))',
-        gap: '8px',
-      },
-      parent: this.bodyWrap,
-    });
-
-    for (const id of creatureIds) {
-      const c = gs.creatures?.find(x => x.id === id);
-      if (!c) continue;
-      const def = getCreatureDef?.(c.kind) || {};
-      const card = createEl('div', {
-        style: {
-          padding: '8px 6px',
-          border: '2px solid #d4c4a4', borderRadius: '8px',
-          backgroundColor: 'rgba(255,250,230,0.6)',
-          textAlign: 'center', cursor: 'pointer',
-        },
-        attrs: { title: def.name || c.kind },
-        parent: grid,
-        onclick: () => {
-          this.creatureDetailId = c.id;
-          this.creatureSubTab = 'stats';
-          this._renderBody();
-        },
-      });
-      // 头像（iconEl：PNG 优先，回退数据 emoji）
-      card.appendChild(iconEl('creatures', c.kind, {
-        def, size: '36px', fallback: def.emoji || '🐾',
-      }));
-      // 血条（小横条）
-      const maxHp = c.maxHp || c.hp || 1;
-      const pct = Math.max(0, Math.min(100, Math.round(((c.hp ?? 0) / maxHp) * 100)));
-      const barOuter = createEl('div', {
-        style: {
-          width: '100%', height: '6px', marginTop: '6px',
-          background: '#e0d5c0', borderRadius: '3px', overflow: 'hidden',
-        },
-        parent: card,
-      });
-      createEl('div', {
-        style: {
-          width: `${pct}%`, height: '100%',
-          background: pct > 50 ? '#7cb342' : (pct > 25 ? '#e8a900' : '#c0392b'),
-        },
-        parent: barOuter,
-      });
-    }
   }
 
   // ════════════════════════════════════════════════════════════

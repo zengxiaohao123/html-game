@@ -61,6 +61,7 @@ export class CreatureView {
 
     for (const c of gs.creatures) {
       if (!c || c.hp <= 0) continue;
+      if (c.housed) continue; // 收纳入设施（关门）：不在栅栏内渲染
       alive.add(c.id);
 
       let el = this.els.get(c.id);

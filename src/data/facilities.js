@@ -608,7 +608,8 @@ const FacilitySlimehouse = {
         for (let i = 0; i < times; i++) {
           const kind = Random.pick(SLIME_KINDS);
           if (kind) {
-            CreatureSystem.spawnCreature(gs, kind, { facilityId: this.id });
+            // sourceTileIdx = 本设施实例所在格，作为开关门/容量的归属键
+            CreatureSystem.spawnCreature(gs, kind, { facilityId: this.id, sourceTileIdx: t.idx });
           }
         }
       }
