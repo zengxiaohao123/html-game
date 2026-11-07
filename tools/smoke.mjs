@@ -828,7 +828,9 @@ console.log('\n═══ 37. 载具模拟路径：中间格只判定，终点结
 {
   // any 模式（心想事成，3×3 外圈 8 格）：6((0,2)) → 0((0,0)) 最短弧经过 7
   const g = createInitialState();
-  VehicleSystem.gainVehicle(g, 'vehicle_chance');
+  // 巧遇与天赋持有者绑定：夏阳必须在当前队伍中（进队即补发 1 件）
+  g.team.groups[g.team.activeGroup].roles = ['yumo', 'xiayang'];
+  VehicleSystem.syncTalentVehicles(g);
   VehicleSystem.attachVehicle(g, g.vehicle.available[0].instanceId);
   const midTile = g.map.outerTiles[7];
   midTile.contentId = 'facility_strawberry';
@@ -1113,7 +1115,8 @@ console.log('\n═══ 行动力四类规则（2026-11-07 裁决） ═══'
 console.log('\n═══ 睡觉行动力恢复：加量语义（2026-11-07） ═══');
 {
   // 上限 8：回一半 = 增加 floor(8/2)=4，加到当前值后夹上限
-  const cases = [[7, 8], [3, 7], [1, 5], [-2, 2], [8, 8]];
+  // 注意：负数在普通睡觉前就已属于心力交瘁（§5.1 判定口径），不走本条；负数见下方心力交瘁用例
+  const cases = [[7, 8], [3, 7], [1, 5], [8, 8]];
   for (const [start, want] of cases) {
     const g = createInitialState();
     g.player.x = 2; // 非家/帐篷格 → 走「回一半」
@@ -1130,12 +1133,19 @@ console.log('\n═══ 睡觉行动力恢复：加量语义（2026-11-07） �
   sleep(gOdd, false);
   check(gOdd.player.stamina === 5, `上限 9：1 + floor(9/2)=4 → ${gOdd.player.stamina}`);
 
-  // 回满仍是设目标值：负数也直接到上限
+  // 回满仍是设目标值：0 不算心力交瘁，在家直接回满
   const gFull = createInitialState();
   gFull.player.x = 6; // 家
-  gFull.player.stamina = -2;
+  gFull.player.stamina = 0;
   sleep(gFull, false);
-  check(gFull.player.stamina === gFull.player.maxStamina, `在家回满：-2 → ${gFull.player.stamina}`);
+  check(gFull.player.stamina === gFull.player.maxStamina, `在家回满：0 → ${gFull.player.stamina}`);
+
+  // 负数即使在家也按心力交瘁：先归 0 再回一半，不回满
+  const gFullNeg = createInitialState();
+  gFullNeg.player.x = 6; // 家
+  gFullNeg.player.stamina = -2;
+  sleep(gFullNeg, false);
+  check(gFullNeg.player.stamina === 4, `在家负数按心力交瘁：-2 → ${gFullNeg.player.stamina}（期望 4）`);
 
   // 心力交瘁：负数先归 0 再回一半；非负直接回一半（与普通睡觉分开）
   const exhaustedCases = [[-2, 4], [-3, 4], [0, 4], [5, 8], [7, 8]];
