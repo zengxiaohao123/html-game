@@ -1054,9 +1054,15 @@ console.log('\n═══ 行动力四类规则（2026-11-07 裁决） ═══'
 
   // 规则 1：百分比增加 → 夹上限
   const g = createInitialState();
-  g.player.stamina = 10;
+  const cap = g.player.maxStamina;
+  g.player.stamina = cap - 1;
   StaminaSystem.gainStaminaPercent(g, 1, { reason: 'test_percent' });
-  check(g.player.stamina === 8, `百分比增加夹上限（10 → ${g.player.stamina}）`);
+  check(g.player.stamina === cap, `百分比增加夹上限（${cap - 1} → ${g.player.stamina}）`);
+
+  // 硬约束：百分比恢复只增不减，超额状态不回退
+  g.player.stamina = cap + 2;
+  StaminaSystem.gainStaminaPercent(g, 1, { reason: 'test_percent_overflow' });
+  check(g.player.stamina === cap + 2, `百分比恢复不降低超额当前值（${cap + 2} → ${g.player.stamina}）`);
 
   // 规则 2：数值直接增加 → 可超上限
   g.player.stamina = 8;
@@ -1130,6 +1136,41 @@ console.log('\n═══ 睡觉行动力恢复：加量语义（2026-11-07） �
   gFull.player.stamina = -2;
   sleep(gFull, false);
   check(gFull.player.stamina === gFull.player.maxStamina, `在家回满：-2 → ${gFull.player.stamina}`);
+
+  // 心力交瘁：负数先归 0 再回一半；非负直接回一半（与普通睡觉分开）
+  const exhaustedCases = [[-2, 4], [-3, 4], [0, 4], [5, 8], [7, 8]];
+  for (const [start, want] of exhaustedCases) {
+    const g = createInitialState();
+    g.player.x = 2; // 非家/帐篷格
+    g.player.stamina = start;
+    g.activeBuffs.push({ id: 'exhausted', target: 'player', remainingTurns: 1, params: {} });
+    sleep(g, false);
+    check(g.player.stamina === want, `心力交瘁睡觉：${start} → ${g.player.stamina}（期望 ${want}）`);
+  }
+
+  // 上限 9：心力交瘁与普通睡觉的取整一致（都是 +floor(9/2)=4）
+  const gOddEx = createInitialState();
+  gOddEx.player.x = 2;
+  gOddEx.player.maxStamina = 9;
+  gOddEx.player.stamina = 0;
+  gOddEx.activeBuffs.push({ id: 'exhausted', target: 'player', remainingTurns: 1, params: {} });
+  sleep(gOddEx, false);
+  check(gOddEx.player.stamina === 4, `上限 9 心力交瘁：0 → ${gOddEx.player.stamina}（+4）`);
+
+  // 硬约束：两条分支对任意非负起点都只增不减（绝不出现 7 → 4）
+  for (let start = 0; start <= 8; start++) {
+    for (const exhausted of [false, true]) {
+      const g = createInitialState();
+      g.player.x = 2;
+      g.player.stamina = start;
+      if (exhausted) {
+        g.activeBuffs.push({ id: 'exhausted', target: 'player', remainingTurns: 1, params: {} });
+      }
+      sleep(g, false);
+      check(g.player.stamina >= start,
+        `${exhausted ? '心力交瘁' : '普通'}睡觉不降低非负起点：${start} → ${g.player.stamina}`);
+    }
+  }
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} smoke 结果：${pass} 通过 / ${fail} 失败（共 ${pass + fail}）`);

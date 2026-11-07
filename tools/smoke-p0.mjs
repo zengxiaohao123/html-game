@@ -117,8 +117,8 @@ head('P0-6 心力交瘁：带着入睡只回一半');
   gs.player.stamina = -2;
   gs.activeBuffs.push({ id: 'exhausted', target: 'player', remainingTurns: 1, params: {} });
   sleep(gs);
-  assert(gs.player.stamina === -2 + Math.floor(gs.player.maxStamina / 2),
-    '心力交瘁入睡固定回一半（加量语义，此前被 startNewDay 先清 buff，恒回满）', gs.player.stamina);
+  assert(gs.player.stamina === Math.floor(gs.player.maxStamina / 2),
+    '心力交瘁入睡：负数先归 0 再回一半（此前被 startNewDay 先清 buff，恒回满）', gs.player.stamina);
   assert(!gs.activeBuffs.some(b => b.id === 'exhausted'), '睡后心力交瘁解除');
 }
 

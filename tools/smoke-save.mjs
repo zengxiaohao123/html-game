@@ -70,7 +70,7 @@ head('S2 日初时点：换日全部结算完成后采集');
 
   const r = sleep(gs, /* isAuto = */ true);
   check(gs.day === dayBefore + 1, `换日 day ${dayBefore} → ${gs.day}`);
-  check(gs.player.stamina === -2 + Math.floor(gs.player.maxStamina / 2), '心力交瘁固定回一半（加量语义，已恢复后的值入档）', gs.player.stamina);
+  check(gs.player.stamina === Math.floor(gs.player.maxStamina / 2), '心力交瘁：负数先归 0 再回一半（已恢复后的值入档）', gs.player.stamina);
   check(!gs.activeBuffs.some(b => b.id === 'exhausted'), '心力交瘁 buff 已移除');
   check(r.goldPenalty === 10 && gs.player.gold === 90, '强制睡觉罚款已落定（扣 10）', { penalty: r.goldPenalty, gold: gs.player.gold });
 

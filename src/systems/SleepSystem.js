@@ -2,7 +2,7 @@
 // 睡觉系统：换日 + 行动力回复 + 强制睡觉金币惩罚
 // 核心逻辑：
 //   - 在家 / 帐篷 → stamina 回满
-//   - 心力交瘁 debuff 存在时 → 所有睡觉增益失效，固定回一半
+//   - 心力交瘁 debuff 存在时 → 所有睡觉增益失效；负数先归 0 再回一半，非负直接回一半
 //   - 强制睡觉（stamina <= -3）→ 金币 10% 惩罚（0~1000 范围）
 
 import { EventBus } from '../core/EventBus.js';
@@ -69,12 +69,21 @@ export function sleep(gs, isAuto = false) {
   const atHome = currentTile && (currentTile.contentId === 'facility_home' || currentTile.contentId === 'facility_tent');
 
   // ② 基础恢复（规则 1）：
-  //    - 回一半 = 增加「上限的一半」（向下取整），加到当前值后再夹上限，**不是**恢复到上限一半；
-  //    - 回满 = 把当前值提升到上限（设目标值，负数也会直接到上限）。
+  //    - 【心力交瘁】生效时：当前行动力 < 0 → 先归 0，再增加「上限的一半」（向下取整），最后夹上限；
+  //      当前非负 → 直接增加。例：上限 8，-2 → 0 → 4，5 → 8。
+  //    - 普通睡觉（无心力交瘁）：回一半 = 增加「上限的一半」后夹上限（负数不归零，如 -2 → 2）；
+  //      回满 = 把当前值提升到上限（设目标值）。
   const beforeRecover = gs.player.stamina;
-  if (wasExhausted || !atHome) {
-    devLog.info('[SleepSystem] 回一半：增加 floor(上限/2) 行动力',
-      wasExhausted ? '（心力交瘁固定回一半）' : '（其他地点回一半）');
+  if (wasExhausted) {
+    if (gs.player.stamina < 0) {
+      devLog.info('[SleepSystem] 心力交瘁：负数先归 0，再回一半');
+      StaminaSystem.resetNegativeStamina(gs, { reason: 'exhausted_reset_zero' });
+    } else {
+      devLog.info('[SleepSystem] 心力交瘁：非负直接回一半');
+    }
+    StaminaSystem.gainStaminaPercent(gs, 0.5, { reason: 'sleep_recover_half_exhausted' });
+  } else if (!atHome) {
+    devLog.info('[SleepSystem] 其他地点回一半：增加 floor(上限/2) 行动力');
     StaminaSystem.gainStaminaPercent(gs, 0.5, { reason: 'sleep_recover_half' });
   } else {
     devLog.info('[SleepSystem] 在家/帐篷：行动力回满');

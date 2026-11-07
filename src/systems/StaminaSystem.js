@@ -50,9 +50,13 @@ function apply(gs, next, opts = {}) {
  */
 export function gainStaminaPercent(gs, ratio, opts = {}) {
   const cap = gs.player.maxStamina;
+  const current = gs.player.stamina;
   const amount = Math.floor(cap * ratio);
   if (amount <= 0) return 0;
-  return apply(gs, Math.min(cap, gs.player.stamina + amount), opts);
+  const next = Math.min(cap, current + amount);
+  // 硬约束：百分比恢复是「增加值」，任何情况下都不允许降低当前值
+  if (next < current) return 0;
+  return apply(gs, next, opts);
 }
 
 /**
@@ -61,7 +65,20 @@ export function gainStaminaPercent(gs, ratio, opts = {}) {
  */
 export function gainStaminaToFull(gs, opts = {}) {
   const cap = gs.player.maxStamina;
+  const current = gs.player.stamina;
+  // 硬约束：回满只抬不降（已满或超额时不做回退）
+  if (current >= cap) return 0;
   return apply(gs, cap, opts);
+}
+
+/**
+ * 【心力交瘁】专属：负数先归 0（非负值不受影响）
+ * 睡觉恢复前调用，随后再走 gainStaminaPercent 加「上限的一半」。
+ * @returns {number} 实际变化量
+ */
+export function resetNegativeStamina(gs, opts = {}) {
+  if (gs.player.stamina >= 0) return 0;
+  return apply(gs, 0, opts);
 }
 
 /**
@@ -118,6 +135,7 @@ export function clampStaminaToCap(gs, opts = {}) {
 export const StaminaSystem = {
   gainStaminaPercent,
   gainStaminaToFull,
+  resetNegativeStamina,
   gainStaminaFlat,
   loseStaminaPercent,
   loseStaminaNegativeEffect,
