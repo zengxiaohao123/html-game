@@ -27,10 +27,10 @@ const BASE_TILE_PX = 80; // 图标随格缩放的基准（仅影响大图缩放�
 
 // §16.3 单格地块视觉层级：
 //   地形 = 背景层（边长 97.5% → 面积约 95%，四周留少量空隙）
-//   放置型道具 = 标志层（单个占 3%~15%，数量少偏大、数量多偏小，右下角起沿底边向左排）
+//   放置型道具 = 标志层（单个占 6%~20%，数量少偏大、数量多偏小，右下角起沿底边向左排）
 const TERRAIN_FILL_SIDE = 0.975;
-const FLAG_MAX_RATIO = 0.15;
-const FLAG_MIN_RATIO = 0.03;
+const FLAG_MAX_RATIO = 0.20;
+const FLAG_MIN_RATIO = 0.06;
 
 export class MapView {
   constructor() {
@@ -403,10 +403,10 @@ export class MapView {
       || (typeof eff.type === 'string' && eff.type.startsWith('placed_'));
   }
 
-  /** 单个标志占比：数量少偏大、数量多偏小，夹在 3%~15% */
+  /** 单个标志占比：1 个时接近 20%，数量增多逐步缩到 6%，夹在 6%~20% */
   _flagSizeRatio(count) {
     if (count <= 0) return 0;
-    const raw = FLAG_MAX_RATIO / Math.max(1, count * 0.55);
+    const raw = FLAG_MAX_RATIO / Math.max(1, count * 0.5);
     return Math.min(FLAG_MAX_RATIO, Math.max(FLAG_MIN_RATIO, raw));
   }
 

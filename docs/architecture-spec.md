@@ -301,7 +301,7 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
   4. 角色图标：MapView 根层 `player-avatar`（`z-index: 10`），居中。
   5. 放置型道具标志 `.tile-flags` / `.tile-flag`：`z-index: 3`，贴右下角、沿底边向左。
 - **标志数据驱动**：只读 `tile.contentState.placedItems`，按 `POTIONS[itemId].useEffect.type` 以 `placed_` 开头（或显式 `placement === true`）判定「放置型道具」，不写死 `item_trap` / `item_incense`；新增放置型道具自动出标志。
-- **排列与尺寸**：容器 `right/bottom` 贴边 + `flex-direction: row-reverse`（第一个标志在右下角，后续向左）；单个占比 `clamp(0.15 / max(1, n*0.55), 0.03, 0.15)`，数量少偏大、数量多偏小，互不重叠。
+- **排列与尺寸**：容器 `right/bottom` 贴边 + `flex-direction: row-reverse`（第一个标志在右下角，后续向左）；单个占比 `clamp(0.20 / max(1, n*0.5), 0.06, 0.20)`，1 个时接近 20%，数量增多逐步缩到 6% 附近，互不重叠且不溢出格子。
 - **覆盖层不被遮挡**：技能高亮（`tile-hl-red/gold/gold-flash` 的 outline + 外发光）、受祝福边框（`.blessed-tile`）、道具指向高亮（`.tile-aim-ok`）都是地块自身的 outline / box-shadow 覆盖样式，绘制在子层之上。
 - **栅栏内地块同一口径**：有地形时同样渲染 `.tile-terrain-bg` 背景层，不再画中心小图标。
 - **验收**：`node tools/smoke-ui.mjs` 的「§16.3 地块视觉层级」用例（地形面积占比、标志顺序、不重叠、无道具无标志、新增 placed_ 数据自动出标志）。

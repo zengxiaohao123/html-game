@@ -233,7 +233,15 @@ head_('§16.3 地块视觉层级：地形背景层 ~95% + 放置型道具标志�
   // 2) 无放置型道具 → 无标志
   assert(flagsOf(tileIdx).length === 0, '无放置型道具 → 无标志');
 
-  // 3) 两个放置型道具：右下→左下、3%~15%、不重叠
+  // 2.1) 单个标志接近 20%
+  tile.contentState = { placedItems: [{ itemId: 'item_trap' }] };
+  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+  const flags1 = flagsOf(tileIdx);
+  const ratio1 = parseFloat(flags1[0]?.getAttribute('data-size-ratio'));
+  assert(flags1.length === 1 && ratio1 >= 0.18 && ratio1 <= 0.20,
+    `单个标志接近 20%（实测 ${(ratio1 * 100).toFixed(1)}%）`, ratio1);
+
+  // 3) 两个放置型道具：右下→左下、6%~20%、不重叠
   tile.contentState = { placedItems: [{ itemId: 'item_trap' }, { itemId: 'item_incense' }] };
   EventBus.emit(GE.TILE_UPDATED, { tileIdx });
   const flags2 = flagsOf(tileIdx);
@@ -243,8 +251,8 @@ head_('§16.3 地块视觉层级：地形背景层 ~95% + 放置型道具标志�
   assert(wrap2?.style.right && wrap2?.style.bottom, '标志容器贴右下角（right + bottom 锚定）');
   assert(flags2[0]?.getAttribute('data-item-id') === 'item_trap', '第一个标志 = 第一个放置道具（最右）');
   const ratios2 = flags2.map((f) => parseFloat(f.getAttribute('data-size-ratio')));
-  assert(ratios2.every((r) => r >= 0.03 && r <= 0.15),
-    '单个标志占比落在 3%~15%', ratios2);
+  assert(ratios2.every((r) => r >= 0.06 && r <= 0.20),
+    '单个标志占比落在 6%~20%', ratios2);
   const tileWidth = parseFloat(tileEl.style.width);
   const gap2 = parseFloat(wrap2?.style.gap) || 0;
   const total2 = flags2.reduce((s, f) => s + parseFloat(f.style.width), 0) + gap2 * (flags2.length - 1);
@@ -267,8 +275,8 @@ head_('§16.3 地块视觉层级：地形背景层 ~95% + 放置型道具标志�
   const flags6 = flagsOf(tileIdx);
   assert(flags6.length === 6, `6 个放置型道具 → 6 个标志（非放置型物品被过滤，实测 ${flags6.length}）`);
   const ratio6 = parseFloat(flags6[0]?.getAttribute('data-size-ratio'));
-  assert(ratio6 < ratios2[0] && ratio6 >= 0.03 && ratio6 <= 0.15,
-    '数量多时单个标志更小且仍在 3%~15%', { ratio2: ratios2[0], ratio6 });
+  assert(ratio6 < ratios2[0] && ratio6 >= 0.06 && ratio6 <= 0.20,
+    '数量多时单个标志更小且仍在 6%~20%', { ratio2: ratios2[0], ratio6 });
 
   // 5) 数据驱动：新增 useEffect.type 以 placed_ 开头的道具自动出标志
   tile.contentState = { placedItems: [{ itemId: '__smoke_placed_a' }] };
