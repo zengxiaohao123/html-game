@@ -17,11 +17,10 @@ import { SKILLS } from '../data/characters.js';
 import { createEl, qs, iconEl } from './dom.js';
 import { devLog } from '../core/Logger.js';
 
-// 计时环几何：窗口 72px，圆环外扩 9px（画布 90×90，圆心 45,45，半径 42）
+// 计时环几何：环画布与窗口可视边界等大，环外缘正好压在窗口边界上、不外扩也不留缝
 const RING_BOX_PX = 72;
-const RING_SIZE = 90;
-const RING_RADIUS = 42;
-const RING_STROKE = 3;
+const RING_STROKE = 6;                                  // 白色环宽（加粗，位于边界内侧）
+const RING_RADIUS = (RING_BOX_PX - RING_STROKE) / 2;    // 33 → 外缘 33 + 6/2 = 36 = 窗口半径
 const RING_CIRC = 2 * Math.PI * RING_RADIUS;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -126,25 +125,28 @@ export class LinkSkillUI {
     queue.slice(0, 3).forEach((entry, i) => {
       const box = createEl('div', {
         style: {
-          position: 'relative', width: `${RING_BOX_PX}px`, height: `${RING_BOX_PX}px`, borderRadius: '50%',
-          background: 'linear-gradient(135deg, #fff6c0 0%, #e8a900 100%)',
-          border: '3px solid #3a3a3a',
-          boxShadow: '0 0 14px rgba(232, 169, 0, 0.85)',
+          position: 'relative', width: `${RING_BOX_PX}px`, height: `${RING_BOX_PX}px`,
+          boxSizing: 'border-box', borderRadius: '50%',
+          // 底板裁在圆环内：无外边框、背景裁成圆、溢出隐藏，任何可见部分都不超出圆环
+          border: 'none', overflow: 'hidden',
+          background: 'radial-gradient(circle at 35% 30%, #fff6c0 0%, #f2c14e 45%, #e8a900 100%)',
+          boxShadow: 'inset 0 2px 6px rgba(120, 70, 0, 0.28)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column',
           pointerEvents: 'auto',
         },
         parent: this.listEl,
       });
-      // 计时环先画（外圈、绝对定位，不参与窗口内部布局），后续角标 / 图标 / 文字覆盖在它之上
+      // 计时环先画（与窗口等大、覆盖边界），后续角标 / 图标 / 文字位于环内侧
       this._rings.push({ idx: i, circle: this._createRing(box) });
       createEl('div', {
         style: {
-          position: 'absolute', top: '-16px', right: '-6px',
-          width: '22px', height: '22px', borderRadius: '50%',
+          // 序号角标收进窗口内，避免被圆环或 overflow:hidden 裁切
+          position: 'absolute', top: '8px', right: '10px',
+          width: '15px', height: '15px', borderRadius: '50%',
           background: '#3a3a3a', color: '#fff6c0',
-          fontSize: '12px', fontWeight: '800',
+          fontSize: '10px', fontWeight: '800',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          border: '2px solid #e8a900',
+          border: '1.5px solid #e8a900',
         },
         text: String(i + 1), parent: box,
       });
@@ -154,7 +156,8 @@ export class LinkSkillUI {
       box.appendChild(iconEl('ui', entry.skillId, { size: '28px', def: sk, fallback: sk?.emoji || '⚡' }));
       if (realName) {
         createEl('div', {
-          style: { fontSize: '9px', fontWeight: '700', color: '#3a2e20', marginTop: '2px', textAlign: 'center', maxWidth: '66px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' },
+          // 文字宽度收在加粗圆环内侧，避免被环压住
+          style: { fontSize: '9px', fontWeight: '700', color: '#3a2e20', marginTop: '2px', textAlign: 'center', maxWidth: '42px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' },
           text: realName, parent: box,
         });
       }
@@ -169,19 +172,19 @@ export class LinkSkillUI {
    */
   _createRing(box) {
     const svg = document.createElementNS(SVG_NS, 'svg');
-    svg.setAttribute('viewBox', `0 0 ${RING_SIZE} ${RING_SIZE}`);
-    svg.setAttribute('width', String(RING_SIZE));
-    svg.setAttribute('height', String(RING_SIZE));
+    svg.setAttribute('viewBox', `0 0 ${RING_BOX_PX} ${RING_BOX_PX}`);
+    svg.setAttribute('width', String(RING_BOX_PX));
+    svg.setAttribute('height', String(RING_BOX_PX));
     svg.style.position = 'absolute';
-    svg.style.left = `${-(RING_SIZE - RING_BOX_PX) / 2}px`;
-    svg.style.top = `${-(RING_SIZE - RING_BOX_PX) / 2}px`;
-    svg.style.width = `${RING_SIZE}px`;
-    svg.style.height = `${RING_SIZE}px`;
+    svg.style.left = '0';
+    svg.style.top = '0';
+    svg.style.width = '100%';
+    svg.style.height = '100%';
     svg.style.pointerEvents = 'none';
-    svg.style.overflow = 'visible';
+    svg.style.overflow = 'hidden';
     box.appendChild(svg);
 
-    const c = RING_SIZE / 2;
+    const c = RING_BOX_PX / 2;
     const mkCircle = (stroke, width) => {
       const el = document.createElementNS(SVG_NS, 'circle');
       el.setAttribute('cx', String(c));
@@ -193,14 +196,12 @@ export class LinkSkillUI {
       svg.appendChild(el);
       return el;
     };
-    // 暗色底衬 + 半透明轨道 + 纯白进度：明亮/深色地图上都清晰，又不喧宾夺主
-    mkCircle('rgba(58,58,58,0.35)', RING_STROKE + 2);
-    mkCircle('rgba(255,255,255,0.22)', RING_STROKE);
+    // 深色轨道 + 纯白进度：轨道占满同一条环宽，白色弧线在轨道内逆时针消减，清晰但不会盖住内容
+    mkCircle('rgba(58, 46, 32, 0.35)', RING_STROKE);
     const circle = mkCircle('#ffffff', RING_STROKE);
     circle.setAttribute('transform', `rotate(-90 ${c} ${c})`);
     circle.setAttribute('stroke-dasharray', `${RING_CIRC} ${RING_CIRC}`);
     circle.setAttribute('class', 'link-ring');
-    circle.style.filter = 'drop-shadow(0 1px 2px rgba(0,0,0,0.55))';
     return circle;
   }
 

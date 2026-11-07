@@ -1906,7 +1906,7 @@ head_('第 13 批 波 2：UI 修复验证（门控 / 信息区 / 商店 / 建造
     const savedRolesRing = (gs.team.groups[0].roles || []).slice();
     try {
       const clock = getRealtimeClock(() => gs);
-      const C = 2 * Math.PI * 42;
+      const C = 2 * Math.PI * 33; // 环半径 33（外缘 33 + 6/2 = 36 = 窗口半径）
       const ringLen = (i) => parseFloat(linkSkillUI._rings[i].circle.getAttribute('stroke-dasharray'));
 
       gs.linkSkillQueue = [];
@@ -1918,10 +1918,29 @@ head_('第 13 批 波 2：UI 修复验证（门控 / 信息区 / 商店 / 建造
       LinkSkillSystem.enqueue(gs, { tileIdx: 2, skillId: 'skill_link_yumo_drain' });
       LinkSkillSystem.enqueue(gs, { tileIdx: 3, skillId: 'skill_link_luyouyou_rise_wind' });
 
-      assert(linkSkillUI._rings.length === 2, '每个连携窗口外圈各有一条圆形计时环', linkSkillUI._rings.length);
-      assert(linkSkillUI._rings[0].circle.getAttribute('stroke') === '#ffffff'
-        && linkSkillUI._rings[0].circle.getAttribute('stroke-width') === '3',
-        '计时环为白色 3px 圆环（SVG 描边）');
+      assert(linkSkillUI._rings.length === 2, '每个连携窗口各有一条圆形计时环', linkSkillUI._rings.length);
+      const ringCircle = linkSkillUI._rings[0].circle;
+      const ringSvg = ringCircle.parentNode;
+      const winBox = linkSkillUI.listEl.children[0];
+      assert(ringCircle.getAttribute('stroke') === '#ffffff'
+        && ringCircle.getAttribute('stroke-width') === '6',
+        '计时环为白色 6px 圆环（已加粗）', ringCircle.getAttribute('stroke-width'));
+      // 环与窗口严格同尺寸：画布 = 窗口 72px，外径 = 2r + 环宽 = 72，正好压在窗口边界上
+      assert(ringSvg.getAttribute('width') === '72' && ringSvg.getAttribute('height') === '72'
+        && ringSvg.getAttribute('viewBox') === '0 0 72 72',
+        '环画布与窗口尺寸一致（无外扩）', `${ringSvg.getAttribute('width')}×${ringSvg.getAttribute('height')}`);
+      const ringOuterD = parseFloat(ringCircle.getAttribute('r')) * 2 + parseFloat(ringCircle.getAttribute('stroke-width'));
+      assert(ringOuterD === 72 && winBox.style.width === '72px' && winBox.style.height === '72px',
+        '环外径 = 窗口直径（正好压在窗口边界上）', { ringOuterD, w: winBox.style.width });
+      assert(winBox.style.overflow === 'hidden' && winBox.style.border === 'none',
+        '底板裁在圆环内（无外边框、溢出隐藏）');
+      const idxBadge = winBox.children.find((c) => c._text === '1');
+      assert(idxBadge && !String(idxBadge.style.top).startsWith('-') && !String(idxBadge.style.right).startsWith('-'),
+        '序号角标收在窗口内，不被圆环或裁剪切掉',
+        idxBadge ? { top: idxBadge.style.top, right: idxBadge.style.right } : null);
+      const nameEl = winBox.children.find((c) => c._text === '汲取');
+      assert(nameEl && nameEl.style.maxWidth === '42px',
+        '技能名收在加粗圆环内侧，不被圆环压住', nameEl?.style?.maxWidth);
 
       // 排队第二位不计时：满圈
       fakeNow += 3600;
