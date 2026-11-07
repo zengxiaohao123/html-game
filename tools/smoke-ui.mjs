@@ -1812,16 +1812,26 @@ head_('第 10 批任务 B：HotBar 槽位选中（点击触发状态变化）');
   assert(hotBar.selectedSlotIdx === null, '再点 → 取消选中');
 }
 
-head_('第 10 批任务 B：MainMenu 图鉴入口（点击触发状态变化）');
+head_('第 10 批任务 B：MainMenu 入口规则（新规则：只有“新游戏/读档成功”才进主地图）');
 {
   const { MainMenu } = await import('../src/ui/MainMenu.js');
   const mm = new MainMenu(director);
   mm.show();
   assert(mm.visible === true, 'MainMenu show() 可见');
+
+  // 图鉴：以面板形式叠在主菜单上，不进入主地图 → 菜单必须保持可见（旧断言“隐藏”已废弃）
   buttonsWithText(mm.mask, '图鉴')[0].click();
   assert(codexPanel.helper?.visible === true, '点图鉴 → 图鉴面板打开');
-  assert(mm.visible === false, '点按钮后主菜单隐藏');
+  assert(mm.visible === true, '点图鉴 → 主菜单保持可见（不进入主地图）');
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'codex' });
+
+  // 读取存档：只打开存读档页面；未读取成功前同样停在主菜单
+  buttonsWithText(mm.mask, '读取存档')[0].click();
+  assert(settingsPanel.visible === true, '点读取存档 → 存读档面板打开');
+  assert(mm.visible === true, '点读取存档 → 主菜单保持可见（读档成功前不进入主地图）');
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'settings' });
+  assert(mm.visible === true, '关闭存读档面板 → 仍停留在主菜单');
+
   mm.remove();
 }
 
