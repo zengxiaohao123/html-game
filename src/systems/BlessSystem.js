@@ -30,6 +30,8 @@ import { HookDispatcher } from '../core/HookDispatcher.js';
 import { Random } from '../core/Random.js';
 import { Distance } from '../core/Distance.js';
 import { devLog } from '../core/Logger.js';
+import { MIN_STAMINA } from '../utils/constants.js';
+import { StaminaSystem } from './StaminaSystem.js';
 import { TurnSystem } from './TurnSystem.js';
 import { SleepSystem } from './SleepSystem.js';
 
@@ -67,9 +69,11 @@ export function blessStart(gs) {
     }
   }
 
-  if (gs.player.stamina < staminaCost) {
-    EventBus.emit(GE.TOAST_SHOW, { text: `🧘 行动力不足（需 ${staminaCost}）`, duration: 2000 });
-    devLog.info('[Bless] stamina not enough');
+  // 祈福是玩家主动操作：允许把行动力扣成负数，只有已到下限（-3，无空间再扣）时才拒绝
+  const minStamina = Number.isFinite(gs.player.minStamina) ? gs.player.minStamina : MIN_STAMINA;
+  if (gs.player.stamina <= minStamina) {
+    EventBus.emit(GE.TOAST_SHOW, { text: `🧘 行动力已到下限（下限 ${minStamina}）`, duration: 2000 });
+    devLog.info('[Bless] stamina at min');
     return { ok: false, targetIdx: null, candidates: [], reason: 'stamina' };
   }
   if (gs.player.gold < goldCost) {
@@ -85,13 +89,8 @@ export function blessStart(gs) {
     return { ok: false, targetIdx: null, candidates: [], reason: 'noTiles' };
   }
 
-  // 扣消耗（锁定）
-  gs.player.stamina -= staminaCost;
-  EventBus.emit(GE.STAMINA_CHANGE, {
-    newValue: gs.player.stamina,
-    delta: -staminaCost,
-    maxStamina: gs.player.maxStamina,
-  });
+  // 扣消耗（锁定）：允许透支为负，但不低于下限（超出下限的部分夹掉）
+  StaminaSystem.spendStaminaActive(gs, staminaCost, { reason: 'bless' });
   gs.player.gold -= goldCost;
   EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: -goldCost });
 

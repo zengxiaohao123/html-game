@@ -352,12 +352,8 @@ export function tryMove(gs, opts = {}) {
   if (gs.player.nextMoveNoStamina) {
     gs.player.nextMoveNoStamina = false;
   } else if (!def.freeStamina) {
-    gs.player.stamina -= 1;
-    EventBus.emit(GE.STAMINA_CHANGE, {
-      newValue: gs.player.stamina,
-      delta: -1,
-      maxStamina: gs.player.maxStamina,
-    });
+    // 载具移动同样是玩家主动操作：允许透支为负，但不低于下限
+    StaminaSystem.spendStaminaActive(gs, 1, { reason: 'vehicle_move' });
   }
 
   // 效果层只在终点生效：模拟路径的中间格只参与判定/长度，不触发地块或状态效果
@@ -370,7 +366,8 @@ export function tryMove(gs, opts = {}) {
   // 到达后额外效果（拓荒者 +5 行动力；购物车 +4 金币）
   // 拓荒者 +5 允许超出上限（物品库 VEH-015 备注 / 03 表 A34 行动力溢出），统一走 StaminaSystem 结算
   if (def.staminaGain) {
-    StaminaSystem.settleStamina(gs, def.staminaGain, { allowOverflow: true, reason: def.id });
+    // 「移动后行动力 +5」属数值直接增加：允许超出上限（次日开始时清除）
+    StaminaSystem.gainStaminaFlat(gs, def.staminaGain, { reason: def.id });
     EventBus.emit(GE.TOAST_SHOW, { text: `${def.emoji} ${def.name} 行动力 +${def.staminaGain}`, duration: 1500 });
   }
   if (def.goldOnArrive) {

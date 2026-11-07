@@ -26,6 +26,7 @@ import { firePassHooksAlong, fireEnterHooks } from './MoveHooks.js';
 import { CombatSystem } from './CombatSystem.js';
 import { TalentSystem } from './TalentSystem.js';
 import { VehicleSystem } from './VehicleSystem.js';
+import { StaminaSystem } from './StaminaSystem.js';
 import { normalizeTerrain } from '../data/terrains.js';
 
 /** 该格地形是否为冰面 */
@@ -92,17 +93,13 @@ export function move(gs, direction) {
   const finalIdx = path[path.length - 1];
 
   // 1. 扣 stamina：整段移动只扣 1 点（滑行是"被迫"的，不额外消耗）
+  //    移动是玩家主动操作：允许透支为负，但不低于下限（StaminaSystem 统一夹取）
   const isFreeMove = !!gs.player.nextMoveNoStamina;
   if (isFreeMove) {
     gs.player.nextMoveNoStamina = false; // 用掉即清，不可叠加
     devLog.info('[MovementSystem] 芋圆免行动力触发，本次移动不扣 stamina');
   } else {
-    gs.player.stamina -= 1;
-    EventBus.emit(GE.STAMINA_CHANGE, {
-      newValue: gs.player.stamina,
-      delta: -1,
-      maxStamina: gs.player.maxStamina,
-    });
+    StaminaSystem.spendStaminaActive(gs, 1, { reason: 'move' });
   }
 
   // 2. 逐格结算【经过时】：冰面滑行经过的每一格都算（起点不算，含终点）
@@ -117,10 +114,8 @@ export function move(gs, direction) {
       if (slimeIdx >= 0) {
         // 注：粘液是地块 debuff（§15），不是生物主动攻击，不受生物停战阻挡
         CombatSystem.applyTrueDamageToPlayer(gs, gs.player, 5, { reason: 'slime_hit' });
-        gs.player.stamina -= 1;
-        EventBus.emit(GE.STAMINA_CHANGE, {
-          newValue: gs.player.stamina, delta: -1, maxStamina: gs.player.maxStamina,
-        });
+        // 粘液是负面效果扣除：不允许把行动力扣到 0 以下
+        StaminaSystem.loseStaminaNegativeEffect(gs, 1, { reason: 'slime_hit' });
         tile.states.splice(slimeIdx, 1);
         EventBus.emit(GE.TOAST_SHOW, { text: '🟢 粘液：hp -5 stamina -1', duration: 1500 });
         devLog.info('[MovementSystem] slime state triggered → removed');

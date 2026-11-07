@@ -32,7 +32,7 @@ export function startNewDay(gs) {
   // 0.1 行动力溢出清除（拓荒者、帐篷祝福 +3 等允许临时超出上限，次日开始时清零，不保留到第二天）
   //     注意顺序（§5.1）：先在本步把行动力夹到上限，再由睡眠结算基础恢复，最后叠加可超上限的额外行动力。
   if (gs.player.stamina > gs.player.maxStamina) {
-    StaminaSystem.settleStamina(gs, gs.player.maxStamina - gs.player.stamina, { reason: 'overflow_clear' });
+    StaminaSystem.clampStaminaToCap(gs, { reason: 'overflow_clear' });
   }
 
   gs.day += 1;

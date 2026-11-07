@@ -108,7 +108,8 @@ const FacilityHome = {
       if (gs.player.stamina < gs.player.maxStamina) {
         const extra = 0; // Phase 2A 暂无额外
         if (extra > 0) {
-          StaminaSystem.settleStamina(gs, extra, { reason: 'facility_home' });
+          // 数值直接增加：允许超出上限
+          StaminaSystem.gainStaminaFlat(gs, extra, { reason: 'facility_home' });
         }
       }
     }, this);
@@ -974,11 +975,11 @@ const ResourceBus = {
       if (!isMine(gs, tileIdx, this.id)) return;
       const tile = gs.map.outerTiles[tileIdx];
 
-      // 行动力 +1（每日限一次；不允许超出上限，统一走 StaminaSystem 结算）
+      // 行动力 +1（每日限一次；数值直接增加，允许超出上限，统一走 StaminaSystem 结算）
       const staminaKey = flagKey(this.id, 'onEnter_stamina');
       if (!tile.dailyFlags[staminaKey]) {
         tile.dailyFlags[staminaKey] = true;
-        StaminaSystem.settleStamina(gs, 1, { reason: 'resource_bus' });
+        StaminaSystem.gainStaminaFlat(gs, 1, { reason: 'resource_bus' });
         EventBus.emit(GE.TOAST_SHOW, { text: '🚌 巴士站：行动力 +1', duration: 1500 });
       }
 

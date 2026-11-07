@@ -90,7 +90,8 @@ export function applyPlaceholderEventEffect(gs, entry) {
       InventorySystem.addItem(gs, eff.itemId, eff.qty || 1);
       return `📦 ${eff.itemId} ×${eff.qty || 1}`;
     case 'stamina':
-      StaminaSystem.settleStamina(gs, eff.amount || 1, { reason: 'placeholder_event' });
+      // 数值直接增加：允许超出上限
+      StaminaSystem.gainStaminaFlat(gs, eff.amount || 1, { reason: 'placeholder_event' });
       return `⚡ 行动力 +${eff.amount || 1}`;
     case 'heal':
       HealSystem.healPlayerByPercent(gs, eff.percent || 0.1, { source: 'placeholder_event' });

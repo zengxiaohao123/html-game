@@ -1281,8 +1281,10 @@ export class InfoPanel {
   _renderBlessTab() {
     const gs = this._getGS();
     const blessing = !!(gs?.uiState?.blessing);
+    // 祈福是主动操作：允许把行动力扣成负数，只要还没到下限就可用
+    const minStamina = Number.isFinite(gs.player.minStamina) ? gs.player.minStamina : -3;
     const canBless = !blessing
-      && gs.player.stamina >= BLESS_STAMINA_COST
+      && gs.player.stamina > minStamina
       && gs.player.gold >= BLESS_GOLD_COST;
 
     // 动态读取当前队伍的精灵
@@ -1339,7 +1341,7 @@ export class InfoPanel {
       });
     } else if (!canBless) {
       const reasons = [];
-      if (gs.player.stamina < BLESS_STAMINA_COST) reasons.push('行动力不足');
+      if (gs.player.stamina <= minStamina) reasons.push('行动力已到下限');
       if (gs.player.gold < BLESS_GOLD_COST) reasons.push('金币不足');
       createEl('div', {
         style: { marginTop: '10px', fontSize: '12px', color: '#c0392b', textAlign: 'center' },

@@ -128,8 +128,8 @@ export function useItem(gs, itemId, opts = {}) {
     }
 
     case 'stamina_and_buff': {
-      // 啤酒 +3：保持既有行为（允许临时超出上限，超出部分次日开始时清除），统一走 StaminaSystem 结算
-      StaminaSystem.settleStamina(gs, eff.stamina || 3, { allowOverflow: true, reason: 'item_beer' });
+      // 啤酒 +3：数值直接增加（允许临时超出上限，超出部分次日开始时清除），统一走 StaminaSystem 结算
+      StaminaSystem.gainStaminaFlat(gs, eff.stamina || 3, { reason: 'item_beer' });
       if (Math.random() < (eff.buffChance ?? 0.3)) {
         gs.activeBuffs = gs.activeBuffs || [];
         // §15 / ITM-CON-003：暴躁 = 攻击力 +25%，持续 1 天，不可叠加。

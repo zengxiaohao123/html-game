@@ -38,8 +38,10 @@ export function sleep(gs, isAuto = false) {
   const wasExhausted = gs.activeBuffs.some(b => b.id === TurnSystem.BUFF_EXHAUSTED);
 
   // 0. Agent 3：天赋 活力满满 onSleep（换日前 fire）—— 心力交瘁时失效
+  //    返回值是「数值直接增加」的行动力，必须在换日三步的第 ③ 步结算（可超上限）
+  let talentStamina = 0;
   if (!wasExhausted) {
-    TalentSystem.onSleepStart(gs);
+    talentStamina = TalentSystem.onSleepStart(gs) || 0;
   } else {
     devLog.info('[SleepSystem] 心力交瘁 → 睡觉增益 hook 全部失效（onSleepStart 跳过）');
   }
@@ -66,31 +68,26 @@ export function sleep(gs, isAuto = false) {
   const currentTile = gs.map.outerTiles[gs.player.x];
   const atHome = currentTile && (currentTile.contentId === 'facility_home' || currentTile.contentId === 'facility_tent');
 
-  let newStamina;
-  if (wasExhausted) {
-    // 心力交瘁（§15）：所有睡觉增益失效，固定回一半
-    newStamina = Math.ceil(gs.player.maxStamina / 2);
-    devLog.info('[SleepSystem] 心力交瘁，固定回一半 stamina:', newStamina);
-  } else if (atHome) {
-    // 在家 / 帐篷：回满
-    newStamina = gs.player.maxStamina;
-    devLog.info('[SleepSystem] 在家，stamina 回满:', newStamina);
-  } else {
-    // 其他地点：回一半
-    newStamina = Math.ceil(gs.player.maxStamina / 2);
-    devLog.info('[SleepSystem] 其他地点，stamina 回一半:', newStamina);
-  }
+  // ② 百分比恢复（规则 1）：心力交瘁固定回一半 / 家、帐篷回满 / 其他回一半，均不允许超出上限
+  const recoverRatio = (wasExhausted || !atHome) ? 0.5 : 1;
+  devLog.info('[SleepSystem] 百分比恢复 ratio =', recoverRatio,
+    wasExhausted ? '（心力交瘁固定回一半）' : (atHome ? '（在家回满）' : '（其他地点回一半）'));
 
   const beforeRecover = gs.player.stamina;
-  StaminaSystem.recoverStaminaTo(gs, newStamina, { reason: 'sleep_recover' });
+  StaminaSystem.gainStaminaPercent(gs, recoverRatio, { reason: 'sleep_recover' });
 
-  // 第二步：允许超上限的额外增加。心力交瘁时所有睡觉增益失效（§15），待结算奖励作废。
+  // ③ 数值直接增加（规则 2）：帐篷受祝福 +3、天赋活力满满 +2 —— 在百分比恢复之后结算，可超上限。
+  //    心力交瘁时所有睡觉增益失效（§15），待结算奖励作废。
   const pendingBonus = gs.pendingSleepStaminaBonus || 0;
   gs.pendingSleepStaminaBonus = 0;
   if (!wasExhausted && pendingBonus > 0) {
-    StaminaSystem.settleStamina(gs, pendingBonus, { allowOverflow: true, reason: 'sleep_bonus_overflow' });
+    StaminaSystem.gainStaminaFlat(gs, pendingBonus, { reason: 'sleep_bonus_tent' });
     EventBus.emit(GE.TOAST_SHOW, { text: `⛺ 祝福帐篷额外 +${pendingBonus} 🔷（可超出行动力上限）`, duration: 1800 });
-    devLog.info('[SleepSystem] 回满后结算超上限行动力 +', pendingBonus, '→', gs.player.stamina);
+    devLog.info('[SleepSystem] 回满后结算帐篷额外行动力 +', pendingBonus, '→', gs.player.stamina);
+  }
+  if (!wasExhausted && talentStamina > 0) {
+    StaminaSystem.gainStaminaFlat(gs, talentStamina, { reason: 'talent_energetic' });
+    devLog.info('[SleepSystem] 回满后结算天赋活力满满额外行动力 +', talentStamina, '→', gs.player.stamina);
   }
   const staminaDelta = gs.player.stamina - beforeRecover;
 

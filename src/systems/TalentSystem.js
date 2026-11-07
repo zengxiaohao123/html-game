@@ -15,7 +15,6 @@
 import { TALENTS, getTalentsByRole } from '../data/talents.js';
 import { EventBus } from '../core/EventBus.js';
 import { HealSystem } from './HealSystem.js';
-import { StaminaSystem } from './StaminaSystem.js';
 import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { Random } from '../core/Random.js';
@@ -156,23 +155,25 @@ export function onDayStart(gs) {
 }
 
 /**
- * SleepSystem.sleep() 开头调用（换日前）
- * 活力满满：睡觉回复翻倍 + 额外 +2 stamina
- * （注意：睡觉本身不回复 HP，此翻倍是给未来增益道具预留 —— 但我们按文档实现，额外 +2 stamina 是实的）
+ * SleepSystem.sleep() 开头调用（换日前），返回本次睡觉的「数值直接增加」行动力总量。
+ * 活力满满：睡觉回复翻倍 + 额外 +2 stamina（HP 翻倍先预留标记）
+ * 额外 +2 属于数值直接增加：必须在换日清超额与百分比恢复之后结算、且允许超出上限，
+ * 因此这里只汇总数值，由 SleepSystem 在第三步统一用 gainStaminaFlat 结算。
+ * @returns {number} 额外增加的行动力（可超上限）
  */
 export function onSleepStart(gs) {
   devLog.info('[TalentSystem.onSleepStart]');
   const talents = filterByTrigger(gs, 'onSleep');
+  let extraTotal = 0;
   for (const t of talents) {
     if (t.effectType === 'sleep_bonus') {
-      // 活力满满：额外 +2 stamina（HP 翻倍先预留标记）
-      // 不允许超出上限的回复，统一走 StaminaSystem 结算
       const extra = t.effectParams?.extraStamina ?? 2;
-      const actual = StaminaSystem.settleStamina(gs, extra, { reason: 'talent_energetic' });
-      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 活力满满：额外 +${actual} 行动力`, duration: 1500 });
-      devLog.info('[TalentSystem.onSleepStart] 活力满满 stamina +', actual);
+      extraTotal += extra;
+      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 活力满满：额外 +${extra} 行动力`, duration: 1500 });
+      devLog.info('[TalentSystem.onSleepStart] 活力满满待结算 stamina +', extra);
     }
   }
+  return extraTotal;
 }
 
 /**

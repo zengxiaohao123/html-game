@@ -222,7 +222,8 @@ console.log('\n═══ 10. 资源耗尽：金币不足不负债 ═══');
   check(bl.ok === false && bl.reason === 'gold' && g.player.gold === 0, '金币不足祈福被拒（不负债）');
   g.player.gold = 100; g.player.stamina = 0;
   const bl2 = BlessSystem.blessStart(g);
-  check(bl2.ok === false && bl2.reason === 'stamina', '行动力不足祈福被拒');
+  check(bl2.ok === true && g.player.stamina === -2,
+    `行动力 0 祈福放行并扣到 -2（实际 ${g.player.stamina}）`);
 }
 
 console.log('\n═══ 11. 生命归 0 后再行动：不卡死 ═══');
@@ -235,7 +236,8 @@ console.log('\n═══ 11. 生命归 0 后再行动：不卡死 ═══');
   move(g, 'up');
   check(g.player.x !== from, '惩罚后仍可移动（透支 -1，不卡死）');
   const bl = BlessSystem.blessStart(g);
-  check(bl.ok === false && bl.reason === 'stamina', '行动力 0 祈福明确拒绝（非静默）');
+  check(bl.ok === true && g.player.stamina === -2,
+    `透支状态下祈福放行（-1 → -2，实际 ${g.player.stamina}）`);
 }
 
 // ═══ 第 13 批 波 1：阻断 + 系统严重修复验证 ═══
@@ -1044,6 +1046,62 @@ console.log('\n═══ 39. 连携技实例化：必须放置 / 同名独立 / 
       && g.linkSkillQueue.length === 0,
       '放置后第 1 次才计数（1/3，不弹窗）');
   }
+}
+
+console.log('\n═══ 行动力四类规则（2026-11-07 裁决） ═══');
+{
+  const { StaminaSystem } = await import('../src/systems/StaminaSystem.js');
+
+  // 规则 1：百分比增加 → 夹上限
+  const g = createInitialState();
+  g.player.stamina = 10;
+  StaminaSystem.gainStaminaPercent(g, 1, { reason: 'test_percent' });
+  check(g.player.stamina === 8, `百分比增加夹上限（10 → ${g.player.stamina}）`);
+
+  // 规则 2：数值直接增加 → 可超上限
+  g.player.stamina = 8;
+  StaminaSystem.gainStaminaFlat(g, 3, { reason: 'test_flat' });
+  check(g.player.stamina === 11, `数值增加可超上限（8 +3 → ${g.player.stamina}）`);
+  g.player.stamina = 8;
+  StaminaSystem.gainStaminaFlat(g, 1, { reason: 'test_flat_1' });
+  check(g.player.stamina === 9, `巴士站/占位事件 +1 可超上限（8 → ${g.player.stamina}）`);
+
+  // 规则 3：负面效果 / 百分比减少 → 夹 0
+  g.player.stamina = 1;
+  StaminaSystem.loseStaminaNegativeEffect(g, 2, { reason: 'test_negative' });
+  check(g.player.stamina === 0, `负面效果扣除不破 0（实际 ${g.player.stamina}）`);
+  g.player.stamina = 1;
+  StaminaSystem.loseStaminaPercent(g, 0.5, { reason: 'test_lose_percent' });
+  check(g.player.stamina === 0, `百分比减少不破 0（实际 ${g.player.stamina}）`);
+
+  // 规则 4：主动操作 → 可负，但不破下限 -3
+  g.player.stamina = -2;
+  StaminaSystem.spendStaminaActive(g, 1, { reason: 'test_active' });
+  check(g.player.stamina === -3, `主动操作扣到下限 -3（实际 ${g.player.stamina}）`);
+  g.player.stamina = 0;
+  StaminaSystem.spendStaminaActive(g, 5, { reason: 'test_active_5' });
+  check(g.player.stamina === -3, `负数扣减夹到 -3 不为 -5（实际 ${g.player.stamina}）`);
+
+  // 祈福：0 → -2 放行；-3 拒绝
+  const g2 = createInitialState();
+  g2.player.gold = 100; g2.player.stamina = 0; g2.team.dailyBlessCount = 1;
+  const b0 = BlessSystem.blessStart(g2);
+  check(b0.ok === true && g2.player.stamina === -2,
+    `祈福 0 → -2 放行（实际 ${g2.player.stamina}）`);
+
+  const g3 = createInitialState();
+  g3.player.gold = 100; g3.player.stamina = -3; g3.team.dailyBlessCount = 1;
+  const b3 = BlessSystem.blessStart(g3);
+  check(b3.ok === false && b3.reason === 'stamina' && g3.player.stamina === -3,
+    '祈福在下限 -3 时被拒（不破下限）');
+
+  // 天赋活力满满：睡觉回满后额外 +2，可超上限
+  const g4 = createInitialState();
+  g4.player.x = 6;                       // 家
+  g4.team.groups[0].roles = ['xiayang']; // 携带活力满满
+  g4.player.stamina = 8;
+  sleep(g4, false);
+  check(g4.player.stamina === 10, `天赋活力满满睡觉后 8 → ${g4.player.stamina}（可超上限）`);
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} smoke 结果：${pass} 通过 / ${fail} 失败（共 ${pass + fail}）`);
