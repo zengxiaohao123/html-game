@@ -101,8 +101,10 @@ export function normalizeToDayStart(gs) {
       if (isPlainObject(c)) {
         delete c.lastMoveTs;
         delete c.moveEverySec;
-        delete c.pauseMs;    // 阶段 2 开发期旧字段 → pauseLeft（秒）
-        delete c.retargetMs; // 阶段 2 开发期旧字段 → retargetLeft（秒）
+        delete c.pauseMs;    // 阶段 2 开发期旧字段
+        delete c.retargetMs; // 阶段 2 开发期旧字段
+        delete c.pauseLeft;  // 阶段 3 起改用 behaviorState/stateLeft
+        delete c.retargetLeft;
       }
     }
   }
@@ -252,8 +254,26 @@ export function migrateGS(loadedGs) {
         c.dir = 0;
       }
       if (!('targetPos' in c)) c.targetPos = null;
-      if (typeof c.pauseLeft !== 'number') c.pauseLeft = 0;
-      if (typeof c.retargetLeft !== 'number') c.retargetLeft = 0;
+
+      // 阶段 3：走走停停行为状态机
+      //   旧档（阶段 2）只有 pauseLeft/retargetLeft：
+      //   - pauseLeft > 0 → 正处在停顿 → idle，剩余秒数沿用
+      //   - 否则有 targetPos → walk；两者都没有 → idle（读档后先站一会儿）
+      if (c.behaviorState !== 'idle' && c.behaviorState !== 'walk') {
+        const legacyPause = typeof c.pauseLeft === 'number' ? c.pauseLeft : 0;
+        const legacyTarget = isPlainObject(c.targetPos);
+        if (legacyPause > 0) c.behaviorState = 'idle';
+        else c.behaviorState = legacyTarget ? 'walk' : 'idle';
+      }
+      if (typeof c.stateLeft !== 'number' || !Number.isFinite(c.stateLeft) || c.stateLeft < 0) {
+        const legacyPause = typeof c.pauseLeft === 'number' ? c.pauseLeft : 0;
+        c.stateLeft = c.behaviorState === 'idle' ? Math.max(0, legacyPause) : 0;
+      }
+      if (typeof c.idleTurnLeft !== 'number' || !Number.isFinite(c.idleTurnLeft)) {
+        c.idleTurnLeft = 0;
+      }
+      delete c.pauseLeft;
+      delete c.retargetLeft;
 
       // 读档时半径可能已变大（或存档越界）：圆心夹回栅栏内合法区域
       const rowCols = loadedGs.map?.fenceRowCols || 0;

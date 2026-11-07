@@ -47,6 +47,7 @@ export class CreatureView {
     this.els = new Map();       // creatureId → DOM 节点
     this.sizes = new Map();     // creatureId → 上次直径 px
     this.kinds = new Map();     // creatureId → 上次 kind（长大换色/换大小）
+    this.transforms = new Map();// creatureId → 上次 transform 字符串（静止时不重复写 DOM）
   }
 
   /**
@@ -68,6 +69,7 @@ export class CreatureView {
         this.els.delete(c.id);
         this.sizes.delete(c.id);
         this.kinds.delete(c.id);
+        this.transforms.delete(c.id);
         el = null;
       }
       if (!el) {
@@ -97,7 +99,12 @@ export class CreatureView {
         el.style.height = `${vis.diameter}px`;
         this.sizes.set(c.id, vis.diameter);
       }
-      el.style.transform = `translate(${vis.x}px, ${vis.y}px) translate(-50%, -50%)`;
+      // 静止 / 未移动的生物不写 transform（避免每帧无意义的 DOM 更新）
+      const transform = `translate(${vis.x}px, ${vis.y}px) translate(-50%, -50%)`;
+      if (this.transforms.get(c.id) !== transform) {
+        el.style.transform = transform;
+        this.transforms.set(c.id, transform);
+      }
     }
 
     for (const [id, el] of this.els) {
@@ -106,6 +113,7 @@ export class CreatureView {
       this.els.delete(id);
       this.sizes.delete(id);
       this.kinds.delete(id);
+      this.transforms.delete(id);
     }
   }
 }

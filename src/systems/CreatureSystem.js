@@ -9,7 +9,9 @@
 // 运动模型（设计文档 §2.3 / §18.3）：
 //   - pos 连续逻辑坐标（判定权威），renderPos 渲染插值位置；
 //   - speedPerTile = 秒/格（3~6 秒/格），dir = 弧度（任意方向）；
-//   - 随机游走：目标点 + 角速度上限的平滑转向；到达目标后偶尔停顿；
+//   - 走走停停状态机（Idle ⇄ Walk）：停下来是常态（长站数秒~十几秒），
+//     行走为短距离踱步，偶尔朝随机方向走一段；所有时长/距离/转向参数见
+//     src/data/creatureBehavior.js（逻辑层不写死数值）；
 //   - 只裁剪栅栏边界（圆心 + 半径不出栅栏），生物之间不碰撞、不分离、允许重叠。
 //
 // 容量 & 超载惩罚（§13.2，2026-11-04 裁决）：
@@ -23,6 +25,7 @@ import { HookDispatcher } from '../core/HookDispatcher.js';
 import { devLog } from '../core/Logger.js';
 import { Random } from '../core/Random.js';
 import { getCreatureDef, SLIME_KINDS } from '../data/creatures.js';
+import { getBehaviorProfile, resolveBehavior } from '../data/creatureBehavior.js';
 import { ITEMS } from '../data/items.js';
 import { normalizeTerrain } from '../data/terrains.js';
 import { InventorySystem } from './InventorySystem.js';
@@ -46,17 +49,6 @@ export function resetCreatureIdCounter() { _nextCreatureId = 1; }
 /** 秒/格 合法区间（设计文档 §2.3：3~6 秒走 1 格） */
 export const MIN_SECONDS_PER_TILE = 3;
 export const MAX_SECONDS_PER_TILE = 6;
-/** 平滑转向的最大角速度（弧度/秒）；保证不会瞬间反向抖动 */
-const MAX_TURN_RATE = 2.4;
-/** 到达目标后的停顿概率与时长（秒；刻意不用 Ms 后缀，避免被日初基线判为墙钟字段） */
-const PAUSE_CHANCE_ON_ARRIVE = 0.3;
-const PAUSE_MIN_S = 0.3;
-const PAUSE_MAX_S = 0.9;
-/** 重新取目标点的间隔（到达/超时都会重取，秒） */
-const RETARGET_MIN_S = 1.2;
-const RETARGET_MAX_S = 3.5;
-/** 视为到达目标点的距离（格） */
-const ARRIVE_EPS = 0.06;
 
 /**
  * 生成 1 只生物
@@ -97,14 +89,17 @@ export function spawnCreature(gs, kind, opts = {}) {
     // 连续坐标（判定权威位置）与半径（米；1 格边长 = 1 米）
     pos,
     radius,
-    // 运动：dir = 弧度（任意方向）；speedPerTile = 秒/格；闲逛目标点 + 停顿/重取计时
+    // 运动：dir = 弧度（任意方向）；speedPerTile = 秒/格；
+    // 行为状态机：behaviorState = 'idle' | 'walk'，stateLeft = 当前状态剩余秒数。
+    // 初始 Idle 时长取 [0, idleMaxS] 随机错峰，避免同一帧全体起步。
     dir,
     speedPerTile: typeof def.speedPerTile === 'number' && def.speedPerTile > 0
       ? def.speedPerTile
       : defaultSecondsPerTile(),
+    behaviorState: 'idle',
+    stateLeft: Math.random() * getBehaviorProfile(def.kind).idleMaxS,
     targetPos: null,
-    pauseLeft: 0,
-    retargetLeft: 0,
+    idleTurnLeft: rand(0.5, 2.5),
     // 渲染插值位置：表现层可随帧更新，结算冻结只冻结 pos，不影响这里
     renderPos: { x: pos.x, y: pos.y },
     hp: def.hp,
@@ -186,6 +181,12 @@ function normalizeAngle(a) {
   return v;
 }
 
+/** 区间随机数（[lo, hi)） */
+function rand(lo, hi) {
+  if (hi <= lo) return lo;
+  return lo + Math.random() * (hi - lo);
+}
+
 /** 从 from 转向 to 的最短角差（-π, π] */
 function shortestAngleDelta(from, to) {
   let d = normalizeAngle(to - from);
@@ -225,15 +226,168 @@ export function clampCreatureToFence(gs, creature) {
   return creature;
 }
 
-/** 随机取栅栏内的闲逛目标点（圆心不越界） */
-function pickWanderTarget(gs, creature) {
-  const inner = fenceInner(gs, creatureRadius(creature));
-  for (let i = 0; i < 8; i++) {
-    const x = inner.x0 + Math.random() * Math.max(0, inner.x1 - inner.x0);
-    const y = inner.y0 + Math.random() * Math.max(0, inner.y1 - inner.y0);
-    if (Math.hypot(x - creature.pos.x, y - creature.pos.y) > ARRIVE_EPS * 4) return { x, y };
+// ────────────────────────────────────────────────────────────
+// 走走停停行为状态机（Idle ⇄ Walk）
+//   参数全部来自 src/data/creatureBehavior.js，逻辑层不写死时长/距离。
+// ────────────────────────────────────────────────────────────
+
+/** 生物实际速度（秒/格）；缺字段时用区间中值兜底 */
+function secondsPerTileOf(creature) {
+  const v = creature?.speedPerTile;
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : defaultSecondsPerTile();
+}
+
+/** 行走态判定；旧实例（无 behaviorState）按阶段 2 语义视为行走 */
+function isWalking(creature) {
+  return creature?.behaviorState !== 'idle';
+}
+
+/** 兼容旧实例 / 运行期手工构造的实例：补齐行为字段（不覆盖已有值） */
+function ensureBehaviorState(creature, profile) {
+  if (creature.behaviorState !== 'idle' && creature.behaviorState !== 'walk') {
+    creature.behaviorState = isWalking(creature) && creature.targetPos ? 'walk' : 'idle';
   }
-  return { x: (inner.x0 + inner.x1) / 2, y: (inner.y0 + inner.y1) / 2 };
+  if (typeof creature.stateLeft !== 'number' || !Number.isFinite(creature.stateLeft) || creature.stateLeft < 0) {
+    creature.stateLeft = creature.behaviorState === 'idle'
+      ? rand(profile.idleMinS, profile.idleMaxS)
+      : 0;
+  }
+  if (typeof creature.idleTurnLeft !== 'number' || !Number.isFinite(creature.idleTurnLeft)) {
+    creature.idleTurnLeft = rand(0.5, 2.5);
+  }
+}
+
+/**
+ * 挑一个行走目标点。
+ *   常规：沿当前朝向 ± walkAngleJitter 的方向走 walkDist 距离（保持方向连贯）；
+ *   远走：longWalkChance 命中时全随机方向 + longWalkDist 距离（「偶尔朝随机方向走一段」）。
+ * 目标点夹回栅栏合法区；若贴墙导致走不动，换方向重试。
+ * @returns {{x:number, y:number, dist:number}}
+ */
+function pickWalkTarget(creature, profile, inner) {
+  const isLong = Math.random() < profile.longWalkChance;
+  const dist = isLong
+    ? rand(profile.longWalkDistMin, profile.longWalkDistMax)
+    : rand(profile.walkDistMin, profile.walkDistMax);
+  const baseDir = Number.isFinite(creature.dir) ? creature.dir : rand(0, Math.PI * 2);
+  const angle = isLong
+    ? rand(0, Math.PI * 2)
+    : baseDir + (Math.random() * 2 - 1) * profile.walkAngleJitter;
+
+  const minMove = Math.max(profile.arriveEps, 0.08);
+  let x = clamp(creature.pos.x + Math.cos(angle) * dist, inner.x0, inner.x1);
+  let y = clamp(creature.pos.y + Math.sin(angle) * dist, inner.y0, inner.y1);
+  if (Math.hypot(x - creature.pos.x, y - creature.pos.y) >= minMove) {
+    return { x, y, dist };
+  }
+
+  // 贴边且朝墙外：换方向重试（最多 6 次）
+  for (let i = 0; i < 6; i++) {
+    const a = rand(0, Math.PI * 2);
+    const cx = clamp(creature.pos.x + Math.cos(a) * dist, inner.x0, inner.x1);
+    const cy = clamp(creature.pos.y + Math.sin(a) * dist, inner.y0, inner.y1);
+    if (Math.hypot(cx - creature.pos.x, cy - creature.pos.y) >= minMove) {
+      return { x: cx, y: cy, dist };
+    }
+  }
+  // 极小栅栏：指向合法区中心（仍走不动时由到达判定结束本次行走）
+  return { x: (inner.x0 + inner.x1) / 2, y: (inner.y0 + inner.y1) / 2, dist };
+}
+
+/** 进入长站/短停：真正静止（pos 不动），期间可能小幅转头 */
+function beginIdle(creature, profile) {
+  creature.behaviorState = 'idle';
+  creature.targetPos = null;
+  const isShortPause = Math.random() < profile.shortPauseChance;
+  const duration = isShortPause
+    ? rand(profile.shortPauseMinS, profile.shortPauseMaxS)
+    : rand(profile.idleMinS, profile.idleMaxS);
+  creature.stateLeft = duration;
+  // 静止期间安排一次小幅转头（不产生位移；圆形不渲染朝向，因此无 DOM 更新）
+  creature.idleTurnLeft = rand(0.6, Math.min(3.0, Math.max(0.8, duration)));
+}
+
+/** 进入行走：挑目标点并设置安全超时（撞栅栏边会提前结束） */
+function beginWalk(gs, creature, profile) {
+  const inner = fenceInner(gs, creatureRadius(creature));
+  const pick = pickWalkTarget(creature, profile, inner);
+  creature.behaviorState = 'walk';
+  creature.targetPos = { x: pick.x, y: pick.y };
+  creature.stateLeft = pick.dist * secondsPerTileOf(creature) * 1.5 + 1;
+  creature.idleTurnLeft = 0;
+}
+
+/** Idle 一步：倒计时 + 偶尔小幅转头；归零后出发 */
+function stepIdle(gs, creature, profile, dtSec) {
+  creature.stateLeft -= dtSec;
+
+  if (creature.stateLeft > 0 && profile.idleTurnChance > 0 && profile.idleTurnMaxRad > 0) {
+    creature.idleTurnLeft -= dtSec;
+    if (creature.idleTurnLeft <= 0) {
+      if (Math.random() < profile.idleTurnChance) {
+        const delta = (Math.random() * 2 - 1) * profile.idleTurnMaxRad;
+        creature.dir = normalizeAngle((Number.isFinite(creature.dir) ? creature.dir : 0) + delta);
+      }
+      creature.idleTurnLeft = rand(1.2, 3.2);
+    }
+  }
+
+  if (creature.stateLeft <= 0) beginWalk(gs, creature, profile);
+}
+
+/**
+ * Walk 一步：平滑转向 + 连续积分（速度 = speedPerTile 秒/格）。
+ * 结束条件：到达目标 / 撞栅栏边 / 安全超时 → 回到 Idle。
+ * @returns {boolean} 是否因进入草格而触发地块内容变化
+ */
+function stepWalk(gs, creature, profile, dtSec) {
+  if (!creature.targetPos) {
+    beginWalk(gs, creature, profile);
+    return false;
+  }
+
+  const toTargetX = creature.targetPos.x - creature.pos.x;
+  const toTargetY = creature.targetPos.y - creature.pos.y;
+  if (Math.hypot(toTargetX, toTargetY) <= profile.arriveEps) {
+    beginIdle(creature, profile);
+    return false;
+  }
+
+  // 平滑转向（角速度上限 → 不会瞬间反向抖动）
+  const desired = Math.atan2(toTargetY, toTargetX);
+  creature.dir = turnToward(
+    Number.isFinite(creature.dir) ? creature.dir : desired,
+    desired,
+    profile.maxTurnRate * dtSec,
+  );
+
+  const dist = dtSec / secondsPerTileOf(creature);
+  const inner = fenceInner(gs, creatureRadius(creature));
+  const beforeX = creature.pos.x;
+  const beforeY = creature.pos.y;
+  const rawX = beforeX + Math.cos(creature.dir) * dist;
+  const rawY = beforeY + Math.sin(creature.dir) * dist;
+  creature.pos.x = clamp(rawX, inner.x0, inner.x1);
+  creature.pos.y = clamp(rawY, inner.y0, inner.y1);
+  creature.stateLeft -= dtSec;
+
+  // 撞到栅栏边（本次位移本会越界）→ 原地停下，回到 Idle（下次重新挑方向）
+  const hitWall = rawX < inner.x0 || rawX > inner.x1 || rawY < inner.y0 || rawY > inner.y1;
+
+  let changed = false;
+  if (Math.abs(creature.pos.x - beforeX) + Math.abs(creature.pos.y - beforeY) > 0) {
+    const newTile = syncPrimaryFenceTile(gs, creature);
+    if (newTile && consumeGrassOnEnter(gs, creature, newTile)) changed = true;
+  }
+
+  const arrived = Math.hypot(
+    creature.targetPos.x - creature.pos.x,
+    creature.targetPos.y - creature.pos.y,
+  ) <= profile.arriveEps;
+  if (hitWall || arrived || creature.stateLeft <= 0) {
+    beginIdle(creature, profile);
+  }
+  return changed;
 }
 
 /** 主格兼容缓存：row/col + fence[].creatures（几何归属仍以 pos+radius 为准） */
@@ -274,77 +428,31 @@ function consumeGrassOnEnter(gs, creature, newTile) {
 }
 
 /**
- * 一个逻辑步的连续积分：只推进 pos（判定权威位置）。
+ * 一个逻辑步（200ms）：按 Idle ⇄ Walk 状态机推进 pos（判定权威位置）。
  * 回合 / 技能结算期间由 RealtimeClock 跳过本函数（pos 冻结），渲染位置照常推进。
  * @param {object} gs
  * @param {number} dtSec 逻辑步时长（秒）
  */
 export function stepCreatures(gs, dtSec) {
   if (!gs || !Array.isArray(gs.creatures)) return;
+  const fence = fenceRect(gs);
+  if (fence.x1 <= fence.x0) return;
   let tileChanged = false;
 
   for (const c of gs.creatures) {
     if (!c || c.hp <= 0) continue;
     if (!c.pos || !Number.isFinite(c.pos.x) || !Number.isFinite(c.pos.y)) continue;
-    const fence = fenceRect(gs);
-    const r = creatureRadius(c);
-    if (fence.x1 <= fence.x0) continue;
+    const profile = resolveBehavior(c);
+    const inner = fenceInner(gs, creatureRadius(c));
+    if (inner.x1 < inner.x0 || inner.y1 < inner.y0) continue;
 
-    // 停顿：不移动、不转向
-    if ((c.pauseLeft || 0) > 0) {
-      c.pauseLeft = Math.max(0, c.pauseLeft - dtSec);
+    ensureBehaviorState(c, profile);
+
+    if (c.behaviorState === 'idle') {
+      stepIdle(gs, c, profile, dtSec); // 真正静止：pos 不产生任何位移
       continue;
     }
-
-    // 目标点：到达 / 超时 / 被边界打断后重取
-    c.retargetLeft = (c.retargetLeft || 0) - dtSec;
-    if (!c.targetPos || c.retargetLeft <= 0) {
-      c.targetPos = pickWanderTarget(gs, c);
-      c.retargetLeft = RETARGET_MIN_S + Math.random() * (RETARGET_MAX_S - RETARGET_MIN_S);
-    }
-
-    const dx = c.targetPos.x - c.pos.x;
-    const dy = c.targetPos.y - c.pos.y;
-    if (Math.hypot(dx, dy) < ARRIVE_EPS) {
-      // 到达：偶尔停顿（低概率，避免"每步都在抖"），再取下一个目标
-      if (Math.random() < PAUSE_CHANCE_ON_ARRIVE) {
-        c.pauseLeft = PAUSE_MIN_S + Math.random() * (PAUSE_MAX_S - PAUSE_MIN_S);
-      }
-      c.targetPos = pickWanderTarget(gs, c);
-      c.retargetLeft = RETARGET_MIN_S + Math.random() * (RETARGET_MAX_S - RETARGET_MIN_S);
-    }
-
-    // 平滑转向（角速度上限 → 不会瞬间反向抖动）
-    const desired = Math.atan2(c.targetPos.y - c.pos.y, c.targetPos.x - c.pos.x);
-    c.dir = turnToward(
-      Number.isFinite(c.dir) ? c.dir : desired,
-      desired,
-      MAX_TURN_RATE * dtSec,
-    );
-
-    // 连续位移：秒/格 → 本次逻辑步的格数
-    const speed = typeof c.speedPerTile === 'number' && c.speedPerTile > 0
-      ? c.speedPerTile : defaultSecondsPerTile();
-    const dist = dtSec / speed;
-    const inner = fenceInner(gs, r);
-    const beforeX = c.pos.x;
-    const beforeY = c.pos.y;
-    c.pos.x = clamp(c.pos.x + Math.cos(c.dir) * dist, inner.x0, inner.x1);
-    c.pos.y = clamp(c.pos.y + Math.sin(c.dir) * dist, inner.y0, inner.y1);
-
-    // 越界被裁剪 → 丢弃目标，下一步重新取朝内的目标（靠角速度平滑转向，不瞬间反弹）
-    const hitX = c.pos.x === inner.x0 || c.pos.x === inner.x1;
-    const hitY = c.pos.y === inner.y0 || c.pos.y === inner.y1;
-    if (hitX || hitY) {
-      c.targetPos = null;
-      c.retargetLeft = 0;
-    }
-
-    const moved = Math.abs(c.pos.x - beforeX) + Math.abs(c.pos.y - beforeY);
-    if (moved > 0) {
-      const newTile = syncPrimaryFenceTile(gs, c);
-      if (newTile && consumeGrassOnEnter(gs, c, newTile)) tileChanged = true;
-    }
+    if (stepWalk(gs, c, profile, dtSec)) tileChanged = true;
   }
 
   // ⑤ 一次性广播：只有地块内容真的变化才发（连续移动本身由渲染层逐帧绘制）
@@ -353,7 +461,8 @@ export function stepCreatures(gs, dtSec) {
 
 /**
  * 每帧推进 renderPos（表现层位置，不参与判定）。
- * 与逻辑积分使用同一套速度/方向；结算冻结期间 pos 停下，但本函数照常调用。
+ * - Idle：renderPos 对齐 pos，不发生位移 → CreatureView 不写 DOM（静止不产生无意义更新）；
+ * - Walk：与逻辑积分使用同一套速度/方向；结算冻结期间 pos 停下，但本函数照常推进。
  * @param {object} gs
  * @param {number} dtSec 真实帧时长（秒）
  */
@@ -369,11 +478,15 @@ export function advanceCreatureRendering(gs, dtSec) {
       c.renderPos = { x: c.pos?.x ?? 0, y: c.pos?.y ?? 0 };
       continue;
     }
-    if ((c.pauseLeft || 0) > 0) continue;
+    if (c.behaviorState === 'idle') {
+      if (c.pos && Number.isFinite(c.pos.x) && Number.isFinite(c.pos.y)) {
+        c.renderPos.x = c.pos.x;
+        c.renderPos.y = c.pos.y;
+      }
+      continue;
+    }
     const r = creatureRadius(c);
-    const speed = typeof c.speedPerTile === 'number' && c.speedPerTile > 0
-      ? c.speedPerTile : defaultSecondsPerTile();
-    const dist = stepSec / speed;
+    const dist = stepSec / secondsPerTileOf(c);
     const dir = Number.isFinite(c.dir) ? c.dir : 0;
     const inner = {
       x0: fence.x0 + r, x1: fence.x1 - r,
@@ -586,6 +699,8 @@ function growUpChick(gs, chick) {
     chick.radius = adultDef.radius;
     chick.speedPerTile = adultDef.speedPerTile;
   }
+  // 行为参数按 kind 运行期查表（kind 已变为 chicken），这里重置状态并错峰长站
+  beginIdle(chick, getBehaviorProfile('chicken'));
   // 半径 1/6 → 0.25 后圆可能越界：把圆心夹回栅栏合法区域（遗留问题本轮修掉）
   clampCreatureToFence(gs, chick);
 }

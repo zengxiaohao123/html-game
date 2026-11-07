@@ -66,7 +66,7 @@ function mkMap(size) {
   return gs;
 }
 
-/** 放一只可控生物：直线闲逛参数（目标很远、不重选、不停顿） */
+/** 放一只可控生物：行走态直线参数（目标很远、不结束本次行走、不进入 Idle） */
 function addStraightCreature(gs, { id = 1, kind = 'chicken', pos, dir = 0, speed = null }) {
   const def = CREATURES[kind];
   const c = {
@@ -78,9 +78,10 @@ function addStraightCreature(gs, { id = 1, kind = 'chicken', pos, dir = 0, speed
     radius: def.radius,
     dir,
     speedPerTile: speed ?? def.speedPerTile,
+    behaviorState: 'walk',
+    stateLeft: 1e9, // 安全超时极大：保证整段测试都在行走态
     targetPos: { x: Math.cos(dir) * 100 + pos.x, y: Math.sin(dir) * 100 + pos.y },
-    pauseLeft: 0,
-    retargetLeft: 1e9, // 不触发重选，保证直线积分可测（单位：秒）
+    idleTurnLeft: 0,
     growth: 0, growthMax: 0,
   };
   gs.creatures.push(c);
@@ -195,7 +196,7 @@ head('5. 小鸡长大：半径 1/6 → 0.25 后圆心被夹回合法区');
     renderPos: { x: 1.17, y: 1.17 },
     radius: CREATURES.chick.radius,
     dir: 0, speedPerTile: CREATURES.chick.speedPerTile,
-    targetPos: null, pauseLeft: 0, retargetLeft: 0,
+    behaviorState: 'idle', stateLeft: 5, targetPos: null, idleTurnLeft: 0,
     growth: 10, growthMax: 10, lastFed: true, mood: 0,
   };
   gs.creatures.push(c);
@@ -309,7 +310,10 @@ head('9. 旧档迁移：速度单位 格/秒 → 秒/格、dir 向量 → 弧度
   check(near(c.speedPerTile, 1 / 0.24, 1e-9), '旧 0.24 格/秒 → 4.1667 秒/格', c.speedPerTile);
   check(c.speedPerTile >= 3 && c.speedPerTile <= 6, '迁移后速度仍在 3~6 秒/格', c.speedPerTile);
   check(near(c.dir, Math.PI / 2, 1e-9), '旧 dir 向量 (0,1) → 弧度 π/2', c.dir);
-  check(typeof c.pauseLeft === 'number' && typeof c.retargetLeft === 'number', '补齐 pauseLeft/retargetLeft（秒，非墙钟字段）');
+  check(c.behaviorState === 'idle' || c.behaviorState === 'walk',
+    '补齐行为状态 behaviorState（idle/walk）', c.behaviorState);
+  check(typeof c.stateLeft === 'number' && c.stateLeft >= 0, '补齐 stateLeft（秒，非墙钟字段）', c.stateLeft);
+  check(!('pauseLeft' in c) && !('retargetLeft' in c), '删除阶段 2 旧字段 pauseLeft/retargetLeft');
 }
 
 console.log(`\n结果：${pass} 通过，${fail} 失败`);

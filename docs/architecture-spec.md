@@ -249,7 +249,13 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 - **已合并的旧定时器**：`GameDirector` 的 1000ms 连携轮询、`CreatureSystem` 的 1000/2000ms 生物移动、`LinkSkillUI` 的 200ms 进度计时器全部移除。连携窗口 UI 改为 `clock.onStep()` 订阅；8 秒窗口仍由 `LinkSkillSystem` 用 `Date.now()` 判定，`WINDOW_MS = 8000` 与到期事件（`triggered:false`）不变。
 - **渲染插值**：`advance()` 无论是否结算都调用 `CreatureSystem.advanceCreatureRendering(gs, dt)` 推进 `renderPos`；`MapView` 的 rAF 只读 `renderPos` 画像素，不写逻辑位置。
 - **结算冻结边界**：`runSettlement` 必须同步调用，`settling` 只存在于毫秒级结算栈内；禁止延长到动画、飞字、淡出、面板打开期间。演出各自消费自己的快照，不持有 settle 锁。
-- **运动模型**：随机游走（目标点 + 角速度上限 `2.4 rad/s` 平滑转向，到达后低概率停顿 0.3~0.9 秒），方向为任意弧度；速度 `speedPerTile` 单位为**秒/格**（3~6），只被栅栏边界裁剪（圆心 + 半径不出栅栏），生物之间不碰撞、允许完全重叠。小鸡长大半径 `1/6 → 0.25` 时圆心立即夹回合法区。
+- **运动模型（走走停停状态机）**：每只生物维护 `behaviorState = 'idle' | 'walk'`。
+  - `Idle`：**真正静止**（`pos` 完全不变），时长为长站或短停二选一——走完一次后按 `shortPauseChance` 进短停，否则进长站；静止期间可按 `idleTurnChance` 发生一次小幅转头（`idleTurnMaxRad`），不产生位移。
+  - `Walk`：朝 `targetPos` 走，方向为任意弧度，按 `maxTurnRate`（弧度/秒）平滑转向（不会瞬间反向）；速度 `speedPerTile` 单位为**秒/格**（3~6）；到达 `arriveEps` / 撞栅栏边 / 安全超时后回到 `Idle`。
+  - 目标点：常规走 `walkDistMin~Max` 格、方向沿当前朝向 ± `walkAngleJitter`；按 `longWalkChance` 偶尔换成全随机方向的 `longWalkDistMin~Max` 长走。
+  - **所有时长/距离/转向/概率参数集中在 `src/data/creatureBehavior.js` 的 `BEHAVIOR_PROFILES` 表**（小鸡/成鸡/史莱姆三套预设 + 通用默认），逻辑层不写死数值；实例可用 `behaviorOverride` 临时覆盖（测试/特殊个体）。
+  - 只被栅栏边界裁剪（圆心 + 半径不出栅栏），生物之间不碰撞、允许完全重叠。小鸡长大半径 `1/6 → 0.25` 时圆心立即夹回合法区并重置为 `Idle`。
+  - **静止不刷 DOM**：`Idle` 时 `renderPos` 对齐 `pos`，`CreatureView` 缓存上次 `transform` 字符串，位置未变则不写样式（`advanceCreatureRendering` 对 Idle 也直接跳过位移）。
 
 ---
 
@@ -302,8 +308,8 @@ export const createInitialState = () => ({
                                //   renderPos: {x, y},                 // 渲染插值位置（表现层写，不参与判定）
                                //   dir,                               // 朝向弧度（任意方向，非四方向）
                                //   speedPerTile,                      // 秒/格，区间 3~6（小鸡 3.0 / 鸡 4.2 / 史莱姆 5.0）
-                               //   targetPos: null,                   // 闲逛目标点（逻辑坐标）
-                               //   pauseLeft, retargetLeft }          // 停顿/重取目标的剩余秒数（非墙钟，可入日初基线）
+                               //   behaviorState, stateLeft,          // 'idle' | 'walk'；当前状态剩余秒数
+                               //   targetPos, idleTurnLeft }          // 行走目标点 / 下次小幅转头倒计时（秒，非墙钟）
                                // row/col 仅为主格兼容缓存；几何归属以 pos+radius 计算
   
   // === 背包 ===
