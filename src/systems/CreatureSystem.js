@@ -706,22 +706,43 @@ function growUpChick(gs, chick) {
 }
 
 /**
- * 超载真实伤害（§13.2，2026-11-04 裁决）：对超容量的生物，逐只按
- * 「该生物 100% 基础攻击力」累计真实伤害。
- * 基础攻击力 = getCreatureDef(kind).atk（面板显示数值），不受敌人临时强化影响。
- * 超容量个体取该类生物中最后 N 只（最近导致超载者，spawnCreature 追加在末尾）。
+ * 超载真实伤害（§13.2，2026-11-07 裁定）：某类型超容量并进入超载期后，
+ * **该类型的所有存活生物**各自结算一次真实伤害，每只 = 100% 该生物**当前攻击力**。
+ * 当前攻击力取实例运行期 `c.atk`（含增益 / 减益后的瞬时值），不是种族面板基础值。
  * @param {GameState} gs
  * @param {'friendly'|'danger'|'extreme'} category
- * @param {number} excess 超出容量的数量
- * @returns {number} 应扣的真实伤害总量
+ * @returns {{creatureId:string, amount:number}[]} 逐只结算条目（顺序稳定，便于独立结算与测试）
  */
-function overloadBaseAtkDamage(gs, category, excess) {
-  if (excess <= 0) return 0;
-  const list = gs.creatures.filter((c) => c && c.hp > 0 && c.category === category);
-  const picks = list.slice(Math.max(0, list.length - excess));
+function overloadTrueDamageEntries(gs, category) {
+  return gs.creatures
+    .filter((c) => c && c.hp > 0 && c.category === category)
+    .map((c) => {
+      const atk = typeof c.atk === 'number' ? c.atk : (getCreatureDef(c.kind)?.atk || 0);
+      return { creatureId: c.id, amount: Math.max(0, atk) };
+    });
+}
+
+/**
+ * 逐只独立结算（每只一条真伤事件）；玩家被扣到 0 后停止后续结算，
+ * 避免多只连续触发同一套死亡惩罚。
+ * @returns {{count:number, total:number}}
+ */
+export function applyOverloadTrueDamage(gs, category, reason) {
+  const entries = overloadTrueDamageEntries(gs, category);
+  let count = 0;
   let total = 0;
-  for (const c of picks) total += Math.max(0, getCreatureDef(c.kind)?.atk || 0);
-  return total;
+  for (const e of entries) {
+    if (e.amount <= 0) continue;
+    const lethal = gs.player.hp <= e.amount;
+    CombatSystem.applyTrueDamageToPlayer(gs, gs.player, e.amount, {
+      reason,
+      creatureId: e.creatureId,
+    });
+    count += 1;
+    total += e.amount;
+    if (lethal) break;
+  }
+  return { count, total };
 }
 
 function updateCapacityAndPunish(gs) {
@@ -761,12 +782,10 @@ function updateCapacityAndPunish(gs) {
     if (cap.dangerOverdue >= 2) {
       devLog.warn('[CreatureSystem] danger OVERLOAD punishment triggered');
       cap.dangerOverloaded = true;
-      // §13.2（2026-11-04 裁决）：对每只超容量生物按「100% 基础攻击力」扣真实伤害
-      //   基础攻击力 = 面板显示数值（getCreatureDef(kind).atk），不受敌人临时强化影响
-      const loss = overloadBaseAtkDamage(gs, 'danger', dangerCount - cap.danger);
-      if (loss > 0) {
-        CombatSystem.applyTrueDamageToPlayer(gs, gs.player, loss, { reason: 'danger_overload' });
-        EventBus.emit(GE.TOAST_SHOW, { text: `⚠️ 危险生物超载！每日开始按超容量生物基础攻击力 100% 扣真实伤害（本次 -${loss} ❤️）`, duration: 2500 });
+      // §13.2（2026-11-07 裁定）：该类型**所有生物**逐只按「100% 当前攻击力」扣真实伤害
+      const { count, total } = applyOverloadTrueDamage(gs, 'danger', 'danger_overload');
+      if (total > 0) {
+        EventBus.emit(GE.TOAST_SHOW, { text: `⚠️ 危险生物超载！每日开始 ${count} 只生物各按当前攻击力 100% 扣真实伤害（本次 -${total} ❤️）`, duration: 2500 });
       }
     }
   } else {
@@ -779,9 +798,8 @@ function updateCapacityAndPunish(gs) {
     cap.extremeOverdue += 1;
     if (cap.extremeOverdue >= 2) {
       cap.extremeOverloaded = true;
-      // §13.2（2026-11-04 裁决）：真伤部分同样按「100% 基础攻击力」口径
-      const loss = overloadBaseAtkDamage(gs, 'extreme', extremeCount - cap.extreme);
-      if (loss > 0) CombatSystem.applyTrueDamageToPlayer(gs, gs.player, loss, { reason: 'extreme_overload' });
+      // §13.2（2026-11-07 裁定）：真伤部分同样按「该类型所有生物 × 100% 当前攻击力」口径
+      applyOverloadTrueDamage(gs, 'extreme', 'extreme_overload');
 
       // ── Agent 3：高危超载 → 拆 2 个地块内容（除了永恒设施 facility_home） ──
       const nonHomeTiles = (gs.map.outerTiles || []).filter(

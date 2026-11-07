@@ -3,7 +3,7 @@
 // 覆盖（逐条对应 2026-11-04 裁决）：
 //   ① 鸡蛋储存满 10 → 产出直接丢弃（不进背包/不进储存，记日志）
 //   ① 优质蛋与鸡蛋共享同一储存额度（合计 10），收获时两物分别占格
-//   ② 超载惩罚 = 超容量生物「100% 基础攻击力」真实伤害（取面板值，不受临时强化影响）
+//   ② 超载惩罚 = 该类型全部生物逐只按「100% 当前攻击力」真实伤害（含增益 / 减益）
 //   ③ 鸡舍「投放饲料」真实 UI 入口（逻辑 + InfoPanel 入口存在性）
 //   ④ 狩猎祝福按地块记账（本格下次狩猎生效，不影响其他狩猎格）
 //   ⑤ 巴士站轮子不限次数（每次进入 +1）
@@ -105,7 +105,7 @@ head('裁决① 优质蛋与鸡蛋共享同一储存额度（合计 10）');
 }
 
 // ════════════════════════════════════════════════════════════
-head('裁决② 超载真伤 = 超容量生物 100% 基础攻击力（面板值，不受临时强化影响）');
+head('裁决② 超载真伤 = 该类型全部生物 × 100% 当前攻击力（逐只独立结算）');
 // ════════════════════════════════════════════════════════════
 {
   gs.creatures = [];
@@ -115,8 +115,8 @@ head('裁决② 超载真伤 = 超容量生物 100% 基础攻击力（面板值�
   for (let i = 0; i < 5; i++) CreatureSystem.spawnCreature(gs, 'slime_fire', { facilityId: 'resource_hunt', sourceTileIdx: null });
   assert(gs.creatures.length === 5, '5 只危险生物已生成', gs.creatures.length);
   gs.map.fence = [gs.map.fence[0]]; // 容量回到 危险 4
-  // 模拟敌人临时强化：实例 atk 被改写（基础攻击力仍应取面板值）
-  gs.creatures[4].atk = 999;
+  // 模拟增益：最后一只实例当前攻击力被改写为 25（按当前值结算，不是种族面板 10）
+  gs.creatures[4].atk = 25;
   gs.player.maxHp = 1000; gs.player.hp = 1000;
   gs.capacity = gs.capacity || {};
   gs.capacity.dangerOverdue = 2; // 警告期已满 → 本次 dailyTick 触发惩罚
@@ -125,9 +125,32 @@ head('裁决② 超载真伤 = 超容量生物 100% 基础攻击力（面板值�
   Math.random = origRandom;
   const baseAtk = getCreatureDef('slime_fire').atk;
   assert(baseAtk === 10, '面板基础攻击力 = 10（creatures.js 定义）', baseAtk);
-  assert(gs.player.hp === 1000 - baseAtk,
-    '超载真伤 = 超容量 1 只 × 100% 基础攻击力（-10；而非旧 10% 生命或实例临时值 999）', gs.player.hp);
+  assert(gs.player.hp === 1000 - (baseAtk * 4 + 25),
+    '超载真伤 = 该类型全部 5 只各自当前攻击力（4×10 + 增益后 25 = -65；旧口径只会扣超出容量的 1 只 -10）', gs.player.hp);
   assert(gs.capacity.dangerOverloaded === true, 'dangerOverloaded 已置位');
+}
+{
+  // 同类型 3 只、容量 1（超 2 只）→ 3 次独立结算（不是只扣超出的 2 只）
+  gs.creatures = [];
+  for (let i = 0; i < 3; i++) CreatureSystem.spawnCreature(gs, 'slime_fire', { facilityId: 'resource_hunt', sourceTileIdx: null });
+  gs.capacity = gs.capacity || {};
+  gs.capacity.danger = 1; // 容量 1（本用例直接验证结算口径，不经过 dailyTick 的容量重算）
+  gs.player.maxHp = 1000; gs.player.hp = 1000;
+  const r3 = CreatureSystem.applyOverloadTrueDamage(gs, 'danger', 'danger_overload');
+  assert(r3.count === 3 && r3.total === 30, '同类型 3 只、容量 1 → 结算 3 次、合计 30', r3);
+  assert(gs.player.hp === 970, '3 只全部各扣 100% 当前攻击力（-30；旧口径只扣超出的 2 只 -20）', gs.player.hp);
+}
+{
+  // 当前攻击力被增益 / 减益后按当前值结算（15 增益 +5、5 减益 -5、20 强化）
+  gs.creatures = [];
+  for (let i = 0; i < 3; i++) CreatureSystem.spawnCreature(gs, 'slime_fire', { facilityId: 'resource_hunt', sourceTileIdx: null });
+  gs.creatures[0].atk = 15;
+  gs.creatures[1].atk = 5;
+  gs.creatures[2].atk = 20;
+  gs.player.maxHp = 1000; gs.player.hp = 1000;
+  const rb = CreatureSystem.applyOverloadTrueDamage(gs, 'danger', 'danger_overload');
+  assert(rb.count === 3 && rb.total === 40, '增益 / 减益后逐只按当前攻击力结算（15+5+20 = 40）', rb);
+  assert(gs.player.hp === 960, '当前攻击力生效（若按面板 10 结算则应为 -30）', gs.player.hp);
 }
 
 // ════════════════════════════════════════════════════════════
