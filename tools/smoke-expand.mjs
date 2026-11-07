@@ -154,14 +154,11 @@ head('X2 I 型：长度（列数）+1');
   const ring = new Set(ringXY(d).map((p) => `${p.x},${p.y}`));
   check(fenceXY.every((k) => !ring.has(k)), '栅栏格与外圈格无重叠（无幽灵格）');
 
-  // 基线也同步扩建（读档可恢复）
+  // 扩建不写日初基线：当天回档时尺寸与背包一起复原
   const base = DayBaseline.getCurrent();
-  check(base.map.cols === 4 && base.map.rows === 3, '日初基线同步为 3×4', dimsOf(base));
-  check(base.player.x === 3, '基线内角色位置同步重映射', base.player.x);
-  check(base.map.outerTiles[2].terrain === gs.map.outerTiles[2].terrain
-    && base.map.outerTiles[2].terrainAmount === gs.map.outerTiles[2].terrainAmount,
-    '基线新格地形与实时地图一致（不出现两次掷骰分叉）',
-    `${base.map.outerTiles[2].terrain} vs ${gs.map.outerTiles[2].terrain}`);
+  check(dimsOf(base).cols === 3 && dimsOf(base).rows === 3, '日初基线保持 3×3（扩建当天内不落基线）', dimsOf(base));
+  check(base.player.x === 2, '基线内角色位置保持日初值', base.player.x);
+  check(InventorySystem.countItem(base, ID_LEN) === 3, '基线内 I 型数量保持 3', InventorySystem.countItem(base, ID_LEN));
 }
 
 head('X3 走廊/邻居在新尺寸下不 wrap、不越界');
@@ -206,9 +203,10 @@ head('X4 II 型：宽度（行数）+1');
   check(gs.map.fence[1 * d.fenceCols + 0].creatures.length === 1, '生物缓存迁到新栅栏格');
   verifyGeometry(gs, 'II型扩建后');
 
+  // 扩建不写日初基线：基线仍是日初的 3×4（此例日初就是 3×4）
   const base = DayBaseline.getCurrent();
-  check(base.map.rows === 4 && base.map.cols === 4, '基线同步为 4×4', dimsOf(base));
-  check(Math.abs(base.creatures[0].pos.y - 2.5) < 1e-9, '基线内生物位置同步');
+  check(base.map.rows === 3 && base.map.cols === 4, '日初基线保持 3×4（II 型当天内不落基线）', dimsOf(base));
+  check(Math.abs(base.creatures[0].pos.y - 1.5) < 1e-9, '基线内生物位置保持日初值', base.creatures[0].pos);
 }
 
 head('X5 多次扩建与上限边界');
@@ -236,18 +234,33 @@ head('X6 存读档往返');
   useItem(gs, ID_LEN);                 // 3×5
   useItem(gs, ID_WID);                 // 4×5
 
-  const base = DayBaseline.getCurrent();
-  check(DayBaseline.assertIdempotent(base) === true, '基线幂等');
-  check(Storage.save(3, base), '写入槽位 3');
-  const loaded = migrateGS(Storage.load(3));
+  // A. 当天存档写的是日初基线 → 读档回到当天开始时（3×3、道具复原）
+  const dayBase = DayBaseline.getCurrent();
+  check(DayBaseline.assertIdempotent(dayBase) === true, '当天基线幂等');
+  check(Storage.save(3, dayBase), '写入槽位 3（当天基线）');
+  const rolled = migrateGS(Storage.load(3));
+  const rd = dimsOf(rolled);
+  check(rd.rows === 3 && rd.cols === 3, '当天存档读档回到 3×3', rd);
+  check(InventorySystem.countItem(rolled, ID_LEN) === 3 && InventorySystem.countItem(rolled, ID_WID) === 3,
+    '当天存档读档扩建道具复原');
+  verifyGeometry(rolled, '当天回档后');
+  Storage.clearSlot(3);
+
+  // B. 跨日采集后存档 → 尺寸保留 4×5、道具按已用数量入档
+  const nextBase = DayBaseline.capture(gs); // 模拟睡觉/跨日的日初采集点
+  check(Storage.save(5, nextBase), '写入槽位 5（跨日基线）');
+  const loaded = migrateGS(Storage.load(5));
   const d = dimsOf(loaded);
-  check(d.rows === 4 && d.cols === 5, '读档恢复 4×5', d);
+  check(d.rows === 4 && d.cols === 5, '跨日存档读档恢复 4×5', d);
   check(loaded.map.outerTiles.length === 2 * 4 + 2 * 5 - 4, '读档外圈数量正确');
   check(loaded.map.fence.length === 2 * 3, '读档栅栏数量正确');
+  check(InventorySystem.countItem(loaded, ID_LEN) === 1 && InventorySystem.countItem(loaded, ID_WID) === 2,
+    '跨日存档读档道具数量为已用后数量');
   verifyGeometry(loaded, '读档后');
   const tentIdx = loaded.map.outerTiles.findIndex((t) => t.contentId === 'facility_tent');
   check(tentIdx >= 0, '扩建搬运的设施在读档后仍存在');
   check(loaded.player.x === tentIdx, '角色位置与设施地块一致（随地块移动）', { player: loaded.player.x, tentIdx });
+  Storage.clearSlot(5);
 }
 
 head('X7 旧存档兼容（缺 rows/cols）');
@@ -287,6 +300,32 @@ head('X8 背包/文本');
   const starterSrc = readFileSync(new URL('../src/data/starterPack.js', import.meta.url), 'utf8');
   check(starterSrc.includes('item_farm_expand_length') && starterSrc.includes('item_farm_expand_width'),
     '测试初始物品写在 starterPack 数据表中');
+}
+
+head('X9 回档/跨日：扩建受日初基线约束');
+{
+  const gs = createInitialState();
+  DayBaseline.setCurrent(DayBaseline.capture(gs)); // 当天日初
+  useItem(gs, ID_LEN);
+  const after = dimsOf(gs);
+  check(after.cols === 4 && after.rows === 3, '当天扩建生效 3×4', after);
+  check(InventorySystem.countItem(gs, ID_LEN) === 2, '当天用掉 1 个 I 型，剩 2', InventorySystem.countItem(gs, ID_LEN));
+
+  // 当天回档：地图尺寸与背包一起回到日初
+  const rolled = DayBaseline.install(DayBaseline.getCurrent());
+  const rd = dimsOf(rolled);
+  check(rd.cols === 3 && rd.rows === 3, '回档后尺寸回到 3×3', rd);
+  check(rolled.map.fence.length === 1, '回档后栅栏回到 1×1', rolled.map.fence.length);
+  check(InventorySystem.countItem(rolled, ID_LEN) === 3, '回档后 I 型恢复 3 个', InventorySystem.countItem(rolled, ID_LEN));
+  verifyGeometry(rolled, '回档后');
+
+  // 正常睡到第二天：日初采集点（SleepSystem.sleep）按实时状态采集 → 尺寸保留
+  DayBaseline.setCurrent(DayBaseline.capture(gs));
+  const next = DayBaseline.install(DayBaseline.getCurrent());
+  const nd = dimsOf(next);
+  check(nd.cols === 4 && nd.rows === 3, '跨日后尺寸保留 3×4', nd);
+  check(InventorySystem.countItem(next, ID_LEN) === 2, '跨日后 I 型为 2 个', InventorySystem.countItem(next, ID_LEN));
+  verifyGeometry(next, '跨日后');
 }
 
 console.log(`\n════ 扩建冒烟：${pass} 通过 / ${fail} 失败 ════`);

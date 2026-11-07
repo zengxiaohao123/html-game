@@ -2532,7 +2532,7 @@ export const ITEMS = {
   "emoji": "📐",
   "icon": null,
   "tier1": "道具",
-  "tier2": "基础道具",
+  "tier2": "消耗道具",
   "tier3": "使用型",
   "hiddenTags": [],
   "owner": null,

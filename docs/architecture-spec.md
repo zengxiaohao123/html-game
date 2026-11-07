@@ -250,7 +250,7 @@ expandMap(gs, axis)          // 在 expandMapInPlace 之上同步日初基线并
 - **内容保留与索引重映射**：重建 `map.outerTiles` 时按新的环形顺序排布，并产出 `idxMap`（旧外圈 idx → 新外圈 idx）；同时重映射 `player` 坐标、`creatures[].pos/renderPos/targetPos`、`fence[].creatures` 缓存、`linkSkillCounters` / `linkSkillCooldowns` 的 `tileIdx|skillId` 键、连携队列的 `tileIdx`/`key`、`uiState.selectedTileIdx`。地块 `tile.idx` 全部改写为新 idx。
 - **地形**：新外圈格走 §4 地形权重（50/40/10）掷骰并写入 `elementAmount`；新栅栏格地形为 `terrain_none`。
 - **无上限、无消耗**：不设扩建次数硬上限（受地图可容纳格数与性能约束），不消耗行动力/体力、无冷却。物品数量扣减由 `UseItemSystem` 的通用道具扣减逻辑完成。
-- **存档关系**：扩建同时写入 `DayBaseline.getCurrent()` 的 `map` 部分并 `setCurrent`，视为世界永久变化——即使当天结束回滚，尺寸仍保留；其余日内变化照旧回滚。`map.rows/cols/fenceRows/fenceCols` 随存档序列化，读档后正确恢复。
+- **存档关系**：扩建属于「当天内的世界变化」，`expandMap` **不写日初基线**；只在正常采集点（`SleepSystem.sleep` 末尾 `DayBaseline.capture`）随实时状态入档。跨日后尺寸保留、道具数量按已用数量入档；当天回档（读档回本日开始时）时尺寸与扩建道具一起复原。`map.rows/cols/fenceRows/fenceCols` 随存档序列化，读档后正确恢复。
 - **UI 重排**：`MapView` 订阅 `GE.MAP_EXPANDED`，重新按新 `rows/cols` 计算 tile 像素、重画所有地块/栅栏/角色/生物层，不产生幽灵格或错位。
 
 ### 2.5 RealtimeClock（统一实时时钟 / 渲染插值）

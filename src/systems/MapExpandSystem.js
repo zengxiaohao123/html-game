@@ -20,8 +20,8 @@
 //        行扩建：新增一行栅栏插在顶行之下；原栅栏内容整体下移 1 行。
 //   3. 外圈下标会整体变化 → 玩家位置、连携技实例键（tileIdx|skillId）、连携队列、
 //      UI 选中格全部重映射；栅栏内生物行扩建时 pos.y +1（世界坐标原点随顶行上移）。
-//   4. 扩建是世界永久变更：立即写入当日日初基线（其余日内变化仍按日初口径），
-//      这样手动/自动存档、读档都能恢复扩建后的尺寸。
+//   4. 扩建是「当天内的世界变化」：不写日初基线，只在睡觉/跨日采集点随实时状态入档；
+//      当天回档时地图尺寸与扩建道具一起回到本日开始时。
 //   5. 新外圈地块按 §4 的 50/40/10 抽取地形；新栅栏地块保持「无地形」，与开局一致。
 
 import { EventBus } from '../core/EventBus.js';
@@ -29,8 +29,7 @@ import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { FENCE_ORIGIN_X, FENCE_ORIGIN_Y } from '../core/Geometry.js';
 import { rollSpawnTerrain, getTerrain } from '../data/terrains.js';
-import { outerIdxToXY, outerXYToIdx, mapDimsOf } from '../core/Distance.js';
-import { DayBaseline } from '../state/DayBaseline.js';
+import { outerIdxToXY, mapDimsOf } from '../core/Distance.js';
 
 export const EXPAND_AXIS = {
   LENGTH: 'length',   // I 型：列数 +1
@@ -88,7 +87,7 @@ function remapKeyedObject(src, idxMap) {
  * 对单个 gs / 基线对象执行扩建（原地修改）
  * @param {object} gs 目标状态（含 map / player / creatures / uiState / linkSkill*）
  * @param {'length'|'width'} axis
- * @returns {{ok:boolean, before:{rows:number,cols:number}, after:{rows:number,cols:number}, newOuterIdxs:number[], playerFollowed:boolean}}
+ * @returns {{ok:boolean, before:{rows:number,cols:number}, after:{rows:number,cols:number}, playerFollowed:boolean}}
  */
 export function expandMapInPlace(gs, axis) {
   const map = gs?.map;
@@ -117,7 +116,6 @@ export function expandMapInPlace(gs, axis) {
 
   // ── 2. 重建外圈（按新 idx 顺序）──
   const newOuter = [];
-  const newOuterIdxs = [];  // 本次新建的外圈格下标（供基线与实时地图对齐地形）
   const idxMap = new Map(); // 旧 envelope idx → 新 idx
   const totalNew = 2 * newRows + 2 * newCols - 4;
   for (let idx = 0; idx < totalNew; idx++) {
@@ -140,7 +138,6 @@ export function expandMapInPlace(gs, axis) {
       tile.idx = idx;
     } else {
       tile = createOuterTile(idx);
-      newOuterIdxs.push(idx);
     }
     newOuter.push(tile);
   }
@@ -246,38 +243,20 @@ export function expandMapInPlace(gs, axis) {
     axis,
     before: { rows: oldRows, cols: oldCols },
     after: { rows: newRows, cols: newCols },
-    newOuterIdxs,
     playerFollowed,
   };
 }
 
 /**
- * 使用扩建道具：扩建实时地图 + 同步当日日初基线 + 广播 MAP_EXPANDED
+ * 使用扩建道具：扩建实时地图 + 广播 MAP_EXPANDED
+ * 扩建属于「当天内的世界变化」：不写日初基线，日初（睡觉/跨日）自然采集后入档；
+ * 当天回档时地图尺寸与背包数量一起回到日初状态。
  * @param {object} gs
  * @param {'length'|'width'} axis
  */
 export function expandMap(gs, axis) {
   const result = expandMapInPlace(gs, axis);
   if (!result.ok) return result;
-
-  // 扩建是世界永久变更：立即写入当日日初基线，保证存读档恢复新尺寸。
-  // 当日其它变化（移动、放置、消耗）仍按日初口径，不在这里回写。
-  // 基线跑同一套结构变换，但新外圈格的地形以实时地图为准（两次掷骰不一致会让基线/实时分叉）。
-  const base = DayBaseline.getCurrent();
-  if (base && base.map) {
-    const baseResult = expandMapInPlace(base, axis);
-    if (baseResult.ok) {
-      for (const idx of result.newOuterIdxs) {
-        const liveTile = gs.map.outerTiles[idx];
-        const baseTile = base.map.outerTiles[idx];
-        if (liveTile && baseTile) {
-          baseTile.terrain = liveTile.terrain;
-          baseTile.terrainAmount = liveTile.terrainAmount;
-        }
-      }
-      DayBaseline.setCurrent(base);
-    }
-  }
 
   EventBus.emit(GE.MAP_EXPANDED, {
     gs, axis, rows: result.after.rows, cols: result.after.cols,
