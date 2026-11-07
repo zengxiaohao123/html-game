@@ -2445,6 +2445,157 @@ head_('第 15 批：同键二次按下 = ESC（专属快捷键页面）');
 }
 
 // ════════════════════════════════════════════════════════════
+head_('§16.23 放置型道具（陷阱 / 艾草熏香）拖拽放置：与地块内容同手感，3 条路径等价');
+{
+  const { useItem } = await import('../src/systems/UseItemSystem.js');
+  const { ItemTargeting } = await import('../src/systems/ItemTargeting.js');
+  const { Distance } = await import('../src/core/Distance.js');
+
+  // 干净起点
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+  if (gs.buildMode) BuildSystem.exitBuildMode(gs);
+  hideAllDialogs();
+  if (ItemTargeting.isActive()) ItemTargeting.cancel('smoke-reset');
+
+  const xyOf = (idx) => {
+    for (let y = 0; y < gs.map.size; y++) {
+      for (let x = 0; x < gs.map.size; x++) {
+        if (Distance.outerXYToIdx(gs.map, x, y) === idx) return [x, y];
+      }
+    }
+    return null;
+  };
+  const dropAt = (idx, itemId) => {
+    const [x, y] = xyOf(idx);
+    const px = mapView.tileSize * mapView._scale;
+    mapView.root.dispatchEvent({
+      type: 'drop', preventDefault() {},
+      clientX: x * px + 10, clientY: y * px + 10,
+      dataTransfer: { getData: () => itemId },
+    });
+  };
+  const placedOf = (idx, itemId) => (gs.map.outerTiles[idx].contentState?.placedItems || [])
+    .filter((p) => p.itemId === itemId);
+  const flagsOf = (idx, itemId) => findAll(mapView.tileEls.get(idx), (el) =>
+    el.getAttribute && el.getAttribute('data-item-id') === itemId
+    && el._classes && el._classes.has('tile-flag'));
+
+  const tileA = 3;
+  const tileB = 4;
+  // 记录原状态，用例结束还原，避免影响后续批次
+  const savedA = { ...(gs.map.outerTiles[tileA].contentState || {}) };
+  const savedB = { ...(gs.map.outerTiles[tileB].contentState || {}) };
+  const savedBStates = (gs.map.outerTiles[tileB].states || []).slice();
+  gs.map.outerTiles[tileA].contentState = {};
+  gs.map.outerTiles[tileB].contentState = {};
+  // 目标格先带一个状态，保证信息区「状态」tab 在放置前就存在（否则放置前后 tab 集合变化，
+  // 无法证明“不操作也刷新”）。放置后再断言该 tab 内出现新道具。
+  gs.map.outerTiles[tileB].states = [{ type: 'slime' }];
+
+  // ── 路径 1：背包拖拽 → 地块（新增能力，与地块内容同一手感）──
+  InventorySystem.addItem(gs, 'item_trap', 1);
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'inventory' });
+  inventoryPanel.tabBtns[0].click(); // 总览 tab：确保道具格已渲染
+  const trapSlot = findAll(inventoryPanel.mask, (el) => el.getAttribute
+    && el.getAttribute('draggable') === 'true' && (el.title || '').includes('陷阱'));
+  assert(trapSlot.length >= 1, '路径1：陷阱在背包中可拖拽（与地块内容一致）');
+  const beforeTrap = InventorySystem.countItem(gs, 'item_trap');
+  let dtTrap = {};
+  trapSlot[0].dispatchEvent({
+    type: 'dragstart', preventDefault() {},
+    dataTransfer: { setData: (k, v) => { dtTrap[k] = v; }, effectAllowed: '' },
+  });
+  assert(dtTrap['text/plain'] === 'item_trap', '路径1：拖拽携带道具 id');
+  assert(ItemTargeting.isActive() && ItemTargeting.currentItem() === 'item_trap',
+    '路径1：拖拽进入既有指向模式（复用可放置高亮 / ESC 取消，不另做视觉）');
+  dropAt(tileA, 'item_trap');
+  assert(placedOf(tileA, 'item_trap').length === 1, '路径1：拖放到地块 → 放置成功');
+  assert(InventorySystem.countItem(gs, 'item_trap') === beforeTrap,
+    '路径1：放置型道具放下后仍留在背包（A-11，不消耗）');
+  assert(flagsOf(tileA, 'item_trap').length === 1,
+    '路径1：放置后地块标志层立即出现（不移动、不做其它操作）');
+  assert(!ItemTargeting.isActive(), '路径1：放置成功后退出指向模式（高亮清除）');
+  trapSlot[0].dispatchEvent({ type: 'dragend' });
+  await new Promise((r) => setTimeout(r, 20));
+
+  // ── 路径 2 / 3：背包点选 → 功能选项「选择地块放置」→ 点地块 ──
+  InventorySystem.addItem(gs, 'item_incense', 1);
+  EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'inventory' });
+  inventoryPanel.tabBtns[0].click(); // 总览 tab
+  const incenseSlot = findAll(inventoryPanel.mask, (el) => el.title && el.title.includes('艾草熏香'));
+  assert(incenseSlot.length >= 1, '路径2：艾草熏香在背包中存在');
+  incenseSlot[0].dispatchEvent({ type: 'click', target: incenseSlot[0], preventDefault() {}, stopPropagation() {} });
+  const funcBtn = buttonsWithText(inventoryPanel.actionEl, '选择地块放置')[0];
+  assert(!!funcBtn, '路径3：背包「功能选项」提供选择地块放置入口');
+  // 先把信息区停在目标格「状态」tab：放置后不得要求额外操作，断言其同帧刷新
+  infoPanel.selectTile(tileB);
+  const stateTab = buttonsWithText(infoPanel.root, '状态')[0];
+  if (stateTab) stateTab.click();
+  const beforeIncense = InventorySystem.countItem(gs, 'item_incense');
+  funcBtn.click();
+  assert(ItemTargeting.isActive() && ItemTargeting.currentItem() === 'item_incense',
+    '路径2：背包点选 → 自动关闭背包并进入指向模式');
+  mapView.tileEls.get(tileB).dispatchEvent({ type: 'click', target: mapView.tileEls.get(tileB), preventDefault() {}, stopPropagation() {} });
+  assert(placedOf(tileB, 'item_incense').length === 1, '路径2：点目标地块 → 放置成功');
+  assert(InventorySystem.countItem(gs, 'item_incense') === beforeIncense,
+    '路径2：放置型道具不消耗（与陷阱同规则）');
+  assert(flagsOf(tileB, 'item_incense').length === 1,
+    '路径2：标志层立即刷新');
+  assert(hasText(infoPanel.bodyWrap, '艾草熏香'),
+    '路径2/3：信息区状态 tab 立即显示新放置的道具（无需再操作）');
+
+  // ── 非法落点：同名道具已存在 → 拒绝、不新增、不消耗 ──
+  {
+    const toasts = [];
+    const onToast = (p) => toasts.push(String(p.text || ''));
+    EventBus.on(GE.TOAST_SHOW, onToast);
+    const before = InventorySystem.countItem(gs, 'item_trap');
+    const beforePlaced = placedOf(tileA, 'item_trap').length;
+    dropAt(tileA, 'item_trap');
+    EventBus.off(GE.TOAST_SHOW, onToast);
+    assert(placedOf(tileA, 'item_trap').length === beforePlaced,
+      '非法落点：同格重复放置被拒绝（不新增）');
+    assert(InventorySystem.countItem(gs, 'item_trap') === before,
+      '非法落点：被拒绝时不消耗道具');
+    assert(toasts.some((t) => t.includes('不能使用该道具')),
+      '非法落点：失败提示与点选路径一致');
+  }
+
+  // ── 非法落点：栅栏内（非外圈）→ 拒绝、不消耗 ──
+  {
+    const toasts = [];
+    const onToast = (p) => toasts.push(String(p.text || ''));
+    EventBus.on(GE.TOAST_SHOW, onToast);
+    const before = InventorySystem.countItem(gs, 'item_trap');
+    // 地图中心格 = 栅栏内，outerXYToIdx 返回 null
+    const center = Math.floor(gs.map.size / 2);
+    const px = mapView.tileSize * mapView._scale;
+    mapView.root.dispatchEvent({
+      type: 'drop', preventDefault() {},
+      clientX: center * px + 10, clientY: center * px + 10,
+      dataTransfer: { getData: () => 'item_trap' },
+    });
+    EventBus.off(GE.TOAST_SHOW, onToast);
+    assert(InventorySystem.countItem(gs, 'item_trap') === before,
+      '非法落点：栅栏内被拒绝且不消耗道具');
+    assert(toasts.some((t) => t.includes('只能放在外圈地块上')),
+      '非法落点：栅栏内失败提示与地块内容拖拽一致');
+  }
+
+  // 收尾还原
+  gs.map.outerTiles[tileA].contentState = savedA;
+  gs.map.outerTiles[tileB].contentState = savedB;
+  gs.map.outerTiles[tileB].states = savedBStates;
+  EventBus.emit(GE.TILE_CONTENT_CHANGED, { tileIdx: tileA });
+  EventBus.emit(GE.TILE_CONTENT_CHANGED, { tileIdx: tileB });
+  InventorySystem.removeItem(gs, 'item_trap', 1);
+  InventorySystem.removeItem(gs, 'item_incense', 1);
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+}
+
+// ════════════════════════════════════════════════════════════
 head_('§17 UI 通用实时契约：直改数据 → 零额外操作 → 界面已更新');
 {
   const { LinkSkillSystem } = await import('../src/systems/LinkSkillSystem.js');

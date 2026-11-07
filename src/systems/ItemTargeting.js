@@ -89,6 +89,19 @@ export function currentItem() {
 }
 
 /**
+ * 在指定地块使用「需要目标」的地块道具（点击指向 / 背包拖拽共用）
+ * 合法性判定与失败提示只此一份，拖拽只是多一条输入路径，不改任何规则。
+ * @returns {{ok:boolean, reason?:string}}
+ */
+export function useAtTile(gs, itemId, tileIdx) {
+  if (!isValidTarget(gs, itemId, tileIdx)) {
+    EventBus.emit(GE.TOAST_SHOW, { text: '🚫 这里不能使用该道具', duration: 1500 });
+    return { ok: false, reason: 'invalidTarget' };
+  }
+  return useItem(gs, itemId, { tileIdx });
+}
+
+/**
  * 地图点击入口（MapView 在指向模式下把点击交给这里）
  * @returns {{ok:boolean, reason?:string}}
  */
@@ -96,12 +109,7 @@ export function handleTileClick(gs, tileIdx) {
   if (!state.active) return { ok: false, reason: 'inactive' };
   const itemId = state.itemId;
 
-  if (!isValidTarget(gs, itemId, tileIdx)) {
-    EventBus.emit(GE.TOAST_SHOW, { text: '🚫 这里不能使用该道具', duration: 1500 });
-    return { ok: false, reason: 'invalidTarget' };
-  }
-
-  const res = useItem(gs, itemId, { tileIdx });
+  const res = useAtTile(gs, itemId, tileIdx);
   if (res.ok) {
     cancel('done');
   } else if (res.reason === 'noItem' || res.reason === 'cooldown') {
@@ -119,4 +127,5 @@ export const ItemTargeting = {
   isActive,
   currentItem,
   handleTileClick,
+  useAtTile,
 };

@@ -331,6 +331,13 @@ export class MapView {
         EventBus.emit(GE.TOAST_SHOW, { text: '🛠️ 只能放在外圈地块上', duration: 2000 });
         return;
       }
+      // 放置型消耗道具（陷阱 / 艾草熏香等）：拖拽与「背包点选 → 点地块」共用
+      // ItemTargeting 的合法性判定、失败提示与结算，规则完全一致；拖拽不消耗道具。
+      if (ItemTargeting.needsTarget(contentId)) {
+        const res = ItemTargeting.useAtTile(gs, contentId, tileIdx);
+        if (res?.ok) ItemTargeting.cancel('dropDone');
+        return;
+      }
       BuildSystem.placeContent(gs, tileIdx, contentId);
     });
   }

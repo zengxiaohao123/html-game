@@ -357,7 +357,8 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 - **触发链**：写入点改完数据后必须发「带索引」的专用事件；组件订阅该事件后就地重绘受影响的子节点。禁止「只在打开时渲染一次」或依赖玩家后续操作（移动 / 再点一次 / 重开面板）刷新。
 - **地块内容**：外圈与栅栏内的新增/移除/替换/地形改变都必须发 `TILE_CONTENT_CHANGED` / `TILE_TERRAIN_CHANGED`（栅栏内带 `fenceIdx`）；`MapView` 只重建受影响格的 `.tile-terrain-bg` / `.tile-content` / `.tile-flags`，不整图重建，并复用 `TILE_UPDATED {terrainOnly|contentOnly}` / `FENCE_TILE_UPDATED` 广播给信息区、高亮、任务、连携技窗口。
 - **裸索引缓存**：UI 里缓存的旧地块索引（`InfoPanel.currentTileIdx/currentFenceIdx`、`TileHighlight.headIdx`/瞬时高亮键）必须在 `MAP_EXPANDED` 中按 `payload.remap`（`outerIdx` / `fenceIdx` 正反映射）迁移，禁止扩建后继续用旧索引显示别的格子。
-- **验收**：`tools/smoke-ui.mjs` §17「UI 通用实时契约」的 `realtime()` 断言器——只改数据 + 发对应事件，不做任何额外操作，直接断言 DOM 已是新状态（覆盖顶部 HUD、信息区单位 tab、连携技窗口、编队、角色页、商店金币灰化、扩建索引迁移）。
+- **放置型道具的 3 条等价入口**：地块内容（facility_/resource_/skill_/terrain_）与放置型消耗道具（`useEffect.type` 以 `placed_` 开头）都必须支持三条等价路径：背包拖拽 → 落点松开、背包点选 → 功能选项「选择地块放置」→ 点地块、背包 / 功能区既有使用入口。拖拽与点选共用 `ItemTargeting.useAtTile` 的合法性判定、失败提示与结算（`useItem`），拖拽只增加输入路径，不改变可放地块 / 层数 / 消耗规则；非法落点（栅栏内、同名重复等）拒绝且不消耗道具。拖拽复用同一套指向模式（高亮 / 落点提示 / ESC 取消），放置成功后 `TILE_CONTENT_CHANGED` 驱动标志层、背包与信息区即时刷新。
+- **验收**：`tools/smoke-ui.mjs` §17「UI 通用实时契约」的 `realtime()` 断言器——只改数据 + 发对应事件，不做任何额外操作，直接断言 DOM 已是新状态（覆盖顶部 HUD、信息区单位 tab、连携技窗口、编队、角色页、商店金币灰化、扩建索引迁移）；§16.23 覆盖放置型道具 3 条路径等价、非法落点拒绝不扣道具、放置后标志层 / 信息区即时刷新。
 
 ---
 
@@ -641,6 +642,7 @@ registerDamage(settlement, targets, { multiplier, element, hits, key });
 commitSettlement(settlement);   // batch.commit() → deathQueue.flush()
 ```
 
+- **`roleId` 必须是真实角色 id，绝不用技能 id 冒充**：调用方显式传入；未传时由 `createSettlement` 用 `skillId` 查 `SKILLS[skillId]` 并 `resolveSkillOwnerId(gs, skillDef)` 兜底（`roleId` 非空返回自身，`roleId: null` 返回当前 1 号位）。`EffectBatch` 只做 `opts.roleId ?? null`，不再有 `opts.skillId` 回退。
 - 结算入口先 `snapshotGeometry(gs)`，整批判定（距离 / 覆盖 / 索敌 / 范围）只读该快照；
   快照不跨回合、不跨帧复用（每次技能触发 / 连携技 / 回合 tick 各自新建）。
 - HP / buff 等状态按最新值读取（集合先定，效果后算）。
@@ -695,7 +697,7 @@ commitSettlement(settlement);   // batch.commit() → deathQueue.flush()
 
 | 阵营 | 代表 | 说明 |
 |---|---|---|
-| `party` 我方 | `gs.player` **共用实体** | 不会变成场上多个带 hp / 坐标的实体。生命、攻击力等属性完全共用；不同角色只体现在**技能倍率与技能归属者**。通用技能（`roleId: null`）的归属者视为「我方角色」。外圈使用余默模型只是 UI 表现，不影响战斗数据 |
+| `party` 我方 | `gs.player` **共用实体** | 不会变成场上多个带 hp / 坐标的实体。生命、攻击力等属性完全共用；不同角色只体现在**技能倍率与技能归属者**。通用技能（`roleId: null`）的归属者 = **当前队伍 1 号位角色**（`getLeadRoleId(gs)`：`activeGroup.roles` 中第一个非空角色，见 `src/data/characters.js`）；换人、改编队、启用组切换后即时按新 1 号位结算。归属只影响结算（倍率、天赋加成、焚灭计数、汲取、风息、屏息、比翼、连携技归属与 UI 展示），**不改变技能可放置性，也不会因换人拆卡或失效**。外圈使用余默模型只是 UI 表现，不影响战斗数据 |
 | `friendly` 友善 | 小鸡 / 鸡 | **不攻击、不追人**；也不会被默认索敌选中 |
 | `hostile` 危险 / 高危 | 史莱姆等 | **不会普通攻击**；若其拥有「攻击倾向的技能」，则按该技能自己的逻辑使用技能进行攻击 |
 
