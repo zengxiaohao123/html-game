@@ -38,6 +38,7 @@ export class MapView {
     this.playerEl = null;
     this.fenceEl = null;
     this.tileEls = new Map();
+    this.fenceTileEls = new Map();  // fenceIdx → 栅栏格 DOM（地形背景层就地刷新用）
     this.gs = null;
     this.buildMode = false;
     this.tileSize = BASE_TILE_PX;
@@ -395,6 +396,67 @@ export class MapView {
     });
   }
 
+  _terrainLayerElOf(tileEl) {
+    if (!tileEl) return null;
+    return (tileEl.children || []).find((c) => c?.classList?.contains('tile-terrain-bg')) || null;
+  }
+
+  /** 就地刷新一格地形背景层：只替换 .tile-terrain-bg 节点，不重建整格 DOM */
+  _applyTerrainLayer(tileEl, terrainId, ratio) {
+    if (!tileEl) return;
+    const old = this._terrainLayerElOf(tileEl);
+    const layer = this._terrainLayer(terrainId, ratio);
+    if (old?.parentNode) old.parentNode.removeChild(old);
+    if (tileEl.firstChild) tileEl.insertBefore(layer, tileEl.firstChild);
+    else tileEl.appendChild(layer);
+  }
+
+  /** 外圈地块地形变化 → 只刷新该格背景层 */
+  _updateOuterTerrain(tileIdx) {
+    const tile = this.gs?.map?.outerTiles?.[tileIdx];
+    if (!tile) return;
+    this._applyTerrainLayer(this.tileEls.get(tileIdx), normalizeTerrain(tile.terrain), this._tileRatio);
+  }
+
+  /** 栅栏内地块地形变化 → 只刷新该格背景层（空地形时移除地形层） */
+  _updateFenceTerrain(fenceIdx) {
+    const cell = this.gs?.map?.fence?.[fenceIdx];
+    const tileEl = this.fenceTileEls.get(fenceIdx);
+    if (!cell || !tileEl) return;
+    const terrainId = normalizeTerrain(cell.terrain);
+    if (terrainId === 'terrain_none') {
+      const old = this._terrainLayerElOf(tileEl);
+      if (old?.parentNode) old.parentNode.removeChild(old);
+      return;
+    }
+    this._applyTerrainLayer(tileEl, terrainId, this._tileRatio);
+  }
+
+  /** 无索引的全量广播（生物吃草等）→ 按数据比对栅栏地形层，只替换变化的那一格 */
+  _syncFenceTerrainLayers() {
+    if (!this.gs?.map?.fence) return;
+    this.fenceTileEls.forEach((tileEl, fenceIdx) => {
+      const terrainId = normalizeTerrain(this.gs.map.fence[fenceIdx]?.terrain);
+      const cur = this._terrainLayerElOf(tileEl);
+      const curId = cur?.getAttribute('data-terrain') || null;
+      let changed = false;
+      if (terrainId === 'terrain_none') {
+        if (cur?.parentNode) { cur.parentNode.removeChild(cur); changed = true; }
+      } else if (!cur || curId !== terrainId) {
+        this._applyTerrainLayer(tileEl, terrainId, this._tileRatio);
+        changed = true;
+      }
+      if (changed) {
+        // 通知信息区等订阅者（不触发 MapView 重建）
+        EventBus.emit(GE.FENCE_TILE_UPDATED, {
+          fenceIdx,
+          row: this.gs.map.fence[fenceIdx]?.row,
+          col: this.gs.map.fence[fenceIdx]?.col,
+        });
+      }
+    });
+  }
+
   /** 数据驱动：放置型道具的通用标识（效果类型以 placed_ 开头，或显式 placement:true） */
   _isPlacementItem(itemId) {
     const eff = POTIONS[itemId]?.useEffect;
@@ -486,6 +548,7 @@ export class MapView {
     const box = this._pxRect(fRect);
 
     if (this.fenceEl) this.fenceEl.remove();
+    this.fenceTileEls.clear();
     this.fenceEl = createEl('div', {
       class: ['map-fence'],
       id: 'fence-container',
@@ -514,9 +577,11 @@ export class MapView {
         const cellTop = (logicalCell.y0 - fRect.y0) * ts;
         const tileEl = createEl('div', {
           class: ['fence-tile'],
-          'data-fence-row': r,
-          'data-fence-col': c,
-          'data-fence-idx': fenceIdx,
+          attrs: {
+            'data-fence-row': String(r),
+            'data-fence-col': String(c),
+            'data-fence-idx': String(fenceIdx),
+          },
           style: {
             position: 'absolute',
             left: `${cellLeft}px`,
@@ -529,8 +594,8 @@ export class MapView {
           },
           parent: fenceEl,
         });
+        this.fenceTileEls.set(fenceIdx, tileEl);
 
-        // 地形背景层（与地块同一口径：地形铺满格子内部，不再画中心小图标）
         const fenceTerrain = normalizeTerrain(cell?.terrain);
         if (cell && fenceTerrain !== 'terrain_none') {
           tileEl.appendChild(this._terrainLayer(fenceTerrain, ratio));
@@ -716,10 +781,27 @@ export class MapView {
       this.renderAllTiles(this.gs);
     });
 
+    // 地形变化：同一同步调用栈内只就地刷新受影响那一格的地形背景层
+    EventBus.on(GE.TILE_TERRAIN_CHANGED, (payload = {}) => {
+      if (!this.gs) return;
+      const { tileIdx, fenceIdx } = payload;
+      if (tileIdx !== undefined && tileIdx !== null) {
+        this._updateOuterTerrain(tileIdx);
+        // 复用既有广播让信息区/高亮同步刷新；terrainOnly 防止 MapView 重建整格
+        EventBus.emit(GE.TILE_UPDATED, { tileIdx, terrainOnly: true });
+      }
+      if (fenceIdx !== undefined && fenceIdx !== null) {
+        this._updateFenceTerrain(fenceIdx);
+        EventBus.emit(GE.FENCE_TILE_UPDATED, { ...payload });
+      }
+    });
+
     // TILE_UPDATED
     EventBus.on(GE.TILE_UPDATED, (payload = {}) => {
       const { tileIdx } = payload;
       if (!this.gs) return;
+      if (payload.terrainOnly) return;   // 地形层已就地刷新，禁止重建整格/整图
+      this._syncFenceTerrainLayers();   // 无索引广播（生物吃草）也即时更新栅栏地形
       if (tileIdx !== undefined && tileIdx !== null) {
         const tile = this.gs.map.outerTiles[tileIdx];
         if (tile) {

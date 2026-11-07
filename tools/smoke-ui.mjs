@@ -293,6 +293,72 @@ head_('§16.3 地块视觉层级：地形背景层 ~95% + 放置型道具标志�
   assert(flagsOf(tileIdx).length === 0, '恢复后无放置道具 → 标志清空');
 }
 
+head_('§16.3b 地形变化实时刷新：只更新该格地形背景层，不整图/整格重建');
+{
+  const tileIdx = 3;
+  const otherIdx = 4;
+  const tile = gs.map.outerTiles[tileIdx];
+  const savedT = { terrain: tile.terrain, terrainAmount: tile.terrainAmount };
+
+  const bgOf = (el) => findAll(el, (n) => n._classes && n._classes.has('tile-terrain-bg'))[0];
+
+  // 初始：草地
+  tile.terrain = 'terrain_grass';
+  tile.terrainAmount = 10;
+  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+  const tileElBefore = mapView.tileEls.get(tileIdx);
+  const otherElBefore = mapView.tileEls.get(otherIdx);
+  assert(bgOf(tileElBefore)?.getAttribute('data-terrain') === 'terrain_grass', '前置：该格已渲染草地');
+  infoPanel.selectTile(tileIdx);
+  assert(hasText(infoPanel.bodyWrap, '草地'), '前置：信息区显示草地');
+
+  // 草元素量被吃空 → 数据为无地形；不做其它操作，只发地形事件
+  tile.terrainAmount = 0;
+  tile.terrain = 'terrain_none';
+  EventBus.emit(GE.TILE_TERRAIN_CHANGED, { tileIdx });
+  assert(hasText(infoPanel.bodyWrap, '无地形') && !hasText(infoPanel.bodyWrap, '草地'),
+    '信息区地形字段同步刷新为无地形');
+  const bgAfter = bgOf(mapView.tileEls.get(tileIdx));
+  assert(bgAfter?.getAttribute('data-terrain') === 'terrain_none', '草地耗尽 → 地形层即时变为无地形');
+  assert(!bgAfter?.style.backgroundImage?.includes('tile_grass.png'), '空地形不再显示草地贴图', bgAfter?.style.backgroundImage);
+  assert(bgAfter?.style.backgroundImage?.includes('tile_none.png'), '空地形切到无地形贴图', bgAfter?.style.backgroundImage);
+  assert(mapView.tileEls.get(tileIdx) === tileElBefore, '地形变化只刷背景层，未重建整格 DOM');
+  assert(mapView.tileEls.get(otherIdx) === otherElBefore, '其它格的 DOM 节点未被重建');
+
+  // 地形被替换成另一种地形 → 同一调用栈内即时更新
+  tile.terrain = 'terrain_water';
+  tile.terrainAmount = 10;
+  EventBus.emit(GE.TILE_TERRAIN_CHANGED, { tileIdx });
+  const bgWater = bgOf(mapView.tileEls.get(tileIdx));
+  assert(bgWater?.getAttribute('data-terrain') === 'terrain_water', '地形替换 → 该格即时更新为水面');
+  assert(bgWater?.style.backgroundImage?.includes('tile_water.png'), '替换后使用新地形贴图', bgWater?.style.backgroundImage);
+  assert(hasText(infoPanel.bodyWrap, '水面'), '信息区地形字段同步刷新为水面');
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+  assert(mapView.tileEls.get(tileIdx) === tileElBefore, '替换地形同样不重建整格 DOM');
+
+  // 栅栏内草地被生物吃空：既有无索引 TILE_UPDATED 广播也必须即时更新
+  if (gs.map.fence?.length > 0) {
+    const fenceIdx = 0;
+    const cell = gs.map.fence[fenceIdx];
+    const fEl = mapView.fenceTileEls.get(fenceIdx);
+    cell.terrain = 'terrain_grass';
+    cell.terrainAmount = 1;
+    EventBus.emit(GE.TILE_TERRAIN_CHANGED, { fenceIdx });
+    assert(bgOf(fEl)?.getAttribute('data-terrain') === 'terrain_grass', '前置：栅栏格已渲染草地');
+    cell.terrainAmount = 0;
+    cell.terrain = 'terrain_none';
+    EventBus.emit(GE.TILE_UPDATED);
+    assert(!bgOf(mapView.fenceTileEls.get(fenceIdx)), '栅栏格草地耗尽 → 地形层即时移除（不再显示草地）');
+    assert(mapView.fenceTileEls.get(fenceIdx) === fEl, '栅栏格 DOM 未被重建');
+    cell.terrain = 'terrain_grass';
+    cell.terrainAmount = 10;
+  }
+
+  tile.terrain = savedT.terrain;
+  tile.terrainAmount = savedT.terrainAmount;
+  EventBus.emit(GE.TILE_TERRAIN_CHANGED, { tileIdx });
+}
+
 head_('§16.6 SpiritArea：只显示精灵图标（无名字文字）');
 {
   const icons = findAll(spiritArea.root, (el) => el.getAttribute && el.getAttribute('data-icon-id'));

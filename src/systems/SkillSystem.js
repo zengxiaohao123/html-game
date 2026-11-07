@@ -115,7 +115,7 @@ function consumeTerrainsForPioneer(gs, count) {
     const tile = candidates[Math.floor(Math.random() * candidates.length)];
     tile.terrain = 'terrain_none';
     tile.terrainAmount = 0;
-    EventBus.emit(GE.TILE_UPDATED, { tileIdx: tile.idx });
+    EventBus.emit(GE.TILE_TERRAIN_CHANGED, { tileIdx: tile.idx });
     consumed += 1;
   }
   if (consumed > 0) devLog.info('[SkillSystem] 开拓 消耗地形', consumed, '块');

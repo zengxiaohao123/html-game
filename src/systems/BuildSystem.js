@@ -116,7 +116,7 @@ export function placeTerrain(gs, tileIdx, terrainId) {
   tile.terrainAmount = terrain.elementAmount;
   InventorySystem.removeItem(gs, terrainId, 1);
 
-  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+  EventBus.emit(GE.TILE_TERRAIN_CHANGED, { tileIdx });
   EventBus.emit(GE.TOAST_SHOW, { text: `🧱 地形变为 ${terrain.name}（元素量 ${terrain.elementAmount}）`, duration: 1600 });
   devLog.info('[Build] placeTerrain tile', tileIdx, '→', terrainId);
   return { ok: true };
@@ -153,6 +153,7 @@ export function placeFenceTerrain(gs, row, col, terrainId) {
   cell.terrainAmount = terrain.elementAmount;
   InventorySystem.removeItem(gs, terrainId, 1);
 
+  EventBus.emit(GE.TILE_TERRAIN_CHANGED, { row, col, fenceIdx });
   EventBus.emit(GE.FENCE_TILE_UPDATED, { row, col, fenceIdx });
   EventBus.emit(GE.TOAST_SHOW, { text: `🧱 地形变为 ${terrain.name}（元素量 ${terrain.elementAmount}）`, duration: 1600 });
   devLog.info('[Build] placeFenceTerrain fence', row, col, '→', terrainId);
