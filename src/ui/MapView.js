@@ -369,7 +369,7 @@ export class MapView {
 
   _terrainLayerElOf(tileEl) {
     if (!tileEl) return null;
-    return (tileEl.children || []).find((c) => c?.classList?.contains('tile-terrain-bg')) || null;
+    return Array.from(tileEl.children || []).find((c) => c?.classList?.contains('tile-terrain-bg')) || null;
   }
 
   /** 就地刷新一格地形背景层：只替换 .tile-terrain-bg 节点，不重建整格 DOM */
@@ -500,7 +500,7 @@ export class MapView {
   /** 渲染内容相关子节点（内容图标 + 放置型道具标志）；重复调用即局部刷新，不动地形层 */
   _renderCellContent(tileEl, cell, box, ratio) {
     if (!tileEl) return;
-    (tileEl.children || []).slice().forEach((child) => {
+    Array.from(tileEl.children || []).forEach((child) => {
       if (child?.classList?.contains('tile-content') || child?.classList?.contains('tile-flags')) {
         if (child.parentNode) child.parentNode.removeChild(child);
       }
