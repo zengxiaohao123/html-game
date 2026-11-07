@@ -40,7 +40,7 @@ import { ITEMS } from '../data/items.js';
 import { normalizeTerrain } from '../data/terrains.js';
 import { InventorySystem } from './InventorySystem.js';
 import { CombatSystem } from './CombatSystem.js';
-import { fenceDimsOf } from '../core/Distance.js';
+import { fenceDimsOf, outerIdxToXY } from '../core/Distance.js';
 import {
   DEFAULT_CREATURE_RADIUS,
   FENCE_ORIGIN_X,
@@ -60,24 +60,138 @@ export function resetCreatureIdCounter() { _nextCreatureId = 1; }
 export const DOOR_FACILITIES = new Set(['facility_henhouse', 'facility_slimehouse']);
 
 /**
- * 放养进食通用规则（§13.3）：
- * 每只生物每日至多消耗 1 草元素量（1 次 = 地块元素量 -1，不走背包），
- * 达成后当天不再消耗。按实例记账（`grassFedDay`），不按物种写死。
+ * 放养进食规则（§13.3）：只有草食生物（数据标记 `feedByGrass`）会吃草；
+ * 每只每日至多消耗 1 草元素量（1 次 = 地块元素量 -1，不走背包），
+ * 达成后当天不再消耗，按实例 `grassFedDay` 记账。
  */
 export const GRASS_ELEMENTS_PER_CREATURE_PER_DAY = 1;
 
+// ── 设施归属：稳定实例 uid 为主键，裸索引仅作旧存档回退 ──
+// 扩建会整体重排外圈 idx；地块对象本身会被搬运，因此「设施实例 uid」不随索引变化。
+let _nextTileUid = 1;
+
+/** 给设施/地块分配稳定 uid（就地写入并返回） */
+export function ensureTileUid(tile) {
+  if (!tile) return null;
+  if (!tile.uid) tile.uid = `fac_${_nextTileUid++}`;
+  return tile.uid;
+}
+
+/** 解析某生物当前归属的设施地块（优先 uid，其次裸索引回退） */
+export function creatureOwnerTile(gs, c) {
+  if (!c) return null;
+  const outer = gs?.map?.outerTiles || [];
+  if (c.sourceTileUid) {
+    const byUid = outer.find(t => t && t.uid === c.sourceTileUid);
+    if (byUid) return byUid;
+  }
+  if (Number.isInteger(c.sourceTileIdx)) return outer[c.sourceTileIdx] || null;
+  return null;
+}
+
+/** 生物是否归属指定设施/地块实例（与物种无关；野生生物两边都为空 → false） */
+export function creatureOwnedByTile(gs, c, tile) {
+  if (!c || !tile) return false;
+  if (c.sourceTileUid && tile.uid) return c.sourceTileUid === tile.uid;
+  return Number.isInteger(c.sourceTileIdx) && c.sourceTileIdx === tile.idx;
+}
+
 /**
- * 某设施实例归属的生物（归属键 = `sourceTileIdx`，与物种无关）。
- * 野生生物（狩猎等来源）`sourceTileIdx === null`，永远不在此列表内。
+ * 某设施实例归属的生物（优先稳定 uid，扩建后仍指向同一座设施）。
+ * 野生生物（狩猎等来源）无归属，永远不在此列表内。
  * @returns {object[]}
  */
 export function facilityOwnedCreatures(gs, tileIdx, { aliveOnly = true } = {}) {
   if (!Array.isArray(gs?.creatures) || tileIdx === null || tileIdx === undefined) return [];
+  const tile = gs?.map?.outerTiles?.[tileIdx];
+  if (!tile) return [];
   return gs.creatures.filter(c => {
-    if (!c || c.sourceTileIdx !== tileIdx) return false;
-    return aliveOnly ? (c.hp > 0 && !c.dead) : true;
+    if (!c) return false;
+    if (aliveOnly && !(c.hp > 0 && !c.dead)) return false;
+    return creatureOwnedByTile(gs, c, tile);
   });
 }
+
+/** 解析扩建事件里的「旧索引 → 新索引」映射（优先用扩建系统提供的 API，缺失时按同一套搬运规则推导） */
+function resolveExpandIdxMap(payload) {
+  const raw = payload?.idxMap;
+  if (raw instanceof Map) return raw;
+  if (Array.isArray(raw)) {
+    const m = new Map();
+    for (const pair of raw) {
+      if (pair && Number.isInteger(pair[0]) && Number.isInteger(pair[1])) m.set(pair[0], pair[1]);
+    }
+    return m.size ? m : null;
+  }
+  if (raw && typeof raw === 'object') {
+    const m = new Map();
+    for (const [k, v] of Object.entries(raw)) {
+      if (Number.isInteger(Number(k)) && Number.isInteger(Number(v))) m.set(Number(k), Number(v));
+    }
+    return m.size ? m : null;
+  }
+
+  // 回退：由 axis + 扩建后的行列数推导（与 MapExpandSystem 的搬运规则一致）
+  const { rows, cols, axis } = payload || {};
+  if (!Number.isInteger(rows) || !Number.isInteger(cols)) return null;
+  const isLength = axis === 'length';
+  const oldRows = payload.oldRows ?? (isLength ? rows : rows - 1);
+  const oldCols = payload.oldCols ?? (isLength ? cols - 1 : cols);
+  if (oldRows < 2 || oldCols < 2) return null;
+
+  const newByXY = new Map();
+  for (const t of payload.gs?.map?.outerTiles || []) {
+    if (!Number.isInteger(t?.idx)) continue;
+    const { x, y } = outerIdxToXY({ rows, cols }, t.idx);
+    newByXY.set(`${x},${y}`, t.idx);
+  }
+  const idxMap = new Map();
+  const totalOld = 2 * oldRows + 2 * oldCols - 4;
+  for (let oldIdx = 0; oldIdx < totalOld; oldIdx++) {
+    const { x, y } = outerIdxToXY({ rows: oldRows, cols: oldCols }, oldIdx);
+    const nx = isLength ? (x === oldCols - 1 ? x + 1 : x) : x;
+    const ny = isLength ? y : (y === 0 ? 0 : y + 1);
+    const next = newByXY.get(`${nx},${ny}`);
+    if (next !== undefined) idxMap.set(oldIdx, next);
+  }
+  return idxMap.size ? idxMap : null;
+}
+
+/**
+ * 收到 MAP_EXPANDED：把生物的归属索引重映射到新 idx，并把旧存档生物升级为稳定 uid 归属。
+ * 不修改 MapExpandSystem；若扩建系统已在事件里带上 idxMap 则直接复用。
+ */
+export function remapCreatureOwnershipAfterExpand(payload) {
+  const gs = payload?.gs;
+  const map = gs?.map;
+  if (!map?.outerTiles) return;
+  const idxMap = resolveExpandIdxMap(payload);
+
+  for (const c of gs.creatures || []) {
+    if (!c || !Number.isInteger(c.sourceTileIdx)) continue;
+    // 若稳定 uid 已指向当前索引上的同一地块，说明归属已正确（防止重复重映射）
+    const cur = map.outerTiles[c.sourceTileIdx];
+    if (c.sourceTileUid && cur && cur.uid === c.sourceTileUid) continue;
+    if (!idxMap) continue;
+    const next = idxMap.get(c.sourceTileIdx);
+    if (next === undefined) {
+      c.sourceTileIdx = null; // 索引已失效，无法归属
+      continue;
+    }
+    c.sourceTileIdx = next;
+    if (!c.sourceTileUid) c.sourceTileUid = ensureTileUid(map.outerTiles[next]);
+  }
+
+  // 并行扩建可能把栅栏格缓存写成生物对象；统一修正为 id 数组，保证开关门/信息区查询可用
+  for (const f of map.fence || []) {
+    if (!Array.isArray(f.creatures)) { f.creatures = []; continue; }
+    f.creatures = f.creatures
+      .map(x => (x && typeof x === 'object' ? x.id : x))
+      .filter(Boolean);
+  }
+}
+
+EventBus.on(GE.MAP_EXPANDED, remapCreatureOwnershipAfterExpand);
 
 // ── 运动参数 ──
 /** 秒/格 合法区间（设计文档 §2.3：3~6 秒走 1 格） */
@@ -90,7 +204,7 @@ export const MAX_SECONDS_PER_TILE = 6;
  * @param {string} kind          creatures.js 里定义的 kind：'chick' / 'slime_fire' 等
  * @param {object} [opts]
  * @param {string} [opts.facilityId] 来源设施（facility_henhouse / facility_slimehouse），用于每日心情 +1
- * @param {number} [opts.sourceTileIdx] 来源设施所在外圈格 idx（鸡舍按实例计数/投喂归属用）
+ * @param {number} [opts.sourceTileIdx] 来源设施所在外圈格 idx（同时写入稳定 uid，扩建后归属不丢）
  * @returns {object|null} 新生物对象；栅栏不存在或 kind 未知 → null
  */
 export function spawnCreature(gs, kind, opts = {}) {
@@ -112,6 +226,10 @@ export function spawnCreature(gs, kind, opts = {}) {
   const rect = fenceTileRect(tile.row, tile.col);
   const pos = randomPointInRect(rect, radius);
   const dir = randomDirection();
+
+  // 归属设施实例：稳定 uid（扩建时地块对象被整体搬运，uid 不随外圈 idx 变化）
+  const sourceTile = opts.sourceTileIdx != null ? gs.map?.outerTiles?.[opts.sourceTileIdx] : null;
+  const sourceTileUid = sourceTile ? ensureTileUid(sourceTile) : null;
 
   // 构造实例
   const creature = {
@@ -159,6 +277,7 @@ export function spawnCreature(gs, kind, opts = {}) {
     stage: def.stage || 'chick',
     facilityId: opts.facilityId || null,
     sourceTileIdx: opts.sourceTileIdx ?? null,
+    sourceTileUid,
     lastMoveTs: Date.now(),
     activeBuffs: [],
   };
@@ -169,8 +288,8 @@ export function spawnCreature(gs, kind, opts = {}) {
   tile.creatures.push(creature.id);
 
   // 设施门关闭时新生成的归属生物直接收纳（不可见、不移动，但仍计入容量）
-  if (creature.sourceTileIdx !== null) {
-    const src = gs.map?.outerTiles?.[creature.sourceTileIdx];
+  if (creature.sourceTileUid || creature.sourceTileIdx !== null) {
+    const src = creatureOwnerTile(gs, creature);
     if (src && DOOR_FACILITIES.has(src.contentId) && (src.contentState || {}).doorOpen === false) {
       putCreatureIntoHouse(gs, creature);
     }
@@ -801,13 +920,17 @@ function syncPrimaryFenceTile(gs, creature) {
 
 /**
  * 进入草地形时消耗草元素量（§13.3 放牧路径）。
- * 通用规则：每只生物每日至多消耗 GRASS_ELEMENTS_PER_CREATURE_PER_DAY（1 元素量），
- * 达成后当天不再消耗（按实例 `grassFedDay` 记账，不按物种写死）。
+ * 仅草食生物（`feedByGrass` 数据标记，如小鸡 / 成鸡）会吃草；
+ * 每只草食生物每日至多消耗 GRASS_ELEMENTS_PER_CREATURE_PER_DAY（1 元素量），
+ * 达成后当天不再消耗（按实例 `grassFedDay` 记账）。
  * 消耗直接扣地块元素量，不走背包库存。
  * @returns {boolean} 本次是否实际发生了消耗
  */
 export function consumeGrassOnEnter(gs, creature, newTile) {
   if (!newTile || !creature) return false;
+  const def = getCreatureDef(creature.kind);
+  // 只有草食生物（数据标记 feedByGrass：小鸡 / 成鸡）才吃草；史莱姆等非草食生物不消耗草元素量
+  if (!def?.feedByGrass) return false;
   if (normalizeTerrain(newTile.terrain) !== 'terrain_grass' || (newTile.terrainAmount ?? 0) <= 0) return false;
   // 当日已经满足进食条件（日初吃过储存饲料 / 当天已啃过一次草）：不再多吃
   if (creature.lastFed === true) return false;
@@ -816,9 +939,8 @@ export function consumeGrassOnEnter(gs, creature, newTile) {
   const eaten = Math.min(amount, newTile.terrainAmount);
   newTile.terrainAmount -= eaten;
   creature.grassFedDay = gs.day;
-  const def = getCreatureDef(creature.kind);
-  // 只有以草为食的生物才因此达成「已投喂」条件；其他生物只受每日消耗上限约束
-  if (def?.feedByGrass) creature.grazedForFeed = true;
+  // 草食生物啃草即达成「已投喂」条件
+  creature.grazedForFeed = true;
   if (newTile.terrainAmount <= 0) {
     newTile.terrain = 'terrain_none';
     // 栅栏内地块地形变化：带索引广播，MapView 只就地重绘这一格的地形背景
@@ -835,10 +957,11 @@ export function consumeGrassOnEnter(gs, creature, newTile) {
 
 // ────────────────────────────────────────────────────────────
 // 设施开门 / 关门（鸡舍、史莱姆屋）
-//   归属键：creature.sourceTileIdx === 设施所在外圈格 idx（0 也算合法 idx，需用 !== null 判断）。
+//   归属键：设施实例稳定 uid（creature.sourceTileUid），扩建重排外圈索引后仍指向同一座设施；
+//   裸索引 sourceTileIdx 仅作旧存档回退。
 //   关门 → housed=true：移出栅栏格缓存、冻结移动/行为/渲染，但仍留在 gs.creatures（容量照常占用）。
 //   开门 → 随机放回栅栏圆心合法区（不越出栅栏），恢复移动与渲染。
-//   野生生物（sourceTileIdx === null）永远不受影响。
+//   野生生物（无 sourceTileUid / sourceTileIdx）永远不受影响。
 // ────────────────────────────────────────────────────────────
 
 /** 把生物移出栅栏格缓存（不改变 pos，只切归属缓存） */
@@ -1058,9 +1181,9 @@ export function dailyTick(gs) {
   const fedCreatures = new Set(); // 本次被投喂过的 creature id
 
   for (const henhouseTile of henhouseTiles) {
-    // 只找「来自这个鸡舍实例」的生物（按 sourceTileIdx 归属；旧存档无该字段的生物无法归属，跳过）
+    // 只找「来自这个鸡舍实例」的生物（稳定 uid 归属，扩建后仍指向同一座鸡舍）
     const henhouseCreatures = gs.creatures.filter(
-      c => c.hp > 0 && c.sourceTileIdx === henhouseTile.idx
+      c => c.hp > 0 && creatureOwnedByTile(gs, c, henhouseTile)
     );
     henhouseTile.contentState = henhouseTile.contentState || {};
     const store = henhouseTile.contentState.henhouseFeed || (henhouseTile.contentState.henhouseFeed = {});
@@ -1123,7 +1246,7 @@ export function dailyTick(gs) {
         // OUT-11：鸡蛋储存于来源鸡舍（上限 10），玩家进入鸡舍时取走（InfoPanel 收获滑条）。
         // 2026-11-04 裁决：鸡蛋与优质蛋共享同一储存额度（合计上限 10）；额度满时产出直接丢弃
         //   —— 不进背包、不进任何储存，仅记日志；收获进背包时鸡蛋与优质蛋为两个不同物品分别占格。
-        const henTile = c.sourceTileIdx != null ? outerTiles[c.sourceTileIdx] : null;
+        const henTile = creatureOwnerTile(gs, c);
         if (henTile && henTile.contentId === 'facility_henhouse') {
           henTile.contentState = henTile.contentState || {};
           const cs = henTile.contentState;
@@ -1173,6 +1296,8 @@ export function dailyTick(gs) {
       if (candidates.length === 0) break;
       const target = Random.pick(candidates);
       if (!target.states) target.states = [];
+      // 同名效果不叠加：一格地块至多 1 层粘液
+      if (target.states.some(s => s && s.type === 'slime')) continue;
       target.states.push({ type: 'slime' });
       EventBus.emit(GE.TILE_UPDATED, { tileIdx: target.idx });
       EventBus.emit(GE.TOAST_SHOW, { text: `🟢 史莱姆喷吐粘液到地块 ${target.idx}`, duration: 1500 });
@@ -1393,5 +1518,9 @@ export const CreatureSystem = {
   setFacilityDoorOpen,
   isFacilityDoorOpen,
   facilityOwnedCreatures,
+  creatureOwnerTile,
+  creatureOwnedByTile,
+  ensureTileUid,
+  remapCreatureOwnershipAfterExpand,
   DOOR_FACILITIES,
 };

@@ -528,7 +528,9 @@ const FacilityHenhouse = {
       if (!tile.dailyFlags[spawnKey]) {
         // FAC-009「每舍至多 4 只」：按本鸡舍实例计数（sourceTileIdx 归属），
         // 不是按类型全局计数——多个鸡舍各自独立拥有 4 只额度
-        const sameHenhouse = gs.creatures.filter(c => c.sourceTileIdx === tileIdx).length;
+        const sameHenhouse = gs.creatures.filter(
+          c => CreatureSystem.creatureOwnedByTile(gs, c, tile)
+        ).length;
         if (sameHenhouse < 4) {
           tile.dailyFlags[spawnKey] = true;
           CreatureSystem.spawnCreature(gs, 'chick', { facilityId: this.id, sourceTileIdx: tileIdx });
@@ -540,7 +542,7 @@ const FacilityHenhouse = {
       // §13.3 / BIO-002 L 列：来自鸡舍的生物，玩家每次进入鸡舍心情 +1（每日限 1 次）；
       // 其他方式心情固定 0（不在 dailyTick 无条件结算）
       for (const c of gs.creatures) {
-        if (!c || c.hp <= 0 || c.sourceTileIdx !== tileIdx) continue;
+        if (!c || c.hp <= 0 || !CreatureSystem.creatureOwnedByTile(gs, c, tile)) continue;
         if (c.lastHenhouseMoodDay === gs.day) continue;
         c.lastHenhouseMoodDay = gs.day;
         c.mood = Math.min(5, (c.mood || 0) + 1);
@@ -552,8 +554,11 @@ const FacilityHenhouse = {
     // 受祝福时：属于该鸡舍的随机 1 只小鸡立刻长大
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
-      // 「属于该鸡舍」= 来源为本鸡舍实例（sourceTileIdx 归属）
-      const chicks = gs.creatures.filter(c => c.sourceTileIdx === tileIdx && c.kind === 'chick');
+      const tile = gs.map.outerTiles[tileIdx];
+      // 「属于该鸡舍」= 归属本鸡舍实例（稳定 uid，扩建后仍有效）
+      const chicks = gs.creatures.filter(
+        c => CreatureSystem.creatureOwnedByTile(gs, c, tile) && c.kind === 'chick'
+      );
       if (chicks.length > 0) {
         const pick = Random.pick(chicks);
         pick.kind = 'chicken';

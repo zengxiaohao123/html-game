@@ -1163,14 +1163,19 @@ export class InfoPanel {
     const states = (tile.states || []).slice();
     for (const s of states) {
       const meta = STATE_META[s.type] || { emoji: '❓', name: s.type };
+      // 名称与含义一律来自物品库「词条字典」；一次性的状态（如粘液）不显示「持续」
+      const term = glossaryOf(meta.name);
+      const descText = term?.meaning ? `：${term.meaning}` : '';
       const remainText = (s.remainingDays !== undefined && s.remainingDays !== null)
         ? `${s.remainingDays} 天`
-        : (s.usesRemaining !== undefined ? `${s.usesRemaining} 次` : '持续');
+        : (s.usesRemaining !== undefined ? `${s.usesRemaining} 次` : '');
 
       const row = createEl('div', { class: ['state-row'], parent: this.bodyWrap });
       createEl('span', { class: ['state-emoji'], text: meta.emoji, parent: row });
-      createEl('span', { class: ['state-name'], text: meta.name, parent: row });
-      createEl('span', { class: ['state-remain'], text: remainText, parent: row });
+      createEl('span', { class: ['state-name'], text: `${meta.name}${descText}`, parent: row });
+      if (remainText) {
+        createEl('span', { class: ['state-remain'], text: remainText, parent: row });
+      }
     }
 
     // 3) 放置在本地块上的放置型消耗道具（陷阱 / 艾草熏香等）：名称 + 效果描述

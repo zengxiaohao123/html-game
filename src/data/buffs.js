@@ -35,7 +35,7 @@ export const BUFFS = {
     emoji: '🟢',
     type: 'debuff',
     target: 'player',
-    description: '玩家进入该格时，生命 -5、行动力 -1，然后移除。',
+    description: '玩家进入该格时生命 -5、行动力 -1，然后移除。',
     duration: 1,
     oneShot: true,
     phase2AImplemented: false,

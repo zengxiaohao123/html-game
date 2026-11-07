@@ -311,10 +311,11 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 
 **放牧进食与设施开关门（2026-11-07）**：
 
-- **每日草消耗上限**：`consumeGrassOnEnter(gs, creature, fenceCell)` 用实例字段 `grassFedDay` 记录当日已消耗的日号，每只生物每日至多扣 1 点草元素量（`GRASS_ELEMENTS_PER_CREATURE_PER_DAY`），当日达成后直接返回 `false`，跨日自动重置；扣减直接改 `fence[].terrainAmount`，不走背包。数据字段 `feedByGrass`（小鸡 / 鸡）决定啃草是否置 `grazedForFeed`；其他生物只受每日上限约束。元素量归零时地形写 `terrain_none`，并 emit `TILE_TERRAIN_CHANGED { row, col, fenceIdx }` + `FENCE_TILE_UPDATED`，MapView 只就地重绘该格地形背景，不再依赖无索引 `TILE_UPDATED` 兜底。
-- **归属键**：`creature.sourceTileIdx` = 设施实例所在外圈格 idx（0 也是合法值，判断用 `!== null`）。鸡舍、史莱姆屋生成时必须写入；`facilityOwnedCreatures(gs, tileIdx)` 按此返回归属活体，与物种无关。狩猎等野生来源保持 `sourceTileIdx = null`。
+- **草食限定与每日上限**：`consumeGrassOnEnter(gs, creature, fenceCell)` 先按数据标记 `feedByGrass` 判定物种，**只有小鸡 / 成鸡会吃草，史莱姆等非草食生物直接返回 `false`、不扣任何元素量**。草食生物用实例字段 `grassFedDay` 记录当日已消耗的日号，每只每日至多扣 1 点草元素量（`GRASS_ELEMENTS_PER_CREATURE_PER_DAY`），当日达成（含日初 `lastFed=true`）后跳过，跨日自动重置；扣减直接改 `fence[].terrainAmount`，不走背包。元素量归零时地形写 `terrain_none`，并 emit `TILE_TERRAIN_CHANGED { row, col, fenceIdx }` + `FENCE_TILE_UPDATED`，MapView 只就地重绘该格地形背景，不再依赖无索引 `TILE_UPDATED` 兜底。
+- **归属键（扩建安全）**：主键为设施实例稳定 uid `creature.sourceTileUid`（`ensureTileUid(tile)` 就地分配，地块对象被扩建搬运时 uid 不变）；`creatureOwnedByTile(gs,c,tile)` / `creatureOwnerTile` / `facilityOwnedCreatures` 统一走该判定，裸索引 `sourceTileIdx` 仅作旧存档回退。`spawnCreature` 写入 `sourceTileIdx` + `sourceTileUid`，狩猎等野生来源两者皆空。`CreatureSystem` 在模块加载时订阅 `MAP_EXPANDED`：若事件带 `idxMap` 则直接复用，否则按 `axis` + 扩建后 `rows/cols` 反推旧尺寸与搬运规则（最右列右移 / 最上行上移）生成映射；对生物重映射 `sourceTileIdx` 并给旧生物补 `sourceTileUid`，同时把 `fence[].creatures` 缓存统一修正为 id 数组。连续多次扩建幂等（uid 命中即跳过）。
 - **开关门**：`setFacilityDoorOpen(gs, tileIdx, open)`（仅 `DOOR_FACILITIES`：鸡舍 / 史莱姆屋）。关门对归属生物置 `housed=true`、移出 `fence[].creatures` 缓存、速度与行为状态清零；开门随机放回 `fenceInner(gs, radius)` 合法区并重建主格缓存。`stepCreatures` / `advanceCreatureRendering` / `CreatureView.paint` / `Geometry.isAlive` 全部跳过 `housed`，所以收纳生物不可见、不移动、不参与空间查询与命中；`gs.creatures` 不删，容量统计（`countByCategory`）与归属不变。门状态存于 `tile.contentState.doorOpen`（缺省视为开门）。开关门不消耗行动力、不占回合。
 - **关门期间新生成**：`spawnCreature` 末尾检查来源设施 `doorOpen === false` 时直接 `housed`（如史莱姆屋每日生成），不再落进栅栏可见区。
+- **粘液**：`dailyTick` 喷吐前检查目标格 `states` 是否已有 `type='slime'`，有则跳过（同名不叠加，一格至多 1 层）；玩家进入后由 `MovementSystem` 结算生命 -5 / 行动力 -1 并立即移除。信息区「状态」行按物品库 `GLOSSARY` 词条逐字展示含义，一次性状态不显示「持续」。
 
 ---
 

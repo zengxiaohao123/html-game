@@ -29,6 +29,11 @@ import {
 import { fenceRect, creatureRadius, snapshotGeometry } from '../src/core/Geometry.js';
 import { EventBus } from '../src/core/EventBus.js';
 import { GE } from '../src/core/GameEvents.js';
+import { expandMap } from '../src/systems/MapExpandSystem.js';
+import { moveStep } from '../src/systems/MovementSystem.js';
+import { Random } from '../src/core/Random.js';
+import { BUFFS } from '../src/data/buffs.js';
+import { GLOSSARY } from '../src/data/items.js';
 
 let pass = 0, fail = 0;
 function check(cond, msg) {
@@ -174,6 +179,100 @@ const gs4 = createInitialState();
 gs4.map.outerTiles[1].contentId = 'facility_wheat';
 const notDoor = setFacilityDoorOpen(gs4, 1, false);
 check(notDoor.ok === false && notDoor.reason === 'notDoorFacility', '麦田等设施不参与开关门');
+
+// ════════════════════════════════════════════════════════════
+console.log('\n═══ 7. 史莱姆不吃草（仅草食生物可消耗草元素量） ═══');
+const gsSlimeGrass = mkHenhouseState();
+const slimeEater = spawnCreature(gsSlimeGrass, 'slime_water', { facilityId: 'facility_slimehouse', sourceTileIdx: 0 });
+const grassCell = gsSlimeGrass.map.fence[0];
+const amount0 = grassCell.terrainAmount;
+check(consumeGrassOnEnter(gsSlimeGrass, slimeEater, grassCell) === false, '史莱姆经过草地不消耗草');
+check(grassCell.terrainAmount === amount0, `草元素量保持 ${amount0}`);
+check(slimeEater.grazedForFeed !== true, '史莱姆不会被标记为已投喂');
+
+// ════════════════════════════════════════════════════════════
+console.log('\n═══ 8. 扩建后归属仍指向同一座设施 ═══');
+const gsExp = createInitialState();
+const henOld = gsExp.map.outerTiles[3]; // 右中，I 型（length）扩建会被右移
+henOld.contentId = 'facility_henhouse';
+henOld.contentState = {};
+const expOwned = [
+  spawnCreature(gsExp, 'chick', { facilityId: 'facility_henhouse', sourceTileIdx: 3 }),
+  spawnCreature(gsExp, 'chick', { facilityId: 'facility_henhouse', sourceTileIdx: 3 }),
+  spawnCreature(gsExp, 'chicken', { facilityId: 'facility_henhouse', sourceTileIdx: 3 }),
+];
+const expWild = spawnCreature(gsExp, 'chick'); // 狩猎来源：无归属
+const oldUid = henOld.uid;
+
+const r1 = expandMap(gsExp, 'length');
+check(r1.ok, 'I 型（length）扩建成功');
+const hen1 = gsExp.map.outerTiles.find(t => t.contentId === 'facility_henhouse');
+check(!!hen1, '扩建后鸡舍仍存在');
+check(hen1.uid === oldUid, `鸡舍实例 uid 不变（${oldUid}）`);
+check(facilityOwnedCreatures(gsExp, hen1.idx).length === 3, '扩建后仍识别 3 只归属生物（未变野生）');
+check(expOwned.every(c => Number.isInteger(c.sourceTileIdx) && c.sourceTileIdx === hen1.idx),
+  '归属索引已重映射到新设施格 idx');
+check(expWild.sourceTileUid === null && expWild.sourceTileIdx === null, '狩猎野生生物仍无归属');
+
+const c1 = setFacilityDoorOpen(gsExp, hen1.idx, false);
+check(c1.ok && c1.count === 3, `第一次扩建后关门收纳 3 只（实际 ${c1.count}）`);
+check(expOwned.every(c => c.housed === true), '3 只归属生物全部收纳');
+check(!expWild.housed, '野生生物不受关门影响');
+const o1 = setFacilityDoorOpen(gsExp, hen1.idx, true);
+check(o1.ok && o1.count === 3 && expOwned.every(c => !c.housed), '第一次扩建后开门放出 3 只');
+
+const r2 = expandMap(gsExp, 'width');
+check(r2.ok, 'II 型（width）连续扩建成功');
+const hen2 = gsExp.map.outerTiles.find(t => t.contentId === 'facility_henhouse');
+check(!!hen2 && hen2.uid === oldUid, '连续扩建后鸡舍仍是同一实例');
+check(facilityOwnedCreatures(gsExp, hen2.idx).length === 3, '连续扩建后归属仍为 3 只');
+const c2 = setFacilityDoorOpen(gsExp, hen2.idx, false);
+check(c2.ok && c2.count === 3 && expOwned.every(c => c.housed), '连续扩建后关门仍收纳全部原归属');
+const o2 = setFacilityDoorOpen(gsExp, hen2.idx, true);
+check(o2.ok && o2.count === 3 && expOwned.every(c => !c.housed), '连续扩建后开门正常放出');
+check(!expWild.housed && expWild.sourceTileUid === null, '两次扩建后野生生物仍不受影响');
+
+// 旧存档（无 sourceTileUid）也要在扩建后被正确归属并升级
+const gsLegacy = createInitialState();
+const legacyHen = gsLegacy.map.outerTiles[3];
+legacyHen.contentId = 'facility_henhouse';
+legacyHen.contentState = {};
+const legacy = spawnCreature(gsLegacy, 'chick', { facilityId: 'facility_henhouse', sourceTileIdx: 3 });
+delete legacy.sourceTileUid; // 模拟旧存档
+expandMap(gsLegacy, 'length');
+const legacyHen2 = gsLegacy.map.outerTiles.find(t => t.contentId === 'facility_henhouse');
+check(facilityOwnedCreatures(gsLegacy, legacyHen2.idx).length === 1, '旧存档生物扩建后仍归属正确');
+check(!!legacy.sourceTileUid, '旧存档生物已补稳定 uid');
+
+// ════════════════════════════════════════════════════════════
+console.log('\n═══ 9. 粘液：不叠加 / 生效即移除 / 描述逐字一致 ═══');
+const gsMucus = createInitialState();
+gsMucus.map.outerTiles = [gsMucus.map.outerTiles[0]];
+gsMucus.player.x = 99; // 唯一外圈格成为喷吐候选
+spawnCreature(gsMucus, 'slime_fire');
+const origChance = Random.chance;
+Random.chance = () => true;
+dailyTick(gsMucus);
+dailyTick(gsMucus);
+Random.chance = origChance;
+check(gsMucus.map.outerTiles[0].states.filter(s => s.type === 'slime').length === 1,
+  '重复施加粘液层数仍为 1');
+
+const gsMucusMove = createInitialState();
+const targetIdx = 5; // 玩家位于 idx 6，向右一格
+gsMucusMove.map.outerTiles[targetIdx].states = [{ type: 'slime' }];
+gsMucusMove.player.nextMoveNoStamina = true; // 隔离移动本身的 -1，只看粘液效果
+const hpBefore = gsMucusMove.player.hp;
+const staminaBefore = gsMucusMove.player.stamina;
+const mv = moveStep(gsMucusMove, 'right');
+check(mv.ok && gsMucusMove.player.x === targetIdx, '角色进入粘液格');
+check(gsMucusMove.map.outerTiles[targetIdx].states.length === 0, '效果触发后粘液立即移除');
+check(gsMucusMove.player.hp === hpBefore - 5, `生命 -5（${hpBefore} → ${gsMucusMove.player.hp}）`);
+check(gsMucusMove.player.stamina === staminaBefore - 1, `行动力 -1（${staminaBefore} → ${gsMucusMove.player.stamina}）`);
+
+const mucusTerm = GLOSSARY.find(g => g && g.term === '粘液');
+check(!!mucusTerm?.meaning, '物品库「词条字典」存在粘液描述');
+check(BUFFS.slime.description === mucusTerm?.meaning, '粘液描述与物品库逐字一致');
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);
