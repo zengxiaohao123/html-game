@@ -44,7 +44,7 @@ export function resolvePath(gs, dirIdx) {
   const path = [];
 
   let cur = startIdx;
-  let next = Distance.outerNeighbors(gs.map.size, cur)[dirIdx];
+  let next = Distance.outerNeighbors(gs.map, cur)[dirIdx];
   if (next === null || next === undefined) return [];
   path.push(next);
   cur = next;
@@ -52,7 +52,7 @@ export function resolvePath(gs, dirIdx) {
   // 冰面滑行：只要落在冰面上，就继续沿同一方向前进；无法直行（拐角/边界）则停下
   let guard = 0;
   while (isIce(gs, cur) && guard++ < 64) {
-    const ahead = Distance.outerNeighbors(gs.map.size, cur)[dirIdx];
+    const ahead = Distance.outerNeighbors(gs.map, cur)[dirIdx];
     if (ahead === null || ahead === undefined) break;   // 必须转弯 → 停在冰面上
     if (path.includes(ahead)) break;                    // 环形地图防死循环
     path.push(ahead);

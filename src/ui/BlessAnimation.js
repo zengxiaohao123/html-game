@@ -16,6 +16,7 @@ import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { BlessSystem } from '../systems/BlessSystem.js';
 import { devLog } from '../core/Logger.js';
+import { Distance } from '../core/Distance.js';
 
 /** 动画参数（可改） */
 const TOTAL_MS = 2500;       // 总时长
@@ -59,7 +60,8 @@ export class BlessAnimation {
     // candidates 是 BlessSystem.blessStart 按 idx 升序排好的外圈格（x/y 为逻辑格中心）
     // 顺时针 = candidates 数组 index 递增：0→1→2→…→N→0→1...
     // 逻辑坐标 → 像素：每格像素 = 容器实时宽度 / 外圈边长（自动兼容扩图与 §16.3 缩放）
-    const tilePx = mapRect.width / Math.max(1, gs.map.size);
+    const dims = Distance.mapDimsOf(gs);
+    const tilePx = mapRect.width / Math.max(1, dims.cols);
     const absPositions = candidates.map(c => ({
       ...c,
       absX: mapRect.left + c.x * tilePx,
@@ -157,7 +159,8 @@ export class BlessAnimation {
     const mapRect = this._getMapRect();
     if (!mapRect) return;
     const gs = this._getGS();
-    const tilePx = mapRect.width / Math.max(1, gs?.map?.size || 3);
+    const cols = Distance.mapDimsOf(gs).cols || 3;
+    const tilePx = mapRect.width / Math.max(1, cols);
 
     this.candidateDots = [];
     for (const c of candidates) {

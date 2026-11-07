@@ -19,7 +19,7 @@
 // 生物归属裁剪（§2.1 域裁剪）：生物的「位于哪些地块」只在栅栏域内判定；
 //   圆贴边压到外圈框不算位于外圈地块（外圈单位页只显示角色）。
 
-import { outerIdxToXY, outerXYToIdx } from './Distance.js';
+import { outerIdxToXY, outerXYToIdx, mapDimsOf, fenceDimsOf, outerRingCount } from './Distance.js';
 import { getCreatureDef } from '../data/creatures.js';
 
 /** 栅栏原点（网格坐标，与地图边长无关，恒为 (1,1)） */
@@ -107,38 +107,33 @@ export function gridCellOfFence(row, col) {
 export function fenceCellOfGrid(gs, x, y) {
   const row = y - FENCE_ORIGIN_Y;
   const col = x - FENCE_ORIGIN_X;
-  const rowCols = fenceRowColsOf(gs);
-  if (row < 0 || row >= rowCols || col < 0 || col >= rowCols) return null;
+  const dims = fenceDimsOf(gs);
+  if (row < 0 || row >= dims.rows || col < 0 || col >= dims.cols) return null;
   return { row, col };
 }
 
-/** 取栅栏行列数：兼容 gs 与几何快照（快照把 map 摊平） */
-function fenceRowColsOf(src) {
-  return src?.map?.fenceRowCols ?? src?.fenceRowCols ?? 0;
-}
-
-/** 取外圈边长：兼容 gs 与几何快照 */
-function mapSizeOf(src) {
-  return src?.map?.size ?? src?.size ?? 0;
+/** 取对外暴露的地图行列数（兼容旧 size 口径） */
+export function mapDims(gs) {
+  return mapDimsOf(gs);
 }
 
 /** 栅栏地块线性索引（与 gs.map.fence 数组下标一致） */
 export function fenceTileIndex(gs, row, col) {
-  return row * (gs?.map?.fenceRowCols ?? 0) + col;
+  return row * fenceDimsOf(gs).cols + col;
 }
 
 /** 把数字/ref 归一化为栅栏 ref；外圈 ref 或非法值返回 null */
 export function normalizeFenceRef(gs, ref) {
-  const rowCols = fenceRowColsOf(gs);
+  const dims = fenceDimsOf(gs);
   if (typeof ref === 'number') {
-    if (!Number.isInteger(ref) || ref < 0 || ref >= rowCols * rowCols) return null;
-    return { kind: 'fence', row: Math.floor(ref / rowCols), col: ref % rowCols };
+    if (!Number.isInteger(ref) || ref < 0 || ref >= dims.rows * dims.cols) return null;
+    return { kind: 'fence', row: Math.floor(ref / dims.cols), col: ref % dims.cols };
   }
   if (isFenceTileRef(ref)) {
     const row = ref.row;
     const col = ref.col;
     if (!Number.isInteger(row) || !Number.isInteger(col)) return null;
-    if (row < 0 || row >= rowCols || col < 0 || col >= rowCols) return null;
+    if (row < 0 || row >= dims.rows || col < 0 || col >= dims.cols) return null;
     return { kind: 'fence', row, col };
   }
   return null; // {kind:'outer'} 一律裁剪掉
@@ -146,14 +141,13 @@ export function normalizeFenceRef(gs, ref) {
 
 /** 归一化为地块 ref；数字按「外圈 idx」解释；非法返回 null */
 export function normalizeTileRef(gs, ref) {
+  const total = outerTileCount(gs);
   if (typeof ref === 'number') {
     if (!Number.isInteger(ref) || ref < 0) return null;
-    const total = 4 * Math.max(0, mapSizeOf(gs) - 1);
     return ref < total ? { kind: 'outer', idx: ref } : null;
   }
   if (isFenceTileRef(ref)) return normalizeFenceRef(gs, ref);
   if (ref && ref.kind === 'outer' && Number.isInteger(ref.idx)) {
-    const total = 4 * Math.max(0, mapSizeOf(gs) - 1);
     return ref.idx >= 0 && ref.idx < total ? ref : null;
   }
   return null;
@@ -171,7 +165,7 @@ export function tileCenter(gs, ref) {
   const r = normalizeTileRef(gs, ref);
   if (!r) return null;
   if (r.kind === 'outer') {
-    const { x, y } = outerIdxToXY(gs.map.size, r.idx);
+    const { x, y } = outerIdxToXY(mapDimsOf(gs), r.idx);
     return { x: x + 0.5, y: y + 0.5 };
   }
   const g = gridCellOfFence(r.row, r.col);
@@ -186,7 +180,7 @@ export function tileRect(gs, ref) {
   const r = normalizeTileRef(gs, ref);
   if (!r) return null;
   if (r.kind === 'outer') {
-    const { x, y } = outerIdxToXY(gs.map.size, r.idx);
+    const { x, y } = outerIdxToXY(mapDimsOf(gs), r.idx);
     return { x0: x, y0: y, x1: x + 1, y1: y + 1 };
   }
   const g = gridCellOfFence(r.row, r.col);
@@ -201,18 +195,19 @@ export function fenceTileRect(row, col) {
 
 /** 整个栅栏区域的矩形（外圈边长可扩展 → 栅栏内区域同步变大） */
 export function fenceRect(gs) {
-  const rowCols = fenceRowColsOf(gs);
+  const dims = fenceDimsOf(gs);
   return {
     x0: FENCE_ORIGIN_X,
     y0: FENCE_ORIGIN_Y,
-    x1: FENCE_ORIGIN_X + rowCols,
-    y1: FENCE_ORIGIN_Y + rowCols,
+    x1: FENCE_ORIGIN_X + dims.cols,
+    y1: FENCE_ORIGIN_Y + dims.rows,
   };
 }
 
-/** 外圈 idx 数量（随地图边长变化） */
+/** 外圈 idx 数量（随地图行/列数变化） */
 export function outerTileCount(gs) {
-  return 4 * Math.max(0, (gs?.map?.size ?? 0) - 1);
+  const dims = mapDimsOf(gs);
+  return outerRingCount(dims.rows, dims.cols);
 }
 
 /** 全部外圈地块 ref */
@@ -225,10 +220,10 @@ export function allOuterTileRefs(gs) {
 
 /** 全部栅栏地块 ref（行优先） */
 export function allFenceTileRefs(gs) {
-  const rowCols = fenceRowColsOf(gs);
+  const dims = fenceDimsOf(gs);
   const out = [];
-  for (let r = 0; r < rowCols; r++) {
-    for (let c = 0; c < rowCols; c++) out.push(fenceTileRef(r, c));
+  for (let r = 0; r < dims.rows; r++) {
+    for (let c = 0; c < dims.cols; c++) out.push(fenceTileRef(r, c));
   }
   return out;
 }
@@ -239,12 +234,17 @@ export function allFenceTileRefs(gs) {
  * @param {object} p
  * @param {number} p.availW 可用宽度（px）
  * @param {number} p.availH 可用高度（px）
- * @param {number} p.size   外圈边长（地图 size）
+ * @param {number} p.size   外圈边长（旧口径方阵；矩形地图请传 rows/cols）
+ * @param {number} [p.rows] 地图行数（宽度）
+ * @param {number} [p.cols] 地图列数（长度）
  * @returns {number} 每格像素（整数）
  */
-export function computeTilePx({ availW, availH, size, maxTilePx = MAX_TILE_PX, minTilePx = MIN_TILE_PX }) {
-  const n = Math.max(1, size || 3);
-  const fit = Math.min(Math.max(0, availW), Math.max(0, availH)) / n;
+export function computeTilePx({
+  availW, availH, size, rows, cols, maxTilePx = MAX_TILE_PX, minTilePx = MIN_TILE_PX,
+}) {
+  const nRows = Math.max(1, rows ?? size ?? 3);
+  const nCols = Math.max(1, cols ?? size ?? 3);
+  const fit = Math.min(Math.max(0, availW) / nCols, Math.max(0, availH) / nRows);
   return Math.max(minTilePx, Math.min(maxTilePx, Math.floor(fit)));
 }
 
@@ -293,9 +293,9 @@ export function creatureTileRefs(gs, creature) {
   const c = creatureCircle(creature);
   if (!c) return [];
   const out = [];
-  const rowCols = fenceRowColsOf(gs);
-  for (let r = 0; r < rowCols; r++) {
-    for (let col = 0; col < rowCols; col++) {
+  const dims = fenceDimsOf(gs);
+  for (let r = 0; r < dims.rows; r++) {
+    for (let col = 0; col < dims.cols; col++) {
       if (circleIntersectsRect(c.x, c.y, c.r, fenceTileRect(r, col))) {
         out.push(fenceTileRef(r, col));
       }
@@ -337,10 +337,16 @@ export function snapshotGeometry(gs) {
         radius: circle.r,
       };
     });
+  const mapDims = mapDimsOf(gs);
+  const fenceDims = fenceDimsOf(gs);
   return {
     __geometrySnapshot: true,
     size: gs?.map?.size ?? 3,
+    rows: mapDims.rows,
+    cols: mapDims.cols,
     fenceRowCols: gs?.map?.fenceRowCols ?? 1,
+    fenceRows: fenceDims.rows,
+    fenceCols: fenceDims.cols,
     creatures,
   };
 }
@@ -482,6 +488,7 @@ export const Geometry = {
   gridCellOfFence,
   fenceCellOfGrid,
   fenceTileIndex,
+  mapDims,
   normalizeFenceRef,
   normalizeTileRef,
   tileCenter,

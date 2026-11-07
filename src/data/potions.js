@@ -85,6 +85,32 @@ export const POTIONS = {
     },
   },
 
+  // ── ITM-BK-003 农场扩建I型 📏（使用型，无目标）──
+  item_farm_expand_length: {
+    id: 'item_farm_expand_length',
+    itemId: 'item_farm_expand_length',
+    name: '农场扩建I型',
+    emoji: '📏',
+    description: ITEMS.item_farm_expand_length.description,
+    useEffect: {
+      type: 'expand_map_length',
+      // 农场的长度（列数）增加 1 列；见 MapExpandSystem
+    },
+  },
+
+  // ── ITM-BK-004 农场扩建II型 📐（使用型，无目标）──
+  item_farm_expand_width: {
+    id: 'item_farm_expand_width',
+    itemId: 'item_farm_expand_width',
+    name: '农场扩建II型',
+    emoji: '📐',
+    description: ITEMS.item_farm_expand_width.description,
+    useEffect: {
+      type: 'expand_map_width',
+      // 农场的宽度（行数）增加 1 行；见 MapExpandSystem
+    },
+  },
+
   // ── ITM-CON-006 艾草熏香 🪔（放置型）──
   item_incense: {
     id: 'item_incense',

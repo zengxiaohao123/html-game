@@ -65,6 +65,10 @@ export const STARTER_ITEMS = [
   ['item_trap', 2],
   ['item_incense', 2],
 
+  // ── 农场扩建（开发期测试：I 型 / II 型各 3 个，便于验证多次扩建与上限边界）──
+  ['item_farm_expand_length', 3],
+  ['item_farm_expand_width', 3],
+
   // ── 基础道具（技能石"获得即习得"只在游戏内获得时触发；开局直接给技能本体）──
   ['skill_link_shift', 1],
   ['grimoire_grain_full', 1],

@@ -160,6 +160,7 @@ export const GE = {
   TILE_UPDATED: 'tile:updated',         // 地块内容/地形/状态变化
   TILE_CLICKED: 'tile:clicked',
   TERRAIN_DEPLETED: 'terrain:depleted',
+  MAP_EXPANDED: 'map:expanded',         // 农场扩建完成（payload: {gs}），UI 需全量重排
   
   // —— 背包/放置 ——
   INVENTORY_CHANGE: 'inventory:change',
@@ -204,7 +205,8 @@ fenceTileRect(row, col)        // 栅栏格 AABB（栅栏原点恒 (1,1)，无�
 fenceRect(gs)                  // 整个栅栏区域 AABB
 outerTileRef(idx) / fenceTileRef(row,col) / fenceTileIndex(gs,row,col)
 allOuterTileRefs(gs) / allFenceTileRefs(gs)
-computeTilePx({availW, availH, size})   // UI 由可用区域反算每格像素（3×3 常规窗口仍 80px）
+mapDims(gs)                     // → { rows, cols }（地图行数/列数；旧存档缺字段时回退 map.size）
+computeTilePx({availW, availH, rows, cols})   // UI 由可用区域反算每格像素：min(availW/cols, availH/rows)（3×3 常规窗口仍 80px）
 
 // —— 生物圆 ——
 creatureRadius(creatureOrKind) // 实例 radius → 生物定义 radius → 0.25（待定兜底）
@@ -223,10 +225,33 @@ snapshotGeometry(gs)                    // 冻结逻辑圆位置/半径的快照
 
 **几何口径（权威）**：
 
-1. **地图外圈边长可配置**：初始 3×3，后续道具可扩长/扩宽。外圈边长 `size` 变化时，栅栏内区域 = `(size-2)×(size-2)` 同步变大，但**栅栏原点恒为网格 (1,1)**；`outerTiles` 长度 = `4*(size-1)`。禁止把 3×3 / 8 格 / 240px 写死。地块像素由可用区域 `computeTilePx()` 反算，扩图不挤压、不错位。逻辑层（如 `BlessSystem`）只输出逻辑坐标，像素换算只发生在 UI（`MapView` / `BlessAnimation`）。
+1. **地图为矩形，行/列可独立变化**：初始 3×3。权威尺寸字段是 `map.rows`（行数 = 设计文档里的“宽度”）与 `map.cols`（列数 = “长度”）；`map.size` 仅作为旧存档回退（`rows ?? size`）。栅栏内区域 = `(rows-2)×(cols-2)`，**栅栏原点恒为网格 (1,1)**，栅栏线性索引 = `row*fenceCols+col`。外圈总格数 = `2rows+2cols-4`（上边 `cols-1`、右边 `rows-1`、下边 `cols-1`、左边 `rows-1`；上边不含右上角、右边含两角、下边不含左下角、左边含左下角）。禁止把 3×3 / 8 格 / 240px 写死。地块像素由可用区域 `computeTilePx({rows, cols})` 反算，扩图不挤压、不错位。逻辑层（如 `BlessSystem`）只输出逻辑坐标，像素换算只发生在 UI（`MapView` / `BlessAnimation`）。
+   - 旧存档缺少 `rows/cols/fenceRows/fenceCols` 时，`Distance.mapDimsOf` / `fenceDimsOf` 一律回退 `size` / `fenceRowCols`，按 3×3 正常工作，不崩溃。
+   - 索引换算统一走 `Distance.outerIdxToXY` / `outerXYToIdx` / `outerNeighbors`（入参可为 `gs.map` 或 `{rows, cols}`），不允许再传裸 `size`；越界一律返回 `null`，环形邻居不跨圈回绕。
 2. **生物只属于栅栏域**：圆贴边压到外圈框不算位于外圈地块（外圈单位页只显示角色）。`fence[].creatures` 只是「主格」兼容缓存，**几何归属以 `pos` + `radius` 计算**；允许一格多只、允许完全重叠，生成不再要求整格为空（容量仍按分类软上限统计）。
 3. **逻辑位置 vs 渲染位置**：`pos` 是判定权威位置；`renderPos` 是表现层插值位置。结算冻结（主动技能/回合结算）只冻结 `pos`（用 `snapshotGeometry()` 捕获），渲染层继续按 `renderPos` 插值，画面不停。阶段 2 起两者都由 `RealtimeClock` 推进：逻辑步写 `pos`，每个真实帧独立写 `renderPos`（见 §2.5）。
 4. **默认索敌（全项目统一）**：任何未明确写索敌对象的技能，一律选**最近的敌人**（圆心到圆心直线距离），即 `nearestCreatureTo(gs, point)` 默认语义（`enemiesOnly: true` + 存活判定）。
+
+### 2.4.1 MapExpandSystem（农场扩建）
+
+```js
+// src/systems/MapExpandSystem.js
+EXPAND_AXIS = { LENGTH: 'length', WIDTH: 'width' }   // 长度=列数+1，宽度=行数+1
+expandMapInPlace(gs, axis)   // 原地扩建，返回 { ok, axis, before:{rows,cols}, after:{rows,cols}, idxMap }
+expandMap(gs, axis)          // 在 expandMapInPlace 之上同步日初基线并广播 GE.MAP_EXPANDED
+```
+
+**实现口径（权威，对应设计文档 §2.1.1）**：
+
+- **方向固定，不做玩家选择**：I 型（`item_farm_expand_length` / `expand_map_length`）恒向右扩 1 列；II 型（`item_farm_expand_width` / `expand_map_width`）恒向上扩 1 行。
+- **I 型（列 +1）**：原最右列（`x = cols-1`）整体右移 1 格到 `x = cols`，腾空的 `x = cols-1` 生成新列——上下端为外圈格，中间为栅栏格；`fenceCols + 1`，新栅栏列追加在末尾。
+- **II 型（行 +1）**：原最上行（`y = 0`）保持，`y ≥ 1` 整体下移 1 行（`y → y+1`），腾空的 `y = 1` 生成新行——左右端为外圈格，中间为栅栏格；`fenceRows + 1`（旧行下移、新行插在最前），栅栏格行索引 `+1`。
+- **跟随规则**：角色恰好站在被移动地块上时随之平移（`player.x/y` 同步重算），该位移**不视为移动**，不触发任何技能/地块效果。
+- **内容保留与索引重映射**：重建 `map.outerTiles` 时按新的环形顺序排布，并产出 `idxMap`（旧外圈 idx → 新外圈 idx）；同时重映射 `player` 坐标、`creatures[].pos/renderPos/targetPos`、`fence[].creatures` 缓存、`linkSkillCounters` / `linkSkillCooldowns` 的 `tileIdx|skillId` 键、连携队列的 `tileIdx`/`key`、`uiState.selectedTileIdx`。地块 `tile.idx` 全部改写为新 idx。
+- **地形**：新外圈格走 §4 地形权重（50/40/10）掷骰并写入 `elementAmount`；新栅栏格地形为 `terrain_none`。
+- **无上限、无消耗**：不设扩建次数硬上限（受地图可容纳格数与性能约束），不消耗行动力/体力、无冷却。物品数量扣减由 `UseItemSystem` 的通用道具扣减逻辑完成。
+- **存档关系**：扩建同时写入 `DayBaseline.getCurrent()` 的 `map` 部分并 `setCurrent`，视为世界永久变化——即使当天结束回滚，尺寸仍保留；其余日内变化照旧回滚。`map.rows/cols/fenceRows/fenceCols` 随存档序列化，读档后正确恢复。
+- **UI 重排**：`MapView` 订阅 `GE.MAP_EXPANDED`，重新按新 `rows/cols` 计算 tile 像素、重画所有地块/栅栏/角色/生物层，不产生幽灵格或错位。
 
 ### 2.5 RealtimeClock（统一实时时钟 / 渲染插值）
 
@@ -273,7 +298,7 @@ export const createInitialState = () => ({
   
   // === 玩家 ===
   player: {
-    x: 0,                      // 外圈格索引 0~7（初始 3×3），左下家的位置
+    x: 0,                      // 外圈格索引 0~(2rows+2cols-5)（初始 3×3 为 0~7），左下家的位置
     y: 0,                      // 同上，实际渲染时用 map.getTileCoord()
     hp: 100,
     maxHp: 100,
@@ -287,10 +312,16 @@ export const createInitialState = () => ({
   
   // === 地图 ===
   map: {
-    size: 3,                   // 外圈边长（初始 3；道具可扩长/扩宽 → size 增大）
-    outerTiles: [],            // 外圈格数组，长度 4*(size-1)；每格 { idx, terrain, terrainAmount, contentId, states: [], dailyFlags: {} }
-    fence: [],                 // 栅栏内网格，fenceRowCols × fenceRowCols；每格 { row, col, terrain, terrainAmount, creatures: [], items: [] }
-    fenceRowCols: 1,           // = size - 2（栅栏内随外圈同步扩大；原点恒为网格 (1,1)）
+    // 新开局只写 size/fenceRowCols；rows/cols/fenceRows/fenceCols 在首次扩建时写入，
+    // 读取一律经 Distance.mapDimsOf / fenceDimsOf（缺字段回退 size / fenceRowCols）
+    rows: 3,                   // 行数（= 设计文档“宽度”）；扩建 II 型 +1
+    cols: 3,                   // 列数（= 设计文档“长度”）；扩建 I 型 +1
+    size: 3,                   // 兼容字段：初始 3，扩建后 = Math.max(rows, cols)
+    outerTiles: [],            // 外圈格数组，长度 2rows+2cols-4；每格 { idx, terrain, terrainAmount, contentId, states: [], dailyFlags: {} }
+    fence: [],                 // 栅栏内网格，fenceRows × fenceCols；每格 { row, col, terrain, terrainAmount, creatures: [], items: [] }
+    fenceRows: 1,              // = rows - 2（栅栏内行数；原点恒为网格 (1,1)）
+    fenceCols: 1,              // = cols - 2（栅栏内列数；线性索引 = row*fenceCols+col）
+    fenceRowCols: 1,           // 兼容字段：初始 = size - 2；扩建后 = fenceRows
   },
   
   // === 容量 ===

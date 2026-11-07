@@ -1031,7 +1031,7 @@ export class InfoPanel {
 
       if (!hasVehicle) {
         // 无载具：只允许相邻格
-        const isAdj = Distance.isOuterAdjacent(gs.map.size, gs.player.x, tile.idx);
+        const isAdj = Distance.isOuterAdjacent(gs.map, gs.player.x, tile.idx);
         if (isAdj) {
           canGo = true;
         } else {
@@ -1076,8 +1076,8 @@ export class InfoPanel {
             if (!director) return;
             if (!hasVehicle) {
               // 无载具：普通 1 步相邻移动（保持原逻辑）
-              const { x: px, y: py } = Distance.outerIdxToXY(gs.map.size, gs.player.x);
-              const { x: tx, y: ty } = Distance.outerIdxToXY(gs.map.size, tile.idx);
+              const { x: px, y: py } = Distance.outerIdxToXY(gs.map, gs.player.x);
+              const { x: tx, y: ty } = Distance.outerIdxToXY(gs.map, tile.idx);
               let dir = null;
               if (tx > px) dir = 'right';
               else if (tx < px) dir = 'left';
@@ -1090,8 +1090,8 @@ export class InfoPanel {
               let result;
               if (pattern === 'directional') {
                 // 轮子：算出方向，走 tryMove({ type:'direction', direction })
-                const { x: px, y: py } = Distance.outerIdxToXY(gs.map.size, gs.player.x);
-                const { x: tx, y: ty } = Distance.outerIdxToXY(gs.map.size, tile.idx);
+                const { x: px, y: py } = Distance.outerIdxToXY(gs.map, gs.player.x);
+                const { x: tx, y: ty } = Distance.outerIdxToXY(gs.map, tile.idx);
                 let dir = null;
                 if (tx > px) dir = 'right';
                 else if (tx < px) dir = 'left';

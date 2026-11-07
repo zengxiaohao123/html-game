@@ -30,6 +30,7 @@ import { ITEMS } from '../data/items.js';
 import { normalizeTerrain } from '../data/terrains.js';
 import { InventorySystem } from './InventorySystem.js';
 import { CombatSystem } from './CombatSystem.js';
+import { fenceDimsOf } from '../core/Distance.js';
 import {
   DEFAULT_CREATURE_RADIUS,
   FENCE_ORIGIN_X,
@@ -392,10 +393,10 @@ function stepWalk(gs, creature, profile, dtSec) {
 
 /** 主格兼容缓存：row/col + fence[].creatures（几何归属仍以 pos+radius 为准） */
 function syncPrimaryFenceTile(gs, creature) {
-  const rowCols = gs.map?.fenceRowCols || 0;
-  if (rowCols <= 0 || !Array.isArray(gs.map?.fence)) return;
-  const gridX = clamp(Math.floor(creature.pos.x), FENCE_ORIGIN_X, FENCE_ORIGIN_X + rowCols - 1);
-  const gridY = clamp(Math.floor(creature.pos.y), FENCE_ORIGIN_Y, FENCE_ORIGIN_Y + rowCols - 1);
+  const fDims = fenceDimsOf(gs);
+  if (fDims.rows <= 0 || fDims.cols <= 0 || !Array.isArray(gs.map?.fence)) return;
+  const gridX = clamp(Math.floor(creature.pos.x), FENCE_ORIGIN_X, FENCE_ORIGIN_X + fDims.cols - 1);
+  const gridY = clamp(Math.floor(creature.pos.y), FENCE_ORIGIN_Y, FENCE_ORIGIN_Y + fDims.rows - 1);
   const cell = fenceCellOfGrid(gs, gridX, gridY);
   if (!cell) return;
   if (creature.row === cell.row && creature.col === cell.col) return;
@@ -406,7 +407,7 @@ function syncPrimaryFenceTile(gs, creature) {
   }
   creature.row = cell.row;
   creature.col = cell.col;
-  const newTile = gs.map.fence[cell.row * rowCols + cell.col];
+  const newTile = gs.map.fence[cell.row * fDims.cols + cell.col];
   if (newTile) {
     newTile.creatures = newTile.creatures || [];
     if (!newTile.creatures.includes(creature.id)) newTile.creatures.push(creature.id);

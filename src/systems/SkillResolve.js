@@ -38,7 +38,7 @@ import {
   creaturesInTiles,
   snapshotGeometry,
 } from '../core/Geometry.js';
-import { outerIdxToXY } from '../core/Distance.js';
+import { outerIdxToXY, mapDimsOf, fenceDimsOf } from '../core/Distance.js';
 import { EffectBatch } from './EffectBatch.js';
 import { PendingDeathQueue } from './PendingDeathQueue.js';
 import { devLog } from '../core/Logger.js';
@@ -63,20 +63,9 @@ export function targetSideOf(skill) {
 /** 行/列 / 线带需要 areaRadius 的形状 */
 const RADIUS_SHAPES = ['circle', 'line'];
 
-function rowColsOf(src) {
-  // 以 map.fence 实际边长为准（真实地图 fence.length = n²），fenceRowCols 仅作回落
-  const fenceLen = Array.isArray(src?.map?.fence)
-    ? src.map.fence.length
-    : (Array.isArray(src?.fence) ? src.fence.length : 0);
-  if (fenceLen > 0) {
-    const side = Math.round(Math.sqrt(fenceLen));
-    if (side > 0 && side * side === fenceLen) return side;
-  }
-  return src?.fenceRowCols ?? src?.map?.fenceRowCols ?? 0;
-}
-
-function sizeOf(src) {
-  return src?.size ?? src?.map?.size ?? 0;
+/** 栅栏行列数（矩形地图：rows/cols 分开取，禁止再用 sqrt(fence.length) 假设方阵） */
+function fenceDims(src) {
+  return fenceDimsOf(src);
 }
 
 // ────────────────────────────────────────────────────────────
@@ -148,12 +137,6 @@ export function validateSkillJudgeModes(skills = SKILLS) {
  */
 export function createSettlement(gs, opts = {}) {
   const snapshot = snapshotGeometry(gs);
-  // 快照的栅栏行数列数以 map.fence 实际边长为准确认（Geometry 只读 map.fenceRowCols，
-  // 测试/工具里手工拼的地图可能与声明值不一致；真实地图 fence.length = n² 两者相同）
-  const derivedCols = rowColsOf(gs);
-  if (derivedCols > 0 && snapshot.fenceRowCols !== derivedCols) {
-    snapshot.fenceRowCols = derivedCols;
-  }
   const deathQueue = opts.deathQueue || new PendingDeathQueue(gs);
   const batch = new EffectBatch(gs, {
     sourceSkillId: opts.skillId ?? null,
@@ -235,10 +218,10 @@ export function enemyPool(snapshot, opts = {}) {
 }
 
 /** 快照条目 → 栅栏格线性索引（距离并列时的稳定次级排序键） */
-function fenceIndexAt(entry, rowCols) {
-  const col = clamp(Math.floor(entry.x) - FENCE_ORIGIN_X, 0, Math.max(0, rowCols - 1));
-  const row = clamp(Math.floor(entry.y) - FENCE_ORIGIN_Y, 0, Math.max(0, rowCols - 1));
-  return row * rowCols + col;
+function fenceIndexAt(entry, dims) {
+  const col = clamp(Math.floor(entry.x) - FENCE_ORIGIN_X, 0, Math.max(0, dims.cols - 1));
+  const row = clamp(Math.floor(entry.y) - FENCE_ORIGIN_Y, 0, Math.max(0, dims.rows - 1));
+  return row * dims.cols + col;
 }
 
 /**
@@ -248,13 +231,13 @@ function fenceIndexAt(entry, rowCols) {
  * @param {object} src gs / snapshot（取 fenceRowCols）
  */
 export function orderByDistance(entries, anchor, src) {
-  const rowCols = rowColsOf(src);
+  const dims = fenceDims(src);
   return [...(entries || [])].sort((a, b) => {
     const da = circleCenterDistance(anchor, a);
     const db = circleCenterDistance(anchor, b);
     if (da !== db) return da - db;
-    const ia = fenceIndexAt(a, rowCols);
-    const ib = fenceIndexAt(b, rowCols);
+    const ia = fenceIndexAt(a, dims);
+    const ib = fenceIndexAt(b, dims);
     if (ia !== ib) return ia - ib;
     return String(a.id).localeCompare(String(b.id));
   });
@@ -382,11 +365,11 @@ export function distancePointToSegment(px, py, ax, ay, bx, by) {
  * @param {number} radius
  */
 export function circleTileRefs(gs, anchor, radius) {
-  const rowCols = rowColsOf(gs);
+  const dims = fenceDims(gs);
   const out = [];
   if (!anchor || !Number.isFinite(anchor.x) || !Number.isFinite(radius)) return out;
-  for (let row = 0; row < rowCols; row++) {
-    for (let col = 0; col < rowCols; col++) {
+  for (let row = 0; row < dims.rows; row++) {
+    for (let col = 0; col < dims.cols; col++) {
       const rect = fenceTileRect(row, col);
       const center = { x: rect.x0 + 0.5, y: rect.y0 + 0.5 };
       if (circleCenterDistance(center, anchor) <= radius) out.push({ kind: 'fence', row, col });
@@ -400,16 +383,15 @@ export function circleTileRefs(gs, anchor, radius) {
  * 越界轴（贴外圈）只保留另一轴。
  */
 export function rowColumnTileRefs(gs, tileIdx) {
-  const size = sizeOf(gs);
-  const rowCols = rowColsOf(gs);
-  const { x, y } = outerIdxToXY(size, tileIdx);
+  const dims = fenceDims(gs);
+  const { x, y } = outerIdxToXY(mapDimsOf(gs), tileIdx);
   const fenceRow = y - FENCE_ORIGIN_Y;
   const fenceCol = x - FENCE_ORIGIN_X;
   const out = [];
-  for (let row = 0; row < rowCols; row++) {
-    for (let col = 0; col < rowCols; col++) {
-      const inRow = fenceRow >= 0 && fenceRow < rowCols && row === fenceRow;
-      const inCol = fenceCol >= 0 && fenceCol < rowCols && col === fenceCol;
+  for (let row = 0; row < dims.rows; row++) {
+    for (let col = 0; col < dims.cols; col++) {
+      const inRow = fenceRow >= 0 && fenceRow < dims.rows && row === fenceRow;
+      const inCol = fenceCol >= 0 && fenceCol < dims.cols && col === fenceCol;
       if (inRow || inCol) out.push({ kind: 'fence', row, col });
     }
   }
@@ -418,17 +400,16 @@ export function rowColumnTileRefs(gs, tileIdx) {
 
 /** 单行 / 单列（预留形状，目前无技能使用） */
 export function rowOrColumnTileRefs(gs, tileIdx, axis) {
-  const size = sizeOf(gs);
-  const rowCols = rowColsOf(gs);
-  const { x, y } = outerIdxToXY(size, tileIdx);
+  const dims = fenceDims(gs);
+  const { x, y } = outerIdxToXY(mapDimsOf(gs), tileIdx);
   const fenceRow = y - FENCE_ORIGIN_Y;
   const fenceCol = x - FENCE_ORIGIN_X;
   const out = [];
-  for (let row = 0; row < rowCols; row++) {
-    for (let col = 0; col < rowCols; col++) {
+  for (let row = 0; row < dims.rows; row++) {
+    for (let col = 0; col < dims.cols; col++) {
       const hit = axis === 'row'
-        ? (fenceRow >= 0 && fenceRow < rowCols && row === fenceRow)
-        : (fenceCol >= 0 && fenceCol < rowCols && col === fenceCol);
+        ? (fenceRow >= 0 && fenceRow < dims.rows && row === fenceRow)
+        : (fenceCol >= 0 && fenceCol < dims.cols && col === fenceCol);
       if (hit) out.push({ kind: 'fence', row, col });
     }
   }
@@ -443,11 +424,11 @@ export function rowOrColumnTileRefs(gs, tileIdx, axis) {
  * @param {number} halfWidth
  */
 export function lineTileRefs(gs, from, to, halfWidth = 0.5) {
-  const rowCols = rowColsOf(gs);
+  const dims = fenceDims(gs);
   const out = [];
   if (!from || !to) return out;
-  for (let row = 0; row < rowCols; row++) {
-    for (let col = 0; col < rowCols; col++) {
+  for (let row = 0; row < dims.rows; row++) {
+    for (let col = 0; col < dims.cols; col++) {
       const rect = fenceTileRect(row, col);
       const center = { x: rect.x0 + 0.5, y: rect.y0 + 0.5 };
       if (distancePointToSegment(center.x, center.y, from.x, from.y, to.x, to.y) <= halfWidth) {

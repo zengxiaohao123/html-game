@@ -90,6 +90,8 @@
   "ITM-CON-006": ["item_incense", "🪔", ""],
   "ITM-BK-001": ["grimoire_harvest_cereal", "📕", ""],
   "ITM-BK-002": ["grimoire_grain_full", "📗", ""],
+  "ITM-BK-003": ["item_farm_expand_length", "📏", ""],
+  "ITM-BK-004": ["item_farm_expand_width", "📐", ""],
   "ITM-ST-001": ["skill_stone_zongheng", "💎", ""],
   "ITM-ST-002": ["skill_stone_shift", "💠", ""],
   "ITM-COL-001": ["collectible_sad_pumpkin", "🎃", ""],

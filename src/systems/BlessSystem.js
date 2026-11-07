@@ -107,7 +107,7 @@ export function blessStart(gs) {
     .slice()
     .sort((a, b) => a.idx - b.idx)
     .map(t => {
-      const { x, y } = Distance.outerIdxToXY(gs.map.size, t.idx);
+      const { x, y } = Distance.outerIdxToXY(gs.map, t.idx);
       return {
         idx: t.idx,
         // 逻辑坐标（格中心）；像素换算由 UI 层按当前每格像素完成（外圈可扩展）

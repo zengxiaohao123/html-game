@@ -49,7 +49,7 @@ const flagKey = (id, hook) => `${id}_${hook}`;
 
 // ── 小工具：相邻水面检查（用于稻田每日产出 +2）──
 function hasAdjacentWater(gs, tileIdx) {
-  const neighbors = Distance.outerNeighbors(gs.map.size, tileIdx);
+  const neighbors = Distance.outerNeighbors(gs.map, tileIdx);
   for (const nIdx of neighbors) {
     if (nIdx === null || nIdx === undefined) continue;
     const nTile = gs.map.outerTiles[nIdx];
@@ -737,7 +737,7 @@ const FacilityCabbage = {
         if (InventorySystem.countItem(gs, 'item_cabbage') < 1) continue;
         if (enemies.length === 0) continue; // 没有敌人就不消耗
         // 最近敌人：以本块位置为基准（外圈 idx → xy；生物在 (col+1, row+1)）
-        const txy = Distance.outerIdxToXY(gs.map.size, t.idx);
+        const txy = Distance.outerIdxToXY(gs.map, t.idx);
         let nearest = null;
         let bestD = Infinity;
         for (const c of enemies) {

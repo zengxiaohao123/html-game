@@ -59,12 +59,13 @@ function ensureVehicleState(gs) {
  * 外圈环顺序（顺时针：顶行 → 右列 → 底行 → 左列），用于 'any' 模式算最短环路径
  */
 function buildRingOrder(gs) {
-  const n = gs.map.size;
+  const dims = Distance.mapDimsOf(gs);
+  const { rows, cols } = dims;
   const seq = [];
-  for (let x = 0; x < n; x++) seq.push(outerXYToIdx(n, x, 0));           // 顶行 左→右
-  for (let y = 1; y < n; y++) seq.push(outerXYToIdx(n, n - 1, y));       // 右列 上→下
-  for (let x = n - 2; x >= 0; x--) seq.push(outerXYToIdx(n, x, n - 1));  // 底行 右→左
-  for (let y = n - 2; y >= 1; y--) seq.push(outerXYToIdx(n, 0, y));      // 左列 下→上
+  for (let x = 0; x < cols; x++) seq.push(outerXYToIdx(dims, x, 0));               // 顶行 左→右
+  for (let y = 1; y < rows; y++) seq.push(outerXYToIdx(dims, cols - 1, y));        // 右列 上→下
+  for (let x = cols - 2; x >= 0; x--) seq.push(outerXYToIdx(dims, x, rows - 1));   // 底行 右→左
+  for (let y = rows - 2; y >= 1; y--) seq.push(outerXYToIdx(dims, 0, y));          // 左列 下→上
   return seq.filter(i => i !== null && i !== undefined);
 }
 
@@ -94,8 +95,8 @@ function simulateWalkPath(gs, fromIdx, toIdx) {
 
 /** 两格外圈格的曼哈顿距离（可穿越栅栏/虚空，只看坐标差） */
 function manhattan(gs, a, b) {
-  const pa = Distance.outerIdxToXY(gs.map.size, a);
-  const pb = Distance.outerIdxToXY(gs.map.size, b);
+  const pa = Distance.outerIdxToXY(gs.map, a);
+  const pb = Distance.outerIdxToXY(gs.map, b);
   if (!pa || !pb) return Infinity;
   return Math.abs(pa.x - pb.x) + Math.abs(pa.y - pb.y);
 }
@@ -242,8 +243,8 @@ function isOuterTileIdx(gs, idx) {
  * 判断两格是否同行或同列（外圈环形地图用 Distance.outerIdxToXY）
  */
 function sameRowOrCol(gs, aIdx, bIdx) {
-  const a = Distance.outerIdxToXY(gs.map.size, aIdx);
-  const b = Distance.outerIdxToXY(gs.map.size, bIdx);
+  const a = Distance.outerIdxToXY(gs.map, aIdx);
+  const b = Distance.outerIdxToXY(gs.map, bIdx);
   return a.x === b.x || a.y === b.y;
 }
 
@@ -280,7 +281,7 @@ export function tryMove(gs, opts = {}) {
     const dirIdx = Direction.dirToIndex(opts.direction);
     if (dirIdx === -1) return { ok: false, reason: 'badDirection' };
 
-    const { x: fx, y: fy } = Distance.outerIdxToXY(gs.map.size, fromIdx);
+    const { x: fx, y: fy } = Distance.outerIdxToXY(gs.map, fromIdx);
     let cx = fx, cy = fy;
 
     // 方向向量：0=up, 1=right, 2=down, 3=left
@@ -291,7 +292,7 @@ export function tryMove(gs, opts = {}) {
     let finalIdx = null;
     for (let step = 1; step <= maxRange; step++) {
       cx += dx; cy += dy;
-      const idx = outerXYToIdx(gs.map.size, cx, cy);
+      const idx = outerXYToIdx(gs.map, cx, cy);
       if (idx !== null) finalIdx = idx;
     }
 
@@ -416,8 +417,8 @@ export function canVehicleReach(gs, targetIdx) {
 
   if (def.movePattern === 'directional') {
     // 轮子：同方向最多 maxRange 格。穿越栅栏/虚空合法，只要落点是外圈格。
-    const { x: fx, y: fy } = Distance.outerIdxToXY(gs.map.size, fromIdx);
-    const { x: tx, y: ty } = Distance.outerIdxToXY(gs.map.size, targetIdx);
+    const { x: fx, y: fy } = Distance.outerIdxToXY(gs.map, fromIdx);
+    const { x: tx, y: ty } = Distance.outerIdxToXY(gs.map, targetIdx);
     const dx = tx - fx;
     const dy = ty - fy;
     // 必须严格只沿一个方向（dx===0 或 dy===0）
@@ -426,7 +427,7 @@ export function canVehicleReach(gs, targetIdx) {
     if (dist === 0 || dist > (def.maxRange || 2)) return { ok: false, reason: 'outOfRange' };
 
     // 只验证落点是合法外圈格 —— 中途穿越栅栏/虚空/null 都是合法的
-    const finalIdx = outerXYToIdx(gs.map.size, tx, ty);
+    const finalIdx = outerXYToIdx(gs.map, tx, ty);
     if (finalIdx === null) return { ok: false, reason: 'badTarget' };
     if (!landOk(gs, targetIdx, def)) return { ok: false, reason: 'landFilter' };
     return { ok: true, def };

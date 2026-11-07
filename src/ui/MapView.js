@@ -53,13 +53,15 @@ export class MapView {
   mount(gs, parent = qs('#app')) {
     this.gs = gs;
     this.tileSize = this._computeTileSize(gs, parent);
-    const mapPx = gs.map.size * this.tileSize;
+    const dims = Geometry.mapDims(gs);
+    const mapW = dims.cols * this.tileSize;
+    const mapH = dims.rows * this.tileSize;
 
     this.root = createEl('div', {
       class: ['map-container'],
       style: {
-        width: `${mapPx}px`,
-        height: `${mapPx}px`,
+        width: `${mapW}px`,
+        height: `${mapH}px`,
         position: 'relative',
         margin: '0 auto',
         flexShrink: '0',
@@ -91,16 +93,17 @@ export class MapView {
     const vh = (typeof window !== 'undefined' && window.innerHeight) || 0;
     const availW = (parentW || vw || 960) - MAP_H_MARGIN * 2;
     const availH = (parentH || vh || 640) - MAP_V_MARGIN * 2;
-    return Geometry.computeTilePx({ availW, availH, size: gs.map.size });
+    const dims = Geometry.mapDims(gs);
+    return Geometry.computeTilePx({ availW, availH, rows: dims.rows, cols: dims.cols });
   }
 
   /** 地图尺寸变化（新游戏/读档）时重算像素并重绘整张图 */
   _relayout(gs) {
     if (!this.root) return;
     this.tileSize = this._computeTileSize(gs, this.root.parentNode);
-    const mapPx = gs.map.size * this.tileSize;
-    this.root.style.width = `${mapPx}px`;
-    this.root.style.height = `${mapPx}px`;
+    const dims = Geometry.mapDims(gs);
+    this.root.style.width = `${dims.cols * this.tileSize}px`;
+    this.root.style.height = `${dims.rows * this.tileSize}px`;
     this.renderAllTiles(gs);
     this.renderFence(gs);
     this.renderPlayer(gs);
@@ -352,7 +355,7 @@ export class MapView {
       const tilePx = this.tileSize * this._scale;
       const x = Math.floor((e.clientX - rect.left) / tilePx);
       const y = Math.floor((e.clientY - rect.top) / tilePx);
-      const tileIdx = Distance.outerXYToIdx(gs.map.size, x, y);
+      const tileIdx = Distance.outerXYToIdx(gs.map, x, y);
       if (tileIdx === null || tileIdx === undefined) {
         EventBus.emit(GE.TOAST_SHOW, { text: '🛠️ 只能放在外圈地块上', duration: 2000 });
         return;
@@ -373,11 +376,11 @@ export class MapView {
 
   renderFence(gs) {
     if (!this.root) return;
-    const rowCols = gs.map.fenceRowCols;
+    const fDims = Distance.fenceDimsOf(gs);
     const ts = this.tileSize;
     const ratio = this._tileRatio;
 
-    // 栅栏原点恒为网格 (1,1)；外圈变大时栅栏内区域 = (size-2)×(size-2) 同步变大，
+    // 栅栏原点恒为网格 (1,1)；外圈变大时栅栏内区域 = (rows-2)×(cols-2) 同步变大，
     // 位置与尺寸全部由几何层给出，不再用「容器 240px - 栅栏 80px」的写死居中算法。
     const fRect = Geometry.fenceRect(gs);
     const box = this._pxRect(fRect);
@@ -416,9 +419,9 @@ export class MapView {
       wheat: '🌾',
     };
 
-    for (let r = 0; r < rowCols; r++) {
-      for (let c = 0; c < rowCols; c++) {
-        const fenceIdx = r * rowCols + c;
+    for (let r = 0; r < fDims.rows; r++) {
+      for (let c = 0; c < fDims.cols; c++) {
+        const fenceIdx = r * fDims.cols + c;
         const cell = gs.map.fence[fenceIdx];
         // 栅栏格相对栅栏容器的偏移 = 逻辑坐标差 × 每格像素（原点恒 (1,1)，扩图不错位）
         const logicalCell = Geometry.fenceTileRect(r, c);
@@ -503,10 +506,12 @@ export class MapView {
 
   _ensureCreatureLayer(gs) {
     if (!this.root) return;
-    const mapPx = gs.map.size * this.tileSize;
+    const dims = Geometry.mapDims(gs);
+    const mapW = dims.cols * this.tileSize;
+    const mapH = dims.rows * this.tileSize;
     if (this.creatureLayer) {
-      this.creatureLayer.style.width = `${mapPx}px`;
-      this.creatureLayer.style.height = `${mapPx}px`;
+      this.creatureLayer.style.width = `${mapW}px`;
+      this.creatureLayer.style.height = `${mapH}px`;
       // 保证在 tile / player 之上（重绘后仍压顶）
       this.root.appendChild(this.creatureLayer);
       return;
@@ -517,8 +522,8 @@ export class MapView {
         position: 'absolute',
         left: '0px',
         top: '0px',
-        width: `${mapPx}px`,
-        height: `${mapPx}px`,
+        width: `${mapW}px`,
+        height: `${mapH}px`,
         pointerEvents: 'none',
         zIndex: '20',
       },
@@ -600,6 +605,13 @@ export class MapView {
 
     // STATE_RESET（兼容其他来源；读档后地图边长可能不同 → 重算像素与栅栏）
     EventBus.on(GE.STATE_RESET, ({ gs }) => {
+      if (!gs) return;
+      this.gs = gs;
+      this._relayout(gs);
+    });
+
+    // 农场扩建：行/列变化 → 整图重排（地块索引已由 MapExpandSystem 重建）
+    EventBus.on(GE.MAP_EXPANDED, ({ gs }) => {
       if (!gs) return;
       this.gs = gs;
       this._relayout(gs);

@@ -88,7 +88,7 @@ export function hasConnectedRice(gs, n = 3) {
       if (seen.has(cur)) continue;
       seen.add(cur);
       size += 1;
-      for (const nb of Distance.outerNeighbors(gs.map.size, cur)) {
+      for (const nb of Distance.outerNeighbors(gs.map, cur)) {
         if (nb != null && rice.has(nb) && !seen.has(nb)) stack.push(nb);
       }
     }

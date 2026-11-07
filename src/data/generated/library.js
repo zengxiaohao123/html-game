@@ -3,12 +3,12 @@
 // 手工维护的部分只有 tools/lib_meta.json（编号 → id / emoji）。
 
 export const LIB_STAT = {
-  "total": 93,
+  "total": 95,
   "byTier1": {
     "产物": 15,
     "载具": 15,
     "地块内容": 42,
-    "道具": 17,
+    "道具": 19,
     "地形": 4
   },
   "pools": 12,
@@ -18,7 +18,7 @@ export const LIB_STAT = {
   "todo": 30
 };
 
-/** 物品总表（93 条）—— 表格第 2 张工作表 */
+/** 物品总表（95 条）—— 表格第 2 张工作表 */
 export const ITEMS = {
   item_wheat: {
   "id": "item_wheat",
@@ -2498,6 +2498,58 @@ export const ITEMS = {
   "stackByValue": false,
   "sources": "文档未指定具体途径（9 章、11 章通用说明）",
   "notes": "若下一格也是冰面则继续滑行，直到滑入非冰面或遇到必须转弯的拐角才停下。"
+},
+  item_farm_expand_length: {
+  "id": "item_farm_expand_length",
+  "libCode": "ITM-BK-003",
+  "name": "农场扩建I型",
+  "emoji": "📏",
+  "icon": null,
+  "tier1": "道具",
+  "tier2": "消耗道具",
+  "tier3": "使用型",
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 99,
+  "value": 30,
+  "valueMode": "固定值",
+  "traits": [],
+  "description": "农场的长度增加1格",
+  "triggers": [
+    "使用后自动生效"
+  ],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "只有指定的少数途径可获得（目前未设置）",
+  "notes": "本物品特殊，允许叠加，不唯一；商店或魔法商店中不会出现；大部分随机池中不会出现；只能通过指定途径获得；所谓长度，是指农场的列数增加1列，且扩建时，为了不影响玩家已经放置的部分，扩建逻辑是：先把最右侧1列向右移动1格距离，然后在原来的最右1列（现在已经空了）新增外圈和栅栏内地块（这部分的逻辑仍然遵循外面一圈是外圈，里面所有空间都是栅栏内的底层逻辑）。扩建时若角色恰好在要被移动的地块上，则角色跟随移动（本次移动不视为真正的移动，不触发任何效果）"
+},
+  item_farm_expand_width: {
+  "id": "item_farm_expand_width",
+  "libCode": "ITM-BK-004",
+  "name": "农场扩建II型",
+  "emoji": "📐",
+  "icon": null,
+  "tier1": "道具",
+  "tier2": "基础道具",
+  "tier3": "使用型",
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 99,
+  "value": 30,
+  "valueMode": "固定值",
+  "traits": [],
+  "description": "农场的宽度增加1格",
+  "triggers": [
+    "使用后自动生效"
+  ],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "只有指定的少数途径可获得（目前未设置）",
+  "notes": "本物品特殊，允许叠加，不唯一；商店或魔法商店中不会出现；大部分随机池中不会出现；只能通过指定途径获得；所谓宽度，是指农场的行数增加1行，且扩建时，为了不影响玩家已经放置的部分，扩建逻辑是：先把最上侧1行向上移动1格距离，然后在原来的最上1行（现在已经空了）新增外圈和栅栏内地块（这部分的逻辑仍然遵循外面一圈是外圈，里面所有空间都是栅栏内的底层逻辑）。扩建时若角色恰好在要被移动的地块上，则角色跟随移动（本次移动不视为真正的移动，不触发任何效果）"
 },
 };
 

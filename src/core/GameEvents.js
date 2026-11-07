@@ -32,6 +32,7 @@ export const GE = {
   TILE_CLICKED: 'tile:clicked',
   FENCE_TILE_CLICKED: 'fence:tile_clicked',
   TERRAIN_DEPLETED: 'terrain:depleted',
+  MAP_EXPANDED: 'map:expanded',       // 农场扩建：外圈行/列数变化，整图需重排
 
   // ── 背包 / 放置 ──
   INVENTORY_CHANGE: 'inventory:change',

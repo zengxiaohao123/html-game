@@ -276,11 +276,12 @@ export function migrateGS(loadedGs) {
       delete c.retargetLeft;
 
       // 读档时半径可能已变大（或存档越界）：圆心夹回栅栏内合法区域
-      const rowCols = loadedGs.map?.fenceRowCols || 0;
-      if (rowCols > 0) {
+      const fRows = loadedGs.map?.fenceRows ?? loadedGs.map?.fenceRowCols ?? 0;
+      const fCols = loadedGs.map?.fenceCols ?? loadedGs.map?.fenceRowCols ?? 0;
+      if (fRows > 0 && fCols > 0) {
         const r = c.radius;
-        const x0 = FENCE_ORIGIN_X + r, x1 = FENCE_ORIGIN_X + rowCols - r;
-        const y0 = FENCE_ORIGIN_Y + r, y1 = FENCE_ORIGIN_Y + rowCols - r;
+        const x0 = FENCE_ORIGIN_X + r, x1 = FENCE_ORIGIN_X + fCols - r;
+        const y0 = FENCE_ORIGIN_Y + r, y1 = FENCE_ORIGIN_Y + fRows - r;
         for (const p of [c.pos, c.renderPos]) {
           p.x = Math.min(x1, Math.max(x0, p.x));
           p.y = Math.min(y1, Math.max(y0, p.y));

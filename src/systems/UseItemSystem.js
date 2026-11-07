@@ -24,6 +24,7 @@ import { HealSystem } from './HealSystem.js';
 import { StaminaSystem } from './StaminaSystem.js';
 import { drawFromPool } from './RandomPool.js';
 import { Random } from '../core/Random.js';
+import { MapExpandSystem, EXPAND_AXIS } from './MapExpandSystem.js';
 
 /** 可作为肥料目标的植物类设施（含 v0.5 新增的三种田地） */
 const PLANT_FACILITIES = new Set([
@@ -155,6 +156,22 @@ export function useItem(gs, itemId, opts = {}) {
       gs.flags = gs.flags || {};
       gs.flags.friendlyAsEnemyToday = true;   // 每日开始时由 DaySystem 清除
       EventBus.emit(GE.TOAST_SHOW, { text: '🍗 本日我方将友善生物也视为敌人', duration: 2000 });
+      break;
+    }
+
+    case 'expand_map_length':
+    case 'expand_map_width': {
+      const axis = eff.type === 'expand_map_length' ? EXPAND_AXIS.LENGTH : EXPAND_AXIS.WIDTH;
+      const result = MapExpandSystem.expandMap(gs, axis);
+      if (!result.ok) {
+        EventBus.emit(GE.TOAST_SHOW, { text: '🚫 无法扩建地图', duration: 1600 });
+        return result;
+      }
+      // 玩家可见文本严格照抄物品库描述
+      EventBus.emit(GE.TOAST_SHOW, {
+        text: axis === EXPAND_AXIS.LENGTH ? '📏 农场的长度增加1格' : '📐 农场的宽度增加1格',
+        duration: 1800,
+      });
       break;
     }
 
