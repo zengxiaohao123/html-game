@@ -29,6 +29,7 @@ import { GE } from '../core/GameEvents.js';
 import { HookDispatcher } from '../core/HookDispatcher.js';
 import { Random } from '../core/Random.js';
 import { Distance } from '../core/Distance.js';
+import { triggerSkillByHook } from './SkillSystem.js';
 import { devLog } from '../core/Logger.js';
 import { MIN_STAMINA } from '../utils/constants.js';
 import { StaminaSystem } from './StaminaSystem.js';
@@ -164,6 +165,10 @@ export function blessCommit(gs, targetIdx) {
 
   // ── 2. fire onBlessed hook（各设施处理自己的立即型 / 持续型效果） ──
   HookDispatcher.fire('onBlessed', { gs, tileIdx: targetIdx });
+
+  // ── 2b. 技能地块的【受祝福时】：与 onEnter/onPass 共用 SkillSystem 的同一结算流水线
+  //     （同一份 snapshot / 判定 / 批次 / 死亡延迟；技能卡本身不是设施，不会再被 fire 触发一次）
+  triggerSkillByHook('onBlessed', { gs, tileIdx: targetIdx });
 
   // ── 3. hook 扫完后，用持续型 state 的 remainingDays 对齐 blessed.remainingDays ──
   //    比如 rice 会 push rice_bless(remainingDays:5)，border 金色特效也要持续 5 天
