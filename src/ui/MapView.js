@@ -11,6 +11,7 @@ import { GE } from '../core/GameEvents.js';
 import { Distance } from '../core/Distance.js';
 import { Assets } from '../core/Assets.js';
 import { normalizeTerrain } from '../data/terrains.js';
+import { POTIONS } from '../data/potions.js';
 import { BuildSystem } from '../systems/BuildSystem.js';
 import { ItemTargeting } from '../systems/ItemTargeting.js';
 import { SKILLS } from '../data/characters.js';
@@ -23,6 +24,13 @@ import { createEl, qs, iconEl } from './dom.js';
 const MAP_H_MARGIN = 32;
 const MAP_V_MARGIN = 110;
 const BASE_TILE_PX = 80; // 图标随格缩放的基准（仅影响大图缩放时的内容尺寸）
+
+// §16.3 单格地块视觉层级：
+//   地形 = 背景层（边长 97.5% → 面积约 95%，四周留少量空隙）
+//   放置型道具 = 标志层（单个占 3%~15%，数量少偏大、数量多偏小，右下角起沿底边向左排）
+const TERRAIN_FILL_SIDE = 0.975;
+const FLAG_MAX_RATIO = 0.15;
+const FLAG_MIN_RATIO = 0.03;
 
 export class MapView {
   constructor() {
@@ -201,7 +209,7 @@ export class MapView {
         boxSizing: 'border-box',
         border: '3px solid #3a3a3a',
         borderRadius: '10px',
-        backgroundColor: this._tileBgColor(tile),
+        backgroundColor: '#f5f0e1',   // 层级 1：几何底色；地形在其上单独铺背景层
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -213,14 +221,8 @@ export class MapView {
       parent: this.root,
     });
 
-    if (tile.terrain && normalizeTerrain(tile.terrain) !== 'terrain_none') {
-      tileEl.appendChild(iconEl('terrains', normalizeTerrain(tile.terrain), {
-        size: `${Math.round(16 * ratio)}px`,
-        fallback: Assets.getEmoji('terrains', tile.terrain),
-        cls: 'tile-terrain',
-        style: { position: 'absolute', bottom: '2px', right: '4px', opacity: '0.6' },
-      }));
-    }
+    // 层级 2：地形背景层（约 95% 面积，铺满格子内部；不得占用右下角标志位）
+    tileEl.appendChild(this._terrainLayer(normalizeTerrain(tile.terrain), ratio));
 
     if (tile.contentId) {
       // 按 contentId 前缀选 group（facility_ → facilities, resource_ → resources, skill_ → characters.SKILLS）
@@ -245,17 +247,14 @@ export class MapView {
         cls: 'tile-content',
         style: {
           position: 'relative',
+          zIndex: '2',
           filter: 'drop-shadow(0 2px 1px rgba(0,0,0,0.3))',
         },
       }));
-    } else {
-      tileEl.appendChild(iconEl('terrains', 'terrain_none', {
-        size: `${Math.round(32 * ratio)}px`,
-        fallback: Assets.terrains.none,
-        cls: 'tile-empty',
-        style: { opacity: '0.3' },
-      }));
     }
+
+    // 层级 5：放置型道具标志（数据驱动；右下角起沿底边向左排列）
+    this._renderPlacedItemFlags(tileEl, tile, box, ratio);
 
     // 玩家当前位置特殊标记
     if (gs.player.x === tile.idx) {
@@ -364,13 +363,114 @@ export class MapView {
     });
   }
 
-  _tileBgColor(tile) {
-    switch (tile.terrain) {
-      case 'grass': return '#a8e6a1';
-      case 'water': return '#87ceeb';
-      case 'mud':   return '#c9a875';
-      case 'none':
-      default:      return '#f5f0e1';
+  /**
+   * 地形背景层：面积约占格子 95%（边长 97.5%），居中铺开，四周留少量空隙。
+   * 素材优先取 Assets 的 PNG（无地形也有自己的样子），缺失时回退纯地形底色。
+   */
+  _terrainLayer(terrainId, ratio) {
+    const png = Assets.getIcon('terrains', terrainId);
+    return createEl('div', {
+      class: ['tile-terrain-bg'],
+      attrs: {
+        'data-terrain': terrainId,
+        'data-fill-side': String(TERRAIN_FILL_SIDE),
+        'data-fill-area': (TERRAIN_FILL_SIDE ** 2).toFixed(3),
+      },
+      style: {
+        position: 'absolute',
+        left: '50%',
+        top: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: `${TERRAIN_FILL_SIDE * 100}%`,
+        height: `${TERRAIN_FILL_SIDE * 100}%`,
+        borderRadius: `${Math.max(5, Math.round(9 * ratio))}px`,
+        backgroundColor: this._terrainColor(terrainId),
+        backgroundImage: png ? `url("${png}")` : 'none',
+        backgroundSize: '100% 100%',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+        pointerEvents: 'none',
+        zIndex: '0',
+      },
+    });
+  }
+
+  /** 数据驱动：放置型道具的通用标识（效果类型以 placed_ 开头，或显式 placement:true） */
+  _isPlacementItem(itemId) {
+    const eff = POTIONS[itemId]?.useEffect;
+    if (!eff) return false;
+    return eff.placement === true
+      || (typeof eff.type === 'string' && eff.type.startsWith('placed_'));
+  }
+
+  /** 单个标志占比：数量少偏大、数量多偏小，夹在 3%~15% */
+  _flagSizeRatio(count) {
+    if (count <= 0) return 0;
+    const raw = FLAG_MAX_RATIO / Math.max(1, count * 0.55);
+    return Math.min(FLAG_MAX_RATIO, Math.max(FLAG_MIN_RATIO, raw));
+  }
+
+  /** 放置型道具标志层：右下角起沿底边向左依次排列，互不重叠 */
+  _renderPlacedItemFlags(tileEl, tile, box, ratio) {
+    const placed = (tile.contentState?.placedItems || [])
+      .filter((p) => this._isPlacementItem(p.itemId));
+    if (placed.length === 0) return;
+
+    const sizeRatio = this._flagSizeRatio(placed.length);
+    const flagPx = Math.max(4, Math.round(box.width * sizeRatio));
+    const edgePx = Math.max(1, Math.round(2 * ratio));
+
+    const wrap = createEl('div', {
+      class: ['tile-flags'],
+      attrs: { 'data-count': String(placed.length), 'data-order': 'right-to-left' },
+      style: {
+        position: 'absolute',
+        right: `${edgePx}px`,
+        bottom: `${edgePx}px`,
+        display: 'flex',
+        flexDirection: 'row-reverse',   // 第一个标志贴右下角，后续沿底边向左
+        alignItems: 'flex-end',
+        gap: `${Math.max(1, Math.round(2 * ratio))}px`,
+        pointerEvents: 'none',
+        zIndex: '3',                    // 高于地块内容图标
+      },
+      parent: tileEl,
+    });
+
+    for (const p of placed) {
+      const def = POTIONS[p.itemId];
+      const flag = createEl('div', {
+        class: ['tile-flag'],
+        attrs: {
+          'data-item-id': p.itemId,
+          'data-size-ratio': sizeRatio.toFixed(3),
+          'title': def?.name || p.itemId,
+        },
+        style: {
+          width: `${flagPx}px`,
+          height: `${flagPx}px`,
+          flexShrink: '0',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        parent: wrap,
+      });
+      flag.appendChild(iconEl('items', p.itemId, {
+        def,
+        size: `${flagPx}px`,
+        fallback: def?.emoji || Assets.getEmoji('items', p.itemId),
+      }));
+    }
+  }
+
+  _terrainColor(terrainValue) {
+    switch (normalizeTerrain(terrainValue)) {
+      case 'terrain_grass': return '#a8e6a1';
+      case 'terrain_water': return '#87ceeb';
+      case 'terrain_ice':   return '#d9f0ff';
+      case 'terrain_none':
+      default:              return '#f5f0e1';
     }
   }
 
@@ -403,22 +503,6 @@ export class MapView {
     });
     const fenceEl = this.fenceEl;
 
-    // terrain → emoji 映射
-    const TERRAIN_EMOJI = {
-      terrain_none: null,
-      terrain_grass: '🌱',
-      terrain_water: '💧',
-      terrain_ice: '🧊',
-      none: null,
-      grass: '🌱',
-      flower: '🌸',
-      wood: '🪵',
-      stone: '🪨',
-      water: '💧',
-      sand: '🏖️',
-      wheat: '🌾',
-    };
-
     for (let r = 0; r < fDims.rows; r++) {
       for (let c = 0; c < fDims.cols; c++) {
         const fenceIdx = r * fDims.cols + c;
@@ -446,20 +530,10 @@ export class MapView {
           parent: fenceEl,
         });
 
-        // terrain 图标（如果有）
-        if (cell?.terrain && normalizeTerrain(cell.terrain) !== 'terrain_none') {
-          const emoji = TERRAIN_EMOJI[cell.terrain];
-          if (emoji) {
-            tileEl.appendChild(iconEl('terrains', normalizeTerrain(cell.terrain), {
-              size: `${Math.round(26 * ratio)}px`,
-              fallback: emoji,
-              style: {
-                position: 'absolute', left: '50%', top: '50%',
-                transform: 'translate(-50%, -50%)',
-                pointerEvents: 'none',
-              },
-            }));
-          }
+        // 地形背景层（与地块同一口径：地形铺满格子内部，不再画中心小图标）
+        const fenceTerrain = normalizeTerrain(cell?.terrain);
+        if (cell && fenceTerrain !== 'terrain_none') {
+          tileEl.appendChild(this._terrainLayer(fenceTerrain, ratio));
         }
 
         // 生物不再按 fence[].creatures 主格缓存画在格子里：

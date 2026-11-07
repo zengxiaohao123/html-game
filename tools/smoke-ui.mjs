@@ -202,6 +202,89 @@ head_('§16.3 MapView：缩放 / 拖拽平移接线');
   assert(after !== before && /scale\(/.test(after), '滚轮缩放生效（transform 含 scale）', { before, after });
 }
 
+head_('§16.3 地块视觉层级：地形背景层 ~95% + 放置型道具标志右下→左下');
+{
+  const { POTIONS } = await import('../src/data/potions.js');
+  const tileIdx = 1;
+  const tile = gs.map.outerTiles[tileIdx];
+  const saved = { terrain: tile.terrain, contentState: tile.contentState };
+
+  const flagsOf = (idx) => findAll(mapView.tileEls.get(idx),
+    (el) => el._classes && el._classes.has('tile-flag'));
+  const wrapOf = (idx) => findAll(mapView.tileEls.get(idx),
+    (el) => el._classes && el._classes.has('tile-flags'))[0];
+
+  // 1) 地形 = 背景层，面积约 95%
+  tile.terrain = 'terrain_grass';
+  tile.contentState = {};
+  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+  const tileEl = mapView.tileEls.get(tileIdx);
+  const bg = findAll(tileEl, (el) => el._classes && el._classes.has('tile-terrain-bg'))[0];
+  assert(!!bg, '地形作为独立背景层渲染（.tile-terrain-bg）');
+  const sideRatio = parseFloat(bg?.style.width) / 100;
+  const areaRatio = sideRatio * (parseFloat(bg?.style.height) / 100);
+  assert(areaRatio > 0.93 && areaRatio < 0.97,
+    `地形背景层面积占比约 95%（实测 ${(areaRatio * 100).toFixed(1)}%）`, { sideRatio, areaRatio });
+  assert(bg?.getAttribute('data-terrain') === 'terrain_grass', '地形层绑定当前地形 id');
+  assert(bg?.style.backgroundImage?.includes('tile_grass.png'), '地形层使用地形 PNG 素材', bg?.style.backgroundImage);
+  assert(!findAll(tileEl, (el) => el._classes && el._classes.has('tile-terrain')).length,
+    '旧右下角地形小图标已移除（不再占用标志位）');
+
+  // 2) 无放置型道具 → 无标志
+  assert(flagsOf(tileIdx).length === 0, '无放置型道具 → 无标志');
+
+  // 3) 两个放置型道具：右下→左下、3%~15%、不重叠
+  tile.contentState = { placedItems: [{ itemId: 'item_trap' }, { itemId: 'item_incense' }] };
+  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+  const flags2 = flagsOf(tileIdx);
+  const wrap2 = wrapOf(tileIdx);
+  assert(flags2.length === 2, `两个放置型道具 → 两个标志（实测 ${flags2.length}）`);
+  assert(wrap2?.style.flexDirection === 'row-reverse', '标志容器 row-reverse（首项右下角，后续向左排）');
+  assert(wrap2?.style.right && wrap2?.style.bottom, '标志容器贴右下角（right + bottom 锚定）');
+  assert(flags2[0]?.getAttribute('data-item-id') === 'item_trap', '第一个标志 = 第一个放置道具（最右）');
+  const ratios2 = flags2.map((f) => parseFloat(f.getAttribute('data-size-ratio')));
+  assert(ratios2.every((r) => r >= 0.03 && r <= 0.15),
+    '单个标志占比落在 3%~15%', ratios2);
+  const tileWidth = parseFloat(tileEl.style.width);
+  const gap2 = parseFloat(wrap2?.style.gap) || 0;
+  const total2 = flags2.reduce((s, f) => s + parseFloat(f.style.width), 0) + gap2 * (flags2.length - 1);
+  assert(total2 <= tileWidth * 0.96, '多个标志沿底边排列不重叠（累计宽度 ≤ 格宽）', { total2, tileWidth });
+
+  // 供后续用例模拟「物品库新增放置型道具」
+  POTIONS.__smoke_placed_a = { name: '烟雾测试放置物A', emoji: '🧪', useEffect: { type: 'placed_smoke_a' } };
+  POTIONS.__smoke_placed_b = { name: '烟雾测试放置物B', emoji: '🧴', useEffect: { type: 'placed_smoke_b' } };
+  POTIONS.__smoke_placed_c = { name: '烟雾测试放置物C', emoji: '🪆', useEffect: { type: 'placed_smoke_c' } };
+  POTIONS.__smoke_placed_d = { name: '烟雾测试放置物D', emoji: '🎯', useEffect: { type: 'placed_smoke_d' } };
+
+  // 4) 数量多 → 单个标志更小；非放置型道具（草药）不出标志
+  tile.contentState = { placedItems: [
+    { itemId: 'item_trap' }, { itemId: 'item_incense' },
+    { itemId: '__smoke_placed_a' }, { itemId: '__smoke_placed_b' },
+    { itemId: '__smoke_placed_c' }, { itemId: '__smoke_placed_d' },
+    { itemId: 'item_herb' },
+  ] };
+  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+  const flags6 = flagsOf(tileIdx);
+  assert(flags6.length === 6, `6 个放置型道具 → 6 个标志（非放置型物品被过滤，实测 ${flags6.length}）`);
+  const ratio6 = parseFloat(flags6[0]?.getAttribute('data-size-ratio'));
+  assert(ratio6 < ratios2[0] && ratio6 >= 0.03 && ratio6 <= 0.15,
+    '数量多时单个标志更小且仍在 3%~15%', { ratio2: ratios2[0], ratio6 });
+
+  // 5) 数据驱动：新增 useEffect.type 以 placed_ 开头的道具自动出标志
+  tile.contentState = { placedItems: [{ itemId: '__smoke_placed_a' }] };
+  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+  const flagsNew = flagsOf(tileIdx);
+  assert(flagsNew.length === 1 && flagsNew[0].getAttribute('data-item-id') === '__smoke_placed_a',
+    '新增 placed_ 类型数据自动出标志（未写死道具 id）');
+
+  // 清理：删掉测试数据并恢复该地块
+  for (const k of ['__smoke_placed_a', '__smoke_placed_b', '__smoke_placed_c', '__smoke_placed_d']) delete POTIONS[k];
+  tile.terrain = saved.terrain;
+  tile.contentState = saved.contentState;
+  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+  assert(flagsOf(tileIdx).length === 0, '恢复后无放置道具 → 标志清空');
+}
+
 head_('§16.6 SpiritArea：只显示精灵图标（无名字文字）');
 {
   const icons = findAll(spiritArea.root, (el) => el.getAttribute && el.getAttribute('data-icon-id'));

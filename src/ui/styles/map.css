@@ -30,6 +30,27 @@
   box-sizing: border-box;
 }
 
+/* ── §16.3 单格地块视觉层级 ─────────────────────────────
+ * 层级 2：地形背景层（面积约 95%，居中铺开；PNG 素材优先，缺失回退底色）
+ * 层级 5：放置型道具标志（右下角起沿底边向左，MapView 内联 row-reverse）
+ * 技能高亮 / 受祝福 / 指向高亮仍是 tile 自身的 outline / box-shadow，绘制在子层之上。
+ */
+.map-tile .tile-terrain-bg {
+  box-sizing: border-box;
+  background-origin: border-box;
+}
+
+.map-tile .tile-flags {
+  max-width: 96%;
+  overflow: hidden;
+}
+
+.map-tile .tile-flag .ui-icon-emoji,
+.map-tile .tile-flag .ui-icon-img {
+  line-height: 1;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
+}
+
 /* 说明：所有图标（包括玩家 🧑）不采用呼吸或浮动的 idle 动画效果（用户要求） */
 /* 玩家仅保留 WASD 移动时的位置过渡 transition: left/top 0.2s ease-out */
 

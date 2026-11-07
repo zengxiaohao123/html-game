@@ -276,13 +276,35 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 - **连携窗口计时环实现（`src/ui/LinkSkillUI.js`）**：窗口边界用 SVG `<circle>` 画白色圆环（`stroke-dasharray` 长度 = 剩余比例 × 周长，`rotate(-90°)` 从 12 点钟起画），只有队列第一位计时、弧长在 8 秒内按逆时针回收，排队条目恒为满圈。环画布与 72px 窗口等大（`viewBox 72×72`），白色环宽 6px 画在边界内侧，外径 = 窗口直径、正好压在窗口可视边界上，无外扩无缝隙；窗口底板无外边框并 `overflow:hidden` 裁在环内，序号角标、图标与技能名都收在环内侧。该更新只读 `expireAtMs` 与 `Date.now()`，不改队列、冷却、解锁与到期逻辑。
 - **渲染插值**：`advance()` 无论是否结算都调用 `CreatureSystem.advanceCreatureRendering(gs, dt)` 推进 `renderPos`；`MapView` 的 rAF 只读 `renderPos` 画像素，不写逻辑位置。
 - **结算冻结边界**：`runSettlement` 必须同步调用，`settling` 只存在于毫秒级结算栈内；禁止延长到动画、飞字、淡出、面板打开期间。演出各自消费自己的快照，不持有 settle 锁。
-- **运动模型（走走停停状态机）**：每只生物维护 `behaviorState = 'idle' | 'walk'`。
-  - `Idle`：**真正静止**（`pos` 完全不变），时长为长站或短停二选一——走完一次后按 `shortPauseChance` 进短停，否则进长站；静止期间可按 `idleTurnChance` 发生一次小幅转头（`idleTurnMaxRad`），不产生位移。
-  - `Walk`：朝 `targetPos` 走，方向为任意弧度，按 `maxTurnRate`（弧度/秒）平滑转向（不会瞬间反向）；速度 `speedPerTile` 单位为**秒/格**（3~6）；到达 `arriveEps` / 撞栅栏边 / 安全超时后回到 `Idle`。
-  - 目标点：常规走 `walkDistMin~Max` 格、方向沿当前朝向 ± `walkAngleJitter`；按 `longWalkChance` 偶尔换成全随机方向的 `longWalkDistMin~Max` 长走。
+- **运动模型（以走为主、偶尔停下的走走停停状态机，2026-11-07 修订）**：每只生物维护 `behaviorState = 'idle' | 'walk'`。
+  - `Idle`：**真正静止**（`pos` 完全不变），时长为长站或短停二选一——走完一次后按 `shortPauseChance` 进短停，否则进长站；静止期间可按 `idleTurnChance` 发生一次小幅转头（`idleTurnMaxRad`），不产生位移。60s 采样静止占比目标：小鸡 30~40% / 成鸡 40~50% / 史莱姆 50~60%（Idle 只是"偶尔停一下"，不是常态）。
+  - `Walk`：朝 `targetPos` 走，方向为任意弧度，按 `maxTurnRate`（弧度/秒）平滑转向（不会瞬间反向）；速度 `speedPerTile` 单位为**秒/格**（3~6）；到达 `arriveEps` 后按 `chainWalkChance` **立刻接下一段**（连续多段位移后再停）或回 `Idle`；安全超时同样走该分支。
+  - 目标点：常规走 `walkDistMin~Max` 格、方向沿当前朝向 ± `walkAngleJitter`；按 `longWalkChance` 偶尔换成全随机方向的 `longWalkDistMin~Max` 长走。距离取 `min(期望距离, 该方向射线到栅栏内边界的可达距离)`——目标永远在合法区内且可达，不再出现"目标夹到墙上、每一步都推不动"。
+  - **撞墙即时重决策（卡墙修复）**：撞到**任何一面**栅栏的**同一个逻辑步内**立即二选一——① 按 `wallHitIdleChance` 进 `Idle`；② 换成满足 `wallFreeDistance = max(wallFreeMinDist 0.5 格, wallFreeHorizonS 1.5s / speedPerTile)` 的新方向，并在同一步内产生真实位移。
+    - 候选方向在 0~2π 全角度采样（先试朝合法区中心），不限于上下左右；采样不到可行方向 → 直接进 `Idle`，并按 `wallFailExtraIdleS` 随连续失败次数延长静止（最多叠加 3 次）。
+    - 任何时刻不允许"`Walk` 却零位移"；撞墙瞬间圆心被夹回合法区，绝不穿出栅栏。计数器 `wallHits` / `lastWallDecision` 只用于测试断言，不参与玩法。
+  - **窄栏加成**：合法圆心区跨度小于 `narrowPenRefSpan`（1.5 格）时 Idle 按比例缩短（下限 `narrowPenIdleMinScale` 0.55），保证 1×1 栅栏（合法圆心区 0.5×0.5）仍以走为主。
   - **所有时长/距离/转向/概率参数集中在 `src/data/creatureBehavior.js` 的 `BEHAVIOR_PROFILES` 表**（小鸡/成鸡/史莱姆三套预设 + 通用默认），逻辑层不写死数值；实例可用 `behaviorOverride` 临时覆盖（测试/特殊个体）。
   - 只被栅栏边界裁剪（圆心 + 半径不出栅栏），生物之间不碰撞、允许完全重叠。小鸡长大半径 `1/6 → 0.25` 时圆心立即夹回合法区并重置为 `Idle`。
   - **静止不刷 DOM**：`Idle` 时 `renderPos` 对齐 `pos`，`CreatureView` 缓存上次 `transform` 字符串，位置未变则不写样式（`advanceCreatureRendering` 对 Idle 也直接跳过位移）。
+
+---
+
+### 2.6 MapView 单格地块视觉层级（UI 实现）
+
+> 对应设计文档 §16.3「单格地块的视觉层级」。只影响 UI 呈现，不改任何物品/地形效果逻辑。
+
+- **层级自底向上**：
+  1. 几何边框/底色：`tileEl` 本体，100%（中性底色 `#f5f0e1`，只负责让人看出这是一格）。
+  2. 地形背景层 `.tile-terrain-bg`：边长 `TERRAIN_FILL_SIDE = 0.975`，即面积约 95%，居中铺开；素材走 `Assets.getIcon('terrains', id)`，有 PNG 用 `background-image`，无 PNG 回退地形底色。**地形不再画成右下角小图标**（旧实现的 `tile-terrain` 小图标正好占用了放置型道具标志的槽位，是本次修正的根因）。
+  3. 地块内容图标 `.tile-content`：~60~70%，居中，`z-index: 2`。
+  4. 角色图标：MapView 根层 `player-avatar`（`z-index: 10`），居中。
+  5. 放置型道具标志 `.tile-flags` / `.tile-flag`：`z-index: 3`，贴右下角、沿底边向左。
+- **标志数据驱动**：只读 `tile.contentState.placedItems`，按 `POTIONS[itemId].useEffect.type` 以 `placed_` 开头（或显式 `placement === true`）判定「放置型道具」，不写死 `item_trap` / `item_incense`；新增放置型道具自动出标志。
+- **排列与尺寸**：容器 `right/bottom` 贴边 + `flex-direction: row-reverse`（第一个标志在右下角，后续向左）；单个占比 `clamp(0.15 / max(1, n*0.55), 0.03, 0.15)`，数量少偏大、数量多偏小，互不重叠。
+- **覆盖层不被遮挡**：技能高亮（`tile-hl-red/gold/gold-flash` 的 outline + 外发光）、受祝福边框（`.blessed-tile`）、道具指向高亮（`.tile-aim-ok`）都是地块自身的 outline / box-shadow 覆盖样式，绘制在子层之上。
+- **栅栏内地块同一口径**：有地形时同样渲染 `.tile-terrain-bg` 背景层，不再画中心小图标。
+- **验收**：`node tools/smoke-ui.mjs` 的「§16.3 地块视觉层级」用例（地形面积占比、标志顺序、不重叠、无道具无标志、新增 placed_ 数据自动出标志）。
 
 ---
 
