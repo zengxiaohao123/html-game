@@ -25,6 +25,7 @@ import { InventorySystem } from '../../systems/InventorySystem.js';
 import { OUTBOX_SLOTS } from '../../utils/constants.js';
 import { createEl, qs, iconEl } from '../dom.js';
 import { renderTraitBadges } from '../TraitBadges.js';
+import { renderTermText } from '../TermText.js';
 import { CATEGORY_TABS as TABS, createCategoryBar } from '../CategoryBar.js';
 
 /** 8 个 tab 定义统一由 CategoryBar 提供（与商店售卖页同一份实现，禁止面板内另拼） */
@@ -326,8 +327,8 @@ export class InventoryPanel {
     // 显性词条：统一徽章入口，不混入描述正文
     renderTraitBadges(this.detailEl, ITEM?.traits);
 
-    // 描述（topRow 下方独立一行；white-space: pre-line 保留数据里的换行）
-    createEl('div', { class: 'inv-detail-desc', text: desc, parent: this.detailEl });
+    // 描述（topRow 下方独立一行；pre-line 保留数据里的换行；其中【术语】行内可点开释义)
+    renderTermText(this.detailEl, desc, { tag: 'div', class: 'inv-detail-desc' });
   }
 
   // ─────────────────────── 右中：行动区（固定存在，点物品才激活） ───────────────────────

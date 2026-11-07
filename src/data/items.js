@@ -24,7 +24,13 @@ export const ITEMS = LIB_ITEMS;
 /** 全部物品 id（稳定顺序，便于遍历渲染） */
 export const ALL_ITEM_IDS = Object.keys(ITEMS);
 
-/** 表格统计（与物品库「说明」表第 5 节一致） */
+/** LIB_STAT / POOLS / OUTPUTS / CREATURES_REF / TODO_LIST：表格统计与其它工作表的再导出 */
+/**
+ * GLOSSARY = 物品库「词条字典」→ **术语释义表**（字段：term / type / meaning / notes）。
+ * 它承载的是术语（【粘液】【燃烧】【虚弱】【易伤】【心力交瘁】…）的逐字释义；
+ * 【永恒】【唯一】等展示词条（物品 traits）**不属于术语集合**，走 TraitBadges 徽章。
+ * UI 唯一入口：src/ui/TermText.js（术语行内组件）；任何地方不得自写措辞或缩写。
+ */
 export { LIB_STAT, POOLS, OUTPUTS, GLOSSARY, CREATURES_REF, TODO_LIST };
 
 // ────────────────────────────────────────── 查询辅助

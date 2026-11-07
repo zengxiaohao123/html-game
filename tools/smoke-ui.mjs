@@ -642,8 +642,8 @@ head_('§16.16 VehiclePanel：每行 3 张卡片 + 卡片直显描述 + 单击�
   const wheelCard = cardOf('vehicle_wheel');
   const desc = descOf(wheelCard);
   assert(!!desc, '卡片直接渲染描述块（无需点开）');
-  assert(desc._text === VEHICLES.vehicle_wheel.description,
-    '描述逐字取数据层 ITEMS[id].description', desc._text);
+  assert(desc.textContent === VEHICLES.vehicle_wheel.description,
+    '描述逐字取数据层 ITEMS[id].description', desc.textContent);
   assert(desc.style.whiteSpace === 'pre-line', '描述保留原有换行（white-space: pre-line）');
   assert(desc.style.WebkitLineClamp === '4' && desc.style.overflow === 'hidden',
     '超长描述卡内 4 行截断 + 省略号，不撑破 1/3 栅格', desc.style.WebkitLineClamp);
@@ -1517,7 +1517,9 @@ head_('第 11 批：InfoPanel 技能详情只渲染一套（防重复 + 无 ⚡ 
   assert(activeDescRows.length === activeLines.length,
     `主动技能描述行数与数据一致（实测 ${activeDescRows.length} 行 / 数据 ${activeLines.length} 行）`);
   for (const ln of activeLines) {
-    const n = findAll(infoPanel.root, (el) => el._text === ln).length;
+    // 术语行内化会把一行拆成多个 span，按整行容器（facility-desc-row）拼接后的文本比对
+    const n = findAll(infoPanel.root, (el) => el._classes && el._classes.has('facility-desc-row')
+      && el.textContent === ln).length;
     assert(n === 1, `主动技能描述行「${ln.slice(0, 14)}…」只出现一次（实测 ${n} 次）`);
   }
   assert(!hasText(infoPanel.root, '使用技能卡') && !hasText(infoPanel.root, '使用技能'),
@@ -1530,7 +1532,7 @@ head_('第 11 批：InfoPanel 技能详情只渲染一套（防重复 + 无 ⚡ 
   rolePanel.selectedRoleId = talent.roleId;
   rolePanel._refresh();
   const talentNameCount = findAll(rolePanel.helper.root, (el) => el._text === talent.name).length;
-  const talentDescCount = findAll(rolePanel.helper.root, (el) => el._text === talent.description).length;
+  const talentDescCount = findAll(rolePanel.helper.root, (el) => el.textContent === talent.description).length;
   assert(talentNameCount === 1, `天赋标题只出现一套（实测 ${talentNameCount} 套）`);
   assert(talentDescCount === 1, `天赋描述只出现一段（实测 ${talentDescCount} 段）`);
   rolePanel.selectedRoleId = savedRoleId;
@@ -3136,7 +3138,7 @@ head_('§20 生物详情技能：史莱姆【粘液喷吐】逐字取自物品�
   slimeCard.click();
   buttonsWithText(infoPanel.root, '技能')[0].click();
   assert(hasText(infoPanel.root, '【粘液喷吐】'), '技能 tab 显示【粘液喷吐】');
-  assert(hasText(infoPanel.root, spit.description), '技能描述逐字上屏（与物品库一致）');
+  assert(infoPanel.root.textContent.includes(spit.description), '技能描述逐字上屏（与物品库一致）');
   assert(hasText(infoPanel.root, '【元素免疫】'), '被动技能【元素免疫】一并显示');
   assert(!hasText(infoPanel.root, '暂无技能'), '有技能时不显示空态');
 
@@ -3147,6 +3149,157 @@ head_('§20 生物详情技能：史莱姆【粘液喷吐】逐字取自物品�
   infoPanel.creatureDetailId = null;
   infoPanel.selectTile(2);
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+}
+
+// ════════════════════════════════════════════════════════════
+head_('§21 术语行内组件（唯一实现）+ 展示词条徽章分离 + 状态列表数据驱动');
+{
+  const { GLOSSARY, ITEMS: ITEMS21 } = await import('../src/data/items.js');
+  const { renderTermText, getTermPopover, hideTermPopover, TERM_COLOR } =
+    await import('../src/ui/TermText.js');
+  const { renderTraitBadges } = await import('../src/ui/TraitBadges.js');
+  const { CombatSystem } = await import('../src/systems/CombatSystem.js');
+
+  const slimeG = GLOSSARY.find((g) => g.term === '粘液');
+  const weakG = GLOSSARY.find((g) => g.term === '虚弱');
+
+  // ── 1) 行内术语：保留【】、配色区别正文、无徽章视觉、换行保留
+  const box = new FakeEl('div');
+  const src = `踩到【粘液】会损失生命；【燃烧】持续 3 回合。\n第二行【永恒】是展示词条，不是术语。`;
+  const hostEl = renderTermText(box, src);
+  const termEls = findAll(box, (el) => el._classes && el._classes.has('term-inline'));
+  assert(termEls.length === 2, `【粘液】【燃烧】行内化为术语（实测 ${termEls.length} 个）`);
+  assert(termEls.every((el) => el._text === (el.attributes['data-term'] === '粘液' ? '【粘液】' : '【燃烧】')),
+    '术语保留【】方头括号');
+  assert(termEls.every((el) => el.style.color === TERM_COLOR && !el._classes.has('trait-badge')
+    && el.style.background === 'transparent' && el.style.border === '0' && el.style.padding === '0'),
+    '术语只有配色区别：无徽章/底色/边框/图标/胶囊');
+  assert(hostEl.textContent === src && hostEl.style.whiteSpace === 'pre-line',
+    '术语行内化不破坏原文与换行（【永恒】保持纯文本）', { got: hostEl.textContent, ws: hostEl.style.whiteSpace });
+  assert(findAll(box, (el) => el._classes.has('term-inline') && el.attributes['data-term'] === '永恒').length === 0,
+    '展示词条【永恒】不会被当成术语');
+
+  // ── 2) 点击术语 → 词条附近浮层（fixed，逐字取字典）
+  hideTermPopover();
+  termEls[0].click();
+  const pop = getTermPopover();
+  assert(!!pop && pop.style.display === 'block', '点击术语 → 释义浮层出现');
+  assert(pop.style.position === 'fixed' && Number(pop.style.zIndex) >= 8000,
+    '浮层 fixed 定位且层级高于面板（不被面板/滚动容器裁切）');
+  assert(pop.textContent.includes(slimeG.meaning), '浮层释义与词条字典逐字一致');
+  assert(!pop.textContent.includes(slimeG.notes || '\u0000'),
+    '浮层只显示释义，不上屏内部备注');
+  hideTermPopover();
+
+  // ── 3) 靠视口边缘自动翻转 / 夹回
+  termEls[1].getBoundingClientRect = () => ({ left: 1270, top: 700, right: 1280, bottom: 712, width: 10, height: 12 });
+  termEls[1].click();
+  const popTop = Number.parseFloat(pop.style.top);
+  const popLeft = Number.parseFloat(pop.style.left);
+  assert(popTop < 700, `靠近底部时浮层向上翻转（top=${popTop}）`);
+  assert(popLeft <= 1280 - 260 - 8 + 1, `靠近右侧时浮层夹回视口内（left=${popLeft}）`);
+  assert(popTop >= 8 && popTop <= 720 - 8, '浮层纵向不溢出视口');
+
+  // ── 4) 点外部关闭
+  (docListeners.click || []).forEach((fn) => fn({ target: new FakeEl('div') }));
+  assert(pop.style.display === 'none', '点击术语以外的区域 → 浮层关闭');
+
+  // ── 5) 展示词条徽章外观不受影响（两套组件）
+  const badgeBox = new FakeEl('div');
+  renderTraitBadges(badgeBox, ['永恒']);
+  const badge = findAll(badgeBox, (el) => el._classes && el._classes.has('trait-badge'))[0];
+  assert(!!badge && badge._text === '永恒' && !badge._classes.has('term-inline'),
+    '展示词条仍是独立徽章，不混入术语样式');
+
+  // ── 6) 图鉴描述：术语行内化、多行排版保留、滚动容器不裁切
+  const termPool = GLOSSARY.filter((g) => g.type !== '展示标签');
+  const itemWithTerm = Object.values(ITEMS21).find((it) => it.description
+    && termPool.some((g) => it.description.includes(`【${g.term}】`)));
+  assert(!!itemWithTerm, '存在含术语的物品描述用于图鉴用例');
+  codexPanel.activeTab = 'items';
+  codexPanel.selectedKey = itemWithTerm.id;
+  codexPanel._refresh();
+  const codexTerms = findAll(codexPanel.detailEl, (el) => el._classes && el._classes.has('term-inline'));
+  assert(codexTerms.length >= 1, '图鉴描述中的术语行内化（同款样式）');
+  const descHost = findAll(codexPanel.detailEl, (el) => el.textContent === itemWithTerm.description)[0];
+  assert(!!descHost && descHost.style.whiteSpace === 'pre-line',
+    '图鉴多行描述保留换行 / 缩进（pre-line）');
+  codexTerms[0].click();
+  const tName = codexTerms[0].attributes['data-term'];
+  const tG = GLOSSARY.find((g) => g.term === tName);
+  assert(pop.textContent.includes(tG.meaning), '图鉴术语浮层与词条字典逐字一致');
+  hideTermPopover();
+
+  // ── 7) 角色状态列表：数据驱动列全部 debuff（虚弱 / 易伤含强度与剩余回合）
+  const savedPlayerIdx = gs.player.x;
+  const savedBuffs = gs.activeBuffs;
+  gs.activeBuffs = [];
+  gs.player.x = 2;
+  CombatSystem.applyBuff({ buffId: 'weakened', target: gs, duration: 1, params: { strength: 0.25 } });
+  infoPanel.selectTile(2);
+  const unitTab = buttonsWithText(infoPanel.root, '单位')[0];
+  if (unitTab) unitTab.click();
+  const playerText = infoPanel.root.textContent;
+  assert(playerText.includes('【虚弱】 25% · 1 回合'), '角色信息区列出【虚弱】+强度+剩余回合');
+  assert(playerText.includes(weakG.meaning), '状态含义逐字取词条字典');
+  const weakTerm = findAll(infoPanel.root, (el) => el._classes && el._classes.has('term-inline')
+    && el.attributes['data-term'] === '虚弱')[0];
+  assert(!!weakTerm, '状态名按术语样式（可点击）');
+  weakTerm.click();
+  assert(pop.textContent.includes(weakG.meaning), '状态术语可点开同一份字典原文');
+  hideTermPopover();
+
+  CombatSystem.applyBuff({ buffId: 'vulnerable', target: gs, duration: 2, params: { strength: 0.25 } });
+  assert(infoPanel.root.textContent.includes('【易伤】 25% · 2 回合'), '新施加 debuff 当场出现');
+  CombatSystem.tickBuffsOnTarget(gs);
+  EventBus.emit(GE.TURN_ADVANCE, { turn: gs.turn + 1, day: gs.day });
+  assert(infoPanel.root.textContent.includes('【易伤】 25% · 1 回合'), '过回合递减后实时更新');
+  CombatSystem.removeBuff(gs, 'weakened');
+  assert(!infoPanel.root.textContent.includes('【虚弱】'), '移除后状态条目立即消失');
+  CombatSystem.tickBuffsOnTarget(gs);
+  EventBus.emit(GE.TURN_ADVANCE, { turn: gs.turn + 1, day: gs.day });
+  assert(!infoPanel.root.textContent.includes('【易伤】'), '剩余归零后条目自动消失');
+
+  // ── 8) 生物实例状态列表：虚弱 / 易伤同样全部列出（不设白名单）
+  const cell21 = gs.map.fence[0];
+  const savedCreatures21 = cell21.creatures;
+  const savedGs21 = gs.creatures.slice();
+  const slime21 = {
+    id: 't21_slime', kind: 'slime_fire', hp: 40, maxHp: 40, atk: 10,
+    growth: 0, growthMax: 0, mood: 0, activeBuffs: [],
+  };
+  cell21.creatures = ['t21_slime'];
+  gs.creatures.push(slime21);
+  CombatSystem.applyBuff({ buffId: 'weakened', target: slime21, duration: 1, params: { strength: 0.25 } });
+  CombatSystem.applyBuff({ buffId: 'vulnerable', target: slime21, duration: 2, params: { strength: 0.25 } });
+  EventBus.emit(GE.FENCE_TILE_CLICKED, { fenceIdx: 0 });
+  buttonsWithText(infoPanel.root, '单位')[0].click();
+  const card21 = findAll(infoPanel.root, (el) => el.tagName === 'DIV'
+    && el.attributes && el.attributes.title === '火史莱姆')[0];
+  assert(!!card21, '栅栏格显示带状态的史莱姆卡片');
+  card21.click();
+  // 生物详情子 tab（数值 / 技能 / 状态）在页面 tabs 之下，取最后一个「状态」按钮
+  const subStateBtns = buttonsWithText(infoPanel.root, '状态');
+  subStateBtns[subStateBtns.length - 1].click();
+  const cText = infoPanel.root.textContent;
+  assert(cText.includes('【虚弱】 25% · 1 回合'), '生物状态列表显示【虚弱】+强度+剩余回合');
+  assert(cText.includes('【易伤】 25% · 2 回合'), '生物状态列表显示【易伤】+强度+剩余回合');
+  assert(findAll(infoPanel.root, (el) => el._classes && el._classes.has('term-inline')
+    && el.attributes['data-term'] === '虚弱').length >= 1, '生物状态名按术语样式');
+  CombatSystem.removeBuff(slime21, 'vulnerable');
+  assert(!infoPanel.root.textContent.includes('【易伤】'), '移除后生物状态条目立即消失',
+    { buffs: slime21.activeBuffs.length, text: infoPanel.root.textContent.slice(0, 200) });
+
+  // 还原
+  gs.creatures.length = 0;
+  gs.creatures.push(...savedGs21);
+  cell21.creatures = savedCreatures21;
+  gs.activeBuffs = savedBuffs;
+  gs.player.x = savedPlayerIdx;
+  infoPanel.creatureDetailId = null;
+  infoPanel.selectTile(savedPlayerIdx);
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+  EventBus.emit(GE.BUFF_REMOVED, { buffId: 'smokeReset', target: gs });
 }
 
 // ════════════════════════════════════════════════════════════

@@ -20,6 +20,7 @@ import { VEHICLES } from '../../data/vehicles.js';
 import { ITEMS } from '../../data/items.js';
 import { VehicleSystem } from '../../systems/VehicleSystem.js';
 import { renderTraitBadges } from '../TraitBadges.js';
+import { renderTermText } from '../TermText.js';
 
 // 视觉常量：绿色边框 = 当前正在使用的载具（不遮挡图标/文字）
 const BORDER_CURRENT = '3px solid #3fa34d';
@@ -192,19 +193,18 @@ export class VehiclePanel {
       // 展示词条徽章（数据源为物品库同名条目；无 traits 时不渲染）
       renderTraitBadges(card, ITEMS[String(def.id || '').replace('vehicle_', 'item_')]?.traits);
 
-      // 描述：逐字取数据层，保留原有换行；超长时卡片内 4 行截断 + 省略号
-      createEl('div', {
+      // 描述：逐字取数据层，保留原有换行；其中的【术语】行内可点开释义。
+      // 超长时卡片内 4 行截断 + 省略号（术语浮层用 fixed 定位，不受截断影响）
+      renderTermText(card, def.description || '', {
+        tag: 'div',
         class: 'vehicle-desc',
         style: {
           fontSize: '11px', lineHeight: '1.45', color: '#7a6a56',
-          whiteSpace: 'pre-line',
           display: '-webkit-box',
           WebkitBoxOrient: 'vertical',
           WebkitLineClamp: '4',
           overflow: 'hidden',
         },
-        text: def.description || '',
-        parent: card,
       });
 
       // hover / 按下反馈（不改边框色，避免盖掉当前载具的绿色标识）

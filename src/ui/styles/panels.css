@@ -552,6 +552,35 @@
   border-color: #2b4d78;
 }
 
+/* 术语（【粘液】【虚弱】…）：行内文字，只有配色区别。
+   不加底色 / 边框 / 图标 / 胶囊，视觉必须弱于展示词条徽章。
+   组件唯一实现见 src/ui/TermText.js，禁止在别处复制样式。 */
+.term-inline {
+  color: #2f6f8f;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+  text-decoration: none;
+}
+.term-inline:hover { color: #1f4f66; }
+
+/* 术语释义浮层：点击术语后在词附近浮出（fixed 定位，靠边自动翻转） */
+.term-popover {
+  position: fixed;
+  z-index: 8600;
+  max-width: 280px;
+  padding: 10px 12px;
+  background: #fffbe6;
+  border: 1px solid #c8b88a;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(58, 46, 32, 0.22);
+  color: #3a2e20;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 /* ── 右半：行动（slider + 数量 + 按钮） ── */
 .inv-right-top-right {
   display: flex;

@@ -13,6 +13,7 @@ import { ELEMENTS } from '../../data/elements.js';
 import { createStandardPanel } from './_panelHelper.js';
 import { createEl, iconEl } from '../dom.js';
 import { renderTraitBadges } from '../TraitBadges.js';
+import { renderTermText } from '../TermText.js';
 import { devLog } from '../../core/Logger.js';
 
 const BOX_BG = 'rgba(255,255,255,0.55)';
@@ -199,7 +200,8 @@ export class RolePanel {
         createEl('span', { style: { fontWeight: '800', fontSize: '14px' }, text: t.name, parent: top });
         createEl('span', { style: { fontSize: '10px', color: isPassive ? '#2a8a3a' : '#c07a20', background: isPassive ? '#e8f5e9' : '#ffe099', padding: '0 6px', borderRadius: '8px', marginLeft: 'auto', border: `1px solid ${isPassive ? '#2a8a3a' : '#c07a20'}` }, text: triggerLabel, parent: top });
         renderTraitBadges(row, t.traits);
-        createEl('div', { style: { fontSize: '12px', color: '#4a3a2a', lineHeight: '1.5', whiteSpace: 'pre-line' }, text: t.description || '', parent: row });
+        // 天赋描述：逐字取数据层，其中【术语】走统一行内术语组件
+        renderTermText(row, t.description || '', { tag: 'div', style: { fontSize: '12px', color: '#4a3a2a', lineHeight: '1.5' } });
       });
     }
 
@@ -226,7 +228,7 @@ export class RolePanel {
           createEl('span', { style: { fontSize: '10px', color: '#c07a20', background: '#ffe099', padding: '0 6px', borderRadius: '8px', marginLeft: 'auto', border: '1px solid #c07a20' }, text: '连携技', parent: top });
         }
         renderTraitBadges(row, sk.traits);
-        createEl('div', { style: { fontSize: '12px', color: '#4a3a2a', lineHeight: '1.5', whiteSpace: 'pre-line' }, text: sk.description || '', parent: row });
+        renderTermText(row, sk.description || '', { tag: 'div', style: { fontSize: '12px', color: '#4a3a2a', lineHeight: '1.5' } });
       });
     }
   }

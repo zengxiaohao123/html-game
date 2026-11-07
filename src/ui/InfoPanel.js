@@ -36,6 +36,8 @@ import { ITEMS, GLOSSARY } from '../data/items.js';
 import { getTerrain, normalizeTerrain } from '../data/terrains.js';
 import { createEl, qs, iconEl } from './dom.js';
 import { renderTraitBadges, renderStateBadges } from './TraitBadges.js';
+import { renderTermText } from './TermText.js';
+
 
 /** 滑入/滑出 transform（§16.4：面板用 top/bottom 双锚点固定高度，只做横向滑入滑出） */
 const SLIDE_IN_TRANSFORM = 'translate(0, 0)';
@@ -62,12 +64,20 @@ const CATEGORY_NAMES = { friendly: '友善', danger: '危险', extreme: '高危'
 /** 物品库词条（GLOSSARY）按 term 精确查找：状态名称/含义的唯一来源，禁止自造词 */
 const glossaryOf = (term) => GLOSSARY.find((g) => g && g.term === term) || null;
 
+/** 状态含义：优先词条字典逐字原文（术语释义），取不到才退回 BUFFS 文案 */
+const stateMeaning = (name, fallback) => glossaryOf(name)?.meaning || fallback || '';
+
+/** 术语名加【】：只有词条字典能查到的名词才加方头括号，避免给非术语乱加 */
+const termLabel = (name) => (glossaryOf(name) ? `【${name}】` : name);
+
+
 /**
  * 生物「实例」的运行时状态（数据源：该生物对象自身字段，不是物种通用描述）
  *   · 投喂状态：lastFed —— CreatureSystem.dailyTick 每自然日起始逐只结算
  *       true → 【已投喂】；false → 【饥饿】；undefined（当日尚未结算）→ 暂不展示
- *   · buff / debuff：实例 activeBuffs（名称与含义取自 BUFFS 数据层）
- * 名称一律取物品库 GLOSSARY（已投喂 / 饥饿）；查不到就不显示，避免自造词。
+ *   · buff / debuff：实例 activeBuffs（数据驱动，不做任何白名单过滤；
+ *       燃烧 / 粘液 / 蓄力 / 虚弱 / 易伤等全部列出，名称与含义取自 BUFFS + 词条字典）
+ *   · 强度 / 剩余回合按实例字段显示（strength、remainingTurns）
  */
 function getCreatureStates(c) {
   const out = [];
@@ -81,20 +91,37 @@ function getCreatureStates(c) {
         emoji: c.lastFed === true ? '🍚' : '😣',
         tone: c.lastFed === true ? 'good' : 'bad',
         meaning: g.meaning || '',
+        strength: null,
+        remainingTurns: null,
+        remainingDays: null,
       });
     }
   }
   for (const b of (c.activeBuffs || [])) {
     const bDef = getBuff(b.id);
+    const strength = typeof b.params?.strength === 'number' ? b.params.strength : null;
     out.push({
       name: bDef?.name || b.id,
       emoji: bDef?.emoji || '❓',
       tone: 'neutral',
-      meaning: bDef?.description || '',
+      meaning: stateMeaning(bDef?.name || b.id, bDef?.description),
+      strength,
+      remainingTurns: b.remainingTurns ?? null,
+      remainingDays: b.remainingDays ?? null,
     });
   }
   return out;
 }
+
+/** 状态附加信息：强度（百分比）与剩余回合 / 天数，正文样式 */
+function stateMetaText(s) {
+  const parts = [];
+  if (typeof s.strength === 'number') parts.push(`${Math.round(s.strength * 100)}%`);
+  if (s.remainingTurns !== null && s.remainingTurns !== undefined) parts.push(`${s.remainingTurns} 回合`);
+  else if (s.remainingDays !== null && s.remainingDays !== undefined) parts.push(`${s.remainingDays} 天`);
+  return parts.join(' · ');
+}
+
 
 export class InfoPanel {
   constructor() {
@@ -442,13 +469,9 @@ export class InfoPanel {
       createEl('span', { text: `地形：${tName}`, parent: tRow });
     }
 
-    // 词条描述（每条一行）
+    // 词条描述（每条一行）；文本中的【术语】统一走 TermText 行内组件（可点开释义）
     for (const desc of descriptions) {
-      createEl('div', {
-        class: ['facility-desc-row'],
-        text: desc,
-        parent: this.bodyWrap,
-      });
+      renderTermText(this.bodyWrap, desc, { tag: 'div', class: 'facility-desc-row' });
     }
 
     // 设施类地块 —— 功能选项区（§16.4：区分"身处该格"vs"随时可点"）
@@ -1158,11 +1181,7 @@ export class InfoPanel {
       size: '20px',
       fallback: Assets.getEmoji('terrains', tile.terrain || 'terrain_none'),
     }));
-    createEl('span', {
-      class: ['state-name'],
-      text: `${tDef.name}：${tDef.description}`,
-      parent: terrainRow,
-    });
+    renderTermText(terrainRow, `${termLabel(tDef.name)}：${tDef.description}`, { class: 'state-name' });
 
     // 2) 以本地块为主体的 buff/debuff（tile.states[]）
     const states = (tile.states || []).slice();
@@ -1177,7 +1196,7 @@ export class InfoPanel {
 
       const row = createEl('div', { class: ['state-row'], parent: this.bodyWrap });
       createEl('span', { class: ['state-emoji'], text: meta.emoji, parent: row });
-      createEl('span', { class: ['state-name'], text: `${meta.name}${descText}`, parent: row });
+      renderTermText(row, `${termLabel(meta.name)}${descText}`, { class: 'state-name' });
       if (remainText) {
         createEl('span', { class: ['state-remain'], text: remainText, parent: row });
       }
@@ -1191,12 +1210,7 @@ export class InfoPanel {
       row.appendChild(iconEl('items', p.itemId, {
         size: '20px', def, fallback: def?.emoji || '📦',
       }));
-      createEl('span', {
-        class: ['state-name'],
-        style: { whiteSpace: 'pre-line' },
-        text: `${def?.name || p.itemId}：${def?.description || '（无描述）'}`,
-        parent: row,
-      });
+      renderTermText(row, `${def?.name || p.itemId}：${def?.description || '（无描述）'}`, { class: 'state-name' });
     }
 
     if (states.length === 0 && placed.length === 0) {
@@ -1254,18 +1268,23 @@ export class InfoPanel {
         createEl('span', { class: ['stat-value'], text: value, parent: row });
       }
 
-      // 当前状态（数值属性之外的 buff / debuff），每条一行文字
+      // 当前状态：数据驱动列出角色身上**全部**生效 buff/debuff（不做白名单过滤），
+      // 名称按术语样式（【】+配色+可点释义），强度与剩余回合用正文样式，实时随 BUFF 事件刷新。
       const buffs = gs.activeBuffs || [];
       for (const b of buffs) {
         const def = getBuff(b.id);
-        const remain = (b.remainingDays !== undefined && b.remainingDays !== null)
-          ? `（剩 ${b.remainingDays} 天）`
-          : (b.remainingTurns !== undefined ? `（剩 ${b.remainingTurns} 回合）` : '');
-        createEl('div', {
-          style: { fontSize: '13px', color: '#3a2e20', padding: '4px 0', borderTop: '1px dashed #d4c4a4', whiteSpace: 'pre-line' },
-          text: `${def?.emoji || '❓'} ${def?.name || b.id}${remain}：${def?.description || ''}`,
+        const name = def?.name || b.id;
+        const meta = stateMetaText({
+          strength: typeof b.params?.strength === 'number' ? b.params.strength : null,
+          remainingTurns: b.remainingTurns ?? null,
+          remainingDays: b.remainingDays ?? null,
+        });
+        const row = createEl('div', {
+          style: { fontSize: '13px', color: '#3a2e20', padding: '4px 0', borderTop: '1px dashed #d4c4a4' },
           parent: this.bodyWrap,
         });
+        createEl('span', { text: `${def?.emoji || '❓'} `, parent: row });
+        renderTermText(row, `${termLabel(name)}${meta ? ` ${meta}` : ''}：${stateMeaning(name, def?.description)}`);
       }
     }
 
@@ -1406,17 +1425,17 @@ export class InfoPanel {
       parent: this.bodyWrap,
     });
 
-    // 当前精灵效果描述（祈福具体效果）
+    // 当前精灵效果描述（祈福具体效果）；描述中的【术语】行内可点
     if (spirit?.description) {
-      createEl('div', {
+      const box = createEl('div', {
         style: {
           padding: '6px 8px', marginTop: '4px', marginBottom: '8px',
           background: 'rgba(255, 240, 180, 0.6)', borderLeft: '3px solid #e8a900',
-          borderRadius: '4px', fontSize: '12px', color: '#5a4a3a', lineHeight: '1.5', whiteSpace: 'pre-line',
+          borderRadius: '4px', fontSize: '12px', color: '#5a4a3a', lineHeight: '1.5',
         },
-        text: `${spiritEmoji} ${spiritName} 的效果：${spirit.description}`,
         parent: this.bodyWrap,
       });
+      renderTermText(box, `${spiritEmoji} ${spiritName} 的效果：${spirit.description}`);
     }
 
     createEl('div', {
@@ -1682,15 +1701,13 @@ export class InfoPanel {
             text: `【${s.name}】`,
             parent: block,
           });
-          createEl('div', {
-            style: { fontSize: '13px', color: '#5a4a38', whiteSpace: 'pre-line', lineHeight: '1.6' },
-            text: s.description,
-            parent: block,
-          });
+          // 描述里的【术语】与全站同一套行内术语组件（可点开词条字典原文）
+          renderTermText(block, s.description, { tag: 'div', style: { fontSize: '13px', color: '#5a4a38', lineHeight: '1.6' } });
         }
       }
     } else {
-      // 状态：该「实例」的运行时状态（投喂状态 + buff/debuff），名称/含义取数据层
+      // 状态：该「实例」的运行时状态（投喂状态 + buff/debuff），数据驱动、不设白名单；
+      // 名称按术语样式，强度 / 剩余回合用正文样式，BUFF 事件与过回合时实时刷新
       const states = getCreatureStates(c);
       if (states.length === 0) {
         createEl('div', {
@@ -1700,11 +1717,13 @@ export class InfoPanel {
         });
       } else {
         for (const s of states) {
-          createEl('div', {
-            style: { fontSize: '13px', color: '#3a2e20', padding: '4px 0', borderBottom: '1px dashed #d4c4a4', whiteSpace: 'pre-line' },
-            text: `${s.emoji} ${s.name}：${s.meaning}`,
+          const meta = stateMetaText(s);
+          const row = createEl('div', {
+            style: { fontSize: '13px', color: '#3a2e20', padding: '4px 0', borderBottom: '1px dashed #d4c4a4' },
             parent: this.bodyWrap,
           });
+          createEl('span', { text: `${s.emoji} `, parent: row });
+          renderTermText(row, `${termLabel(s.name)}${meta ? ` ${meta}` : ''}：${s.meaning}`);
         }
       }
     }
@@ -1798,13 +1817,15 @@ export class InfoPanel {
     EventBus.on(GE.CREATURE_SPAWNED, refreshCreatureDetail);
     EventBus.on(GE.CREATURE_DEFEATED, refreshCreatureDetail);
 
-    // 单位 tab 展示的生命 / 攻击 / 状态词条：任一变化立即重绘
+    // 单位 tab 展示的生命 / 攻击 / 状态：任一变化立即重绘。
+    // buff/debuff 同时作用于玩家与生物实例 → 两条刷新路径都要走（生物详情页由 refreshCreatureDetail 负责）
     EventBus.on(GE.HP_CHANGE, refreshVisibleBody);
     EventBus.on(GE.ATK_CHANGE, refreshVisibleBody);
     EventBus.on(GE.STAT_CHANGE, refreshVisibleBody);
     EventBus.on(GE.TURN_ADVANCE, refreshVisibleBody);
-    EventBus.on(GE.BUFF_APPLIED, refreshVisibleBody);
-    EventBus.on(GE.BUFF_REMOVED, refreshVisibleBody);
+    EventBus.on(GE.BUFF_APPLIED, () => { refreshCreatureDetail(); refreshVisibleBody(); });
+    EventBus.on(GE.BUFF_REMOVED, () => { refreshCreatureDetail(); refreshVisibleBody(); });
+
 
     // 农场扩建：外圈 / 栅栏索引整体位移 → 面板缓存的重映射；
     // 不处理会继续显示旧索引对应的另一格（“显示的是别的格子的信息”）。

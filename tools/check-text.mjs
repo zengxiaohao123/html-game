@@ -1,7 +1,7 @@
 // tools/check-text.mjs
 // 玩家可见文案逐字校验：data/*.js 的 description 必须与物品库 / 设计文档原文逐字一致。
-// 同时校验：备注（note）0 外露、显性词条（traits）0 混入正文、语义分行生效，
-// 以及 InfoPanel 不另抄一份写死描述（必须取数据层 + pre-line 渲染）。
+// 同时校验：备注（note）0 外露、展示词条（traits）0 混入正文、语义分行生效，
+// 以及 InfoPanel 不另抄一份写死描述（必须取数据层 + pre-line / 术语行内组件渲染）。
 
 import { readFileSync } from 'node:fs';
 import { ITEMS } from '../src/data/items.js';
@@ -139,8 +139,12 @@ for (const [needle, msg] of infoNeeds) {
   if (!infoSrc.includes(needle)) errors.push(`[InfoPanel 数据源缺失] ${msg}`);
 }
 checked++;
+// 换行保留：既可显式 whiteSpace: 'pre-line'，也可由术语行内组件 renderTermText 统一保证
 const preLineCount = (infoSrc.match(/whiteSpace: 'pre-line'/g) || []).length;
-if (preLineCount < 4) errors.push(`[InfoPanel 未分行] pre-line 仅 ${preLineCount} 处`);
+const termTextCount = (infoSrc.match(/renderTermText\(/g) || []).length;
+if (preLineCount + termTextCount < 4) {
+  errors.push(`[InfoPanel 未分行] pre-line ${preLineCount} 处 + renderTermText ${termTextCount} 处不足 4`);
+}
 checked++;
 const splitCount = (infoSrc.match(/\.split\('\\n'\)/g) || []).length;
 if (splitCount < 2) errors.push(`[InfoPanel 未分行] 描述未按 \\n 拆分（仅 ${splitCount} 处）`);

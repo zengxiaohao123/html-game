@@ -1,8 +1,11 @@
 // src/ui/TraitBadges.js
-// 展示词条（【永恒】【唯一】等）的统一徽章渲染入口。
+// **展示词条（trait，【永恒】【唯一】等）**的统一徽章渲染入口 —— 与「术语」严格分开：
+//   · 展示词条 = 物品属性静态标签（traits），显眼独立徽章 → renderTraitBadges（本文件）。
+//   · 术语 = 正文里【X】形式、可查词条字典的名词（粘液 / 虚弱…）→ 行内组件 src/ui/TermText.js，禁止用本函数。
 // 所有详情视图（背包 / 图鉴 / 信息区 / 角色·技能·天赋 / 载具 / 生物 / 已放置内容）
 // 必须调用本函数，禁止各面板自行拼 description 或重复写徽章 DOM。
 // 备注字段 note 永不上屏；本函数只接收 traits 展示词条。
+// renderStateBadges 是**运行时状态（buff/debuff）**的动态徽章入口，同样只渲染名称，不负责术语释义。
 
 import { createEl } from './dom.js';
 

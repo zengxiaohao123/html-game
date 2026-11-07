@@ -27,6 +27,7 @@ import { createEl, qs, iconEl } from '../dom.js';
 import { devLog } from '../../core/Logger.js';
 import { ITEMS } from '../../data/items.js';
 import { renderTraitBadges } from '../TraitBadges.js';
+import { renderTermText } from '../TermText.js';
 import { CATEGORY_TABS, createCategoryBar } from '../CategoryBar.js';
 import {
   SHOP_KINDS, getShop, enterShop, leaveShop, buy, sell,
@@ -562,10 +563,10 @@ export class ShopPanel {
     // 展示词条徽章：与背包 / 图鉴共用同一个渲染入口与 trait-badge 样式（§16.4）
     renderTraitBadges(box, ITEMS[item.id]?.traits, { marginBottom: '2px' });
 
-    createEl('div', {
-      text: (ITEMS[item.id]?.description || item.description || ''),
-      style: { fontSize: '12px', lineHeight: '1.55', maxHeight: '108px', overflowY: 'auto', opacity: '0.92', whiteSpace: 'pre-line' },
-      parent: box,
+    // 描述：可滚动容器内也保持术语可点（浮层为 fixed 定位，不会被滚动区裁切）
+    renderTermText(box, ITEMS[item.id]?.description || item.description || '', {
+      tag: 'div',
+      style: { fontSize: '12px', lineHeight: '1.55', maxHeight: '108px', overflowY: 'auto', opacity: '0.92' },
     });
 
     // 售卖数量：- / 输入 / + / 最大；购买不做数量选择（每格仅 1 件，§16.21）

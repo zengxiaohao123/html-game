@@ -12,6 +12,7 @@ import { COLLECTIBLES } from '../../data/collectibles.js';
 import { createStandardPanel } from './_panelHelper.js';
 import { createEl, iconEl } from '../dom.js';
 import { renderTraitBadges } from '../TraitBadges.js';
+import { renderTermText } from '../TermText.js';
 
 const TABS = [
   { id: 'items',        label: '📦 物品' },
@@ -236,11 +237,11 @@ export class CodexPanel {
     // 展示词条：统一徽章入口，独立于描述正文
     renderTraitBadges(this.detailEl, entry.traits, { marginBottom: '6px' });
 
-    // 公共字段：description（pre-line 保留换行）
+    // 公共字段：description（pre-line 保留换行；其中的【术语】走统一行内术语组件，可点开释义）
     if (entry.description) {
-      createEl('div', {
-        style: { fontSize: '13px', color: '#4a3a2a', lineHeight: '1.7', padding: '6px 8px', background: 'rgba(255,255,255,0.7)', borderRadius: '6px', whiteSpace: 'pre-line' },
-        text: entry.description, parent: this.detailEl,
+      renderTermText(this.detailEl, entry.description, {
+        tag: 'div',
+        style: { fontSize: '13px', color: '#4a3a2a', lineHeight: '1.7', padding: '6px 8px', background: 'rgba(255,255,255,0.7)', borderRadius: '6px' },
       });
     }
 
@@ -309,7 +310,9 @@ export class CodexPanel {
       createEl('div', { style: { fontSize: '11px', color: '#8a7a66', marginTop: '2px' }, text: `参数：${JSON.stringify(c.effectParams).replace(/[{}]/g, '')}`, parent: this.detailEl });
     }
     if (c.effectParams?.unique) {
-      createEl('div', { style: { fontSize: '11px', color: '#c07a20', fontWeight: '700' }, text: '【唯一】同一效果只生效一次', parent: this.detailEl });
+      // 【唯一】是展示词条（物品属性），走徽章组件，不能用术语行内样式
+      renderTraitBadges(this.detailEl, ['唯一'], { marginBottom: '2px' });
+      createEl('div', { style: { fontSize: '11px', color: '#c07a20', fontWeight: '700' }, text: '同一效果只生效一次', parent: this.detailEl });
     }
   }
 
