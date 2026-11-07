@@ -20,6 +20,7 @@ import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { getSkill, SKILLS } from '../data/characters.js';
+import { FACTION, factionOf, isHostileTo } from '../data/factions.js';
 import {
   createSettlement,
   commitSettlement,
@@ -305,6 +306,17 @@ function linkAnchorOf(gs, ctx) {
   return playerAnchor(gs);
 }
 
+/**
+ * 触发上下文里的目标 id → 快照条目，且必须仍是阵营合法目标（我方 → 危险 / 高危）。
+ * 防止早期触发源留下的 id 在结算时打到友善生物。
+ */
+function hostileEntryOf(settlement, id) {
+  if (!settlement || !id) return null;
+  const entry = settlement.snapshot.creatures.find(e => e.id === id);
+  if (!entry) return null;
+  return isHostileTo(FACTION.PARTY, factionOf(entry)) ? entry : null;
+}
+
 /** 快照条目对应的活体是否带有指定 buff（集合先定：几何读快照，状态读最新） */
 function entryHasBuff(gs, entry, buffId) {
   const live = liveById(gs, entry.id);
@@ -345,15 +357,16 @@ export function periodicConditionScan(gs) {
   if (!gs?.creatures) return;
   pruneUnplaced(gs);
 
-  // 炽燃：有敌人 burn
-  if (gs.creatures.some(c => isTargetBurned(c))) {
+  // 炽燃：有敌人 burn（友善生物身上的状态不算，阵营合法性第一层）
+  const isHostile = (c) => c.hp > 0 && isHostileTo(FACTION.PARTY, factionOf(c));
+  if (gs.creatures.some(c => isHostile(c) && isTargetBurned(c))) {
     for (const inst of getPlacedInstances(gs, 'skill_link_xiayang_scorch')) {
       tryEnqueue(gs, inst);
     }
   }
 
   // 弱点击破：有敌人 charge
-  if (gs.creatures.some(c => isTargetCharging(c))) {
+  if (gs.creatures.some(c => isHostile(c) && isTargetCharging(c))) {
     for (const inst of getPlacedInstances(gs, 'skill_link_luyouyou_weak_point')) {
       tryEnqueue(gs, inst);
     }
@@ -468,9 +481,8 @@ export function resolveLinkSkill(gs, skill, ctx = {}) {
 
       // C-2（SKL-L-002）：tile 型 —— 锚点 = 目标**中心点**，半径按米计（1 格边长 = 1 米），
       // 命中 = 锚点圆与生物碰撞圆重叠（§12.3，不绑定地块枚举）
-      const targetEntry = (ctx.targetCreatureId
-        ? settlement.snapshot.creatures.find(e => e.id === ctx.targetCreatureId)
-        : null) || selectNearestEnemies(settlement.snapshot, anchor, { count: 1 })[0];
+      const targetEntry = hostileEntryOf(settlement, ctx.targetCreatureId)
+        || selectNearestEnemies(settlement.snapshot, anchor, { count: 1 })[0];
       if (!targetEntry) break;
       const targets = circleTargetsOf(settlement, skill, { x: targetEntry.x, y: targetEntry.y }, radius);
       register(targets, { multiplier, key: skill.id });
@@ -513,9 +525,8 @@ export function resolveLinkSkill(gs, skill, ctx = {}) {
 
     case 'skill_link_luyouyou_hunt': {
       // 追猎：上一次攻击的目标 → 3 次弹射 20% 物理；允许重复弹射（每次独立伤害键）
-      let cur = (ctx.targetCreatureId
-        ? settlement.snapshot.creatures.find(e => e.id === ctx.targetCreatureId)
-        : null) || selectNearestEnemies(settlement.snapshot, anchor, { count: 1 })[0];
+      let cur = hostileEntryOf(settlement, ctx.targetCreatureId)
+        || selectNearestEnemies(settlement.snapshot, anchor, { count: 1 })[0];
       if (!cur) break;
 
       const bounceCount = eff.bounceCount || 3;
@@ -536,9 +547,8 @@ export function resolveLinkSkill(gs, skill, ctx = {}) {
 
     case 'skill_link_luyouyou_rise_wind': {
       // 风起：对 1 名敌人（触发目标优先，否则最近）15% 风伤 + 3 回合 30% 易伤
-      const targetEntry = (ctx.targetCreatureId
-        ? settlement.snapshot.creatures.find(e => e.id === ctx.targetCreatureId)
-        : null) || selectNearestEnemies(settlement.snapshot, anchor, { count: 1 })[0];
+      const targetEntry = hostileEntryOf(settlement, ctx.targetCreatureId)
+        || selectNearestEnemies(settlement.snapshot, anchor, { count: 1 })[0];
       if (targetEntry) {
         const live = liveById(gs, targetEntry.id);
         register([targetEntry], { multiplier: skill.damageMultiplier, element: 'wind', key: skill.id });

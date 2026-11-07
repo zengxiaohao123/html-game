@@ -64,6 +64,7 @@ export function createInitialState() {
 
     // ── 玩家 ──
     player: {
+      faction: 'party',     // 我方共用实体（含全部角色属性；见 data/factions.js）
       x: HOME_IDX,          // 初始在家（左下）
       y: 0,                 // 外圈格索引模式下 y 暂不使用
       hp: 100,

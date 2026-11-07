@@ -19,6 +19,7 @@ import { GE } from '../core/GameEvents.js';
 import { HookDispatcher } from '../core/HookDispatcher.js';
 import { devLog } from '../core/Logger.js';
 import { SKILLS } from '../data/characters.js';
+import { FACTION, factionOf, isHostileTo } from '../data/factions.js';
 import { CombatSystem } from './CombatSystem.js';
 import { TalentSystem } from './TalentSystem.js';
 import { LinkSkillSystem } from './LinkSkillSystem.js';
@@ -27,6 +28,7 @@ import {
   createSettlement,
   commitSettlement,
   judgeModeOf,
+  targetSideOf,
   liveById,
   selectSkillTargets,
   skillTileAnchor,
@@ -86,11 +88,16 @@ export function triggerSkillByHook(hookType, params) {
   const judgeMode = judgeModeOf(skillDef);
   const anchor = skillTileAnchor(gs, tileIdx);
 
-  // 主目标（也是 tile 型的锚点来源）：默认最近存活敌人
-  const primary = selectSkillTargets(settlement.snapshot, skillDef, anchor, {
-    friendlyAsEnemyToday: settlement.friendlyAsEnemyToday,
-  });
-  if (primary.length === 0) return; // 保持既有行为：无合法目标则不触发
+  // 主目标（也是 tile 型的锚点来源）：默认最近存活敌人（阵营过滤在 enemyPool 内完成）
+  const targetSide = targetSideOf(skillDef);
+  const primary = targetSide === 'enemy'
+    ? selectSkillTargets(settlement.snapshot, skillDef, anchor, {
+      friendlyAsEnemyToday: settlement.friendlyAsEnemyToday,
+    })
+    : [];
+  // 自身 / 友方技能（鼓舞、屏息瞄准）没有敌人也应触发；
+  // 敌方技能保持"无阵营合法目标则不触发"（不空放冷却）
+  if (targetSide === 'enemy' && primary.length === 0) return;
 
   // 触发！
   fireOneSkill(gs, skillDef, primary, cdKey, hookType, tileIdx, settlement, judgeMode, anchor);
@@ -247,7 +254,10 @@ function applySkillExtraEffects(gs, skill, target, hookName = 'onEnter', phase =
       // 引燃（SKL-A-006）：【进入时】施加燃烧；【受祝福时】随机 1 名燃烧中的敌人燃烧剩余回合翻倍
       if (eff.enterOnly && hookName !== 'onEnter') {
         if (eff.onBlessedDoubleBurn && hookName === 'onBlessed') {
-          const burned = gs.creatures.filter(c => c.hp > 0 && (c.activeBuffs || []).some(b => b.id === 'burn'));
+          // 阵营合法性：只对敌人生效（友善生物身上的燃烧不参与）
+          const burned = gs.creatures.filter(c => c.hp > 0
+            && isHostileTo(FACTION.PARTY, factionOf(c))
+            && (c.activeBuffs || []).some(b => b.id === 'burn'));
           if (burned.length > 0) {
             const pick = burned[Math.floor(Math.random() * burned.length)];
             const burn = pick.activeBuffs.find(b => b.id === 'burn');

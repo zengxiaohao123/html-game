@@ -71,7 +71,9 @@ export function getCharacterDef(id) {
 //     { onEnter: true, onPass: false, onBlessed: true }
 //   cooldown: 冷却回合（-1 = 不受豌豆架每 2 回合限次影响，0 = 每次都能触发）
 //   range: 目标范围（1 = 同栅格 / 同一 fence tile 内）
-//   targetCategory: 'danger' / 'extreme' / 'friendly_danger_extreme'（默认不攻击友善）
+//   targetSide: 'enemy'（默认，只选阵营合法目标）/ 'self' / 'ally'（我方共用实体）
+//     阵营合法性见 data/factions.js：我方 → 危险 / 高危；友善生物永不被默认选中。
+//   ignoreFaction: true = 【不分敌我】词条（当前技能库 0 条；出现时跳过阵营过滤）
 //   description: 玩家可见描述
 // ════════════════════════════════════════════════════════════════
 
@@ -80,8 +82,11 @@ export function getCharacterDef(id) {
  * {
  *   id, name, emoji, roleId, element, damageMultiplier,
  *   hooks, range, cooldown, isLinkSkill, realDamage,
- *   targetCategory, extraEffect, description
+ *   targetSide, ignoreFaction, extraEffect, description
  * }
+ *
+ * 伤害类型口径：未特殊说明的一律为常规伤害；元素未说明则默认物理。
+ * 真实伤害必须在技能描述中明确写出（当前技能库无真实伤害技能）。
  *
  *   hooks.onEnter  时：SkillSystem.triggerSkillByHook('onEnter', { gs, tileIdx }) 会遍历
  *     team 里 activeGroup 的所有角色的所有技能；若 tileIdx 对应的 fence tile 里有危险生物
@@ -103,7 +108,7 @@ export const SKILLS = {
     range: 1,
     cooldown: 0,
     isLinkSkill: false,
-    targetCategory: 'danger_extreme',
+    targetSide: 'enemy',
     description: ITEMS.skill_yumo_slash.description,
   },
   skill_yumo_desperate: {
@@ -120,7 +125,7 @@ export const SKILLS = {
     range: 1,
     cooldown: 2,
     isLinkSkill: false,
-    targetCategory: 'danger_extreme',
+    targetSide: 'enemy',
     targetCount: 2,               // SKL-A-002：对 2 个敌人
     targetSelection: 'nearest',   // 取最近的 2 名
     extraEffect: {
@@ -147,7 +152,7 @@ export const SKILLS = {
     range: 1,
     cooldown: 3,
     isLinkSkill: false,
-    targetCategory: 'danger_extreme',
+    targetSide: 'enemy',
     extraEffect: {
       type: 'pioneer_multiplier',
       perConsumeMultiplier: 0.7,   // 每消耗 1 块有地形的地块，本次攻击倍率 +70%（物品库 SKL-A-003）
@@ -171,7 +176,7 @@ export const SKILLS = {
     range: 1,
     cooldown: 0,
     isLinkSkill: false,
-    targetCategory: 'danger_extreme',
+    targetSide: 'enemy',
     extraEffect: {
       type: 'apply_buff',
       buffId: 'burn',
@@ -193,7 +198,7 @@ export const SKILLS = {
     range: 1,
     cooldown: 0,
     isLinkSkill: false,
-    targetCategory: 'danger_extreme',
+    targetSide: 'enemy',
     applyBuffOnly: true,
     extraEffect: {
       type: 'apply_buff',
@@ -220,7 +225,7 @@ export const SKILLS = {
     range: 1,
     cooldown: 0,
     isLinkSkill: false,
-    targetCategory: 'danger_extreme',
+    targetSide: 'enemy',
     hits: 2,
     description: ITEMS.skill_luyouyou_careful_shot.description,
   },
@@ -238,7 +243,7 @@ export const SKILLS = {
     range: 1,
     cooldown: 4,
     isLinkSkill: false,
-    targetCategory: 'danger_extreme',
+    targetSide: 'enemy',
     targetCount: 2,              // SKL-A-011：对 2 个随机敌人
     targetSelection: 'random',   // 不放回随机 2 名
     extraEffect: {
@@ -260,14 +265,13 @@ export const SKILLS = {
     roleId: 'xiayang',
     element: 'physical',
     damageMultiplier: 0,   // 本身不直接造成伤害，只有生命回复 + 攻击力 buff
-    // §2.8：自身 buff + 回血，无敌人目标 → target 流（selfOnly）
+    // §2.8：自身 buff + 回血，无敌人目标 → target 流（targetSide = self）
     judgeMode: 'target',
-    selfOnly: true,
+    targetSide: 'self',
     hooks: { onEnter: true, onPass: true, onBlessed: true },
     range: 1,
     cooldown: 0,
     isLinkSkill: false,
-    targetCategory: 'danger_extreme',
     extraEffect: {
       type: 'self_regen_and_buff',
       regenPercentOfAtk: 0.2,   // 回复相当于 20% 攻击力的生命值（经过时触发）
@@ -291,7 +295,7 @@ export const SKILLS = {
     range: 1,
     cooldown: 3,
     isLinkSkill: false,
-    targetCategory: 'danger_extreme',
+    targetSide: 'enemy',
     extraEffect: {
       type: 'damage_modifier_self',
       fireDamageBonus: 0.2,            // 本日内我方火元素伤害 +20%
@@ -319,7 +323,7 @@ export const SKILLS = {
     range: 1,
     cooldown: 7,
     isLinkSkill: false,
-    targetCategory: 'danger_extreme',
+    targetSide: 'enemy',
     onBlessedRefreshCooldown: true,  // 【受祝福时】立即刷新冷却（SkillSystem 读取）
     description: ITEMS.skill_xiayang_blast_carnival.description,
   },
@@ -334,14 +338,13 @@ export const SKILLS = {
     roleId: 'luyouyou',
     element: 'physical',
     damageMultiplier: 0,   // 本身不造成伤害，只给下一次攻击加 buff
-    // §2.8：自身暴击 buff，无敌人目标 → target 流（selfOnly）
+    // §2.8：自身暴击 buff，无敌人目标 → target 流（targetSide = self）
     judgeMode: 'target',
-    selfOnly: true,
+    targetSide: 'self',
     hooks: { onEnter: true, onPass: false, onBlessed: true },
     range: 1,
     cooldown: 0,
     isLinkSkill: false,
-    targetCategory: 'danger_extreme',
     extraEffect: {
       type: 'self_crit_buff',
       critRateBonus: 1.0,   // 下一次攻击暴击率 +100%
@@ -368,7 +371,7 @@ export const SKILLS = {
     range: null,    // 行+列所有敌人，不是普通范围
     cooldown: 0,
     isLinkSkill: false,
-    targetCategory: 'danger_extreme',
+    targetSide: 'enemy',
     description: ITEMS.skill_zongheng.description,
   },
 
@@ -386,9 +389,9 @@ export const SKILLS = {
     roleId: 'yumo',
     element: 'physical',
     damageMultiplier: 0,   // 本身不造成伤害，只切换下次攻击元素类型
-    // §2.8：自身效果，无敌人目标 → target 流（selfOnly）
+    // §2.8：自身效果，无敌人目标 → target 流（targetSide = self）
     judgeMode: 'target',
-    selfOnly: true,
+    targetSide: 'self',
     hooks: { onEnter: false, onPass: false, onBlessed: false },
     range: 1,
     cooldown: 3,

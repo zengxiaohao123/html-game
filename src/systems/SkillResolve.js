@@ -26,6 +26,7 @@
 //     （地块中心点到线段距离，或锚点所在行/列），再按碰撞框取格内生物。
 
 import { SKILLS } from '../data/characters.js';
+import { FACTION, factionOf, isHostileTo } from '../data/factions.js';
 import {
   FENCE_ORIGIN_X,
   FENCE_ORIGIN_Y,
@@ -45,6 +46,19 @@ import { devLog } from '../core/Logger.js';
 export const JUDGE_MODES = ['tile', 'target'];
 export const TILE_ANCHORS = ['skillTile', 'target', 'player+target'];
 export const TILE_SHAPES = ['circle', 'row', 'column', 'rowColumn', 'line'];
+
+/**
+ * 技能目标侧（意在取代已废弃的 `selfOnly` 死字段）：
+ *   enemy —— 默认：只选阵营合法的敌方生物（我方 → 危险 / 高危）
+ *   self  —— 自身 / 我方共用实体，不选生物目标（鼓舞、屏息瞄准、汲取）
+ *   ally  —— 我方共用实体（与 self 目前等价：我方只有一个实体，不按角色拆分）
+ */
+export const TARGET_SIDES = ['enemy', 'self', 'ally'];
+
+/** 读取技能目标侧；未声明按 enemy（绝大多数技能默认索敌） */
+export function targetSideOf(skill) {
+  return TARGET_SIDES.includes(skill?.targetSide) ? skill.targetSide : 'enemy';
+}
 
 /** 行/列 / 线带需要 areaRadius 的形状 */
 const RADIUS_SHAPES = ['circle', 'line'];
@@ -196,19 +210,27 @@ export function liveById(gs, id) {
 // ────────────────────────────────────────────────────────────
 
 /**
- * 合法目标池：默认打危险 / 高危；friendlyAsEnemyToday（感恩节的晚餐）时全部视为敌人。
- * targetCategory 未声明时不过滤（与旧 LinkSkillSystem 的 allCreatures 口径一致）。
+ * 合法目标池（两层过滤的第一层：阵营）。
+ * 默认攻击方 = 我方角色（party），只返回阵营合法目标 = 危险 / 高危生物；
+ * 友善生物默认**永远**不在池内（除非技能显式 ignoreFaction，或当日 friendlyAsEnemyToday）。
  * @param {object} snapshot
- * @param {{targetCategory?:string|null, friendlyAsEnemyToday?:boolean}} [opts]
+ * @param {object} [opts]
+ * @param {'party'|'friendly'|'hostile'} [opts.attackerFaction='party'] 攻击方阵营
+ * @param {boolean} [opts.ignoreFaction=false] 【不分敌我】：跳过阵营过滤（当前技能库 0 条）
+ * @param {boolean} [opts.friendlyAsEnemyToday=false] 感恩节的晚餐：当日友善生物视同敌人
  */
 export function enemyPool(snapshot, opts = {}) {
-  const { targetCategory = null, friendlyAsEnemyToday = false } = opts;
+  const {
+    attackerFaction = FACTION.PARTY,
+    ignoreFaction = false,
+    friendlyAsEnemyToday = false,
+  } = opts;
   return (snapshot?.creatures || [])
     .filter(e => e.hp > 0)
     .filter(e => {
-      if (!targetCategory || targetCategory === 'friendly_danger_extreme') return true;
+      if (ignoreFaction) return true;
       if (friendlyAsEnemyToday) return true;
-      return e.category === 'danger' || e.category === 'extreme';
+      return isHostileTo(attackerFaction, factionOf(e));
     });
 }
 
@@ -242,7 +264,7 @@ export function orderByDistance(entries, anchor, src) {
  * 最近 N 名敌人（§12.3 默认索敌）
  * @param {object} snapshot
  * @param {{x:number,y:number}} anchor
- * @param {object} [opts] { count, targetCategory, friendlyAsEnemyToday, excludeIds, filter }
+ * @param {object} [opts] { count, attackerFaction, ignoreFaction, friendlyAsEnemyToday, excludeIds, filter }
  */
 export function selectNearestEnemies(snapshot, anchor, opts = {}) {
   const { count = 1, excludeIds = [], filter = null } = opts;
@@ -265,12 +287,18 @@ export function selectRandomEnemies(snapshot, opts = {}) {
   return out;
 }
 
-/** 技能声明的默认目标选择（targetCount / targetSelection） */
+/**
+ * 技能声明的默认目标选择（targetCount / targetSelection）。
+ * `targetSide` 不是 enemy（自身 / 友方）时不选生物目标，返回空数组。
+ */
 export function selectSkillTargets(snapshot, skill, anchor, opts = {}) {
+  if (targetSideOf(skill) !== 'enemy') return [];
   const count = Math.max(1, skill?.targetCount || 1);
   const merged = {
     count,
-    targetCategory: skill?.targetCategory ?? null,
+    attackerFaction: opts.attackerFaction ?? FACTION.PARTY,
+    // 【不分敌我】：技能词条或调用方显式放开时才跳过阵营过滤
+    ignoreFaction: !!skill?.ignoreFaction || !!opts.ignoreFaction,
     friendlyAsEnemyToday: !!opts.friendlyAsEnemyToday,
   };
   if ((skill?.targetSelection || 'nearest') === 'random') {
@@ -455,7 +483,7 @@ export function tileRefsForSkill(gs, skill, params = {}) {
  */
 export function tileTargetsOf(settlement, skill, tileRefs) {
   const allowed = new Set(enemyPool(settlement.snapshot, {
-    targetCategory: skill?.targetCategory ?? null,
+    ignoreFaction: !!skill?.ignoreFaction,
     friendlyAsEnemyToday: settlement.friendlyAsEnemyToday,
   }).map(e => e.id));
   return creaturesInTiles(settlement.snapshot, tileRefs).filter(e => allowed.has(e.id));
@@ -475,7 +503,7 @@ export function circleTargetsOf(settlement, skill, anchorPoint, radiusOverride =
   if (!anchorPoint) return [];
   const radius = radiusOverride == null ? (skill?.areaRadius ?? 0) : radiusOverride;
   return entriesNearPoint(settlement.snapshot, anchorPoint, radius, {
-    targetCategory: skill?.targetCategory ?? null,
+    ignoreFaction: !!skill?.ignoreFaction,
     friendlyAsEnemyToday: settlement.friendlyAsEnemyToday,
   });
 }
@@ -519,6 +547,8 @@ export const SkillResolve = {
   JUDGE_MODES,
   TILE_ANCHORS,
   TILE_SHAPES,
+  TARGET_SIDES,
+  targetSideOf,
   judgeModeOf,
   validateSkillJudgeModes,
   createSettlement,
