@@ -26,12 +26,12 @@ export const STONE_TO_SKILL = {
   skill_stone_shift: 'skill_link_shift',
 };
 
-let wired = false;
+let wiredEpoch = -1;
 
-/** 只挂一次：常驻/触发型收藏品的 hook */
+/** 挂常驻/触发型收藏品的 hook */
 function wireHooks() {
-  if (wired) return;
-  wired = true;
+  if (wiredEpoch === HookDispatcher.epoch) return;
+  wiredEpoch = HookDispatcher.epoch;
 
   // 睡觉时：皇家枕头回 15% 生命
   HookDispatcher.register('onSleep', ({ gs }) => {
@@ -210,6 +210,9 @@ export function syncPumpkin(gs) {
  */
 export function initPassiveItems(getGS) {
   wireHooks();
+  // GameDirector.start() 会 HookDispatcher.clearAll()，把这里的 hook 一并清掉；
+  // 每次 start 结束后都会发 BOOT，此时若 epoch 变了就补挂一次（否则收藏品效果全部失效）
+  EventBus.on(GE.BOOT, () => { wireHooks(); });
   if (typeof getGS !== 'function') return;
   EventBus.on(GE.ITEM_GAINED, ({ itemId }) => {
     const gs = getGS();

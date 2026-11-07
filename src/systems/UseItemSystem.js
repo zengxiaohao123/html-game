@@ -250,11 +250,16 @@ export function onSleep(gs) {
 }
 
 /** 初始化：把放置型道具的睡觉结算挂到 onSleep */
-let wired = false;
-export function initUseItems() {
-  if (wired) return;
-  wired = true;
+let wiredEpoch = -1;
+function wireHooks() {
+  if (wiredEpoch === HookDispatcher.epoch) return;
+  wiredEpoch = HookDispatcher.epoch;
   HookDispatcher.register('onSleep', ({ gs }) => onSleep(gs));
+}
+export function initUseItems() {
+  wireHooks();
+  // GameDirector.start() 会 HookDispatcher.clearAll()；每次 start 结束后发 BOOT，epoch 变了就补挂
+  EventBus.on(GE.BOOT, () => { wireHooks(); });
 }
 
 export const UseItemSystem = { useItem, canUse, onDailyStart, onSleep, initUseItems, runScopedDaily, isPlantTarget };

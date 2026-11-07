@@ -45,6 +45,8 @@ const registry = new Map();
 for (const t of HOOK_TYPES) registry.set(t, []);
 
 export const HookDispatcher = {
+  /** clearAll 的累计次数：供在模块初始化阶段注册 hook 的模块判断"是否需要补挂" */
+  epoch: 0,
   /**
    * 注册 hook
    * @param {string} hookType 必须是 HOOK_TYPES 中的一个
@@ -84,6 +86,7 @@ export const HookDispatcher = {
    */
   clearAll() {
     for (const t of registry.keys()) registry.set(t, []);
+    this.epoch += 1;
   },
 
   /**
