@@ -34,6 +34,9 @@ import { moveStep } from '../src/systems/MovementSystem.js';
 import { Random } from '../src/core/Random.js';
 import { BUFFS } from '../src/data/buffs.js';
 import { GLOSSARY } from '../src/data/items.js';
+import { clearContent, placeContent } from '../src/systems/BuildSystem.js';
+import { countByCategory, removeCreaturesOwnedByTile } from '../src/systems/CreatureSystem.js';
+import { InventorySystem } from '../src/systems/InventorySystem.js';
 
 let pass = 0, fail = 0;
 function check(cond, msg) {
@@ -273,6 +276,68 @@ check(gsMucusMove.player.stamina === staminaBefore - 1, `行动力 -1（${stamin
 const mucusTerm = GLOSSARY.find(g => g && g.term === '粘液');
 check(!!mucusTerm?.meaning, '物品库「词条字典」存在粘液描述');
 check(BUFFS.slime.description === mucusTerm?.meaning, '粘液描述与物品库逐字一致');
+
+// ════════════════════════════════════════════════════════════
+console.log('\n═══ 10. 生物设施拆除：归属生物全部死亡移除、无掉落、容量实时下降 ═══');
+const gsRem = mkHenhouseState();
+gsRem.buildMode = true;
+const deathEvents = [];
+const capEvents = [];
+EventBus.on(GE.CREATURE_DEFEATED, e => deathEvents.push(e));
+EventBus.on(GE.CAPACITY_CHANGE, e => capEvents.push(e));
+const remA = spawnCreature(gsRem, 'chick', { facilityId: 'facility_henhouse', sourceTileIdx: 0 });
+const remB = spawnCreature(gsRem, 'chicken', { facilityId: 'facility_henhouse', sourceTileIdx: 0 });
+setFacilityDoorOpen(gsRem, 0, false); // 关门：A/B 变为 housed
+const remC = spawnCreature(gsRem, 'chick', { facilityId: 'facility_henhouse', sourceTileIdx: 0 }); // 关门期间新生成 → 自动 housed
+const remWild = spawnCreature(gsRem, 'chick'); // 无归属
+const remFriendlyBefore = countByCategory(gsRem, 'friendly');
+const remGoldBefore = gsRem.player.gold;
+const remInvBefore = JSON.stringify(gsRem.inventory || {});
+deathEvents.length = 0;
+capEvents.length = 0;
+
+const cleared = clearContent(gsRem, 0);
+check(cleared.ok === true, '鸡舍拆除成功');
+check(!gsRem.creatures.some(c => c.id === remA.id || c.id === remB.id || c.id === remC.id),
+  '归属生物（含 housed）全部从 gs.creatures 移除');
+check(gsRem.creatures.some(c => c.id === remWild.id) && !remWild.dead, '野生生物不受影响');
+check(remFriendlyBefore - countByCategory(gsRem, 'friendly') === 3, '友善容量计数下降 3');
+check(capEvents.some(e => e.category === 'friendly' && e.newCount === countByCategory(gsRem, 'friendly')),
+  '拆除后发出 CAPACITY_CHANGE，容量条可实时刷新');
+check(deathEvents.length === 3 && deathEvents.every(e => e.noReward === true),
+  '3 只归属生物算作死亡且标记无奖励');
+check(gsRem.player.gold === remGoldBefore, '拆除不产生金币收益');
+check(JSON.stringify(gsRem.inventory || {}) === remInvBefore, '拆除不产生任何物品掉落');
+check(!gsRem.map.fence[0].creatures.includes(remA.id), '栅栏格缓存已清理收纳/可见生物');
+check(gsRem.map.outerTiles[0].contentId === null, '地块内容已清空');
+
+deathEvents.length = 0;
+capEvents.length = 0;
+const clearedAgain = clearContent(gsRem, 0);
+check(clearedAgain.ok === false && clearedAgain.reason === 'empty', '重复拆除幂等（空格返回 empty）');
+check(deathEvents.length === 0 && capEvents.length === 0, '重复拆除不产生二次死亡/容量事件');
+
+// 替换路径（UI 主要入口：有旧内容时先拆后放）
+const gsRep = mkHenhouseState();
+gsRep.buildMode = true;
+const repA = spawnCreature(gsRep, 'chick', { facilityId: 'facility_henhouse', sourceTileIdx: 0 });
+const repB = spawnCreature(gsRep, 'chick', { facilityId: 'facility_henhouse', sourceTileIdx: 0 });
+const repWild = spawnCreature(gsRep, 'chick');
+InventorySystem.addItem(gsRep, 'facility_slimehouse', 1);
+const repPlaced = placeContent(gsRep, 0, 'facility_slimehouse');
+check(repPlaced.ok === true, '用史莱姆屋替换旧鸡舍成功');
+check(!gsRep.creatures.some(c => c.id === repA.id || c.id === repB.id), '替换时旧鸡舍归属生物一并死亡移除');
+check(gsRep.creatures.some(c => c.id === repWild.id), '替换时野生生物不受影响');
+check(gsRep.map.outerTiles[0].contentId === 'facility_slimehouse', '新设施已放置');
+
+// 非生物类设施拆除：无归属生物 → 不触发任何生物死亡
+const gsNon = createInitialState();
+gsNon.buildMode = true;
+gsNon.map.outerTiles[1].contentId = 'facility_wheat';
+const nonA = spawnCreature(gsNon, 'chick'); // 野生
+const noOp = removeCreaturesOwnedByTile(gsNon, gsNon.map.outerTiles[1]);
+check(noOp.ok === false && noOp.removed.length === 0, '非生物设施拆除不产生生物死亡');
+check(gsNon.creatures.some(c => c.id === nonA.id), '野生生物保持不变');
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);

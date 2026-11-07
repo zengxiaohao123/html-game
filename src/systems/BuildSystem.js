@@ -22,6 +22,7 @@ import { TERRAINS } from '../data/terrains.js';
 import { SKILLS } from '../data/characters.js';
 import { InventorySystem } from './InventorySystem.js';
 import { LinkSkillSystem, getActiveGroupRoles } from './LinkSkillSystem.js';
+import { removeCreaturesOwnedByTile } from './CreatureSystem.js';
 import { fenceDimsOf } from '../core/Distance.js';
 import { devLog } from '../core/Logger.js';
 
@@ -234,6 +235,8 @@ export function placeContent(gs, tileIdx, contentId) {
 
   // ── 旧内容处理（v0.5：只有技能回背包，其余一律消失）──
   if (oldContentId) {
+    // 生物类内容被替换：归属生物全部死亡并移除（无任何掉落 / 金币 / 经验），容量计数随之下降
+    removeCreaturesOwnedByTile(gs, tile, { reason: 'facilityReplaced' });
     if (oldContentId.startsWith('skill_')) {
       LinkSkillSystem.onSkillCardRemoved(gs, tileIdx, oldContentId);
       InventorySystem.addItem(gs, oldContentId, 1);
@@ -291,6 +294,8 @@ export function clearContent(gs, tileIdx) {
     return { ok: false, reason: 'unreplaceable' };
   }
   const removedId = tile.contentId;
+  // 生物类内容被拆除：归属生物全部死亡并移除（含 housed；无掉落），容量实时下降
+  removeCreaturesOwnedByTile(gs, tile, { reason: 'facilityCleared' });
   tile.contentId = null;
   tile.contentState = {};
 

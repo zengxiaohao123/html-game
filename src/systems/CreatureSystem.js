@@ -338,7 +338,7 @@ function defaultSecondsPerTile() {
   return (MIN_SECONDS_PER_TILE + MAX_SECONDS_PER_TILE) / 2;
 }
 
-function countByCategory(gs, category) {
+export function countByCategory(gs, category) {
   return gs.creatures.filter(c => c.category === category).length;
 }
 
@@ -1045,6 +1045,50 @@ export function setFacilityDoorOpen(gs, tileIdx, open) {
   return { ok: true, open: next, count: owned.length };
 }
 
+/**
+ * 通用：内容被拆除 / 替换时，清理该地块内容归属的全部生物。
+ * 判定依据是「该地块是否有归属生物」（uid / 旧索引），不写死设施 id；
+ * 归属生物算作死亡并直接移除（含 housed 收纳中的），但**不产生任何掉落 / 金币 / 经验**，
+ * 也不走击杀结算。野生生物无归属，不受影响。幂等：无归属生物时不做任何事。
+ * @returns {{ok:boolean, removed:object[]}}
+ */
+export function removeCreaturesOwnedByTile(gs, tile, { reason = 'facilityRemoved' } = {}) {
+  if (!gs || !tile || !Array.isArray(gs.creatures)) return { ok: false, removed: [] };
+  const owned = gs.creatures.filter(c => c && creatureOwnedByTile(gs, c, tile));
+  if (owned.length === 0) return { ok: false, removed: [] };
+
+  const removedIds = new Set(owned.map(c => c.id));
+  // 从栅栏格缓存移除（含关门时各自 row/col 缓存残留）
+  for (const f of gs.map?.fence || []) {
+    if (!Array.isArray(f.creatures)) continue;
+    f.creatures = f.creatures
+      .map(x => (x && typeof x === 'object' ? x.id : x))
+      .filter(id => id && !removedIds.has(id));
+  }
+  // 标记死亡（不调用任何击杀 / 掉落结算）
+  const categories = new Set();
+  for (const c of owned) {
+    categories.add(getCreatureDef(c.kind)?.category || 'friendly');
+    c.hp = 0;
+    c.dead = true;
+    c.housed = false;
+  }
+  gs.creatures = gs.creatures.filter(c => !removedIds.has(c.id));
+
+  // 容量计数随 gs.creatures 自动下降 → 广播实时刷新 UI
+  for (const category of categories) {
+    EventBus.emit(GE.CAPACITY_CHANGE, {
+      category,
+      newCount: countByCategory(gs, category),
+      reason,
+    });
+  }
+  for (const c of owned) {
+    EventBus.emit(GE.CREATURE_DEFEATED, { creature: c, source: reason, noReward: true });
+  }
+  return { ok: true, removed: owned };
+}
+
 /** 该设施当前是否开门（缺省视为开门，与初始状态一致） */
 export function isFacilityDoorOpen(gs, tileIdx) {
   const tile = gs?.map?.outerTiles?.[tileIdx];
@@ -1522,5 +1566,7 @@ export const CreatureSystem = {
   creatureOwnedByTile,
   ensureTileUid,
   remapCreatureOwnershipAfterExpand,
+  removeCreaturesOwnedByTile,
+  countByCategory,
   DOOR_FACILITIES,
 };
