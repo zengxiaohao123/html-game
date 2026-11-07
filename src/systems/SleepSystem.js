@@ -68,13 +68,18 @@ export function sleep(gs, isAuto = false) {
   const currentTile = gs.map.outerTiles[gs.player.x];
   const atHome = currentTile && (currentTile.contentId === 'facility_home' || currentTile.contentId === 'facility_tent');
 
-  // ② 百分比恢复（规则 1）：心力交瘁固定回一半 / 家、帐篷回满 / 其他回一半，均不允许超出上限
-  const recoverRatio = (wasExhausted || !atHome) ? 0.5 : 1;
-  devLog.info('[SleepSystem] 百分比恢复 ratio =', recoverRatio,
-    wasExhausted ? '（心力交瘁固定回一半）' : (atHome ? '（在家回满）' : '（其他地点回一半）'));
-
+  // ② 基础恢复（规则 1）：
+  //    - 回一半 = 增加「上限的一半」（向下取整），加到当前值后再夹上限，**不是**恢复到上限一半；
+  //    - 回满 = 把当前值提升到上限（设目标值，负数也会直接到上限）。
   const beforeRecover = gs.player.stamina;
-  StaminaSystem.gainStaminaPercent(gs, recoverRatio, { reason: 'sleep_recover' });
+  if (wasExhausted || !atHome) {
+    devLog.info('[SleepSystem] 回一半：增加 floor(上限/2) 行动力',
+      wasExhausted ? '（心力交瘁固定回一半）' : '（其他地点回一半）');
+    StaminaSystem.gainStaminaPercent(gs, 0.5, { reason: 'sleep_recover_half' });
+  } else {
+    devLog.info('[SleepSystem] 在家/帐篷：行动力回满');
+    StaminaSystem.gainStaminaToFull(gs, { reason: 'sleep_recover_full' });
+  }
 
   // ③ 数值直接增加（规则 2）：帐篷受祝福 +3、天赋活力满满 +2 —— 在百分比恢复之后结算，可超上限。
   //    心力交瘁时所有睡觉增益失效（§15），待结算奖励作废。

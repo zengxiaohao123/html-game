@@ -41,16 +41,27 @@ function apply(gs, next, opts = {}) {
 }
 
 /**
- * 规则 1：百分比增加（回一半 / 回满）—— 结果不超过上限
- * 按上限的 ratio 恢复到目标值：1 = 回满，0.5 = 回一半（沿用睡觉回复的既有口径）。
- * 目标先夹到 maxStamina；当前高于目标时会被拉回目标值。
+ * 规则 1：百分比增加（恢复相当于上限 X% 的行动力）—— 是**增加量**，不是设目标值
+ * 增加量按设计文档取向下取整（文档未写取整规则，2026-11-07 定为 floor），
+ * 加到当前值后再夹到上限（百分比增加不允许溢出）。
+ * 例：cap=8、ratio=0.5、当前 3 → 3 + 4 = 7；当前 7 → 11 → 夹到 8。
  * @param {number} ratio 上限的比例（0~1]
  * @returns {number} 实际变化量
  */
 export function gainStaminaPercent(gs, ratio, opts = {}) {
   const cap = gs.player.maxStamina;
-  const target = Math.min(Math.ceil(cap * ratio), cap);
-  return apply(gs, target, opts);
+  const amount = Math.floor(cap * ratio);
+  if (amount <= 0) return 0;
+  return apply(gs, Math.min(cap, gs.player.stamina + amount), opts);
+}
+
+/**
+ * 「回满」：把行动力提升到上限（语义上确实是设目标值，负数也会直接到上限）
+ * @returns {number} 实际变化量
+ */
+export function gainStaminaToFull(gs, opts = {}) {
+  const cap = gs.player.maxStamina;
+  return apply(gs, cap, opts);
 }
 
 /**
@@ -106,6 +117,7 @@ export function clampStaminaToCap(gs, opts = {}) {
 
 export const StaminaSystem = {
   gainStaminaPercent,
+  gainStaminaToFull,
   gainStaminaFlat,
   loseStaminaPercent,
   loseStaminaNegativeEffect,

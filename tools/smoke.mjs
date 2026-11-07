@@ -538,7 +538,7 @@ console.log('\n═══ 25. 心力交瘁：持续 1 日 / 睡觉移除 / 睡觉
   SleepSystem.sleep(g);
   check(!g.activeBuffs.some((b) => b.id === 'exhausted'), '睡觉睡醒后移除心力交瘁');
   check(g.player.hp === 50, `心力交瘁期间睡觉增益失效（皇家枕头不回血，hp = ${g.player.hp}）`);
-  check(g.player.stamina === Math.ceil(g.player.maxStamina / 2), `心力交瘁睡觉固定回一半行动力（${g.player.stamina}）`);
+  check(g.player.stamina === 2 + Math.floor(g.player.maxStamina / 2), `心力交瘁睡觉固定回一半行动力（加量语义，${g.player.stamina}）`);
   // 对照：无心衰时枕头正常生效
   const g2 = createInitialState();
   g2.player.x = 6;
@@ -1102,6 +1102,34 @@ console.log('\n═══ 行动力四类规则（2026-11-07 裁决） ═══'
   g4.player.stamina = 8;
   sleep(g4, false);
   check(g4.player.stamina === 10, `天赋活力满满睡觉后 8 → ${g4.player.stamina}（可超上限）`);
+}
+
+console.log('\n═══ 睡觉行动力恢复：加量语义（2026-11-07） ═══');
+{
+  // 上限 8：回一半 = 增加 floor(8/2)=4，加到当前值后夹上限
+  const cases = [[7, 8], [3, 7], [1, 5], [-2, 2], [8, 8]];
+  for (const [start, want] of cases) {
+    const g = createInitialState();
+    g.player.x = 2; // 非家/帐篷格 → 走「回一半」
+    g.player.stamina = start;
+    sleep(g, false);
+    check(g.player.stamina === want, `睡觉回一半：${start} → ${g.player.stamina}（期望 ${want}）`);
+  }
+
+  // 奇数上限取整：设计文档未写，取向下取整 floor(9/2)=4
+  const gOdd = createInitialState();
+  gOdd.player.x = 2; // 非家/帐篷格 → 走「回一半」
+  gOdd.player.maxStamina = 9;
+  gOdd.player.stamina = 1;
+  sleep(gOdd, false);
+  check(gOdd.player.stamina === 5, `上限 9：1 + floor(9/2)=4 → ${gOdd.player.stamina}`);
+
+  // 回满仍是设目标值：负数也直接到上限
+  const gFull = createInitialState();
+  gFull.player.x = 6; // 家
+  gFull.player.stamina = -2;
+  sleep(gFull, false);
+  check(gFull.player.stamina === gFull.player.maxStamina, `在家回满：-2 → ${gFull.player.stamina}`);
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} smoke 结果：${pass} 通过 / ${fail} 失败（共 ${pass + fail}）`);
