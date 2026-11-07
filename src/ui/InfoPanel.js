@@ -1031,7 +1031,10 @@ export class InfoPanel {
           } else if (reachInfo.movePattern === 'any') {
             goLabel = `✨ ${reachInfo.emoji || ''} ${reachInfo.name}：前往（任意格）`;
           }
-          goLabel += ` · 剩 ${gs.vehicle.current.usageLeft} 次`;
+          const left = gs.vehicle.current.usageLeft;
+          goLabel += Number.isFinite(left)
+            ? ` · 剩 ${left} 次`
+            : (reachInfo.perDayLimit ? ` · 每天限 ${reachInfo.perDayLimit} 次` : ' · 不限次数');
         } else {
           canGo = false;
           goReason = reach.reason;

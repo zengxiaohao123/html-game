@@ -115,7 +115,9 @@ export class VehiclePanel {
       left.appendChild(iconEl('items', cur.vehicleId, { size: '18px', def: curDef, fallback: curDef.emoji || '🚗' }));
       createEl('span', {
         style: { color: '#2f7d32' },
-        text: `${curDef.name}（剩余 ×${VehiclePanel._fmtUsage(cur.usageLeft)}）`,
+        text: curDef.perDayLimit && gs.vehicle.chanceUsedToday
+          ? `${curDef.name}（今日已用）`
+          : `${curDef.name}（${curDef.perDayLimit ? `每天限 ${curDef.perDayLimit} 次` : `剩余 ×${VehiclePanel._fmtUsage(cur.usageLeft)}`}）`,
         parent: left,
       });
     } else {
@@ -178,9 +180,12 @@ export class VehiclePanel {
         text: def.name || entry.vehicleId,
         parent: titleBox,
       });
+      const usedToday = !!def.perDayLimit && !!gs?.vehicle?.chanceUsedToday;
       createEl('div', {
-        style: { fontSize: '11px', color: '#7a6a56' },
-        text: `剩余 ×${VehiclePanel._fmtUsage(entry.usageLeft)}`,
+        style: { fontSize: '11px', color: usedToday ? '#b23b3b' : '#7a6a56', fontWeight: usedToday ? '800' : '400' },
+        text: usedToday
+          ? `今日已用（每天限 ${def.perDayLimit} 次）`
+          : (def.perDayLimit ? `每天限 ${def.perDayLimit} 次` : `剩余 ×${VehiclePanel._fmtUsage(entry.usageLeft)}`),
         parent: titleBox,
       });
 

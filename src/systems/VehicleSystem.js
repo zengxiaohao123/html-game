@@ -4,7 +4,7 @@
 // 移动方式：
 //   vehicle_wheel (directional) —— 指定方向最多 2 格，穿越非法但不能停留
 //   vehicle_broom (line)         —— 同行列任意格（必须同行或同列），不能穿越非法
-//   vehicle_chance (any)         —— 任意格（心想事成天赋专用），不能进 fence
+//   vehicle_chance (any)         —— 任意格（心想事成天赋专用，每天限 1 次，用后自动卸下）
 //
 // 载具不占背包，单独在载具页面（T 键）管理。
 // 载具是独立实体：同名载具不是同一个东西，每件都有自己的 instanceId / 剩余次数，
@@ -126,6 +126,48 @@ export function listLandingTiles(gs) {
   return out;
 }
 
+/** 当前启用队伍的成员 */
+function activeGroupRoles(gs) {
+  const idx = gs?.team?.activeGroup ?? 0;
+  return gs?.team?.groups?.[idx]?.roles || [];
+}
+
+/** 天赋限定载具的持有者是否在当前队伍中 */
+function talentOwnerInTeam(gs, def) {
+  if (!def?.talentRoleId) return true;
+  return activeGroupRoles(gs).includes(def.talentRoleId);
+}
+
+/**
+ * 天赋限定载具跟随其持有者（心想事成 → 巧遇）：
+ * - 持有者在当前队伍：保证恰好持有 1 件（进队 / 读档 / 开局补发）
+ * - 持有者离队：立即收回，正在装载的强制卸下
+ * 由 GameDirector 在开局、读档、TEAM_CHANGE 后调用。
+ */
+export function syncTalentVehicles(gs) {
+  ensureVehicleState(gs);
+  const roles = activeGroupRoles(gs);
+  for (const def of Object.values(VEHICLES)) {
+    if (!def.talentExclusive || !def.talentRoleId) continue;
+    const ownedCount = gs.vehicle.available.filter(a => a.vehicleId === def.id).length;
+    const isCurrent = gs.vehicle.current?.vehicleId === def.id;
+    if (roles.includes(def.talentRoleId)) {
+      if (ownedCount === 0 && !isCurrent) gainVehicle(gs, def.id);
+      continue;
+    }
+    // 离队：强制卸下 + 收回全部同名实例
+    if (isCurrent) {
+      const cur = gs.vehicle.current;
+      gs.vehicle.current = null;
+      EventBus.emit(GE.VEHICLE_ATTACH, { vehicleId: cur.vehicleId, instanceId: cur.instanceId, attached: false });
+    }
+    if (ownedCount > 0) {
+      gs.vehicle.available = gs.vehicle.available.filter(a => a.vehicleId !== def.id);
+      EventBus.emit(GE.TOAST_SHOW, { text: `🚗 ${def.name} 已随天赋收回`, duration: 1500 });
+    }
+  }
+}
+
 /**
  * 玩家获得一个载具（巴士站 / 心想事成天赋 / 商店等）
  */
@@ -163,11 +205,10 @@ export function attachVehicle(gs, instanceId) {
   const def = VEHICLES[entry.vehicleId];
   if (!def) return false;
 
-  // 心想事成：检查 activeGroup 里有没有夏阳
-  if (def.talentExclusive === 'xiayang_want') {
-    // vehicles.js 写的 talentExclusive 是 'xiayang_want'，但 talents.js id 是 'xiayangWant' —— 我们用 talents.js 的 id
-    // 按设计文档 §14.7："心想事成天赋专用"—— 简化：只要 vehicle_chance 在 available 里就能用
-    // （不做强检查 talent 是否存在，因为 talent 可能未来加强校验）
+  // 天赋限定载具：持有者必须仍在当前队伍
+  if (def.talentExclusive && !talentOwnerInTeam(gs, def)) {
+    EventBus.emit(GE.TOAST_SHOW, { text: `🚗 ${def.name} 需要天赋持有者在当前队伍`, duration: 1500 });
+    return false;
   }
   // 每天限 1 次
   if (def.perDayLimit && gs.vehicle.chanceUsedToday) {
@@ -217,6 +258,16 @@ function consumeUsage(gs) {
   const def = VEHICLES[cur.vehicleId];
   if (def.talentExclusive && def.perDayLimit) {
     gs.vehicle.chanceUsedToday = true;
+    // 每日限次载具用后自动卸下：避免「仍装载但当日不允许」按整键拦截把方向键全锁死
+    if (cur.usageLeft > 0) {
+      const avail = gs.vehicle.available.find(a => a.instanceId === cur.instanceId);
+      if (avail) avail.usageLeft = cur.usageLeft;
+      gs.vehicle.current = null;
+      EventBus.emit(GE.VEHICLE_ATTACH, { vehicleId: cur.vehicleId, instanceId: cur.instanceId, attached: false });
+      EventBus.emit(GE.TOAST_SHOW, { text: `🚗 ${def.name} 今日次数已用，已自动卸下`, duration: 1500 });
+      devLog.info('[VehicleSystem.consumeUsage]', cur.vehicleId, 'perDayLimit → auto detach');
+      return true;
+    }
   }
 
   if (cur.usageLeft <= 0) {
@@ -267,6 +318,15 @@ export function tryMove(gs, opts = {}) {
 
   const def = VEHICLES[cur.vehicleId];
   if (!def) return { ok: false, reason: 'unknown' };
+
+  // 天赋限定载具：持有者不在队 → 直接拒绝（配合 syncTalentVehicles 的双保险）
+  if (def.talentExclusive && !talentOwnerInTeam(gs, def)) {
+    return { ok: false, reason: 'talentUnavailable' };
+  }
+  // 每日限次载具：当日次数已用 → 拒绝，不消耗任何东西
+  if (def.perDayLimit && gs.vehicle.chanceUsedToday) {
+    return { ok: false, reason: 'perDayLimit' };
+  }
 
   const fromIdx = gs.player.x;
   // 目标索引必须在合法外圈范围内，避免越界/负索引被 outerIdxToXY 包裹成别的格子
@@ -454,6 +514,9 @@ export function canVehicleReach(gs, targetIdx) {
   const def = VEHICLES[cur.vehicleId];
   if (!def) return { ok: false, reason: 'unknown' };
 
+  if (def.talentExclusive && !talentOwnerInTeam(gs, def)) return { ok: false, reason: 'talentUnavailable' };
+  if (def.perDayLimit && gs.vehicle.chanceUsedToday) return { ok: false, reason: 'perDayLimit' };
+
   const fromIdx = gs.player.x;
   if (!isOuterTileIdx(gs, targetIdx)) return { ok: false, reason: 'badTarget' };
   if (targetIdx === fromIdx) return { ok: false, reason: 'sameTile' };
@@ -512,6 +575,7 @@ export function onDayStart(gs) {
 
 export const VehicleSystem = {
   gainVehicle,
+  syncTalentVehicles,
   attachVehicle,
   detachVehicle,
   tryMove,

@@ -455,6 +455,20 @@ export function consumeTwinBuffIfAny(gs, attackerRoleId = null) {
 }
 
 /**
+ * 编队变化（换人 / 调整 1 号位 / 启用组切换）后调用。
+ * 比翼 buff 跟随陆悠悠：她不在当前队伍时立即清除，不再等 99 天自然过期。
+ */
+export function onTeamChange(gs) {
+  const idx = gs?.team?.activeGroup ?? 0;
+  const roles = gs?.team?.groups?.[idx]?.roles || [];
+  if (!roles.includes('luyouyou') && gs?.team?.twinBuffNextAtkCritRateBonus > 0) {
+    gs.team.twinBuffNextAtkCritRateBonus = 0;
+    gs.team.twinBuffActiveDays = 0;
+    EventBus.emit(GE.TOAST_SHOW, { text: '💔 比翼：陆悠悠已离队，加成清除', duration: 1200 });
+  }
+}
+
+/**
  * 每日开始时：涅槃冷却 -1（触发当天算冷却一天，所以 onDayStart 每次都 -1）
  */
 export function onDayStartCooldownTick(gs) {
@@ -478,4 +492,5 @@ export const TalentSystem = {
   consumeTwinBuffIfAny,
   recordElementDamage,
   onDayStartCooldownTick,
+  onTeamChange,
 };

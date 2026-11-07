@@ -24,6 +24,7 @@ import { SkillSystem } from './SkillSystem.js';
 import { InventorySystem } from './InventorySystem.js';
 import { TalentSystem } from './TalentSystem.js';
 import { LinkSkillSystem } from './LinkSkillSystem.js';
+import { syncTalentVehicles } from './VehicleSystem.js';
 import { getRealtimeClock } from './RealtimeClock.js';
 import { canMoveNow, markMoved, resetMoveCooldown } from './MoveCooldown.js';
 
@@ -134,6 +135,9 @@ export class GameDirector {
       // 裁定 3：角色离队 → 其已放置技能自动拆除回背包，再重算常驻天赋
       autoRemoveSkillsOutsideTeam(this.gs);
       TalentSystem.firePassive(this.gs);
+      // 比翼 buff 跟随陆悠悠；巧遇跟随夏阳（进队补发 / 离队收回）
+      TalentSystem.onTeamChange(this.gs);
+      syncTalentVehicles(this.gs);
     });
 
     // Panel 栈维护（§16.20 / §16.21 / §16.14 中央接线）
@@ -220,6 +224,8 @@ export class GameDirector {
 
     // 5. Phase 4：Agent 3 —— 天赋 passive
     TalentSystem.firePassive(this.gs);
+    // 5.5 天赋限定载具（心想事成 → 巧遇）：夏阳在队即持有
+    syncTalentVehicles(this.gs);
 
     // 6. 初始背包物品（让玩家有东西可选来建造）
     // A-13：skill_heart_force 为未知物品（物品库/设计文档均无此条目）—— 移除
@@ -276,6 +282,8 @@ export class GameDirector {
       return false;
     }
     migrateGS(loadedGs);  // ← 迁移：补全旧存档缺失字段 + 旧实时档归一化为日初基线
+    // 读档后补齐天赋限定载具（旧档可能没有巧遇），必须在冻结基线之前完成
+    syncTalentVehicles(loadedGs);
 
     // 直接读档（未经过新开局）时也必须先注册中央接线（MOVE / TEAM_CHANGE / 面板栈）
     this._registerOnce();

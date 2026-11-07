@@ -63,8 +63,8 @@ export const VEHICLES = {
     usageCount: Infinity,
     perDayLimit: 1,
     persistent: true,          // 用完不消失
-    cannotEnterFence: true,    // 不能进入栅栏内
-    talentExclusive: 'xiayang_want',
+    talentExclusive: 'xiayangWant',
+    talentRoleId: 'xiayang',   // 心想事成的持有者：夏阳必须在当前队伍中
     rarity: 99,
   },
 
