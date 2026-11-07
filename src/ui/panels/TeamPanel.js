@@ -134,6 +134,8 @@ export class TeamPanel {
       if (this.helper?.visible) this.helper.hide();
     });
     EventBus.on(GE.STATE_RESET, () => { if (this.helper?.visible) this._refresh(); });
+    // 队伍数据被其它来源改动（外部编队 / 启用组切换）→ 面板即时刷新
+    EventBus.on(GE.TEAM_CHANGE, () => { if (this.helper?.visible) this._refresh(); });
   }
 
   _getGS() { return this.director?.getGS?.(); }

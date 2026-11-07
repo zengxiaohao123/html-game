@@ -118,6 +118,9 @@ export class RolePanel {
     });
     // 生命/攻击为全角色共用值（gs.player），数值变化时刷新
     EventBus.on(GE.STAT_CHANGE, () => { if (this.helper?.visible) this._refresh(); });
+    // 属性栏展示的「最大生命 / 攻击力」也可能单独变化（如清风祝福只改 atk）
+    EventBus.on(GE.ATK_CHANGE, () => { if (this.helper?.visible) this._refresh(); });
+    EventBus.on(GE.HP_CHANGE, () => { if (this.helper?.visible) this._refresh(); });
     EventBus.on(GE.STATE_RESET, () => { if (this.helper?.visible) this._refresh(); });
   }
 

@@ -91,6 +91,21 @@ export class TileHighlight {
     // 地块节点会被 MapView 在移动 / 局部更新时重建，重建后重新挂类
     EventBus.on(GE.MOVE, () => this._renderAll());
     EventBus.on(GE.TILE_UPDATED, () => { this.syncHead(); this._renderAll(); });
+    // 农场扩建：缓存的队首 idx / 瞬时高亮键都按旧索引保存，必须随 remap 位移
+    EventBus.on(GE.MAP_EXPANDED, ({ remap } = {}) => {
+      const idxMap = remap?.outerIdx;
+      if (!idxMap || typeof idxMap.get !== 'function') return;
+      if (Number.isInteger(this.headIdx) && idxMap.has(this.headIdx)) {
+        this.headIdx = idxMap.get(this.headIdx);
+      }
+      const nextFlashes = new Map();
+      for (const [idx, v] of this.flashes) {
+        nextFlashes.set(idxMap.has(idx) ? idxMap.get(idx) : idx, v);
+      }
+      this.flashes = nextFlashes;
+      this.syncHead();
+      this._renderAll();
+    });
     EventBus.on(GE.BOOT, () => { this._reset(); this.syncHead(); });
     EventBus.on(GE.STATE_RESET, () => { this._reset(); this.syncHead(); });
   }

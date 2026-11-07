@@ -1759,9 +1759,39 @@ export class InfoPanel {
     const refreshCreatureDetail = () => {
       if (this.creatureDetailId) this._renderBody();
     };
-    EventBus.on(GE.DAY_START, refreshCreatureDetail);
+    // 当前面板展示的玩家数值 / 状态 / 词条同理：数据一变就重绘（不要求玩家再操作一次）
+    const refreshVisibleBody = () => {
+      if (this.creatureDetailId) return; // 生物详情已由 refreshCreatureDetail 处理
+      if (this.currentTileIdx !== null || this.mode === 'bless') this._renderBody();
+    };
+    // 跨日：buff 剩余天数、回合 / 天数行、日期等都要立即反映
+    EventBus.on(GE.DAY_START, () => { refreshCreatureDetail(); refreshVisibleBody(); });
     EventBus.on(GE.CREATURE_SPAWNED, refreshCreatureDetail);
     EventBus.on(GE.CREATURE_DEFEATED, refreshCreatureDetail);
+
+    // 单位 tab 展示的生命 / 攻击 / 状态词条：任一变化立即重绘
+    EventBus.on(GE.HP_CHANGE, refreshVisibleBody);
+    EventBus.on(GE.ATK_CHANGE, refreshVisibleBody);
+    EventBus.on(GE.STAT_CHANGE, refreshVisibleBody);
+    EventBus.on(GE.TURN_ADVANCE, refreshVisibleBody);
+    EventBus.on(GE.BUFF_APPLIED, refreshVisibleBody);
+    EventBus.on(GE.BUFF_REMOVED, refreshVisibleBody);
+
+    // 农场扩建：外圈 / 栅栏索引整体位移 → 面板缓存的重映射；
+    // 不处理会继续显示旧索引对应的另一格（“显示的是别的格子的信息”）。
+    EventBus.on(GE.MAP_EXPANDED, ({ remap } = {}) => {
+      if (!remap) return;
+      let changed = false;
+      if (Number.isInteger(this.currentTileIdx) && remap.outerIdx?.has?.(this.currentTileIdx)) {
+        const next = remap.outerIdx.get(this.currentTileIdx);
+        if (next !== this.currentTileIdx) { this.currentTileIdx = next; changed = true; }
+      }
+      if (Number.isInteger(this.currentFenceIdx) && remap.fenceIdx?.has?.(this.currentFenceIdx)) {
+        const next = remap.fenceIdx.get(this.currentFenceIdx);
+        if (next !== this.currentFenceIdx) { this.currentFenceIdx = next; changed = true; }
+      }
+      if (changed || this.creatureDetailId) this._renderBody();
+    });
 
     EventBus.on(GE.BLESS_START, () => {
       this._renderBody();

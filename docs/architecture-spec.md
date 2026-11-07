@@ -349,6 +349,17 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 
 ---
 
+### 2.6.1 UI 实时刷新契约（2026-11-07）
+
+> 用户默认契约：**几乎全部 UI 都必须实时更新**；不实时更新属于例外，需在设计文档显式说明。
+
+- **触发链**：写入点改完数据后必须发「带索引」的专用事件；组件订阅该事件后就地重绘受影响的子节点。禁止「只在打开时渲染一次」或依赖玩家后续操作（移动 / 再点一次 / 重开面板）刷新。
+- **地块内容**：外圈与栅栏内的新增/移除/替换/地形改变都必须发 `TILE_CONTENT_CHANGED` / `TILE_TERRAIN_CHANGED`（栅栏内带 `fenceIdx`）；`MapView` 只重建受影响格的 `.tile-terrain-bg` / `.tile-content` / `.tile-flags`，不整图重建，并复用 `TILE_UPDATED {terrainOnly|contentOnly}` / `FENCE_TILE_UPDATED` 广播给信息区、高亮、任务、连携技窗口。
+- **裸索引缓存**：UI 里缓存的旧地块索引（`InfoPanel.currentTileIdx/currentFenceIdx`、`TileHighlight.headIdx`/瞬时高亮键）必须在 `MAP_EXPANDED` 中按 `payload.remap`（`outerIdx` / `fenceIdx` 正反映射）迁移，禁止扩建后继续用旧索引显示别的格子。
+- **验收**：`tools/smoke-ui.mjs` §17「UI 通用实时契约」的 `realtime()` 断言器——只改数据 + 发对应事件，不做任何额外操作，直接断言 DOM 已是新状态（覆盖顶部 HUD、信息区单位 tab、连携技窗口、编队、角色页、商店金币灰化、扩建索引迁移）。
+
+---
+
 ### 2.7 载具移动 / WASD 等价语义（2026-11-07）
 
 > 对应设计文档 §7「WASD 在载具允许时等价于使用载具」。只收敛「走 1 格」的执行路径，不改载具数值。

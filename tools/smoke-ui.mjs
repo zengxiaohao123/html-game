@@ -2445,5 +2445,216 @@ head_('第 15 批：同键二次按下 = ESC（专属快捷键页面）');
 }
 
 // ════════════════════════════════════════════════════════════
+head_('§17 UI 通用实时契约：直改数据 → 零额外操作 → 界面已更新');
+{
+  const { LinkSkillSystem } = await import('../src/systems/LinkSkillSystem.js');
+  const MapExpandSystem = await import('../src/systems/MapExpandSystem.js');
+
+  // 干净起点
+  for (const p of ['info', 'inventory', 'role', 'team', 'forge', 'vehicle', 'task', 'codex', 'shop', 'settings']) {
+    EventBus.emit(GE.UI_PANEL_CLOSE, { panel: p });
+  }
+  if (gs.buildMode) BuildSystem.exitBuildMode(gs);
+  hideAllDialogs();
+  assert(director.openPanels.length === 0, '前置：面板栈为空', director.openPanels);
+
+  // 通用实时断言器：只允许「改数据 + 对应事件」，不允许任何额外 UI 操作；
+  // 任何需要「再移动一格 / 再点一次」才刷新的回归都会在这里直接失败。
+  const realtime = (label, mutate, check, extra) => {
+    mutate();
+    assert(check(), label, extra);
+  };
+
+  // ── R-1 TopBar：生命 / 攻击 / 金币 ──
+  {
+    const saved = { hp: gs.player.hp, atk: gs.player.atk, gold: gs.player.gold };
+    realtime('R-1a 生命变化 → 顶部 HUD 同帧更新（不移动）',
+      () => { gs.player.hp = Math.max(0, saved.hp - 1); EventBus.emit(GE.HP_CHANGE, { delta: -1 }); },
+      () => topBar.hpText._text === String(gs.player.hp), gs.player.hp);
+    realtime('R-1b 攻击变化 → 顶部 HUD 同帧更新（不移动）',
+      () => { gs.player.atk = saved.atk + 17; EventBus.emit(GE.ATK_CHANGE, {}); },
+      () => topBar.atkText._text === String(Math.floor(gs.player.atk)), gs.player.atk);
+    realtime('R-1c 金币变化 → 顶部 HUD 同帧更新（不移动）',
+      () => { gs.player.gold = saved.gold + 88; EventBus.emit(GE.GOLD_CHANGE, { delta: 88 }); },
+      () => topBar.goldText._text === String(gs.player.gold), gs.player.gold);
+    gs.player.hp = saved.hp;
+    gs.player.atk = saved.atk;
+    gs.player.gold = saved.gold;
+    EventBus.emit(GE.STAT_CHANGE, {});
+  }
+
+  // ── R-2 信息区「单位」tab：生命 / 攻击 / 状态词条 ──
+  {
+    const saved = { hp: gs.player.hp, atk: gs.player.atk, buffs: gs.activeBuffs };
+    gs.player.x = 0;
+    infoPanel.selectTile(gs.player.x);
+    const unitBtn = buttonsWithText(infoPanel.tabsWrap, '单位')[0];
+    assert(!!unitBtn, '前置：单位 tab 存在（玩家所在格）');
+    if (unitBtn) unitBtn.click();
+    const statRow = (label) => findAll(infoPanel.bodyWrap,
+      (el) => el._classes && el._classes.has('player-info-row'))
+      .find((r) => hasText(r, label));
+    assert(!!statRow('生命') && hasText(statRow('生命'), `${gs.player.hp}`),
+      '前置：单位 tab 显示当前生命');
+
+    realtime('R-2a 生命变化 → 信息区单位 tab 即时刷新',
+      () => { gs.player.hp = Math.max(1, saved.hp - 2); EventBus.emit(GE.HP_CHANGE, { delta: -2 }); },
+      () => hasText(statRow('生命'), `${gs.player.hp} / ${gs.player.maxHp}`), gs.player.hp);
+    realtime('R-2b 攻击变化 → 信息区单位 tab 即时刷新',
+      () => { gs.player.atk = saved.atk + 5; EventBus.emit(GE.ATK_CHANGE, {}); },
+      () => hasText(statRow('攻击'), `${gs.player.atk}`), gs.player.atk);
+    realtime('R-2c 状态词条新增 → 信息区单位 tab 即时出现',
+      () => {
+        gs.activeBuffs = [...(gs.activeBuffs || []), { id: 'buff_realtime_probe', remainingDays: 2 }];
+        EventBus.emit(GE.BUFF_APPLIED, { id: 'buff_realtime_probe' });
+      },
+      () => hasText(infoPanel.bodyWrap, 'buff_realtime_probe'));
+    realtime('R-2d 状态词条移除 → 信息区单位 tab 即时消失',
+      () => {
+        gs.activeBuffs = (gs.activeBuffs || []).filter((b) => b.id !== 'buff_realtime_probe');
+        EventBus.emit(GE.BUFF_REMOVED, { id: 'buff_realtime_probe' });
+      },
+      () => !hasText(infoPanel.bodyWrap, 'buff_realtime_probe'));
+
+    gs.player.hp = saved.hp;
+    gs.player.atk = saved.atk;
+    gs.activeBuffs = saved.buffs;
+    EventBus.emit(GE.STAT_CHANGE, {});
+    EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+  }
+
+  // ── R-3 连携技窗口：技能卡拆除后窗口立即消失（无需移动） ──
+  {
+    const tileIdx = 2;
+    const tile = gs.map.outerTiles[tileIdx];
+    const saved = { contentId: tile.contentId, contentState: tile.contentState, buildMode: gs.buildMode };
+    const savedRoles = (gs.team.groups[0].roles || []).slice();
+    gs.linkSkillQueue = [];
+    gs.team.groups[0].roles = ['yumo', 'luyouyou'];
+    tile.contentId = 'skill_link_yumo_drain';
+    tile.contentState = {};
+    LinkSkillSystem.onSkillCardPlaced(gs, tileIdx, 'skill_link_yumo_drain');
+    LinkSkillSystem.enqueue(gs, { tileIdx, skillId: 'skill_link_yumo_drain' });
+    linkSkillUI._reRender();
+    assert(linkSkillUI.visible && linkSkillUI.listEl.children.length === 1,
+      '前置：连携技窗口已显示（1 条队列）');
+
+    if (gs.buildMode !== true) BuildSystem.enterBuildMode(gs);
+    realtime('R-3 拆除技能卡 → 连携技窗口即时消失（不移动、不做其它操作）',
+      () => BuildSystem.clearContent(gs, tileIdx),
+      () => gs.linkSkillQueue.length === 0 && linkSkillUI.visible === false
+        && linkSkillUI.root.style.display === 'none',
+      { queue: gs.linkSkillQueue.length, visible: linkSkillUI.visible });
+
+    if (saved.buildMode !== true) BuildSystem.exitBuildMode(gs);
+    gs.linkSkillQueue = [];
+    gs.team.groups[0].roles = savedRoles;
+    tile.contentId = saved.contentId;
+    tile.contentState = saved.contentState;
+    linkSkillUI._reRender();
+    delete gs.linkSkillCounters?.[`${tileIdx}|skill_link_yumo_drain`];
+    delete gs.linkSkillCooldowns?.[`${tileIdx}|skill_link_yumo_drain`];
+    EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+  }
+
+  // ── R-4 编队：外部启用组切换 → 面板即时迁移「已启用」标记 ──
+  {
+    EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'team' });
+    const savedActive = gs.team.activeGroup;
+    const nextActive = (savedActive + 1) % 4;
+    const activeIndexOf = () => findAll(teamPanel.topRow, (el) => el.tagName === 'BUTTON')
+      .findIndex((b) => b.children.some((c) => (c._text || '').includes('已启用')));
+    realtime('R-4a 启用组变化 → 编队面板即时刷新（无需重开面板）',
+      () => { gs.team.activeGroup = nextActive; EventBus.emit(GE.TEAM_CHANGE, {}); },
+      () => activeIndexOf() === nextActive);
+    assert(activeIndexOf() === nextActive, 'R-4b 「已启用」标记落在新的启用组上', { activeIdx: activeIndexOf(), nextActive });
+    gs.team.activeGroup = savedActive;
+    EventBus.emit(GE.TEAM_CHANGE, {});
+    EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'team' });
+  }
+
+  // ── R-5 角色页：攻击力变化 → 属性栏即时刷新 ──
+  {
+    EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'role' });
+    const savedAtk = gs.player.atk;
+    realtime('R-5 攻击力变化 → 角色页属性栏即时刷新（无需重开面板）',
+      () => { gs.player.atk = savedAtk + 20; EventBus.emit(GE.ATK_CHANGE, {}); },
+      () => hasText(rolePanel.attrCol, String(gs.player.atk)), gs.player.atk);
+    gs.player.atk = savedAtk;
+    EventBus.emit(GE.ATK_CHANGE, {});
+    EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'role' });
+  }
+
+  // ── R-6 商店：金币变化 → 详情「购买」按钮即时灰化 / 恢复 ──
+  {
+    // 地图此时可能已无空格：临时占用一格开出商店，用后原样还原
+    const shopTile = gs.map.outerTiles[1];
+    const savedShop = { contentId: shopTile.contentId, contentState: shopTile.contentState };
+    const savedGold = gs.player.gold;
+    shopTile.contentId = 'resource_shop';
+    shopTile.contentState = {};
+    EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'shop', tileIdx: shopTile.idx });
+    const buyCells = shopPanel.gridEl.children.filter((c) => c._classes && !c._classes.has('empty'));
+    assert(buyCells.length > 0, '前置：商店有可购买商品');
+    if (buyCells[0]) buyCells[0].click();
+    const okBtn = buttonsWithText(shopPanel.detailEl, '购买')[0];
+    assert(!!okBtn, '前置：购买详情弹窗已打开');
+    if (okBtn) {
+      realtime('R-6a 金币归零 → 购买按钮即时灰化（详情弹窗不重开）',
+        () => { gs.player.gold = 0; EventBus.emit(GE.GOLD_CHANGE, { delta: 0 }); },
+        () => okBtn.disabled === true);
+      realtime('R-6b 金币恢复 → 购买按钮即时恢复可点（详情弹窗不重开）',
+        () => { gs.player.gold = 999999; EventBus.emit(GE.GOLD_CHANGE, { delta: 999999 }); },
+        () => okBtn.disabled === false);
+    }
+    shopPanel._closeDetail();
+    EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'shop' });
+    gs.player.gold = savedGold;
+    shopTile.contentId = savedShop.contentId;
+    shopTile.contentState = savedShop.contentState;
+  }
+
+  // ── R-7 扩建：信息区缓存的裸索引随 remap 迁移（不显示「别的格子」） ──
+  {
+    const { ITEMS } = await import('../src/data/items.js');
+    const oldIdx = 2;
+    const tile = gs.map.outerTiles[oldIdx];
+    const saved = { contentId: tile.contentId, contentState: tile.contentState, terrain: tile.terrain };
+    tile.contentId = 'facility_tent';
+    tile.contentState = {};
+    tile.terrain = 'terrain_none';
+    infoPanel.selectTile(oldIdx);
+    const tentName = ITEMS['facility_tent']?.name;
+    assert(hasText(infoPanel.bodyWrap, tentName), '前置：信息区显示扩建前的地块内容', tentName);
+
+    MapExpandSystem.expandMap(gs, 'length');
+    const remap = MapExpandSystem.getLastExpandRemap();
+    const expectedIdx = remap?.outerIdx?.get?.(oldIdx);
+    assert(Number.isInteger(expectedIdx), '前置：扩建提供旧→新外圈索引映射', expectedIdx);
+    assert(infoPanel.currentTileIdx === expectedIdx,
+      'R-7a 信息区选中索引随扩建 remap（不再指向旧索引）',
+      { before: oldIdx, expected: expectedIdx, now: infoPanel.currentTileIdx });
+    assert(hasText(infoPanel.bodyWrap, tentName),
+      'R-7b 扩建后信息区仍显示同一格内容（不是别的格子）', tentName);
+
+    // 栅栏内索引同样重映射
+    infoPanel.currentTileIdx = null;
+    infoPanel.mode = 'fence';
+    infoPanel.currentFenceIdx = 0;
+    infoPanel._renderBody();
+    const oldFenceIdx = infoPanel.currentFenceIdx;
+    MapExpandSystem.expandMap(gs, 'width');
+    const remap2 = MapExpandSystem.getLastExpandRemap();
+    const expectedFence = remap2?.fenceIdx?.get?.(oldFenceIdx);
+    assert(Number.isInteger(expectedFence) && infoPanel.currentFenceIdx === expectedFence,
+      'R-7c 栅栏内选中索引随扩建 remap',
+      { before: oldFenceIdx, expected: expectedFence, now: infoPanel.currentFenceIdx });
+
+    // 收尾：还原该格（扩建本身是本脚本最后一段，不影响后续用例）
+    EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+  }
+}
+
+// ════════════════════════════════════════════════════════════
 console.log(`\nsmoke-ui 结果：${pass} 通过 / ${fail} 失败（共 ${pass + fail}）`);
 process.exit(fail > 0 ? 1 : 0);

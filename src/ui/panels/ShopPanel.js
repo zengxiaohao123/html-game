@@ -109,6 +109,12 @@ export class ShopPanel {
     });
     EventBus.on(GE.STATE_RESET, () => { if (this.visible) this.close(); });
     EventBus.on(GE.INVENTORY_CHANGE, () => { if (this.visible && this.tab === 'sell') this._renderGrid(); });
+    // 金币变化：购买按钮可用态（金币不足灰化）必须即时反映，不依赖玩家再点一次
+    EventBus.on(GE.GOLD_CHANGE, () => {
+      if (!this.visible) return;
+      this._detailRefresh?.();
+      if (this.tab === 'sell') this._renderGrid();
+    });
     // §16.21：玩家离开商店格时自动关闭商店（商店只能在所站格子上使用）
     EventBus.on(GE.MOVE, ({ toIdx }) => {
       if (this.visible && this.tileIdx >= 0 && toIdx !== this.tileIdx) this.close();
@@ -634,28 +640,38 @@ export class ShopPanel {
       parent: btns,
     });
     // §16.21：金币不足时「购买」灰化；不可出售物品「售卖」灰化
-    const blocked = mode === 'buy'
-      ? this.gs.player.gold < pay
-      : !isSellable(item.id);
-    if (blocked) {
-      ok.disabled = true;
-      ok.style.background = '#d8d2c4';
-      ok.style.color = '#9a938a';
-      ok.style.cursor = 'default';
-    } else {
-      ok.onclick = () => {
-        const res = mode === 'buy'
-          ? buy(this.gs, this.tileIdx, slotIdx)
-          : sell(this.gs, item.id, { ...(value !== undefined ? { value } : {}), qty: this._sellQty });
-        if (res.ok) {
-          this._closeDetail();
-          this._render();
-        }
-      };
-    }
+    // （金币在详情打开期间也可能变化 → 统一走 applyState，GOLD_CHANGE 时重新判定）
+    const applyState = () => {
+      const blockedNow = mode === 'buy'
+        ? this.gs.player.gold < pay
+        : !isSellable(item.id);
+      ok.disabled = !!blockedNow;
+      if (blockedNow) {
+        ok.onclick = null;
+        ok.style.background = '#d8d2c4';
+        ok.style.color = '#9a938a';
+        ok.style.cursor = 'default';
+      } else {
+        ok.style.background = 'linear-gradient(135deg,#8ed36b,#4fae3f)';
+        ok.style.color = '#fff';
+        ok.style.cursor = 'pointer';
+        ok.onclick = () => {
+          const res = mode === 'buy'
+            ? buy(this.gs, this.tileIdx, slotIdx)
+            : sell(this.gs, item.id, { ...(value !== undefined ? { value } : {}), qty: this._sellQty });
+          if (res.ok) {
+            this._closeDetail();
+            this._render();
+          }
+        };
+      }
+    };
+    this._detailRefresh = applyState;
+    applyState();
   }
 
   _closeDetail() {
+    this._detailRefresh = null;
     if (this.detailEl) {
       this.detailEl.remove();
       this.detailEl = null;

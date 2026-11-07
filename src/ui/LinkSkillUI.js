@@ -68,6 +68,10 @@ export class LinkSkillUI {
     EventBus.on(GE.LINK_SKILL_EXPIRE, () => this._reRender());
     EventBus.on(GE.BOOT, () => this._reRender());
     EventBus.on(GE.STATE_RESET, () => this._reRender());
+    // 技能卡拆除 / 被替换：LinkSkillSystem.pruneUnplaced 会把队列条目静默清掉
+    // （队列清空时不发 READY/EXPIRE），窗口必须随地块内容变化立即重绘 / 隐藏，
+    // 否则会残留一张已不存在的技能卡窗口，直到玩家再移动才刷新。
+    EventBus.on(GE.TILE_UPDATED, () => this._reRender());
   }
 
   _setupKeyHandler() {
