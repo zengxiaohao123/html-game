@@ -324,7 +324,7 @@ export const SKILLS = {
     cooldown: 7,
     isLinkSkill: false,
     targetSide: 'enemy',
-    onBlessedRefreshCooldown: true,  // 【受祝福时】立即刷新冷却（SkillSystem 读取）
+    onBlessedRefreshCooldown: true,  // 【受祝福时】只立即刷新冷却，不再结算/不造成伤害（SkillSystem 读取）
     description: ITEMS.skill_xiayang_blast_carnival.description,
   },
 

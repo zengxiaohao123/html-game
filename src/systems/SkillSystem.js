@@ -69,10 +69,18 @@ export function triggerSkillByHook(hookType, params) {
   if (!skillDef.hooks || !skillDef.hooks[hookType]) return;
 
   // cooldown 检查：按技能卡（skillId）独立 —— §12.3 技能卡位置被移动时冷却保留
-  // 例外：爆炸狂欢（SKL-A-008）【受祝福时】即使冷却中也触发并刷新冷却
   const cdKey = `skill_${skillDef.id}`;
-  const refreshOnBless = hookType === 'onBlessed' && skillDef.onBlessedRefreshCooldown;
-  if (!refreshOnBless && gs.skillCooldowns[cdKey] && gs.skillCooldowns[cdKey] > 0) return;
+
+  // 爆炸狂欢（SKL-A-008）【受祝福时】：「立即刷新冷却」只做这一件事 ——
+  // 不选目标、不进入结算流水线、不造成伤害，也不触发任何「使用技能」联动
+  if (hookType === 'onBlessed' && skillDef.onBlessedRefreshCooldown) {
+    delete gs.skillCooldowns[cdKey];
+    EventBus.emit(GE.TOAST_SHOW, { text: '💥 爆炸狂欢【受祝福】：冷却已刷新', duration: 1800 });
+    devLog.info('[SkillSystem] 爆炸狂欢【受祝福时】冷却已刷新（不结算）');
+    return;
+  }
+
+  if (gs.skillCooldowns[cdKey] && gs.skillCooldowns[cdKey] > 0) return;
 
   // 连携技不走普通 hook 触发（它们是实时窗口按键触发的）
   if (skillDef.isLinkSkill) return;
@@ -209,12 +217,6 @@ function fireOneSkill(gs, skill, primaryEntries, cdKey, hookName = 'onEnter', ti
     gs.skillCooldowns = gs.skillCooldowns || {};
     gs.skillCooldowns[cdKey] = skill.cooldown;
   }
-  // 爆炸狂欢（SKL-A-008）：【受祝福时】立即刷新冷却
-  if (cdKey && skill.onBlessedRefreshCooldown && hookName === 'onBlessed') {
-    delete gs.skillCooldowns[cdKey];
-    devLog.info('[SkillSystem] 爆炸狂欢【受祝福时】冷却已刷新');
-  }
-
   if (!skill.isLinkSkill) {
     LinkSkillSystem.onSkillFired(gs, { roleId: skill.roleId, skillId: skill.id, skill, target: displayTarget });
   }
