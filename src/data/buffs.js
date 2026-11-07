@@ -23,7 +23,7 @@ export const BUFFS = {
     emoji: '💫',
     type: 'debuff',
     target: 'player',
-    description: '行动力 <0 时获得，持续 1 天。\n睡觉时固定回复行动力上限一半（不溢出；若当前为负则先变 0 再回复），所有睡觉增益失效',
+    description: '行动力 <0 时获得，持续 1 天；\n睡觉固定回复上限一半且所有睡觉增益失效。',
     duration: 1,
     phase2AImplemented: true,
     phase3Implemented: true,
