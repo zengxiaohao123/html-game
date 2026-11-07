@@ -125,15 +125,18 @@ export function calculateDamage(opts) {
     rawDamage += talentFlatBonus;
   }
 
-  // ── 3. 虚弱（攻击者侧） ──
-  const attackerBuffs = (player && Array.isArray(player.activeBuffs)) ? player.activeBuffs : [];
+  // ── 3. 虚弱（攻击者侧）── §15：同名效果取最高，不叠乘
+  // 虚弱属于「造成伤害」的一方：谁出手就读谁身上的 weakened（我方角色或生物攻击者）
+  const attackerUnit = attacker || player;
+  const attackerBuffs = (attackerUnit && Array.isArray(attackerUnit.activeBuffs)) ? attackerUnit.activeBuffs : [];
+  let weakenedStrength = 0;
   for (const b of attackerBuffs) {
-    if (b.id === 'weakened') {
-      const def = getBuff('weakened');
-      const strength = b.params?.strength ?? def?.strength ?? 0.30;
-      rawDamage *= (1 - strength);
-    }
+    if (b.id !== 'weakened') continue;
+    const def = getBuff('weakened');
+    const strength = b.params?.strength ?? def?.strength ?? 0.30;
+    if (strength > weakenedStrength) weakenedStrength = strength;
   }
+  if (weakenedStrength > 0) rawDamage *= (1 - weakenedStrength);
 
   // ── 4. 蓄力（defender 身上 —— BUG-4 修复路径） ──
   if (defender && Array.isArray(defender.activeBuffs)) {
@@ -226,17 +229,15 @@ export function calculateDamage(opts) {
     }
   }
 
-  // ── 8. 防御方易伤 ──
-  let vulnerableMul = 1;
-  const buffsOfTarget = defender.activeBuffs || [];
-  for (const b of buffsOfTarget) {
-    if (b.id === 'vulnerable') {
-      const def = getBuff('vulnerable');
-      const strength = b.params?.strength ?? def?.strength ?? 0.30;
-      vulnerableMul += strength;
-    }
+  // ── 8. 防御方易伤 ── §15：同名效果取最高，不叠加
+  let vulnerableStrength = 0;
+  for (const b of (defender.activeBuffs || [])) {
+    if (b.id !== 'vulnerable') continue;
+    const def = getBuff('vulnerable');
+    const strength = b.params?.strength ?? def?.strength ?? 0.30;
+    if (strength > vulnerableStrength) vulnerableStrength = strength;
   }
-  let finalDamage = rawDamage * vulnerableMul;
+  let finalDamage = rawDamage * (1 + vulnerableStrength);
   finalDamage = Math.max(0, Math.floor(finalDamage));
 
   // ── 8.5 涅槃 death immunity ──
