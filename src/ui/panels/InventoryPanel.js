@@ -216,55 +216,44 @@ export class InventoryPanel {
       createEl('div', { class: 'inv-big-qty', text: `×${entry.qty}`, parent: slot });
       slot.title = `${name} ×${entry.qty}`;
 
-      // 拖拽放置（§16.15 / §16.23）：地块内容类物品 + 放置型消耗道具（陷阱 / 艾草熏香等）可拖；
-      // 拖拽开始时背包自动关闭露出地图，拖到目标地块松开即放置（每次只放 1 个，见 MapView drop）
+      // 拖拽（§16.15 / §16.19 / §16.23）：所有背包物品都可拖进 HotBar（产物 / 消耗道具 /
+      // 放置型道具 / 装备 / 收藏品）。拖拽开始后背包自动关闭露出地图与快捷栏：
+      //   · 松手在 HotBar → 放入该槽位；
+      //   · 松手在地块 → 地块内容类放置、放置型道具进入既有指向模式，
+      //     其余（产物 / 装备 / 收藏品）由 MapView 拒绝并提示，不消耗。
       const isPlacedItem = this._isPlacedItem(entry.itemId);
-      if (this._isPlaceable(entry.itemId) || isPlacedItem) {
-        slot.setAttribute('draggable', 'true');
-        slot.addEventListener('dragstart', (e) => {
-          // 放置型道具：进入既有「指向模式」——复用同一套可放置高亮 / 落点提示 / ESC 取消，
-          // 不另做道具专属视觉；非法落点在建靶前就被拒绝（无法进入拖拽），不消耗道具。
-          if (isPlacedItem) {
-            const gs = this._getGS();
-            const started = gs ? ItemTargeting.start(gs, entry.itemId) : { ok: false };
-            if (!started?.ok) {
-              e.preventDefault();
-              window.__invDrag = false;
-              return;
-            }
+      slot.setAttribute('draggable', 'true');
+      slot.addEventListener('dragstart', (e) => {
+        // 放置型道具：进入既有「指向模式」——复用同一套可放置高亮 / 落点提示 / ESC 取消，
+        // 不另做道具专属视觉；非法落点在建靶前就被拒绝（无法进入拖拽），不消耗道具。
+        if (isPlacedItem) {
+          const gs = this._getGS();
+          const started = gs ? ItemTargeting.start(gs, entry.itemId) : { ok: false };
+          if (!started?.ok) {
+            e.preventDefault();
+            window.__invDrag = false;
+            return;
           }
-          if (e.dataTransfer) {
-            e.dataTransfer.setData('text/plain', entry.itemId);
-            e.dataTransfer.effectAllowed = 'move';
-          }
-          // 第 9 批：全局拖拽标记——拖背包格期间 MapView 不得触发拖拽平移
-          window.__invDrag = true;
-          // 背包自动关闭露出地图。
-          // B-01：同步 hide() 会移除拖拽源节点 → 浏览器立即取消 drag（dragend 紧随 dragstart）。
-          // 延迟到下一帧再隐藏，保证 drag 会话成立。
-          setTimeout(() => this.hide(), 0);
-        });
-        slot.addEventListener('dragend', () => {
-          window.__invDrag = false;
-          // 未落到合法地块 = 取消：退出指向模式，移除高亮与落点提示
-          if (isPlacedItem && ItemTargeting.isActive()
-            && ItemTargeting.currentItem() === entry.itemId) {
-            ItemTargeting.cancel('dragCancel');
-          }
-        });
-      } else {
-        // L-06 / §16.15：产物、工具等不可放置物品"不触发拖拽并给出弹窗提示"——
-        //   让浏览器发起 drag 手势以便在 dragstart 拦截，随即 preventDefault 取消拖拽并提示。
-        slot.setAttribute('draggable', 'true');
-        slot.addEventListener('dragstart', (e) => {
-          e.preventDefault();
-          const def = ITEMS[entry.itemId];
-          EventBus.emit(GE.TOAST_SHOW, {
-            text: `❌ ${def?.name || entry.itemId} 不可放置到地块`,
-            duration: 2000,
-          });
-        });
-      }
+        }
+        if (e.dataTransfer) {
+          e.dataTransfer.setData('text/plain', entry.itemId);
+          e.dataTransfer.effectAllowed = 'move';
+        }
+        // 第 9 批：全局拖拽标记——拖背包格期间 MapView 不得触发拖拽平移
+        window.__invDrag = true;
+        // 背包自动关闭露出地图与 HotBar。
+        // B-01：同步 hide() 会移除拖拽源节点 → 浏览器立即取消 drag（dragend 紧随 dragstart）。
+        // 延迟到下一帧再隐藏，保证 drag 会话成立。
+        setTimeout(() => this.hide(), 0);
+      });
+      slot.addEventListener('dragend', () => {
+        window.__invDrag = false;
+        // 未落到合法地块 = 取消：退出指向模式，移除高亮与落点提示
+        if (isPlacedItem && ItemTargeting.isActive()
+          && ItemTargeting.currentItem() === entry.itemId) {
+          ItemTargeting.cancel('dragCancel');
+        }
+      });
 
       slot.addEventListener('click', (e) => {
         e.stopPropagation();

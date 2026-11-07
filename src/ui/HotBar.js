@@ -15,6 +15,13 @@ import { createEl, qs, iconEl } from './dom.js';
 import { HOTBAR_SLOTS } from '../utils/constants.js';
 import { ForgeSystem } from '../systems/ForgeSystem.js';
 import { SKILLS } from '../data/characters.js';
+import { ITEMS } from '../data/items.js';
+import { POTIONS } from '../data/potions.js';
+import { ItemTargeting } from '../systems/ItemTargeting.js';
+import { useItem } from '../systems/UseItemSystem.js';
+
+/** 可放到地块上的物品：地块内容（设施 / 资源 / 技能 / 地形） */
+const PLACEABLE_PREFIX = /^(facility_|resource_|skill_|terrain_)/;
 
 export class HotBar {
   constructor() {
@@ -23,6 +30,7 @@ export class HotBar {
     this.selectedSlotIdx = null; // 建造模式下选中的槽位 idx（null = 未选中）
     this.selectedContentId = null; // 该槽位上的 contentId（简化：假设 hotbar 里的都是 contentId）
     this.buildMode = false;
+    this._targetingFromHotbar = false; // 指向模式是否由快捷栏点击建立（用于切槽/取消时精确回收）
   }
 
   mount(parent = qs('#app')) {
@@ -119,29 +127,106 @@ export class HotBar {
   }
 
   _handleSlotClick(idx) {
-    const slot = this._getCurrentGS()?.hotbar?.[idx];
+    const gs = this._getCurrentGS();
+    const slot = gs?.hotbar?.[idx];
     if (!slot || !slot.itemId) {
       this._clearSelection();
       return;
     }
-    // 切换选中
+    // 再次点击同一格 = 取消选中（原有规则）
     if (this.selectedSlotIdx === idx) {
       this._clearSelection();
-    } else {
-      this.selectedSlotIdx = idx;
-      this.selectedContentId = slot.itemId;
-      this.slotEls.forEach((el, i) => {
-        if (i === idx) el.classList.add('selected');
-        else el.classList.remove('selected');
-      });
-      // 只在建造模式下同步到 GS（让 MapView 读到用来放置）
-      if (this.buildMode) {
-        this._syncSelectionToGS();
-      }
+      return;
     }
+
+    // 建造模式：只接受「地块内容 / 放置型道具」；其余物品（草药等一次性道具、
+    // 产物 / 装备 / 收藏品）不参与建造，点到就明确提示，避免选了个点地块必然失败的槽
+    if (this.buildMode && !this._canSelectForBuild(slot.itemId)) {
+      EventBus.emit(GE.TOAST_SHOW, { text: '🛠️ 建造模式下请选择地块内容或放置型道具', duration: 2000 });
+      return;
+    }
+
+    this._selectSlot(idx);
+    // 切换槽位时先撤掉上一件「需要指向」道具留下的高亮
+    if (ItemTargeting.isActive()) {
+      ItemTargeting.cancel('hotbarSwitch');
+      this._targetingFromHotbar = false;
+    }
+
+    if (this.buildMode) {
+      // 放置型道具：进入既有指向模式（可放置高亮 / 点地块结算 / ESC 取消），
+      // 地块内容则由 MapView 读 selectedBuildContentId 后走 BuildSystem.placeContent
+      if (ItemTargeting.needsTarget(slot.itemId)) {
+        this._targetingFromHotbar = true;
+        const res = ItemTargeting.start(gs, slot.itemId);
+        if (!res?.ok) this._targetingFromHotbar = false;
+      }
+      this._syncSelectionToGS();
+      return;
+    }
+
+    // 探索模式：选中视觉保留，同时按物品自身规则立即响应（不再有“点了没反应”的死格子）
+    this._useFromHotbar(gs, slot.itemId);
+  }
+
+  /** 建造模式下可作为“待放置内容”的槽：地块内容 + 放置型消耗道具 */
+  _canSelectForBuild(itemId) {
+    return PLACEABLE_PREFIX.test(itemId) || ItemTargeting.needsTarget(itemId);
+  }
+
+  /**
+   * 探索模式点击快捷栏：按物品自身规则处理。
+   * 消耗道具 → 能直接用就直接用，需要目标地块就进入既有指向模式；
+   * 地块内容 → 提示到建造模式使用；产物 / 装备 / 收藏品（被动）→ 展示物品库原文。
+   */
+  _useFromHotbar(gs, itemId) {
+    if (!gs) return;
+    const def = ITEMS[itemId];
+    const name = def?.name || itemId;
+    const qty = gs.inventory?.items?.find((e) => e.itemId === itemId)?.qty ?? 0;
+    if (qty < 1) {
+      EventBus.emit(GE.TOAST_SHOW, { text: `🚫 背包里没有 ${name}`, duration: 1600 });
+      return;
+    }
+
+    const potion = POTIONS[itemId];
+    if (potion?.useEffect) {
+      if (ItemTargeting.needsTarget(itemId)) {
+        this._targetingFromHotbar = true;
+        const res = ItemTargeting.start(gs, itemId);
+        if (!res?.ok) this._targetingFromHotbar = false;
+      } else {
+        useItem(gs, itemId, { tileIdx: gs.player.x });
+      }
+      return;
+    }
+
+    if (PLACEABLE_PREFIX.test(itemId)) {
+      EventBus.emit(GE.TOAST_SHOW, { text: '🛠️ 地块内容：切到建造模式（Tab）选中后点地块放置', duration: 2200 });
+      return;
+    }
+
+    // 产物 / 装备 / 收藏品等没有主动使用动作 → 展示物品库原文，不做死格子
+    EventBus.emit(GE.TOAST_SHOW, {
+      text: def?.description ? `${def.emoji || '📦'} ${name}：${def.description}` : `📦 ${name}`,
+      duration: 2600,
+    });
+  }
+
+  _selectSlot(idx) {
+    this.selectedSlotIdx = idx;
+    this.selectedContentId = this._getCurrentGS()?.hotbar?.[idx]?.itemId || null;
+    this.slotEls.forEach((el, i) => {
+      if (i === idx) el.classList.add('selected');
+      else el.classList.remove('selected');
+    });
   }
 
   _clearSelection() {
+    if (this._targetingFromHotbar) {
+      ItemTargeting.cancel('hotbarDeselect');
+      this._targetingFromHotbar = false;
+    }
     this.selectedSlotIdx = null;
     this.selectedContentId = null;
     this.slotEls.forEach(el => el.classList.remove('selected'));
@@ -270,7 +355,8 @@ export class HotBar {
         document.body.classList.add('build-mode');
         // §16.14 修复：进入建造模式默认选中 1 号位（1 号位有内容时），避免「无法放置」状态
         const first = this._getCurrentGS()?.hotbar?.[0];
-        if (first?.itemId) this._handleSlotClick(0);
+        // 1 号位可参与建造才自动选中；否则静默清空（避免进入建造模式就弹出“不可选”提示）
+        if (first?.itemId && this._canSelectForBuild(first.itemId)) this._handleSlotClick(0);
         else this._clearSelection();
       } else {
         document.body.classList.remove('build-mode');

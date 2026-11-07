@@ -1408,16 +1408,18 @@ head_('第 9 批：商店剩余预览 / 背包拖拽放置 / 粘液中文名');
   assert(facSlots.length === 1, '地块内容类（设施）格可拖拽');
   const wheatSlot = findAll(invRoot, (el) => (el.title || '').startsWith(ITEMS['item_wheat'].name + ' ×'));
   assert(wheatSlot.length >= 1, '产物类物品格存在');
-  // L-06 / §16.15：试图拖拽不可放置物品 → 拖拽被取消（preventDefault，不触发拖拽）并弹窗提示
+  // §16.19 更新：产物等非地块内容也可发起拖拽（拖入 HotBar 用），不再在 dragstart 取消；
+  // 拖到地图时由 MapView 明确拒绝并提示、不消耗（见 §19）。
   {
     let cancelled = false;
-    const toastsL06 = [];
-    const onToastL06 = (p) => toastsL06.push(String(p.text || ''));
-    EventBus.on(GE.TOAST_SHOW, onToastL06);
-    wheatSlot[0].dispatchEvent({ type: 'dragstart', preventDefault() { cancelled = true; } });
-    EventBus.off(GE.TOAST_SHOW, onToastL06);
-    assert(cancelled, 'L-06：产物类物品拖拽被取消（不触发拖拽）');
-    assert(toastsL06.some((t) => t.includes('不可放置')), 'L-06：试图拖拽不可放置物品弹窗提示');
+    const dtProd = {};
+    wheatSlot[0].dispatchEvent({
+      type: 'dragstart', preventDefault() { cancelled = true; },
+      dataTransfer: { setData: (k, v) => { dtProd[k] = v; }, effectAllowed: '' },
+    });
+    assert(!cancelled, '产物类物品可发起拖拽（用于拖入 HotBar）');
+    assert(dtProd['text/plain'] === 'item_wheat', '产物拖拽携带 itemId（可放入 HotBar）');
+    window.__invDrag = false;
   }
 
   // dragstart：背包自动关闭 + 全局拖拽标记
@@ -2914,6 +2916,190 @@ head_('§18 功能页面删除标题行：无标题节点 / 外框不变 / 内�
   // 商店：本就没有同形态文字标题（顶部只有 购买/售卖 tab 与右上 ✖），无需改动
   const shopTexts = findAll(shopPanel.root, (el) => OLD_TITLES.some((t) => (el._text || '').includes(t)));
   assert(shopTexts.length === 0, '商店：无同形态文字标题（仅 tab 与右上 ✖，不涉及删除）');
+}
+
+// ════════════════════════════════════════════════════════════
+// §19 快捷栏：全类型物品可入 + 探索点击按物品规则响应 + 建造模式从快捷栏放置
+// ════════════════════════════════════════════════════════════
+head_('§19 HotBar 全类型物品：拖入 / 点击响应 / 建造模式放置');
+{
+  const { ITEMS } = await import('../src/data/items.js');
+  const { ItemTargeting } = await import('../src/systems/ItemTargeting.js');
+  // HotBar._getCurrentGS 经 window.__gameDirector 取 GS（镜像 main.js；§16.24 曾置 null）
+  const prevGameDirector = window.__gameDirector;
+  window.__gameDirector = director;
+  const TYPES = ['item_wheat', 'collectible_royal_pillow', 'item_herb', 'item_trap', 'facility_tent'];
+  gs.hotbar = [];
+  if (gs.buildMode) {
+    gs.buildMode = false;
+    EventBus.emit(GE.UI_MODE_CHANGE, { mode: 'explore' });
+  }
+  TYPES.forEach((id) => InventorySystem.addItem(gs, id, id === 'item_herb' ? 3 : 1));
+  if (TYPES.includes('item_wheat')) InventorySystem.addItem(gs, 'item_wheat', 4); // 小麦共 5
+
+  // ── 1) 拖入：产物 / 收藏品 / 消耗道具 / 放置型道具 / 地块内容 全部可拖入 HotBar ──
+  {
+    const toasts = [];
+    const onToast = (p) => toasts.push(String(p.text || ''));
+    EventBus.on(GE.TOAST_SHOW, onToast);
+    for (let i = 0; i < TYPES.length; i++) {
+      const id = TYPES[i];
+      hotBar.slotEls[i].dispatchEvent({
+        type: 'drop', preventDefault() {},
+        dataTransfer: { getData: () => id },
+      });
+    }
+    EventBus.off(GE.TOAST_SHOW, onToast);
+    TYPES.forEach((id, i) => {
+      assert(gs.hotbar[i]?.itemId === id, `${ITEMS[id].name} 可放入 HotBar slot ${i + 1}`);
+      assert(hasText(hotBar.slotEls[i], String(InventorySystem.countItem(gs, id))),
+        `${ITEMS[id].name} 放入后数量显示正确`);
+    });
+    assert(toasts.filter((t) => t.includes('📌')).length === TYPES.length, '各类型物品放入均有成功反馈');
+  }
+
+  // ── 1b) 非地块内容拖到地图：明确拒绝、不落物（产物不再被 BuildSystem 误当内容）──
+  {
+    const { Distance } = await import('../src/core/Distance.js');
+    const target = gs.map.outerTiles.find((t) => !t.contentId);
+    let xy = null;
+    for (let y = 0; y < gs.map.size && !xy; y++) {
+      for (let x = 0; x < gs.map.size; x++) {
+        if (Distance.outerXYToIdx(gs.map, x, y) === target.idx) { xy = [x, y]; break; }
+      }
+    }
+    assert(!!xy, '找到空白地块坐标');
+    const px = mapView.tileSize * mapView._scale;
+    const toasts = [];
+    const onToast = (p) => toasts.push(String(p.text || ''));
+    const beforeContent = target.contentId;
+    EventBus.on(GE.TOAST_SHOW, onToast);
+    mapView.root.dispatchEvent({
+      type: 'drop', preventDefault() {},
+      clientX: xy[0] * px + 10, clientY: xy[1] * px + 10,
+      dataTransfer: { getData: () => 'item_wheat' },
+    });
+    EventBus.off(GE.TOAST_SHOW, onToast);
+    assert(target.contentId === beforeContent, '产物拖到地图：不落物（地块内容未变）');
+    assert(toasts.some((t) => t.includes('不可放置')), '产物拖到地图：明确拒绝并提示');
+  }
+
+  // ── 2) 探索模式点击：可用道具直接用、需选目标进指向模式、被动物品有响应（无死格） ──
+  {
+    const herbIdx = TYPES.indexOf('item_herb');
+    gs.player.hp = gs.player.maxHp - 20;
+    const beforeHerb = InventorySystem.countItem(gs, 'item_herb');
+    hotBar.slotEls[herbIdx].dispatchEvent({ type: 'click', target: hotBar.slotEls[herbIdx], preventDefault() {}, stopPropagation() {} });
+    assert(InventorySystem.countItem(gs, 'item_herb') === beforeHerb - 1,
+      '草药：探索模式点快捷栏 → 直接使用并消耗 1 个');
+    assert(gs.player.hp === gs.player.maxHp, '草药：生命值即时恢复', gs.player.hp);
+    assert(hasText(hotBar.slotEls[herbIdx], String(beforeHerb - 1), false),
+      '草药：快捷栏数量即时刷新（无额外操作）');
+    hotBar.slotEls[herbIdx].dispatchEvent({ type: 'click', target: hotBar.slotEls[herbIdx], preventDefault() {}, stopPropagation() {} }); // 取消选中
+  }
+
+  {
+    const toasts = [];
+    const onToast = (p) => toasts.push(String(p.text || ''));
+    EventBus.on(GE.TOAST_SHOW, onToast);
+    const prodIdx = TYPES.indexOf('item_wheat');
+    hotBar.slotEls[prodIdx].dispatchEvent({ type: 'click', target: hotBar.slotEls[prodIdx], preventDefault() {}, stopPropagation() {} });
+    const colIdx = TYPES.indexOf('collectible_royal_pillow');
+    hotBar.slotEls[colIdx].dispatchEvent({ type: 'click', target: hotBar.slotEls[colIdx], preventDefault() {}, stopPropagation() {} });
+    EventBus.off(GE.TOAST_SHOW, onToast);
+    assert(toasts.some((t) => t.includes(ITEMS['item_wheat'].name)),
+      '产物：点击有明确响应（展示物品库原文，不再是死格子）');
+    assert(toasts.some((t) => t.includes(ITEMS['collectible_royal_pillow'].name)),
+      '收藏品：点击有明确响应（展示物品库原文）');
+    hotBar._clearSelection();
+  }
+
+  // ── 3) 探索模式点击放置型道具 → 进入指向模式，点地块放置成功、不消耗 ──
+  const plain = gs.map.outerTiles.filter((t) => !t.contentId && t.idx !== gs.player.x);
+  assert(plain.length >= 3, '存在可用于放置的空白地块', plain.length);
+  const tileA = plain[0].idx;
+  const tileB = plain[1].idx;
+  {
+    const trapIdx = TYPES.indexOf('item_trap');
+    const beforeTrap = InventorySystem.countItem(gs, 'item_trap');
+    hotBar.slotEls[trapIdx].dispatchEvent({ type: 'click', target: hotBar.slotEls[trapIdx], preventDefault() {}, stopPropagation() {} });
+    assert(ItemTargeting.isActive() && ItemTargeting.currentItem() === 'item_trap',
+      '放置型道具：探索模式点击快捷栏 → 进入既有指向模式（可放置高亮）');
+    mapView.tileEls.get(tileA).dispatchEvent({ type: 'click', target: mapView.tileEls.get(tileA), preventDefault() {}, stopPropagation() {} });
+    const placed = (gs.map.outerTiles[tileA].contentState?.placedItems || []).filter((p) => p.itemId === 'item_trap');
+    assert(placed.length === 1, '放置型道具：点合法地块 → 放置成功');
+    assert(InventorySystem.countItem(gs, 'item_trap') === beforeTrap, '放置型道具：放置后不消耗、仍留在背包');
+    assert(!ItemTargeting.isActive(), '放置型道具：成功后退出指向模式');
+    hotBar.slotEls[trapIdx].click(); // 取消选中
+  }
+
+  // ── 4) 建造模式：地块内容 → 选中 → 点地块放置；放置型道具 → 选中即进指向模式 ──
+  {
+    gs.buildMode = true;
+    EventBus.emit(GE.UI_MODE_CHANGE, { mode: 'build' });
+    // 建造模式不接受小麦（产物）/收藏品：点击只提示，不选中
+    const prodIdx = TYPES.indexOf('item_wheat');
+    hotBar.slotEls[prodIdx].click();
+    assert(hotBar.selectedSlotIdx === null, '建造模式：产物类不可选（点击给出提示，不产生点地块必失败的选中）');
+
+    // 地块内容
+    const tentIdx = TYPES.indexOf('facility_tent');
+    const beforeTent = InventorySystem.countItem(gs, 'facility_tent');
+    hotBar.slotEls[tentIdx].click();
+    assert(hotBar.selectedContentId === 'facility_tent' && gs.uiState.selectedBuildContentId === 'facility_tent',
+      '建造模式：点地块内容槽 → 选中并同步给 MapView');
+    mapView.tileEls.get(tileB).dispatchEvent({ type: 'click', target: mapView.tileEls.get(tileB), preventDefault() {}, stopPropagation() {} });
+    assert(gs.map.outerTiles[tileB].contentId === 'facility_tent', '建造模式：点地块 → 地块内容放置成功');
+    assert(InventorySystem.countItem(gs, 'facility_tent') === beforeTent - 1, '建造模式：地块内容放置消耗 1 个');
+    assert(findAll(mapView.tileEls.get(tileB), (el) => el._classes && el._classes.has('tile-content')).length >= 1,
+      '建造模式：地块内容层即时刷新');
+
+    // 放置型道具：选中即进入指向模式（复用可放置高亮），点地块放置
+    const trapIdx = TYPES.indexOf('item_trap');
+    const beforeTrap = InventorySystem.countItem(gs, 'item_trap');
+    hotBar.slotEls[trapIdx].click();
+    assert(ItemTargeting.isActive() && ItemTargeting.currentItem() === 'item_trap',
+      '建造模式：点放置型道具槽 → 进入指向模式并高亮可放置地块');
+    const tileC = plain[2].idx;
+    mapView.tileEls.get(tileC).dispatchEvent({ type: 'click', target: mapView.tileEls.get(tileC), preventDefault() {}, stopPropagation() {} });
+    assert((gs.map.outerTiles[tileC].contentState?.placedItems || []).filter((p) => p.itemId === 'item_trap').length === 1,
+      '建造模式：放置型道具点地块 → 放置成功');
+    assert(InventorySystem.countItem(gs, 'item_trap') === beforeTrap, '建造模式：放置型道具不消耗');
+    assert(findAll(mapView.tileEls.get(tileC), (el) => el.getAttribute && el.getAttribute('data-item-id') === 'item_trap').length >= 1,
+      '建造模式：放置后地块标志层即时出现（无额外操作）');
+
+    // 非法落点（同名道具重复）：拒绝、不新增、不消耗
+    const toasts = [];
+    const onToast = (p) => toasts.push(String(p.text || ''));
+    EventBus.on(GE.TOAST_SHOW, onToast);
+    const beforeDup = InventorySystem.countItem(gs, 'item_trap');
+    mapView.tileEls.get(tileC).dispatchEvent({ type: 'click', target: mapView.tileEls.get(tileC), preventDefault() {}, stopPropagation() {} });
+    EventBus.off(GE.TOAST_SHOW, onToast);
+    const dupPlaced = (gs.map.outerTiles[tileC].contentState?.placedItems || []).filter((p) => p.itemId === 'item_trap');
+    assert(dupPlaced.length === 1, '非法落点：同名道具重复放置被拒绝（不新增）');
+    assert(InventorySystem.countItem(gs, 'item_trap') === beforeDup, '非法落点：拒绝时不消耗道具');
+    assert(toasts.some((t) => t.includes('不能使用')), '非法落点：给出明确失败提示');
+
+    // 非法落点（家：【永恒】不可替换）：拒绝且不消耗
+    const homeTile = gs.map.outerTiles.find((t) => t.contentId === 'facility_home');
+    if (homeTile) {
+      InventorySystem.addItem(gs, 'facility_tent', 1);
+      hotBar.slotEls[tentIdx].click();
+      const beforeHome = InventorySystem.countItem(gs, 'facility_tent');
+      mapView.tileEls.get(homeTile.idx).dispatchEvent({ type: 'click', target: mapView.tileEls.get(homeTile.idx), preventDefault() {}, stopPropagation() {} });
+      assert(gs.map.outerTiles[homeTile.idx].contentId === 'facility_home', '非法落点：家不可被替换');
+      assert(InventorySystem.countItem(gs, 'facility_tent') === beforeHome, '非法落点：家拒绝时不消耗地块内容');
+    }
+
+    gs.buildMode = false;
+    EventBus.emit(GE.UI_MODE_CHANGE, { mode: 'explore' });
+  }
+
+  // 清理：快捷栏清空、界面回探索态（不影响后续用例）
+  gs.hotbar = [];
+  hotBar.renderFromGS(gs);
+  ItemTargeting.cancel?.('smokeCleanup');
+  window.__gameDirector = prevGameDirector;
 }
 
 // ════════════════════════════════════════════════════════════

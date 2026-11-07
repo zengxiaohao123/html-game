@@ -12,6 +12,7 @@ import { Distance } from '../core/Distance.js';
 import { Assets } from '../core/Assets.js';
 import { normalizeTerrain } from '../data/terrains.js';
 import { POTIONS } from '../data/potions.js';
+import { ITEMS } from '../data/items.js';
 import { BuildSystem } from '../systems/BuildSystem.js';
 import { ItemTargeting } from '../systems/ItemTargeting.js';
 import { SKILLS } from '../data/characters.js';
@@ -300,6 +301,13 @@ export class MapView {
       });
       return;
     }
+    // 放置型道具（陷阱 / 艾草熏香…）从 HotBar 选中：与背包指向模式共用同一套合法性判定与结算
+    // （首次选中已由 ItemTargeting.start 建立高亮；这里兜住连续放置 / 未成功建立指向的情况）
+    if (ItemTargeting.needsTarget(contentId)) {
+      const res = ItemTargeting.useAtTile(gs, contentId, tileIdx);
+      if (res?.ok) ItemTargeting.cancel('buildPlaceDone');
+      return;
+    }
     BuildSystem.placeContent(gs, tileIdx, contentId);
   }
 
@@ -336,6 +344,14 @@ export class MapView {
       if (ItemTargeting.needsTarget(contentId)) {
         const res = ItemTargeting.useAtTile(gs, contentId, tileIdx);
         if (res?.ok) ItemTargeting.cancel('dropDone');
+        return;
+      }
+      // 非地块内容（产物 / 装备 / 收藏品 / 天赋等）拖到地图：明确拒绝，不消耗、不落物
+      if (!/^(facility_|resource_|skill_|terrain_)/.test(contentId)) {
+        EventBus.emit(GE.TOAST_SHOW, {
+          text: `❌ ${ITEMS[contentId]?.name || contentId} 不可放置到地块`,
+          duration: 2000,
+        });
         return;
       }
       BuildSystem.placeContent(gs, tileIdx, contentId);
