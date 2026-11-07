@@ -1670,6 +1670,11 @@ export class InfoPanel {
       this._renderBody();
     });
 
+    // 栅栏内地块状态变化（地形放置等）→ 正在查看该格时实时刷新
+    EventBus.on(GE.FENCE_TILE_UPDATED, ({ fenceIdx }) => {
+      if (this.mode === 'fence' && this.currentFenceIdx === fenceIdx) this._renderBody();
+    });
+
     // 建造模式下 InfoPanel 完全隐藏（§16.14：不滑出、不 emit）
     EventBus.on(GE.UI_MODE_CHANGE, ({ mode }) => {
       if (!this.root) return;

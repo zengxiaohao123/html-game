@@ -22,6 +22,7 @@ import { TERRAINS } from '../data/terrains.js';
 import { SKILLS } from '../data/characters.js';
 import { InventorySystem } from './InventorySystem.js';
 import { LinkSkillSystem, getActiveGroupRoles } from './LinkSkillSystem.js';
+import { fenceDimsOf } from '../core/Distance.js';
 import { devLog } from '../core/Logger.js';
 
 /** 家（facility_home）拥有【永恒】词条，不可替换 */
@@ -87,6 +88,43 @@ export function placeTerrain(gs, tileIdx, terrainId) {
   EventBus.emit(GE.TOAST_SHOW, { text: `🧱 地形变为 ${terrain.name}（元素量 ${terrain.elementAmount}）`, duration: 1600 });
   devLog.info('[Build] placeTerrain tile', tileIdx, '→', terrainId);
   return { ok: true };
+}
+
+/**
+ * 放置地形到栅栏内地块（§4：地形可作用于任意栅栏内格子；设施/技能仍仅限外圈）
+ * @param {object} gs
+ * @param {number} row 栅栏内行号（0 = 网格第 1 行）
+ * @param {number} col 栅栏内列号（0 = 网格第 1 列）
+ * @param {string} terrainId
+ * @returns {{ ok: boolean, reason?: string, fenceIdx?: number }}
+ */
+export function placeFenceTerrain(gs, row, col, terrainId) {
+  const terrain = TERRAINS[terrainId];
+  if (!terrain) return { ok: false, reason: 'unknownTerrain' };
+
+  const fDims = fenceDimsOf(gs);
+  if (!Number.isInteger(row) || !Number.isInteger(col)
+    || row < 0 || col < 0 || row >= fDims.rows || col >= fDims.cols) {
+    return { ok: false, reason: 'invalidFenceCell' };
+  }
+  const fenceIdx = row * fDims.cols + col;
+  const cell = gs.map.fence?.[fenceIdx];
+  if (!cell) return { ok: false, reason: 'invalidFenceCell' };
+
+  if (InventorySystem.countItem(gs, terrainId) < 1) {
+    EventBus.emit(GE.TOAST_SHOW, { text: `🛠️ 背包里没有 ${terrain.name}`, duration: 1600 });
+    return { ok: false, reason: 'noItem' };
+  }
+
+  // 同种地形重复施加：地形不变、元素量回满（与外圈同口径）
+  cell.terrain = terrainId;
+  cell.terrainAmount = terrain.elementAmount;
+  InventorySystem.removeItem(gs, terrainId, 1);
+
+  EventBus.emit(GE.FENCE_TILE_UPDATED, { row, col, fenceIdx });
+  EventBus.emit(GE.TOAST_SHOW, { text: `🧱 地形变为 ${terrain.name}（元素量 ${terrain.elementAmount}）`, duration: 1600 });
+  devLog.info('[Build] placeFenceTerrain fence', row, col, '→', terrainId);
+  return { ok: true, fenceIdx };
 }
 
 /**
@@ -270,6 +308,7 @@ export const BuildSystem = {
   exitBuildMode,
   placeContent,
   placeTerrain,
+  placeFenceTerrain,
   clearContent,
   autoRemoveSkillsOutsideTeam,
 };

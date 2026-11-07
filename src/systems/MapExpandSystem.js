@@ -49,13 +49,14 @@ function createOuterTile(idx) {
   };
 }
 
-/** 新栅栏地块（开局栅栏为无地形，扩图新格保持同口径） */
+/** 新栅栏地块：地形与外圈新地块同一套概率分布（§4 的 50/40/10） */
 function createFenceTile(row, col) {
+  const terrainId = rollSpawnTerrain();
   return {
     row,
     col,
-    terrain: 'terrain_none',
-    terrainAmount: 0,
+    terrain: terrainId,
+    terrainAmount: getTerrain(terrainId).elementAmount,
     creatures: [],
     items: [],
   };

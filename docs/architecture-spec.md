@@ -58,6 +58,7 @@ src/
 │   ├── HotBar.js             # 快捷物品栏（底部居中，10 格）
 │   ├── SpiritArea.js         # 左侧精灵 + 祈福按钮
 │   ├── LinkSkillUI.js        # 连携区（8 秒窗口小圆框 + 队列）
+│   ├── FenceTerrainDrop.js   # 地形拖拽进栅栏内的捕获阶段桥接（设施/技能仍限外圈）
 │   ├── panels/
 │   │   ├── MainMenu.js       # 主菜单（新游戏/读档/图鉴）
 │   │   ├── SettingsPanel.js  # ESC 设置（存档/读档/回主菜单）
@@ -158,6 +159,7 @@ export const GE = {
   
   // —— 地图 ——
   TILE_UPDATED: 'tile:updated',         // 地块内容/地形/状态变化
+  FENCE_TILE_UPDATED: 'fence:tile_updated', // 栅栏内地块状态变化（地形放置等）
   TILE_CLICKED: 'tile:clicked',
   TERRAIN_DEPLETED: 'terrain:depleted',
   MAP_EXPANDED: 'map:expanded',         // 农场扩建完成（payload: {gs}），UI 需全量重排
@@ -248,10 +250,23 @@ expandMap(gs, axis)          // 在 expandMapInPlace 之上同步日初基线并
 - **II 型（行 +1）**：原最上行（`y = 0`）保持，`y ≥ 1` 整体下移 1 行（`y → y+1`），腾空的 `y = 1` 生成新行——左右端为外圈格，中间为栅栏格；`fenceRows + 1`（旧行下移、新行插在最前），栅栏格行索引 `+1`。
 - **跟随规则**：角色恰好站在被移动地块上时随之平移（`player.x/y` 同步重算），该位移**不视为移动**，不触发任何技能/地块效果。
 - **内容保留与索引重映射**：重建 `map.outerTiles` 时按新的环形顺序排布，并产出 `idxMap`（旧外圈 idx → 新外圈 idx）；同时重映射 `player` 坐标、`creatures[].pos/renderPos/targetPos`、`fence[].creatures` 缓存、`linkSkillCounters` / `linkSkillCooldowns` 的 `tileIdx|skillId` 键、连携队列的 `tileIdx`/`key`、`uiState.selectedTileIdx`。地块 `tile.idx` 全部改写为新 idx。
-- **地形**：新外圈格走 §4 地形权重（50/40/10）掷骰并写入 `elementAmount`；新栅栏格地形为 `terrain_none`。
+- **地形**：新外圈格与新增栅栏格都走 §4 地形权重（50/40/10）掷骰并写入 `terrainAmount`；初始 3×3 已有的栅栏格保持 `terrain_none`，不回溯。
 - **无上限、无消耗**：不设扩建次数硬上限（受地图可容纳格数与性能约束），不消耗行动力/体力、无冷却。物品数量扣减由 `UseItemSystem` 的通用道具扣减逻辑完成。
 - **存档关系**：扩建属于「当天内的世界变化」，`expandMap` **不写日初基线**；只在正常采集点（`SleepSystem.sleep` 末尾 `DayBaseline.capture`）随实时状态入档。跨日后尺寸保留、道具数量按已用数量入档；当天回档（读档回本日开始时）时尺寸与扩建道具一起复原。`map.rows/cols/fenceRows/fenceCols` 随存档序列化，读档后正确恢复。
 - **UI 重排**：`MapView` 订阅 `GE.MAP_EXPANDED`，重新按新 `rows/cols` 计算 tile 像素、重画所有地块/栅栏/角色/生物层，不产生幽灵格或错位。
+
+### 2.4.2 栅栏内地形放置（2026-11-07）
+
+```js
+// src/systems/BuildSystem.js
+placeFenceTerrain(gs, row, col, terrainId) // 栅栏内行/列号（0 起）→ { ok, fenceIdx?, reason? }
+```
+
+- **地形允许进栅栏**：栅栏格与外围格一样有 `terrain / terrainAmount`；`placeFenceTerrain` 校验栅栏行列范围、库存后写入地形并扣 1 个道具，广播 `GE.FENCE_TILE_UPDATED`。重复施加同种地形 = 回满元素量（与 `placeTerrain` 同口径）。
+- **设施/资源/技能仍限外圈**：`placeContent` 只接受外圈 `tileIdx`；`placeFenceTerrain` 只接受 `terrains.js` 里登记的地形 id，传入 `facility_*` / `skill_*` 一律按 `unknownTerrain` 拒绝。
+- **拖拽入口**：`MapView` 的 drop 只认外圈坐标，栅栏内拖拽由独立模块 `src/ui/FenceTerrainDrop.js` 在容器捕获阶段接管（只处理 `terrain_` 前缀并 `stopPropagation`，避免误弹"只能放在外圈"）；放置成功后调用 `mapView.renderFence(gs)` 局部重绘栅栏背景层。设施/技能等其它内容仍走 `MapView` 原逻辑被拒绝。
+- **信息区**：`InfoPanel` 订阅 `GE.FENCE_TILE_UPDATED`，正在查看该栅栏格时重渲染「地块内容 / 状态」tab。
+- **验收**：`node tools/smoke-expand.mjs` 的 X2/X5（新栅栏格随机地形、初始格不回溯）与 X10（地形可放置、扣减、回满、越界拒绝、设施/技能不可）。
 
 ### 2.5 RealtimeClock（统一实时时钟 / 渲染插值）
 

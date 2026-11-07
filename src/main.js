@@ -12,6 +12,7 @@ import { InputManager } from './systems/InputManager.js';
 
 // UI
 import { MapView } from './ui/MapView.js';
+import { mountFenceTerrainDrop } from './ui/FenceTerrainDrop.js';
 import { TopBar } from './ui/TopBar.js';
 import { FuncBar } from './ui/FuncBar.js';
 import { HotBar } from './ui/HotBar.js';
@@ -105,6 +106,7 @@ toast.mount();
 
 const mapView = new MapView();
 mapView.mount(gs);
+mountFenceTerrainDrop(mapView);
 
 const topBar = new TopBar();
 topBar.mount(gs);

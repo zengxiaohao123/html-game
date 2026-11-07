@@ -7,9 +7,11 @@
 //   X3 几何一致性：外圈 idx ↔ (x,y) 双射、栅栏线性索引、无幽灵格
 //   X4 II 型：行数 +1；原顶行不动；新增行插在顶行之下；栅栏整体下移；生物 pos.y+1
 //   X5 多次扩建 + 上限边界：3×I + 3×II → 6×6，背包耗尽后不再扩建
-//   X6 存读档往返：扩建立即写入日初基线，读档后尺寸/内容/角色位置恢复
+//   X6 存读档往返：当天存档回日初口径（尺寸/道具复原）；跨日采集后保留扩建尺寸
 //   X7 旧存档兼容：缺少 rows/cols 的旧档按 size 还原（3×3）且不崩溃
 //   X8 背包数量扣减 + 无目标直接使用；描述与物品库逐字一致
+//   X9 回档/跨日：扩建受日初基线约束（尺寸与道具一起回滚 / 跨日保留）
+//   X10 栅栏内地形：扩建新格随机地形、地形可放置进栅栏、设施/技能仍不可
 //
 // 用法：node tools/smoke-expand.mjs
 
@@ -33,6 +35,9 @@ const { Distance } = await import('../src/core/Distance.js');
 const { ITEMS } = await import('../src/data/items.js');
 const { POTIONS } = await import('../src/data/potions.js');
 const { STARTER_ITEMS } = await import('../src/data/starterPack.js');
+const { TERRAINS } = await import('../src/data/terrains.js');
+const { SKILLS } = await import('../src/data/characters.js');
+const { BuildSystem } = await import('../src/systems/BuildSystem.js');
 
 let pass = 0, fail = 0;
 function check(cond, msg, extra) {
@@ -144,6 +149,12 @@ head('X2 I 型：长度（列数）+1');
   check(gs.map.outerTiles[3].contentId === 'facility_tent', '设施随地块右移，内容保留', gs.map.outerTiles[3].contentId);
   check(gs.map.outerTiles[2].contentId === null, '空出的新列是全新地块，无内容', gs.map.outerTiles[2].contentId);
   check(VALID_TERRAIN.has(gs.map.outerTiles[2].terrain), '新外圈地块按 §4 抽取地形', gs.map.outerTiles[2].terrain);
+  // 栅栏新格与外围新格同一套地形分布；已存在的初始栅栏格不回溯
+  const newFenceCell = gs.map.fence[1];
+  check(VALID_TERRAIN.has(newFenceCell.terrain), '扩建新增栅栏格按 §4 抽随机地形', newFenceCell.terrain);
+  check(newFenceCell.terrainAmount === TERRAINS[newFenceCell.terrain].elementAmount,
+    '新栅栏格地形量与该地形一致', { t: newFenceCell.terrain, amt: newFenceCell.terrainAmount });
+  check(gs.map.fence[0].terrain === 'terrain_none', '已存在的初始栅栏格保持无地形（不回溯）', gs.map.fence[0].terrain);
   verifyGeometry(gs, 'I型扩建后');
 
   // 新列中部是栅栏（(2,1) 对应新栅栏 col1）；新增外圈格不能和栅栏重叠
@@ -326,6 +337,36 @@ head('X9 回档/跨日：扩建受日初基线约束');
   check(nd.cols === 4 && nd.rows === 3, '跨日后尺寸保留 3×4', nd);
   check(InventorySystem.countItem(next, ID_LEN) === 2, '跨日后 I 型为 2 个', InventorySystem.countItem(next, ID_LEN));
   verifyGeometry(next, '跨日后');
+}
+
+head('X10 栅栏内地形放置');
+{
+  const gs = createInitialState();
+  useItem(gs, ID_LEN); // 3×4，栅栏 1×2
+  const fDims = Distance.fenceDimsOf(gs);
+  check(fDims.rows === 1 && fDims.cols === 2, '栅栏为 1×2（含扩建新增格）', fDims);
+
+  InventorySystem.addItem(gs, 'terrain_ice', 2);
+  const before = InventorySystem.countItem(gs, 'terrain_ice');
+
+  const r1 = BuildSystem.placeFenceTerrain(gs, 0, 1, 'terrain_ice');
+  check(r1.ok && gs.map.fence[1].terrain === 'terrain_ice', '地形可放到栅栏内任意格', r1);
+  check(gs.map.fence[1].terrainAmount === TERRAINS.terrain_ice.elementAmount, '栅栏格地形量正确写入');
+  check(InventorySystem.countItem(gs, 'terrain_ice') === before - 1, '放置扣 1 个地形道具');
+
+  gs.map.fence[1].terrainAmount = 0; // 消耗后重复施加
+  const r2 = BuildSystem.placeFenceTerrain(gs, 0, 1, 'terrain_ice');
+  check(r2.ok && gs.map.fence[1].terrainAmount === TERRAINS.terrain_ice.elementAmount, '重复施加同种地形：地形量回满');
+
+  check(!BuildSystem.placeFenceTerrain(gs, 1, 0, 'terrain_ice').ok, '越界栅栏格被拒绝');
+  const skillId = Object.keys(SKILLS)[0];
+  check(!BuildSystem.placeFenceTerrain(gs, 0, 0, 'facility_tent').ok, '设施不可放置到栅栏内');
+  check(!BuildSystem.placeFenceTerrain(gs, 0, 0, skillId).ok, '技能不可放置到栅栏内', skillId);
+  check(!BuildSystem.placeContent(gs, gs.map.outerTiles.length + 1, 'facility_tent').ok, '外圈放置接口不接受越界/栅栏坐标');
+
+  InventorySystem.addItem(gs, 'terrain_grass', 1);
+  const r3 = BuildSystem.placeFenceTerrain(gs, 0, 0, 'terrain_grass');
+  check(r3.ok && gs.map.fence[0].terrain === 'terrain_grass', '初始栅栏格同样允许地形覆盖');
 }
 
 console.log(`\n════ 扩建冒烟：${pass} 通过 / ${fail} 失败 ════`);

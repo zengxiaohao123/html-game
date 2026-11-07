@@ -31,6 +31,7 @@ export const GE = {
   TILE_UPDATED: 'tile:updated',
   TILE_CLICKED: 'tile:clicked',
   FENCE_TILE_CLICKED: 'fence:tile_clicked',
+  FENCE_TILE_UPDATED: 'fence:tile_updated',   // 栅栏内地块状态变化（地形等）
   TERRAIN_DEPLETED: 'terrain:depleted',
   MAP_EXPANDED: 'map:expanded',       // 农场扩建：外圈行/列数变化，整图需重排
 
