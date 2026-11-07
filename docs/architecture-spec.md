@@ -48,6 +48,7 @@ src/
 │   ├── LinkSkillSystem.js    # 连携技（解锁检测 + 8 秒窗口 + 队列）
 │   ├── RealtimeClock.js      # 统一实时时钟（200ms 逻辑步 + 渲染插值 + 结算快照冻结）
 │   ├── CreatureSystem.js     # 生物连续积分移动（3~6 秒/格）+ 投喂 + 成长 + 心情
+│   ├── CapacitySystem.js     # 容量上限即时同步（栅栏面积 → 友善/危险上限 +1/格）
 │   └── BuildSystem.js        # 建造模式 + 放置/替换地块内容
 ├── ui/                       # UI 渲染层（订阅 EventBus，更新 DOM）
 │   ├── UIController.js       # UI 总控（模式切换 + 页面管理）
@@ -253,6 +254,8 @@ expandMap(gs, axis)          // 在 expandMapInPlace 之上同步日初基线并
 - **地形**：新外圈格与新增栅栏格都走 §4 地形权重（50/40/10）掷骰并写入 `terrainAmount`；初始 3×3 已有的栅栏格保持 `terrain_none`，不回溯。
 - **无上限、无消耗**：不设扩建次数硬上限（受地图可容纳格数与性能约束），不消耗行动力/体力、无冷却。物品数量扣减由 `UseItemSystem` 的通用道具扣减逻辑完成。
 - **存档关系**：扩建属于「当天内的世界变化」，`expandMap` **不写日初基线**；只在正常采集点（`SleepSystem.sleep` 末尾 `DayBaseline.capture`）随实时状态入档。跨日后尺寸保留、道具数量按已用数量入档；当天回档（读档回本日开始时）时尺寸与扩建道具一起复原。`map.rows/cols/fenceRows/fenceCols` 随存档序列化，读档后正确恢复。
+- **容量上限即时同步**：`expandMap` 在结构变更后立刻调用 `CapacitySystem.syncCapacityLimits(gs)`（上限 = 4 + 栅栏格数 - 1，友善/危险各自计算，高危恒 0），并广播 `GE.CAPACITY_CHANGE` → `TopBar._renderAll` 在同一帧内重绘容量条，不依赖玩家的后续操作。读档侧由 `migrateGS` 在 `DayBaseline.capture` 之前调用 `applyCapacityLimits(gs)`（只写上限不广播），因此读档进入扩建后的存档时容量 UI 首帧即为新值，旧档也能按实际栅栏面积校正。
+- **容量与惩罚解耦**：`syncCapacityLimits` 只改上限与计数，不推进超载警告期；超载计时/惩罚仍只在日结算的 `updateCapacityAndPunish` 中处理。`CreatureSystem` 与 `CapacitySystem` 的上限公式必须保持一致（栅栏每多 1 格：友善 +1、危险 +1）。
 - **UI 重排**：`MapView` 订阅 `GE.MAP_EXPANDED`，重新按新 `rows/cols` 计算 tile 像素、重画所有地块/栅栏/角色/生物层，不产生幽灵格或错位。
 
 ### 2.4.2 栅栏内地形放置（2026-11-07）
@@ -406,7 +409,10 @@ export const createInitialState = () => ({
   // === 祝福 ===
   blessingQueue: [],           // [{ tileIdx, dayRemaining, usesRemaining }]
   
-  // === 建造模式 ===
+  // === 建造模式（设计文档 v0.5 §16.14） ===
+  // 写入点唯一：BuildSystem.applyMode（enterBuildMode / exitBuildMode / forceModeByStory）。
+  // 玩家侧只有「建造图标按钮（FuncBar）」与「Tab（InputManager）」两条切换途径；
+  // 打开 / 关闭任何页面或面板都不得改变该字段；读档与旧档迁移只在会话边界复位为 false。
   buildMode: false,            // true = 建造模式；false = 探索模式
   
   // === 连携技 ===

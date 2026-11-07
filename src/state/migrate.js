@@ -9,6 +9,7 @@ import { createInitialState } from './gameState.js';
 import { devLog } from '../core/Logger.js';
 import { getCreatureDef } from '../data/creatures.js';
 import { DEFAULT_CREATURE_RADIUS, FENCE_ORIGIN_X, FENCE_ORIGIN_Y } from '../core/Geometry.js';
+import { applyCapacityLimits } from '../systems/CapacitySystem.js';
 
 /**
  * 判断一个值是否是 plain object（非数组、非 null）
@@ -289,6 +290,10 @@ export function migrateGS(loadedGs) {
       }
     }
   }
+
+  // 容量上限只由栅栏面积决定：读档时按实际尺寸重算，保证读档首帧容量 UI 即为正确值
+  //（旧档可能来自扩建机制加入前，存的仍是基础容量 4/4）
+  applyCapacityLimits(loadedGs);
 
   // 存档口径归一化：旧实时档一次性提升为「当天开始」基线（新档重复执行结果不变）
   normalizeToDayStart(loadedGs);

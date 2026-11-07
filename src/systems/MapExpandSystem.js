@@ -22,7 +22,7 @@
 //      UI 选中格全部重映射；栅栏内生物行扩建时 pos.y +1（世界坐标原点随顶行上移）。
 //   4. 扩建是「当天内的世界变化」：不写日初基线，只在睡觉/跨日采集点随实时状态入档；
 //      当天回档时地图尺寸与扩建道具一起回到本日开始时。
-//   5. 新外圈地块按 §4 的 50/40/10 抽取地形；新栅栏地块保持「无地形」，与开局一致。
+//   5. 新外圈与新栅栏内地块共用 §4 的 50/40/10 地形抽取；初始 3×3 已有栅栏格不回溯。
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
@@ -30,6 +30,7 @@ import { devLog } from '../core/Logger.js';
 import { FENCE_ORIGIN_X, FENCE_ORIGIN_Y } from '../core/Geometry.js';
 import { rollSpawnTerrain, getTerrain } from '../data/terrains.js';
 import { outerIdxToXY, mapDimsOf } from '../core/Distance.js';
+import { syncCapacityLimits } from './CapacitySystem.js';
 
 export const EXPAND_AXIS = {
   LENGTH: 'length',   // I 型：列数 +1
@@ -258,6 +259,9 @@ export function expandMapInPlace(gs, axis) {
 export function expandMap(gs, axis) {
   const result = expandMapInPlace(gs, axis);
   if (!result.ok) return result;
+
+  // 栅栏面积变化 → 容量上限立即同步，并广播 CAPACITY_CHANGE（TopBar 同帧重绘）
+  syncCapacityLimits(gs);
 
   EventBus.emit(GE.MAP_EXPANDED, {
     gs, axis, rows: result.after.rows, cols: result.after.cols,

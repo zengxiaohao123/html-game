@@ -155,6 +155,7 @@ head('X2 I 型：长度（列数）+1');
   check(newFenceCell.terrainAmount === TERRAINS[newFenceCell.terrain].elementAmount,
     '新栅栏格地形量与该地形一致', { t: newFenceCell.terrain, amt: newFenceCell.terrainAmount });
   check(gs.map.fence[0].terrain === 'terrain_none', '已存在的初始栅栏格保持无地形（不回溯）', gs.map.fence[0].terrain);
+  check(gs.capacity.friendly === 5, '扩建后容量上限立即 +1（无需其它操作）', gs.capacity.friendly);
   verifyGeometry(gs, 'I型扩建后');
 
   // 新列中部是栅栏（(2,1) 对应新栅栏 col1）；新增外圈格不能和栅栏重叠
