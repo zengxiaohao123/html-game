@@ -852,7 +852,7 @@ head_('第 8 批：商店/魔法商店逐项 UI（选项齐全/正方格/留白/
   assert(shopPanel.visible === false, '魔法商店「离开」二次确认后关闭');
 }
 
-head_('§16.20 中央接线：开新面板关旧面板 / 开面板退建造');
+head_('§16.20 中央接线：开新面板关旧面板 / 打开面板不切换模式');
 {
   EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'inventory' });
   EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'role' });
@@ -864,8 +864,10 @@ head_('§16.20 中央接线：开新面板关旧面板 / 开面板退建造');
   BuildSystem.enterBuildMode(gs);
   assert(gs.buildMode === true, '进入建造模式');
   EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'inventory' });
-  assert(gs.buildMode === false, '§16.14 打开任何界面 → 退出建造模式');
+  assert(gs.buildMode === true, '§16.14 打开任何界面 → 模式保持不变（仍为建造模式）');
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });
+  assert(gs.buildMode === true, '§16.14 关闭界面后模式保持不变（仍为建造模式）');
+  BuildSystem.exitBuildMode(gs);   // 还原，避免建造模式影响后续用例
 }
 
 head_('§16.10 睡觉：先文字弹窗 → 弹窗内二次确认 → 同一 tick 换日 → 1.5s 淡出；P 键同链路');
@@ -1910,12 +1912,14 @@ head_('第 13 批 波 2：UI 修复验证（门控 / 信息区 / 商店 / 建造
   });
   assert(shopPanel.visible === false, 'M-04：离开商店格自动关闭商店（§16.21）');
 
-  // ── M-05：建造模式下 ESC 只退出建造 ──
+  // ── M-05：建造模式下 ESC 不改变模式 ──
   BuildSystem.enterBuildMode(gs);
   assert(gs.buildMode === true, 'M-05 前置：已进入建造模式');
   director.handleESC();
-  assert(gs.buildMode === false && settingsPanel.visible === false,
-    'M-05：建造模式下 ESC 只退出建造模式（不打开设置）');
+  assert(gs.buildMode === true, 'M-05：建造模式下 ESC 不改变模式（仍为建造模式）');
+  assert(settingsPanel.visible === true, 'M-05：ESC 仍按层级栈打开设置（不影响模式）');
+  if (settingsPanel.visible) settingsPanel.hide();
+  BuildSystem.exitBuildMode(gs);
 
   // ── M-07：进入建造模式默认选中 1 号位 ──
   window.__gameDirector = director; // HotBar._getCurrentGS 依赖（镜像 main.js）
@@ -2271,14 +2275,16 @@ head_('第 15 批：同键二次按下 = ESC（专属快捷键页面）');
   dlgK.hide();
   director.dialogBox = prevDlgK;
 
-  // ── 建造模式：不误触发同键关闭 ──
+  // ── 建造模式：打开背包不退出建造，同键关闭仍生效 ──
   BuildSystem.enterBuildMode(gs);
   key('b');
-  assert(inventoryPanel.visible && gs.buildMode === false,
-    '门控-2 建造模式按 B 正常打开背包（退出建造，不误判为关闭）', { buildMode: gs.buildMode });
+  assert(inventoryPanel.visible && gs.buildMode === true,
+    '门控-2 建造模式按 B 正常打开背包（模式保持建造）', { buildMode: gs.buildMode });
   key('b');
   assert(!inventoryPanel.visible && director.openPanels.length === 0,
-    '门控-3 再按 B 关闭背包（同键关闭在探索模式生效）', director.openPanels);
+    '门控-3 再按 B 关闭背包');
+  assert(gs.buildMode === true, '门控-4 关闭背包后仍为建造模式');
+  BuildSystem.exitBuildMode(gs);
   inputManager.unbind();
 }
 
