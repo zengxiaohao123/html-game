@@ -12,7 +12,10 @@
 // v0.5 扩展：
 //   - 【冰面】徒步进入时被迫沿原方向滑行：滑到非冰面、或无法继续直行（拐角）才停。
 //     滑行不额外扣行动力；每滑过一格都触发【经过时】，终点触发【进入时】。
-//     使用载具移动不受滑行影响（走 VehicleSystem，不经过这里）。
+//     使用载具移动不受滑行影响（走 VehicleSystem，不经过这里的滑行逻辑）。
+//   - WASD 与「前往」共用同一条「1 格移动」入口 moveStep：
+//     若装载的载具规则允许落到相邻这一格，则按「使用载具」结算（VehicleSystem.tryMove），
+//     消耗次数并派生 byVehicle 事件（移形等联动）；否则按徒步跋涉结算。
 //   - 【移动后】hook：走完整段路径后触发一次，params.distance = 本次走过的格数
 //     （蒲公英田地按这个提升价值，蹁跹天赋按这个回血）。
 
@@ -71,25 +74,48 @@ function markVisited(gs, idx) {
  * 尝试移动玩家
  * @param {object} gs 全局状态（会被直接修改）
  * @param {string} direction 'up' | 'right' | 'down' | 'left'
- * @returns {number|null} 移动成功返回最终停留格 idx，失败返回 null
+ * @returns {{ ok: boolean, finalIdx: number|null, byVehicle: boolean }}
+ *   移动成功时 finalIdx 为最终停留格 idx；失败时 ok=false。
+ *   byVehicle=true 表示本次按「使用载具」结算（已由 VehicleSystem 发 MOVE/byVehicle 等事件）。
  */
-export function move(gs, direction) {
+export function moveStep(gs, direction) {
   const dirIdx = Direction.dirToIndex(direction);
   if (dirIdx === -1) {
     devLog.warn('[MovementSystem] 非法方向:', direction);
-    return null;
+    return { ok: false, finalIdx: null, byVehicle: false };
   }
 
-  // WASD 永远只走 1 步；冰面会额外滑行（滑行不额外扣行动力）
-  // 载具的"一次移动更远"只通过 InfoPanel 点击「前往」走 VehicleSystem.tryMove
+  const fromIdx = gs.player.x;
+  // 「走 1 格」的目标格：只看相邻一格（不含冰面滑行 —— 滑行是徒步专属的地形位移）
+  const stepIdx = Distance.outerNeighbors(gs.map, fromIdx)[dirIdx];
+  if (stepIdx === null || stepIdx === undefined) {
+    devLog.info('[MovementSystem] 方向', direction, '不可通行');
+    EventBus.emit(GE.MOVE_BLOCKED, { direction, currentIdx: fromIdx });
+    return { ok: false, finalIdx: null, byVehicle: false };
+  }
+
+  // 载具优先：装载的载具规则允许落到这 1 格时，WASD 这 1 格等价于「使用载具」
+  // 收敛到 VehicleSystem.tryMove 的统一载具流程（消耗次数 / 唯一终点结算 /
+  // MOVE { byVehicle:true } → 移形等联动），失败则回落到徒步语义。
+  if (VehicleSystem.canUseVehicleForStep(gs, stepIdx)) {
+    const r = VehicleSystem.tryMove(gs, { targetIdx: stepIdx, wasdStep: true });
+    if (r.ok) {
+      devLog.info('[MovementSystem] WASD 载具移动成功:', fromIdx, '→', r.finalIdx);
+      return { ok: true, finalIdx: r.finalIdx, byVehicle: true };
+    }
+    // 冷却期间的载具移动被忽略时不得回落徒步（否则等于绕过冷却）
+    if (r.reason === 'cooldown') return { ok: false, finalIdx: null, byVehicle: false };
+    devLog.info('[MovementSystem] WASD 载具移动失败，回落徒步:', r.reason);
+  }
+
+  // 徒步：WASD 走 1 步；冰面会额外滑行（滑行不额外扣行动力）
   const path = resolvePath(gs, dirIdx);
   if (path.length === 0) {
     devLog.info('[MovementSystem] 方向', direction, '不可通行');
     EventBus.emit(GE.MOVE_BLOCKED, { direction, currentIdx: gs.player.x });
-    return null;
+    return { ok: false, finalIdx: null, byVehicle: false };
   }
 
-  const fromIdx = gs.player.x;
   const finalIdx = path[path.length - 1];
 
   // 1. 扣 stamina：整段移动只扣 1 点（滑行是"被迫"的，不额外消耗）
@@ -143,19 +169,30 @@ export function move(gs, direction) {
   HookDispatcher.fire('onMoveEnd', { gs, distance, fromIdx, toIdx: finalIdx });
   TalentSystem.onMoveEnd(gs);
 
-  // 7. 装备载具时：WASD 1 步移动也消耗 1 次载具使用次数（载具用完自动卸下）
-  if (gs.vehicle?.current) {
-    VehicleSystem.useOnce(gs);
-  }
+  // 7. 徒步语义：不消耗载具次数、不触发任何载具联动
+  //    （载具允许该格时已在上方走 VehicleSystem.tryMove，不会走到这里）
 
   if (distance > 1) {
     EventBus.emit(GE.TOAST_SHOW, { text: `🧊 冰面滑行 ${distance} 格`, duration: 1200 });
   }
   devLog.info('[MovementSystem] 移动成功:', fromIdx, '→', finalIdx, direction, 'distance=', distance);
-  return finalIdx;
+  return { ok: true, finalIdx, byVehicle: false };
+}
+
+/**
+ * 兼容旧调用：只关心最终停留格（失败 null）。
+ * 需要区分「载具移动 / 徒步」时请用 moveStep。
+ * @param {object} gs
+ * @param {string} direction
+ * @returns {number|null}
+ */
+export function move(gs, direction) {
+  const r = moveStep(gs, direction);
+  return r.ok ? r.finalIdx : null;
 }
 
 export const MovementSystem = {
   move,
+  moveStep,
   resolvePath,
 };

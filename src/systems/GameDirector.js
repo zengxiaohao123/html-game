@@ -288,9 +288,13 @@ export class GameDirector {
   // ── 对外操作接口（供 InputManager 调用） ──
 
   /**
-   * 尝试移动玩家
+   * 尝试移动玩家（WASD / 相邻格「前往」共用）
+   * 1 格移动统一走 MovementSystem.moveStep：
+   * 载具规则允许落到该相邻格时按「使用载具」结算（VehicleSystem.tryMove 已发 MOVE/byVehicle，
+   * 回合推进 / 【移动后】hook / 移形由下面的 GE.MOVE 订阅完成），这里不再重复推进；
+   * 否则按徒步跋涉推进回合。
    * @param {string} direction 'up' | 'right' | 'down' | 'left'
-   * @returns {number|null} 成功返回目标格 idx，失败返回 null
+   * @returns {number|null} 成功返回最终停留格 idx，失败返回 null
    */
   move(direction) {
     // §5.2：两次移动之间至少间隔 0.5 秒。冷却期间直接忽略（不排队、不累积）。
@@ -298,8 +302,14 @@ export class GameDirector {
       devLog.info('[GameDirector] 移动冷却中，忽略本次移动:', direction);
       return null;
     }
-    const result = MovementSystem.move(this.gs, direction);
-    if (result === null) return null;
+    const result = MovementSystem.moveStep(this.gs, direction);
+    if (!result.ok) return null;
+
+    if (result.byVehicle) {
+      // 载具移动：markMoved / 回合 / 强制睡觉 / 移形等已在 VehicleSystem.tryMove
+      // 与 GE.MOVE 订阅中完成，避免重复推进
+      return result.finalIdx;
+    }
 
     // 只有真正走动了才记录时间戳（撞墙/边界不占用冷却）
     markMoved(this.gs);
@@ -312,7 +322,7 @@ export class GameDirector {
       SleepSystem.sleep(this.gs, /* isAuto = */ true);
     }
 
-    return result;
+    return result.finalIdx;
   }
 
   /**

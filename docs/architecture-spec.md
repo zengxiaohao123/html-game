@@ -329,6 +329,30 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 
 ---
 
+### 2.7 载具移动 / WASD 等价语义（2026-11-07）
+
+> 对应设计文档 §7「WASD 在载具允许时等价于使用载具」。只收敛「走 1 格」的执行路径，不改载具数值。
+
+- **唯一 1 格入口**：`MovementSystem.moveStep(gs, direction)` → `{ ok, finalIdx, byVehicle }`；
+  `MovementSystem.move(gs, direction)` 仅作兼容包装（返回 `finalIdx | null`）。`GameDirector.move` 使用 `moveStep`。
+  - 点击相邻格「前往」（无载具）仍换算方向后走 `director.move`，与 WASD 同一条入口。
+- **载具判定插入点**：`moveStep` 先取相邻 1 格 `stepIdx`（不含冰面滑行的多格路径），再调
+  `VehicleSystem.canUseVehicleForStep(gs, stepIdx)`：
+  - 装载了载具，且 `canVehicleReach` 允许落该格（同方向 / 同行列 / 射程 / `landFilter` 全部参与）→ 走
+    `VehicleSystem.tryMove(gs, { targetIdx: stepIdx, wasdStep: true })`，`byVehicle: true`；
+  - 随机型载具（`movePattern='random'`）的落点由系统选定，不接受 WASD 指定目标 → 按徒步处理。
+- **载具结算口径不变**：`wasdStep` 只把目标固定为这一格，后续仍走原有的路径模拟（本场景即最短路径 1 格）、
+  `landOk`、消耗 1 次使用、终点 `firePassHookAt` + `fireEnterHooks`、`MOVE { byVehicle:true, distance, path }`。
+  模拟路径只用于【经过时】判定与路径长度，不触发沿途地块/状态效果。
+- **回合只推进一次**：`byVehicle` 的回合推进、`onMoveEnd`、天赋、`LinkSkillSystem.onVehicleMoved`（移形）
+  全在原 `GE.MOVE` 订阅里完成；`GameDirector.move` 见到 `byVehicle` 直接返回，不再重复 `advanceTurn`。
+- **徒步语义**：未装载载具、载具不允许该格、次数耗尽已自动卸下时，`moveStep` 回落徒步：不消耗载具次数、
+  不发 `byVehicle`，因此不触发任何载具联动。
+- **验收**：`node tools/smoke-wasd-vehicle.mjs`（载具 1 格 → 次数 -1 + 移形解锁；徒步 → 不解锁；
+  载具不允许 → 徒步、不扣次数、不解锁；次数耗尽后 → 徒步语义）。
+
+---
+
 ## 三、全局状态 schema（GS 对象）
 
 ```js

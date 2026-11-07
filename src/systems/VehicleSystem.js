@@ -275,7 +275,15 @@ export function tryMove(gs, opts = {}) {
   }
   let targetIdx = null;
 
-  if (def.movePattern === 'directional') {
+  if (opts.wasdStep) {
+    // WASD 走 1 格：落点就是调用方给定的相邻格（是否允许已由 canUseVehicleForStep 预判），
+    // 不按 movePattern 自动延伸射程（WASD 只走这一格）。
+    // 随机型载具（momo 图腾）的落点由系统自选，不接受 WASD 指定。
+    if (opts.targetIdx == null) return { ok: false, reason: 'needTarget' };
+    if (opts.targetIdx === fromIdx) return { ok: false, reason: 'sameTile' };
+    if (def.movePattern === 'random') return { ok: false, reason: 'randomNoWASD' };
+    targetIdx = opts.targetIdx;
+  } else if (def.movePattern === 'directional') {
     // 轮子：指定方向最多 maxRange 格。
     // 穿越栅栏/虚空合法，只要求最终落点是外圈格。
     const dirIdx = Direction.dirToIndex(opts.direction);
@@ -393,10 +401,28 @@ export function tryMove(gs, opts = {}) {
 }
 
 /**
- * 外部调用：消耗 1 次载具使用（WASD 普通移动消耗）
+ * 外部调用：消耗 1 次载具使用（保留的显式 API，正常移动请走 tryMove 统一流程）
  */
 export function useOnce(gs) {
   return consumeUsage(gs);
+}
+
+/**
+ * WASD 走 1 格时，当前是否按「使用载具」结算：
+ * 装载了载具，且该载具规则允许落到这一格（landFilter / 同方向 / 同行列 / 射程都参与判定）。
+ * 随机型载具（movePattern='random'，如 momo 图腾）的落点由系统自选，
+ * 不接受 WASD 指定目标，因此按徒步跋涉处理。
+ * @param {object} gs
+ * @param {number} targetIdx 相邻目标格
+ * @returns {boolean}
+ */
+export function canUseVehicleForStep(gs, targetIdx) {
+  ensureVehicleState(gs);
+  const cur = gs.vehicle.current;
+  if (!cur) return false;
+  const def = VEHICLES[cur.vehicleId];
+  if (!def || def.movePattern === 'random') return false;
+  return canVehicleReach(gs, targetIdx).ok;
 }
 
 /**
@@ -474,5 +500,6 @@ export const VehicleSystem = {
   tryMove,
   useOnce,
   canVehicleReach,
+  canUseVehicleForStep,
   onDayStart,
 };
