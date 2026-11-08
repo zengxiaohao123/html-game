@@ -41,6 +41,7 @@ import { ShopSystem } from '../systems/ShopSystem.js';
 import { StaminaSystem } from '../systems/StaminaSystem.js';
 import { syncPumpkin, hasGrimoire } from '../systems/PassiveItemSystem.js';
 import { FieldEffects } from '../systems/FieldEffects.js';
+import { PendingDeathQueue } from '../systems/PendingDeathQueue.js';
 import { buildEventStory } from './stories.js';
 
 // ── 小工具：判断是否为"我的设施"格 ──
@@ -704,6 +705,12 @@ const FacilityCabbage = {
     //   所以祝福标记必须落在 contentState 上，不能依赖 states 里的 blessed。
     const throwCabbage = (gs, fromTileIdx, target) => {
       CombatSystem.applyElementalDamageToCreature(gs, target, 20, 'grass', { source: 'facility_cabbage' });
+      // 地块伤害不经过技能批次 → 击杀需要在此立即入队并 flush（掉落 / 图鉴 / 天赋回调一致）
+      if (target.hp <= 0) {
+        const deaths = new PendingDeathQueue(gs);
+        deaths.markDead(target);
+        deaths.flush();
+      }
       EventBus.emit(GE.TOAST_SHOW, {
         text: `🥬 卷心菜投向 ${getCreatureDef(target.kind)?.name || '敌人'} → 20 草元素伤害`,
         duration: 1600,

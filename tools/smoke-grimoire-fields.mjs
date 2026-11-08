@@ -91,7 +91,7 @@ import * as InventorySystem from '../src/systems/InventorySystem.js';
 import { initPassiveItems } from '../src/systems/PassiveItemSystem.js';
 import { advanceTurn } from '../src/systems/TurnSystem.js';
 import { FieldEffects } from '../src/systems/FieldEffects.js';
-import { calculateDamage } from '../src/systems/CombatSystem.js';
+import { calculateDamage, applyElementalDamageToCreature } from '../src/systems/CombatSystem.js';
 
 let pass = 0, fail = 0;
 function check(cond, msg, extra) {
@@ -121,6 +121,8 @@ function reset() {
     t.contentId = t.idx === HOME_IDX ? 'facility_home' : null;
     t.terrain = 'terrain_grass';
     t.states = [];
+    t.dailyFlags = {};
+    t.contentState = {};
   }
   gs.player.hp = gs.player.maxHp;
   gs.flags = {};
@@ -188,15 +190,19 @@ head('3. 春光好：草元素伤害 +（2% × 水稻田块数量）');
   const defender = { name: '木桩', hp: 9999, maxHp: 9999, def: 0 };
   // 用剥离了天赋状态的探针 gs，避免其它战斗加成像干扰倍率断言
   const probe = { player: gs.player, map: gs.map, inventory: gs.inventory, team: {}, flags: {}, activeBuffs: [] };
+  // 暴击是随机的（rawDamage 已含 1.5 倍），断言时按 isCrit 还原基准
+  const critMul = (r) => (r.isCrit ? 1.5 : 1);
   const grass = calculateDamage({ atk: 100, defender, element: 'grass', player: probe.player, gs: probe });
-  check(Math.abs(grass.rawDamage - 108) < 1e-6, '草元素 rawDamage = 100 × 1.08', grass.rawDamage);
+  check(Math.abs(grass.rawDamage - 108 * critMul(grass)) < 1e-6, '草元素 rawDamage = 100 × 1.08（含暴击还原）', [grass.rawDamage, grass.isCrit]);
 
   // 摘掉魔导书做对照：物理伤害不应有任何变化
   probe.inventory = { items: gs.inventory.items.filter((e) => e.itemId !== 'grimoire_spring_glow'), outbox: [] };
   const physicalWithBook = calculateDamage({ atk: 100, defender, element: 'physical', player: probe.player, gs: probe });
   const grassNoBook = calculateDamage({ atk: 100, defender, element: 'grass', player: probe.player, gs: probe });
-  check(Math.abs(physicalWithBook.rawDamage - 100) < 1e-6, '物理不受影响', physicalWithBook.rawDamage);
-  check(Math.abs(grassNoBook.rawDamage - 100) < 1e-6, '无魔导书时草元素不加成', grassNoBook.rawDamage);
+  check(Math.abs(physicalWithBook.rawDamage - 100 * critMul(physicalWithBook)) < 1e-6, '物理不受影响',
+    [physicalWithBook.rawDamage, physicalWithBook.isCrit]);
+  check(Math.abs(grassNoBook.rawDamage - 100 * critMul(grassNoBook)) < 1e-6, '无魔导书时草元素不加成',
+    [grassNoBook.rawDamage, grassNoBook.isCrit]);
 
   probe.inventory = { items: gs.inventory.items, outbox: [] };
   const real = calculateDamage({ atk: 100, defender, element: 'grass', player: probe.player, gs: probe, realDamage: true });
@@ -282,6 +288,45 @@ head('7. 仓廪实：稻草 / 小麦田块双向视同');
   const w0 = wheat();
   HookDispatcher.fire('onDailyEnd', { gs });
   check(wheat() === w0 + 3, '穗粒满按视同数量 +3', wheat() - w0);
+}
+
+// ════════════════════════════════════════════════════════════
+head('8. 地块元素伤害链路：applyElementalDamageToCreature + 春光好');
+{
+  reset();
+  put(0, RICE); put(1, RICE); put(2, RICE); put(3, RICE);   // 4 块稻田 → +8%
+  give('grimoire_spring_glow');
+  const dummy = { id: 'dummy_1', kind: 'slime', name: '粘液', category: 'hostile', hp: 100, maxHp: 100 };
+  const r1 = applyElementalDamageToCreature(gs, dummy, 20, 'grass', { source: 'facility_cabbage' });
+  check(r1?.finalDamage === 21 && dummy.hp === 79, '20 草伤 → 21（floor(20×1.08)）', [r1?.finalDamage, dummy.hp]);
+
+  gs.inventory.items = gs.inventory.items.filter((e) => e.itemId !== 'grimoire_spring_glow');
+  dummy.hp = 100;
+  const r2 = applyElementalDamageToCreature(gs, dummy, 20, 'grass');
+  check(r2?.finalDamage === 20 && dummy.hp === 80, '无魔导书 → 20', [r2?.finalDamage, dummy.hp]);
+
+  const immune = { id: 'dummy_2', kind: 'slime', hp: 100, maxHp: 100, elementImmune: 'grass' };
+  const r3 = applyElementalDamageToCreature(gs, immune, 20, 'grass');
+  check(r3?.immune === true && immune.hp === 100, '草元素免疫 → 0 伤害', [r3?.immune, immune.hp]);
+
+  // 卷心菜田块真实链路：每日开始投掷，不再因函数缺失被静默吞掉
+  give('grimoire_spring_glow');
+  put(3, 'facility_cabbage');
+  give('item_cabbage', 2);
+  const cabbageTarget = { id: 'dummy_3', kind: 'slime', name: '粘液', category: 'hostile', hp: 100, maxHp: 100, fenceCol: 1, fenceRow: 1 };
+  gs.creatures = [cabbageTarget];
+  HookDispatcher.fire('onDailyStart', { gs });
+  check(cabbageTarget.hp === 79, '卷心菜投掷落到 21 草伤', cabbageTarget.hp);
+
+  // 致死目标立即入队并 flush（从 gs.creatures 移除）
+  put(3, 'facility_cabbage');
+  tile(3).dailyFlags = {};
+  give('item_cabbage', 1);
+  const dying = { id: 'dummy_4', kind: 'slime', name: '粘液', category: 'hostile', hp: 10, maxHp: 100, fenceCol: 1, fenceRow: 1 };
+  gs.creatures = [dying];
+  HookDispatcher.fire('onDailyStart', { gs });
+  check(gs.creatures.length === 0, '地块伤害击杀 → 立即移出生物列表', gs.creatures.length);
+  gs.creatures = [];
 }
 
 // ════════════════════════════════════════════════════════════

@@ -362,6 +362,45 @@ function applyDamage(defender, finalDamage, opts) {
   }
 }
 
+/**
+ * 对生物施加一次元素伤害 —— 设施 / 地块等「非技能、非角色」来源使用。
+ * 例：卷心菜田块【每一日开始时】投掷 20 点草元素伤害。
+ *
+ * 与角色技能伤害的区别（有意为之）：
+ *   · 不参与暴击 / 闪避 / 角色天赋 onDamageDeal —— 这些属于角色出手，地块投掷没有角色归属；
+ *   · 仍走元素免疫判定，并享受「我方单位」通用的元素伤害加成（如魔导书【春光好】）；
+ *   · 最终伤害向下取整，再交给 applyDamage 落血并广播 DAMAGE_DEALT。
+ * 击杀处理不在这里做：调用方（如每日结算）负责把 hp 归 0 的目标交给 PendingDeathQueue flush。
+ *
+ * @param {object} gs
+ * @param {object} target 生物实例
+ * @param {number} amount 基础伤害（未加成）
+ * @param {string} [element] 元素，缺省物理
+ * @param {object} [extra] 附加到 DAMAGE_DEALT / 免疫事件上的信息（如 { source }）
+ * @returns {{finalDamage:number, finalElement:string, immune:boolean}|null}
+ */
+export function applyElementalDamageToCreature(gs, target, amount, element = 'physical', extra = {}) {
+  if (!gs || !target || typeof target !== 'object') return null;
+  if (typeof target.hp === 'number' && target.hp <= 0) return null;
+
+  let dmg = Math.max(0, Math.floor(Number(amount) || 0));
+  if (dmg <= 0) return null;
+
+  // 元素免疫：与技能走同一条判定
+  if (elementImmuneCheck(target, element)) {
+    EventBus.emit(GE.ELEMENT_IMMUNE_HIT, { element, target });
+    EventBus.emit(GE.TOAST_SHOW, { text: `🛡️ ${target.name || target.kind || '单位'} 免疫 ${element} 伤害`, duration: 1500 });
+    devLog.info('[CombatSystem] facility elemental damage immune:', target.kind || target.name, element);
+    return { finalDamage: 0, finalElement: element, immune: true };
+  }
+
+  // 魔导书【春光好】：我方单位造成的草元素伤害 +（2% × 水稻田块数量）
+  if (element === 'grass') dmg = Math.floor(dmg * FieldEffects.grassElementMultiplier(gs));
+
+  applyDamage(target, dmg, { element, isReal: false, ...extra });
+  return { finalDamage: dmg, finalElement: element, immune: false };
+}
+
 export function applyBuff({ buffId, target, duration, params = {}, creatureId, player }) {
   const def = getBuff(buffId);
   if (!def) {
@@ -445,6 +484,7 @@ export const CombatSystem = {
   calculateDamage,
   applyDeathPenalty,
   applyTrueDamageToPlayer,
+  applyElementalDamageToCreature,
   applyBuff,
   removeBuff,
   tickBuffsOnTarget,
