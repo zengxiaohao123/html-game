@@ -92,8 +92,22 @@ export class TeamPanel {
       style: { display: 'flex', gap: '8px', justifyContent: 'flex-end', borderTop: '2px dashed #b8a888', paddingTop: '8px', flexShrink: '0' },
       parent: body,
     });
-    createEl('button', { class: 'action-btn', text: '⚡ 快捷编队', parent: foot, onclick: () => (this._quickEditMode ? this._closeQuick() : this._openQuick()) });
-    createEl('button', { class: 'action-btn', text: '✅ 启用', parent: foot, onclick: () => this._activate() });
+    // 右下角两个按钮：快捷编队、启用（主操作，字号/内边距放大）
+    const FOOT_BTN_STYLE = { fontSize: '18px', padding: '12px 22px', fontWeight: '800', borderRadius: '12px' };
+    createEl('button', {
+      class: 'action-btn',
+      style: FOOT_BTN_STYLE,
+      text: '⚡ 快捷编队',
+      parent: foot,
+      onclick: () => (this._quickEditMode ? this._closeQuick() : this._openQuick()),
+    });
+    createEl('button', {
+      class: 'action-btn',
+      style: FOOT_BTN_STYLE,
+      text: '✅ 启用',
+      parent: foot,
+      onclick: () => this._activate(),
+    });
 
     // 快捷编队滑出层（左侧 1/3 宽）
     this.quickOverlay = createEl('div', {

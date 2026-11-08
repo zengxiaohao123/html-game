@@ -1,8 +1,7 @@
 // RolePanel.js —— 第 5 批 UI 对齐（§16.11 角色页面，快捷键 C）
 // 全屏。顶部一行所有角色头像（无文字），点击切换，默认余默。
-// 左侧一列分页 tab：技能展示 / 羁绊等级。
-// 技能展示页：中间上下两分区——上【天赋】区、下【技能】区；右侧属性栏。
-// 羁绊等级页：中间展示羁绊每级效果及可获得技能（数据未实装 → 空态）。
+// 左侧一列分页 tab：天赋 / 技能 / 羁绊等级（天赋与技能各自独立成页）。
+// 天赋页：该角色的天赋列表；技能页：主动技能 + 连携技；羁绊等级页：羁绊效果（数据未实装 → 空态）。
 // 纯查看页 —— 没有"把技能放到地块"的入口。
 
 import { EventBus } from '../../core/EventBus.js';
@@ -18,6 +17,12 @@ import { devLog } from '../../core/Logger.js';
 
 const BOX_BG = 'rgba(255,255,255,0.55)';
 const BOX_BORDER = '2px solid #b8a888';
+// 分页顺序即左侧 tab 的展示顺序
+const TABS = [
+  { key: 'talents', label: '🌟 天赋' },
+  { key: 'skills', label: '⚔️ 技能' },
+  { key: 'bond', label: '💞 羁绊等级' },
+];
 
 export class RolePanel {
   constructor(director) {
@@ -27,7 +32,7 @@ export class RolePanel {
     this.tabsCol = null;
     this.tabBody = null;
     this.attrCol = null;
-    this.activeTab = 'skills';   // 'skills' | 'bond'
+    this.activeTab = 'talents';   // 'talents' | 'skills' | 'bond'
     this.selectedRoleId = 'yumo'; // §16.11：默认余默
   }
 
@@ -66,8 +71,8 @@ export class RolePanel {
       style: { display: 'flex', flexDirection: 'column', gap: '8px' },
       parent: main,
     });
-    ['skills', 'bond'].forEach((k) => {
-      const label = k === 'skills' ? '📚 技能展示' : '💞 羁绊等级';
+    ['talents', 'skills', 'bond'].forEach((k) => {
+      const label = TABS.find((t) => t.key === k)?.label || k;
       createEl('button', {
         class: ['action-btn'],
         style: {
@@ -150,7 +155,7 @@ export class RolePanel {
     // ── 左列 tab 高亮 ──
     if (this.tabsCol) {
       [...this.tabsCol.children].forEach((btn, i) => {
-        const k = i === 0 ? 'skills' : 'bond';
+        const k = TABS[i]?.key;
         const on = this.activeTab === k;
         btn.style.background = on ? '#ffe099' : 'rgba(255,255,255,0.7)';
         btn.style.border = on ? '3px solid #e8a900' : BOX_BORDER;
@@ -163,7 +168,9 @@ export class RolePanel {
 
     // ── 中间内容 ──
     this.tabBody.innerHTML = '';
-    if (this.activeTab === 'skills') {
+    if (this.activeTab === 'talents') {
+      this._renderTalentsTab(c);
+    } else if (this.activeTab === 'skills') {
       this._renderSkillsTab(c);
     } else {
       this._renderBondTab(c);
@@ -173,11 +180,10 @@ export class RolePanel {
     this._renderAttrCol(c);
   }
 
-  // 技能展示页：上【天赋】区 + 下【技能】区
-  _renderSkillsTab(c) {
+  // 天赋页：只展示该角色的天赋（天赋与技能不再混在同一页）
+  _renderTalentsTab(c) {
     // 角色详情：展示词条统一徽章入口
     renderTraitBadges(this.tabBody, c.traits, { marginBottom: '6px' });
-    // 上：天赋区
     const talentSec = createEl('div', {
       style: { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', border: '2px dashed #b8a888', borderRadius: '10px', padding: '8px' },
       parent: this.tabBody,
@@ -204,8 +210,12 @@ export class RolePanel {
         renderTermText(row, t.description || '', { tag: 'div', style: { fontSize: '12px', color: '#4a3a2a', lineHeight: '1.5' } });
       });
     }
+  }
 
-    // 下：技能区（主动技能 + 连携技）
+  // 技能页：主动技能 + 连携技
+  _renderSkillsTab(c) {
+    // 角色详情：展示词条统一徽章入口
+    renderTraitBadges(this.tabBody, c.traits, { marginBottom: '6px' });
     const skillSec = createEl('div', {
       style: { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', border: '2px dashed #b8a888', borderRadius: '10px', padding: '8px' },
       parent: this.tabBody,

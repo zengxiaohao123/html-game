@@ -221,8 +221,10 @@ head_('§16.3 地块视觉层级：地形背景层 ~95% + 放置型道具标志�
   const tileEl = mapView.tileEls.get(tileIdx);
   const bg = findAll(tileEl, (el) => el._classes && el._classes.has('tile-terrain-bg'))[0];
   assert(!!bg, '地形作为独立背景层渲染（.tile-terrain-bg）');
-  const sideRatio = parseFloat(bg?.style.width) / 100;
-  const areaRatio = sideRatio * (parseFloat(bg?.style.height) / 100);
+  const bgW = parseFloat(bg?.style.width);
+  const tileW = parseFloat(tileEl.style.width);
+  const sideRatio = bgW / tileW;
+  const areaRatio = sideRatio * (parseFloat(bg?.style.height) / tileW);
   assert(areaRatio > 0.93 && areaRatio < 0.97,
     `地形背景层面积占比约 95%（实测 ${(areaRatio * 100).toFixed(1)}%）`, { sideRatio, areaRatio });
   assert(bg?.getAttribute('data-terrain') === 'terrain_grass', '地形层绑定当前地形 id');
@@ -357,6 +359,67 @@ head_('§16.3b 地形变化实时刷新：只更新该格地形背景层，不�
   tile.terrain = savedT.terrain;
   tile.terrainAmount = savedT.terrainAmount;
   EventBus.emit(GE.TILE_TERRAIN_CHANGED, { tileIdx });
+}
+
+head_('§16.3b2 地形层基准一致：外圈格 vs 栅栏格（相对自己格子偏移 0、尺寸同口径）');
+{
+  const Geometry = await import('../src/core/Geometry.js');
+  const bgOf = (el) => findAll(el, (n) => n._classes && n._classes.has('tile-terrain-bg'))[0];
+
+  const outIdx = 0;
+  const outTile = gs.map.outerTiles[outIdx];
+  const savedOutTerrain = outTile.terrain;
+  const fIdx = 0;
+  const fCell = gs.map.fence[fIdx];
+  const savedFTerrain = fCell.terrain;
+
+  outTile.terrain = 'terrain_grass';
+  fCell.terrain = 'terrain_grass';
+  EventBus.emit(GE.TILE_TERRAIN_CHANGED, { tileIdx: outIdx });
+  EventBus.emit(GE.TILE_TERRAIN_CHANGED, { fenceIdx: fIdx });
+
+  const outBg = bgOf(mapView.tileEls.get(outIdx));
+  const fBg = bgOf(mapView.fenceTileEls.get(fIdx));
+  assert(!!outBg && !!fBg, '同一地形在外圈格与栅栏格都渲染地形层');
+
+  // 1) 相对各自格子的定位基准一致：都贴格心、无额外偏移
+  for (const [name, bg] of [['外圈格', outBg], ['栅栏格', fBg]]) {
+    assert(bg.style.position === 'absolute', `${name}地形层为绝对定位`);
+    assert(bg.style.left === '50%' && bg.style.top === '50%',
+      `${name}地形层以格心为基准（left/top = 50%）`);
+    assert(/translate\(\s*-50%\s*,\s*-50%\s*\)/.test(bg.style.transform || ''),
+      `${name}地形层 translate(-50%,-50%) 居中，相对偏移为 0`);
+  }
+
+  // 2) 尺寸口径一致：同地形在两类格子上像素尺寸完全相同，均为格边长的 97.5%
+  const outCellPx = parseFloat(outBg.getAttribute('data-cell-side'));
+  const fCellPx = parseFloat(fBg.getAttribute('data-cell-side'));
+  const outFillPx = parseFloat(outBg.style.width);
+  const fFillPx = parseFloat(fBg.style.width);
+  assert(outCellPx === fCellPx, `两类格子边长一致（${outCellPx}px / ${fCellPx}px）`);
+  assert(Math.abs(outFillPx - fFillPx) < 1e-6,
+    `地形层像素尺寸完全一致（外圈 ${outFillPx}px / 栅栏 ${fFillPx}px）`);
+  assert(Math.abs(outFillPx / outCellPx - 0.975) < 1e-3 && Math.abs(fFillPx / fCellPx - 0.975) < 1e-3,
+    '地形层边长均为格子的 97.5%（面积约 95%）', { outFillPx, outCellPx, fFillPx, fCellPx });
+
+  // 3) 栅栏格自身落在逻辑网格上：容器边框（4px）不再造成整体位移
+  const tsPx = mapView.tileSize;
+  const fRect = Geometry.fenceRect(gs);
+  const lc = Geometry.fenceTileRect(0, 0);
+  const expLeft = (lc.x0 - fRect.x0) * tsPx - 4;
+  const expTop = (lc.y0 - fRect.y0) * tsPx - 4;
+  const fEl = mapView.fenceTileEls.get(fIdx);
+  assert(Math.abs(parseFloat(fEl.style.left) - expLeft) < 1e-6
+    && Math.abs(parseFloat(fEl.style.top) - expTop) < 1e-6,
+    '栅栏格 DOM 与逻辑网格严格对齐（已扣除容器边框）', { left: fEl.style.left, top: fEl.style.top, expLeft, expTop });
+  assert(parseFloat(fEl.style.width) === tsPx && parseFloat(fEl.style.height) === tsPx,
+    '栅栏格与外圈格同尺寸（每格 = tileSize）', { w: fEl.style.width, h: fEl.style.height, tsPx });
+
+  // 清理
+  outTile.terrain = savedOutTerrain;
+  fCell.terrain = savedFTerrain;
+  EventBus.emit(GE.TILE_TERRAIN_CHANGED, { tileIdx: outIdx });
+  EventBus.emit(GE.TILE_TERRAIN_CHANGED, { fenceIdx: fIdx });
 }
 
 head_('§16.3c 地块内容放置/移除即时刷新（不移动、不做其它操作）');
@@ -578,12 +641,29 @@ head_('§16.13 ForgePanel：6 tab（无技能）+ 右上>右下');
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'forge' });
 }
 
-head_('§16.11 RolePanel：全屏 + 左侧分页 tab');
+head_('§16.11 RolePanel：全屏 + 左侧分页 tab（天赋 / 技能 / 羁绊等级）');
 {
   EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'role' });
   assert(rolePanel.helper?.visible === true, 'OPEN(role) → 显示');
-  assert(hasText(rolePanel.helper.root, '技能展示') && hasText(rolePanel.helper.root, '羁绊等级'),
-    '左侧分页 tab：技能展示 / 羁绊等级');
+  assert(hasText(rolePanel.helper.root, '天赋') && hasText(rolePanel.helper.root, '技能')
+    && hasText(rolePanel.helper.root, '羁绊等级'),
+    '左侧分页 tab：天赋 / 技能 / 羁绊等级');
+  assert(!hasText(rolePanel.helper.root, '技能展示'),
+    '「技能展示」合并 tab 已拆分为天赋/技能两个独立 tab');
+
+  // 天赋页仅含天赋、不含技能；技能页仅含技能、不含天赋
+  const c = (await import('../src/data/characters.js')).CHARACTERS[rolePanel.selectedRoleId];
+  const skills = (await import('../src/data/characters.js')).getSkillsByRole(c.id);
+  const talentNames = (await import('../src/data/talents.js')).TALENTS;
+  const myTalentNames = Object.values(talentNames).filter(t => t.roleId === c.id).map(t => t.name);
+  rolePanel.activeTab = 'talents';
+  rolePanel._refresh();
+  assert(myTalentNames.every(n => hasText(rolePanel.tabBody, n)), '天赋 tab 展示该角色的全部天赋');
+  assert(skills.length === 0 || !hasText(rolePanel.tabBody, skills[0].name), '天赋 tab 不再混入技能');
+  rolePanel.activeTab = 'skills';
+  rolePanel._refresh();
+  assert(skills.every(sk => hasText(rolePanel.tabBody, sk.name)), '技能 tab 展示该角色的全部技能');
+  assert(myTalentNames.length === 0 || !hasText(rolePanel.tabBody, myTalentNames[0]), '技能 tab 不再混入天赋');
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'role' });
 }
 
@@ -595,6 +675,20 @@ head_('§16.12 TeamPanel：快捷编队按钮 + 二级 ESC 回一级');
   const quickBtn = buttonsWithText(teamPanel.helper.root, '快捷编队')[0];
   const enableBtn = buttonsWithText(teamPanel.helper.root, '启用')[0];
   assert(!!quickBtn && !!enableBtn, '右下角两按钮：快捷编队 / 启用');
+  // 两按钮已放大（字号与内边距），且仍保持在右下角独立排列
+  const bigBtnStyle = (btn) => ({
+    fontSize: parseFloat(btn.style.fontSize) || 0,
+    paddingTop: parseFloat(String(btn.style.padding || '').split(' ')[0]) || 0,
+    paddingX: parseFloat(String(btn.style.padding || '').split(' ')[1]) || 0,
+  });
+  for (const [name, btn] of [['快捷编队', quickBtn], ['启用', enableBtn]]) {
+    const st = bigBtnStyle(btn);
+    assert(st.fontSize >= 17 && st.paddingTop >= 10 && st.paddingX >= 18,
+      `${name}按钮已放大（字号 ${st.fontSize}px / 内边距 ${st.paddingTop}px ${st.paddingX}px）`, st);
+  }
+  assert(quickBtn.parentNode === enableBtn.parentNode
+    && quickBtn.parentNode.style.justifyContent === 'flex-end',
+    '放大后两按钮仍共处底部操作条、右对齐，未挤坏布局');
   quickBtn.click();
   const quickVisible = teamPanel.quickOverlay
     && teamPanel.quickOverlay.style.display !== 'none';
@@ -1525,11 +1619,12 @@ head_('第 11 批：InfoPanel 技能详情只渲染一套（防重复 + 无 ⚡ 
   assert(!hasText(infoPanel.root, '使用技能卡') && !hasText(infoPanel.root, '使用技能'),
     '主动技能信息区没有任何「使用技能」手动入口');
 
-  // 天赋：详情只渲染一套（RolePanel 技能展示页）
+  // 天赋：详情只渲染一套（RolePanel 天赋 tab）
   const { TALENTS } = await import('../src/data/talents.js');
   const savedRoleId = rolePanel.selectedRoleId;
   const talent = Object.values(TALENTS).find((t) => t.roleId === savedRoleId) || Object.values(TALENTS)[0];
   rolePanel.selectedRoleId = talent.roleId;
+  rolePanel.activeTab = 'talents';
   rolePanel._refresh();
   const talentNameCount = findAll(rolePanel.helper.root, (el) => el._text === talent.name).length;
   const talentDescCount = findAll(rolePanel.helper.root, (el) => el.textContent === talent.description).length;
@@ -1657,8 +1752,8 @@ head_('第 10 批任务 B：RolePanel 羁绊 tab（点击触发状态变化）')
   EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'role' });
   buttonsWithText(rolePanel.helper.root, '羁绊等级')[0].click();
   assert(rolePanel.activeTab === 'bond', '点羁绊等级 → activeTab=bond', rolePanel.activeTab);
-  buttonsWithText(rolePanel.helper.root, '技能展示')[0].click();
-  assert(rolePanel.activeTab === 'skills', '点技能展示 → activeTab=skills');
+  buttonsWithText(rolePanel.helper.root, '技能')[0].click();
+  assert(rolePanel.activeTab === 'skills', '点技能 → activeTab=skills');
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'role' });
 }
 

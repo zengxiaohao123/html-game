@@ -338,15 +338,15 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 
 - **层级自底向上**：
   1. 几何边框/底色：`tileEl` 本体，100%（中性底色 `#f5f0e1`，只负责让人看出这是一格）。
-  2. 地形背景层 `.tile-terrain-bg`：边长 `TERRAIN_FILL_SIDE = 0.975`，即面积约 95%，居中铺开；素材走 `Assets.getIcon('terrains', id)`，有 PNG 用 `background-image`，无 PNG 回退地形底色。**地形不再画成右下角小图标**（旧实现的 `tile-terrain` 小图标正好占用了放置型道具标志的槽位，是本次修正的根因）。
+  2. 地形背景层 `.tile-terrain-bg`：边长 `TERRAIN_FILL_SIDE = 0.975`（按格子边长的**像素口径**计算，即 0.975 × tileSize），面积约 95%，以格子边界为基准居中铺开，相对格子中心偏移恒为 0；素材走 `Assets.getIcon('terrains', id)`，有 PNG 用 `background-image`，无 PNG 回退地形底色。**地形不再画成右下角小图标**（旧实现的 `tile-terrain` 小图标正好占用了放置型道具标志的槽位，是本次修正的根因）。
   3. 地块内容图标 `.tile-content`：~60~70%，居中，`z-index: 2`。
   4. 角色图标：MapView 根层 `player-avatar`（`z-index: 10`），居中。
   5. 放置型道具标志 `.tile-flags` / `.tile-flag`：`z-index: 3`，贴右下角、沿底边向左。
 - **标志数据驱动**：只读 `tile.contentState.placedItems`，按 `POTIONS[itemId].useEffect.type` 以 `placed_` 开头（或显式 `placement === true`）判定「放置型道具」，不写死 `item_trap` / `item_incense`；新增放置型道具自动出标志。
 - **排列与尺寸**：容器 `right/bottom` 贴边 + `flex-direction: row-reverse`（第一个标志在右下角，后续向左）；单个占比 `clamp(0.20 / max(1, n*0.5), 0.06, 0.20)`，1 个时接近 20%，数量增多逐步缩到 6% 附近，互不重叠且不溢出格子。
 - **覆盖层不被遮挡**：技能高亮（`tile-hl-red/gold/gold-flash` 的 outline + 外发光）、受祝福边框（`.blessed-tile`）、道具指向高亮（`.tile-aim-ok`）都是地块自身的 outline / box-shadow 覆盖样式，绘制在子层之上。
-- **栅栏内地块同一口径**：有地形时同样渲染 `.tile-terrain-bg` 背景层，不再画中心小图标。
-- **验收**：`node tools/smoke-ui.mjs` 的「§16.3 地块视觉层级」用例（地形面积占比、标志顺序、不重叠、无道具无标志、新增 placed_ 数据自动出标志）。
+- **栅栏内地块同一口径**：有地形时同样渲染 `.tile-terrain-bg` 背景层，不再画中心小图标；尺寸与定位基准与外圈格完全一致（同像素口径、同格心居中）。栅栏容器自身 4px 边框会让绝对定位子节点以 padding box 为基准，栅栏格的 `left/top` 已扣减该边框宽度，保证与外圈格落在同一逻辑网格上。
+- **验收**：`node tools/smoke-ui.mjs` 的「§16.3 地块视觉层级」「§16.3b2 地形层基准一致」用例（地形面积占比、外圈/栅栏地形层相对各自格子偏移一致且像素尺寸相同、标志顺序、不重叠、无道具无标志、新增 placed_ 数据自动出标志）。
 
 ---
 

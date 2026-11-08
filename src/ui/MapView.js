@@ -30,6 +30,8 @@ const BASE_TILE_PX = 80; // 图标随格缩放的基准（仅影响大图缩放�
 //   地形 = 背景层（边长 97.5% → 面积约 95%，四周留少量空隙）
 //   放置型道具 = 标志层（单个占 6%~20%，数量少偏大、数量多偏小，右下角起沿底边向左排）
 const TERRAIN_FILL_SIDE = 0.975;
+// 栅栏容器边框（绝对定位子节点以 padding box 为基准 → 必须减去边框宽度才能对齐逻辑网格）
+const FENCE_BORDER_PX = 4;
 const FLAG_MAX_RATIO = 0.20;
 const FLAG_MIN_RATIO = 0.06;
 
@@ -360,24 +362,31 @@ export class MapView {
 
   /**
    * 地形背景层：面积约占格子 95%（边长 97.5%），居中铺开，四周留少量空隙。
+   * 尺寸按「格子边长」的像素口径计算（不按包含边框的 padding box 百分比），
+   * 保证外圈格与栅栏格（边框粗细不同）的地形层尺寸一致、相对各自格心偏移恒为 0。
    * 素材优先取 Assets 的 PNG（无地形也有自己的样子），缺失时回退纯地形底色。
    */
   _terrainLayer(terrainId, ratio) {
     const png = Assets.getIcon('terrains', terrainId);
+    // 单元格边长（像素）：外圈格与栅栏格都由几何层保证等于 tileSize
+    const cellSide = BASE_TILE_PX * ratio;
+    const side = TERRAIN_FILL_SIDE * cellSide;
     return createEl('div', {
       class: ['tile-terrain-bg'],
       attrs: {
         'data-terrain': terrainId,
         'data-fill-side': String(TERRAIN_FILL_SIDE),
         'data-fill-area': (TERRAIN_FILL_SIDE ** 2).toFixed(3),
+        'data-cell-side': cellSide.toFixed(2),
+        'data-fill-px': side.toFixed(2),
       },
       style: {
         position: 'absolute',
         left: '50%',
         top: '50%',
         transform: 'translate(-50%, -50%)',
-        width: `${TERRAIN_FILL_SIDE * 100}%`,
-        height: `${TERRAIN_FILL_SIDE * 100}%`,
+        width: `${side.toFixed(2)}px`,
+        height: `${side.toFixed(2)}px`,
         borderRadius: `${Math.max(5, Math.round(9 * ratio))}px`,
         backgroundColor: this._terrainColor(terrainId),
         backgroundImage: png ? `url("${png}")` : 'none',
@@ -616,7 +625,8 @@ export class MapView {
         top: `${box.top}px`,
         width: `${box.width}px`,
         height: `${box.height}px`,
-        border: '4px dashed #5a5a5a',
+        boxSizing: 'border-box',   // 边框计入尺寸：子节点定位需扣减 FENCE_BORDER_PX
+        border: `${FENCE_BORDER_PX}px dashed #5a5a5a`,
         borderRadius: '8px',
         backgroundColor: 'rgba(220, 220, 220, 0.4)',
       },
@@ -631,8 +641,10 @@ export class MapView {
         // 栅栏格相对栅栏容器的偏移 = 逻辑坐标差 × 每格像素（原点恒 (1,1)，扩图不错位）
         const logicalCell = Geometry.fenceTileRect(r, c);
         const cellRect = this._pxRect(logicalCell);
-        const cellLeft = (logicalCell.x0 - fRect.x0) * ts;
-        const cellTop = (logicalCell.y0 - fRect.y0) * ts;
+        // 子节点以栅栏容器的 padding box 为定位基准（位于边框内侧），
+        // 需减去容器的边框宽度，栅栏格才能与逻辑网格（=外圈格的同一网格）严格对齐。
+        const cellLeft = (logicalCell.x0 - fRect.x0) * ts - FENCE_BORDER_PX;
+        const cellTop = (logicalCell.y0 - fRect.y0) * ts - FENCE_BORDER_PX;
         const tileEl = createEl('div', {
           class: ['fence-tile'],
           attrs: {
