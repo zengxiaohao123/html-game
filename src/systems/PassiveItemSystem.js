@@ -1,13 +1,13 @@
 // src/systems/PassiveItemSystem.js
-// "获得后自动生效"类物品的统一处理：收藏品、魔导书、技能石。
+// "获得后自动生效"类物品的统一处理：收藏品、魔导书。
 //
 // 设计文档 v0.5 §14.1：
 //   魔导书 —— 为设施提供效果，获得后自动生效，自带【唯一】，不可出售
-//   技能石 —— 获得后自动习得对应技能，允许同名多个，不可出售
 //   收藏品 —— 直接提供增益，绝大多数自带【唯一】，不可出售
 //
-// 三类物品都不需要玩家手动"使用"，所以统一在获得的那一刻（ITEM_GAINED）结算，
+// 两类物品都不需要玩家手动"使用"，所以统一在获得的那一刻（ITEM_GAINED）结算，
 // 之后常驻生效的通过 HookDispatcher 挂到对应触发点。
+// 技能不再经过中间物品：购买 / 获得技能物品即直接入背包，未放置前就是物品。
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
@@ -15,18 +15,13 @@ import { HookDispatcher } from '../core/HookDispatcher.js';
 import { devLog } from '../core/Logger.js';
 import { COLLECTIBLES } from '../data/collectibles.js';
 import { ITEMS } from '../data/items.js';
-import { Distance } from '../core/Distance.js';
 import { drawFromPool } from './RandomPool.js';
 import * as InventorySystem from './InventorySystem.js';
 import { HealSystem } from './HealSystem.js';
-
-/** 技能石 → 习得的技能 id */
-export const STONE_TO_SKILL = {
-  skill_stone_zongheng: 'skill_zongheng',
-  skill_stone_shift: 'skill_link_shift',
-};
+import { FieldEffects } from './FieldEffects.js';
 
 let wiredEpoch = -1;
+let hpListenerAttached = false;
 
 /** 挂常驻/触发型收藏品的 hook */
 function wireHooks() {
@@ -48,20 +43,32 @@ function wireHooks() {
     HealSystem.healPlayer(gs, amount, { source: 'collectible_deadwood' });
   });
 
-  // 每一日结束时：穗粒满 → 每块小麦田 +1 小麦
+  // 每一日结束时：穗粒满 → 每块小麦田块 +1 小麦
+  // （仓廪实生效时，水稻田块同样视同小麦田块，一起计入）
   HookDispatcher.register('onDailyEnd', ({ gs }) => {
     if (InventorySystem.countItem(gs, 'grimoire_grain_full') < 1) return;
-    const n = gs.map.outerTiles.filter((t) => t.contentId === 'facility_wheat').length;
+    const n = FieldEffects.countFieldTiles(gs, FieldEffects.FIELD_TYPES.WHEAT);
     if (n > 0) {
       InventorySystem.addItem(gs, 'item_wheat', n);
       devLog.info('[Passive] 穗粒满 小麦 +', n);
     }
   });
 
-  // 每一日开始时：庆丰收 → 重算"水稻是否 ≥3 相连"，给设施侧一个开关
-  HookDispatcher.register('onDailyStart', ({ gs }) => {
-    gs.flags = gs.flags || {};
-    gs.flags.riceDouble = hasGrimoire(gs, 'grimoire_harvest_cereal') && hasConnectedRice(gs, 3);
+  // 每一回合开始时：稻香远 → 回复 2 × 稻草田块数量 点生命（受上限截断）
+  HookDispatcher.register('onTurnStart', ({ gs }) => {
+    if (InventorySystem.countItem(gs, 'grimoire_rice_scent') < 1) return;
+    const n = FieldEffects.countFieldTiles(gs, FieldEffects.FIELD_TYPES.RICE);
+    if (n <= 0) return;
+    HealSystem.healPlayer(gs, 2 * n, { source: 'grimoire_rice_scent' });
+  });
+
+  // 经过时：黄金浪 → 处于「≥3 小麦田块相连」簇内的田块，经过时获得小麦 ×1
+  HookDispatcher.register('onPass', ({ gs, tileIdx }) => {
+    if (InventorySystem.countItem(gs, 'grimoire_golden_wave') < 1) return;
+    if (!FieldEffects.hasGoldenWaveTrait(gs, tileIdx)) return;
+    InventorySystem.addItem(gs, 'item_wheat', 1);
+    EventBus.emit(GE.TOAST_SHOW, { text: '🌾 黄金浪：经过麦浪 → 小麦 +1', duration: 1200 });
+    devLog.info('[Passive] 黄金浪 经过田块', tileIdx, '→ 小麦 +1');
   });
 }
 
@@ -71,30 +78,38 @@ export function hasGrimoire(gs, id) {
 
 /**
  * 是否存在"≥n 个水稻田块相连"的簇（四方向相邻，栅栏内不算）
+ * 保留此导出供既有调用方使用，实现已收敛到 FieldEffects（含仓廪实视同）。
  */
 export function hasConnectedRice(gs, n = 3) {
-  const rice = new Set(
-    gs.map.outerTiles.filter((t) => t.contentId === 'facility_rice').map((t) => t.idx)
-  );
-  if (rice.size < n) return false;
+  return FieldEffects.hasFieldCluster(gs, FieldEffects.FIELD_TYPES.RICE, n);
+}
 
-  const seen = new Set();
-  for (const start of rice) {
-    if (seen.has(start)) continue;
-    const stack = [start];
-    let size = 0;
-    while (stack.length) {
-      const cur = stack.pop();
-      if (seen.has(cur)) continue;
-      seen.add(cur);
-      size += 1;
-      for (const nb of Distance.outerNeighbors(gs.map, cur)) {
-        if (nb != null && rice.has(nb) && !seen.has(nb)) stack.push(nb);
-      }
-    }
-    if (size >= n) return true;
+/**
+ * 「食为先」：角色生命值低于 50% 时立即回复（3% × 小麦田块数量）生命值，每天限 1 次。
+ * 由 GE.HP_CHANGE（生命下降）驱动；回复走 HealSystem，天然不会突破生命上限。
+ * 口径：向下取整，至少 1 点；小麦田块数量为 0 时不消耗当日次数。
+ */
+export function tryFoodFirstHeal(gs, payload) {
+  if (!gs || !gs.player) return 0;
+  if (!payload || !(payload.delta < 0)) return 0;
+  if (InventorySystem.countItem(gs, 'grimoire_food_first') < 1) return 0;
+  if (gs.player.hp <= 0) return 0;
+  if (gs.player.hp >= gs.player.maxHp * 0.5) return 0;
+
+  gs.flags = gs.flags || {};
+  if (gs.flags.foodFirstDay === gs.day) return 0;
+
+  const n = FieldEffects.countFieldTiles(gs, FieldEffects.FIELD_TYPES.WHEAT);
+  if (n <= 0) return 0;
+
+  gs.flags.foodFirstDay = gs.day;   // 先记账再回复：OnHeal 链上不会二次触发
+  const amount = Math.max(1, Math.floor(gs.player.maxHp * 0.03 * n));
+  const healed = HealSystem.healPlayer(gs, amount, { source: 'grimoire_food_first' });
+  if (healed > 0) {
+    EventBus.emit(GE.TOAST_SHOW, { text: `📖 食为先：回复 ${healed} 生命`, duration: 1800 });
+    devLog.info('[Passive] 食为先 回复', healed, '（小麦田块', n, '）');
   }
-  return false;
+  return healed;
 }
 
 /** 商店折扣（会员卡） */
@@ -108,16 +123,6 @@ export function shopDiscount(gs) {
 export function onItemGained(gs, itemId) {
   const def = ITEMS[itemId];
   if (!def) return;
-
-  // ── 技能石：获得即习得 ──
-  const skillId = STONE_TO_SKILL[itemId];
-  if (skillId) {
-    InventorySystem.addItem(gs, skillId, 1);
-    InventorySystem.removeItem(gs, itemId, 1);
-    EventBus.emit(GE.TOAST_SHOW, { text: `💎 习得技能【${ITEMS[skillId]?.name || skillId}】`, duration: 2000 });
-    devLog.info('[Passive] skill stone →', skillId);
-    return;
-  }
 
   // ── 收藏品 ──
   if (def.tier3 === '收藏品') {
@@ -165,12 +170,31 @@ export function onItemGained(gs, itemId) {
   // ── 魔导书 ──
   if (def.tier3 === '魔导书') {
     gs.flags = gs.flags || {};
-    if (itemId === 'grimoire_harvest_cereal') {
-      gs.flags.riceDouble = hasConnectedRice(gs, 3);
-      EventBus.emit(GE.TOAST_SHOW, { text: '📕 庆丰收：相连水稻田产出翻倍', duration: 2200 });
-    }
-    if (itemId === 'grimoire_grain_full') {
-      EventBus.emit(GE.TOAST_SHOW, { text: '📗 穗粒满：小麦田每日结束时 +1 小麦', duration: 2200 });
+    const toast = (text) => EventBus.emit(GE.TOAST_SHOW, { text, duration: 2200 });
+    switch (itemId) {
+      case 'grimoire_harvest_cereal':
+        toast('📕 庆丰收：相连水稻田产出翻倍');
+        break;
+      case 'grimoire_grain_full':
+        toast('📗 穗粒满：小麦田每日结束时 +1 小麦');
+        break;
+      case 'grimoire_rice_scent':
+        toast('📖 稻香远：每回合开始时回复生命');
+        break;
+      case 'grimoire_spring_glow':
+        toast('📖 春光好：草元素伤害提升');
+        break;
+      case 'grimoire_food_first':
+        toast('📖 食为先：低血量时自动回复（每日 1 次）');
+        break;
+      case 'grimoire_golden_wave':
+        toast('📖 黄金浪：相连麦田经过时 +1 小麦');
+        break;
+      case 'grimoire_granary_full':
+        toast('📖 仓廪实：水稻田块与小麦田块互为视同');
+        break;
+      default:
+        break;
     }
   }
 }
@@ -215,6 +239,16 @@ export function initPassiveItems(getGS) {
   // 每次 start 结束后都会发 BOOT，此时若 epoch 变了就补挂一次（否则收藏品效果全部失效）
   EventBus.on(GE.BOOT, () => { wireHooks(); });
   if (typeof getGS !== 'function') return;
+
+  // 食为先：生命值下降后检查「低于 50%」—— 事件订阅只挂一次，避免多次 BOOT 后重复结算
+  if (!hpListenerAttached) {
+    hpListenerAttached = true;
+    EventBus.on(GE.HP_CHANGE, (payload) => {
+      const gs = getGS();
+      if (gs) tryFoodFirstHeal(gs, payload);
+    });
+  }
+
   EventBus.on(GE.ITEM_GAINED, ({ itemId }) => {
     const gs = getGS();
     if (gs) onItemGained(gs, itemId);
@@ -226,7 +260,7 @@ export const PassiveItemSystem = {
   onItemGained,
   hasGrimoire,
   hasConnectedRice,
+  tryFoodFirstHeal,
   shopDiscount,
   syncPumpkin,
-  STONE_TO_SKILL,
 };

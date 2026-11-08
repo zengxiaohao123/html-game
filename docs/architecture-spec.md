@@ -38,10 +38,11 @@ src/
 ├── systems/                  # 游戏逻辑系统（读取/修改 GS，触发 EventBus）
 │   ├── GameDirector.js       # 主循环导演（回合制 + 连携技实时窗口）
 │   ├── InputManager.js       # 键鼠输入统一监听 + 路由
-│   ├── TurnSystem.js         # 回合推进 + 行动力扣减 + 心力交瘁
+│   ├── TurnSystem.js         # 回合推进 + 行动力扣减 + 心力交瘁（onTurnStart 唯一触发点）
 │   ├── DaySystem.js          # 每日开始事件 + 每日限次重置
+│   ├── FieldEffects.js       # 田块通用工具：数量统计 / 四方向连通块 / 仓廪实视同 / 庆丰收・黄金浪・春光好取数
 │   ├── MovementSystem.js     # 移动（WASD）+ 经过/进入触发
-│   ├── BlessSystem.js        # 祈福（2 行动力 + 1 金币 + 随机祝福）
+│   ├── BlessSystem.js        # 祈福（按下即结算：2 行动力 + 1 金币 + 随机祝福；动画仅演出）
 │   ├── InventorySystem.js    # 背包 + 出货箱 + 快捷栏 + 拖拽放置
 │   ├── CombatSystem.js       # 伤害计算 + 闪避 + 元素免疫 + 范围
 │   ├── SkillSystem.js        # 技能触发（进入时/经过时/受祝福时）
@@ -69,7 +70,8 @@ src/
 │   │   ├── ForgePanel.js     # F 键合成页面
 │   │   ├── VehiclePanel.js   # T 键载具页面
 │   │   └── ShopPanel.js      # 商店页面（地块功能进入）
-│   ├── DialogBox.js          # 剧情区（底部居中）
+│   ├── DialogBox.js          # 确认弹窗（含剧情跳过确认，z 9100）
+│   ├── StoryUI.js            # 剧情区 + 选项区（§16.5，z 9000）
 │   ├── ConfirmAction.js      # 统一二次确认状态机（arm/disarm/trigger + 快捷键绑定）
 │   ├── Toast.js              # 中央弹窗提示（物品+1、心力交瘁等）
 │   └── styles/
@@ -77,6 +79,7 @@ src/
 │       ├── map.css           # 地图 + 地块样式
 │       ├── panels.css        # 面板通用样式
 │       ├── hotbar.css        # 快捷栏样式
+│       ├── story.css         # 剧情区 + 选项区样式
 │       └── ui.css            # 其余 UI 通用样式
 └── utils/
     ├── dom.js                # DOM 操作工具（createEl、addClass 等）
@@ -113,10 +116,12 @@ export const HookDispatcher = {
   // 触发时机：遍历所有已注册的 callback，按注册顺序执行
   fire(hookType, params)
   
-  // 10 种 hook 类型（常量，在 GameEvents 或独立文件）
+  // hook 类型（常量，以 HookDispatcher.HOOK_TYPES 为准）
   // 'onEnter'      —— 角色进入该格（最终停留）
   // 'onPass'       —— 角色经过该格（路径上所有格 + 最终格）
   // 'onBlessed'    —— 该格被挂上祝福状态
+  // 'onTurnStart'  —— 回合开始时（TurnSystem.advanceTurn：turn+1 之后、
+  //                   buff tick / 冷却递减 / 心力交瘁判定之前，每次推进只 fire 一次）
   // 'onDailyStart' —— 每日开始时
   // 'onSleep'      —— 睡觉时
   // 'onReplace'    —— 被替换时（用于帐篷【替换时】词条）
@@ -144,7 +149,9 @@ export const GE = {
   MOVE_BLOCKED: 'player:moveBlocked',
   SLEEP: 'player:sleep',
   BLESS: 'player:bless',
-  BLESS_DONE: 'player:blessDone',
+  BLESS_START: 'player:blessStart',
+  BLESS_DONE: 'player:blessDone',       // 结算完成（祈福按下瞬间触发）
+  BLESS_FINISH: 'player:blessFinish',   // 动画结束（只解锁 blessing，不再结算）
   
   // —— 回合/时间 ——
   TURN_ADVANCE: 'turn:advance',         // 回合数 +1
@@ -188,6 +195,12 @@ export const GE = {
   UI_PANEL_CLOSE: 'ui:panelClose',
   UI_MODE_CHANGE: 'ui:modeChange',      // 探索/建造
   TOAST_SHOW: 'toast:show',             // payload: {text, duration}
+
+  // —— 剧情 / 事件（§16.5）——
+  STORY_SHOW:  'story:show',            // payload: {script, ctx}
+  STORY_START: 'story:start',           // payload: {id, title}
+  STORY_NODE:  'story:node',            // payload: {id, nodeKey}
+  STORY_END:   'story:end',             // payload: {id, reason}
   
   // —— 存档 ——
   SAVE_DONE: 'save:done',
@@ -391,6 +404,53 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
   地形/落点限制、方向越界、随机型载具 → 位置/行动力/回合/次数/装备全不变且无事件无提示；次数耗尽后 → 徒步语义）。
 
 ---
+
+### 2.8 StoryUI（剧情区 + 选项区，2026-11-08）
+
+> 对应设计文档 §16.5 / §16.5.1。剧情与事件共用同一套 UI；UI 不写死任何文案。
+
+- **文件**：`src/ui/StoryUI.js`（`StoryUI` 类）、`src/ui/styles/story.css`、`src/data/stories.js`。
+- **两个分区**：
+  - 剧情区 `.story-panel`：屏幕下方居中（`left:50% / bottom:104px / translateX(-50%)`，宽 `min(880px,66vw)`），
+    左侧 `.story-emblem` 圆形徽记 + 右侧 `.story-text` 正文（`white-space:pre-wrap`，最高 24vh 内滚），
+    右下 `.story-foot` 推进指示（`继续` / `请选择`），右上 `.story-close`（✖，跳过入口）。
+  - 选项区 `.option-area`：右侧中部（`right:26px / top:50%`，宽 340px，最高 64vh 滚动），竖排 `.story-option`。
+- **数据驱动**：`STORY_SHOW {script, ctx}` 播放；`script = {id,title,start,nodes,onEnd}`，
+  `nodes[key] = {text,options?,next?,end?,onEnter?}`，`Option = {id,label,sub,detail,disabled,disabledReason,safe,next,end,onSelect}`。
+  事件点（RES-001）由 `buildEventStory(entry)` 生成占位脚本，不带任何硬编码文案。
+- **公共 API**：`show(script, ctx)` / `advance()` / `skip()` / `requestSkip()` / `refresh()` / `closeSilently(reason)`；
+  只读 `visible` 供 InputGate 使用。`refresh()` 不重建待确认 / 淡出中的选项，避免打断玩家手势。
+- **推进**：`advance()` 在选项节点直接返回 `false`（不可越过选择）；节点 `end` 或无 `next` → 结束。
+  结束统一走 `_finish(reason)`，先 `_hide()` 再广播 `STORY_END {id,reason}`，最后调 `script.onEnd(ctx)`。
+- **二次确认**：完全复用 `ConfirmAction`（`arm / isArmed / trigger`），不再写第二套状态机；
+  只有 `safe:true` 的选项单击即生效（与 DialogBox 安全选项同口径）。
+  确认后**业务先于动画**：`onSelect` + 正文切换同一 tick 完成，卡片 1.5 秒淡出，淡出期整块选项区 `pointer-events:none`。
+- **跳过**：`.story-close` / ESC → `DIALOG_SHOW` 二次确认；`skip()` 沿 `next` 前进，
+  遇到 `options` 节点停下（选项节点上跳过被拒绝并 Toast 提示），无后续节点则结束。
+- **键盘**：空格 / 回车 / 点剧情区 = 推进；`1~4` = 选项（与鼠标同入口）；ESC = 跳过入口；
+  `DialogBox.visible` 时让渡键盘（跳过确认期间不拦截）。
+- **输入门控**：`InputGate` 读 `director.storyUI?.visible` → `INPUT_BLOCK.STORY`，
+  移动 / 祈福 / 睡觉 / 数字键 / 面板快捷键全部停用；`STORY_END` 后自动恢复（门控每次按键实时计算，无缓存）。
+  `InputManager` 在 `settings` 分支增加 `isStoryBlocked()` 守卫，避免剧情中 ESC 打开设置页。
+- **层级**：薄纱 `.story-mask` 8950（拦截地图点击、替代缺失的事件背景图）；剧情区 / 选项区 9000；
+  `DialogBox` 由 9000 抬到 **9100**，保证跳过确认弹窗压在剧情 UI 之上。
+- **生命周期**：`STATE_RESET` / `BOOT` → `closeSilently()`，静默关闭且**不**结算 `onEnd`（读档 / 重开不重复结算）。
+- **验收**：`node tools/smoke-story.mjs`（无选项旁白、有选项、选项回调、二次确认、禁用态、键位、
+  推进到底关闭、跳过只停在选项处、期间输入封锁、结束后恢复、数据驱动与 `refresh()` 实时刷新）。
+
+---
+
+### 2.8 商店直接售卖技能（2026-11-08）
+
+> 对应设计文档 §11.2 / §14.1 / §19.5。**技能石概念已整体删除**，不再存在「买技能石 → 使用技能石 → 获得技能」的链路。
+
+- **货架来源**：`ShopSystem.SHOP_SKILLS` 提供魔法商店技能货架（`skill_zongheng` 10 金、`skill_link_shift` 20 金，沿用旧版售价）。技能 id 复用物品库现有技能条目，名称 / 图标 / 描述全部取 `ITEMS[id]`。
+- **商品槽**：魔法商店 10 格中「技能」占 2~3 格；`generateStock` 对 `pool === 'SHOP_SKILL'` 走 `drawShopSkills`，每个货位独立等权抽取，允许同一技能重复上架（同名技能允许持有多份）。`POOL-11` 已停用，不再读写。
+- **购买链路**：`ShopSystem.buy` 直接 `InventorySystem.addItem(gs, skillId, 1)`，购买成功即背包出现该技能物品，**没有二次「使用」步骤**；该货位按既有规则标记 `sold`。技能未放置前就是普通物品，可在背包 / 信息区直接放置。
+- **不可出售**：`ShopSystem.isSellable` 增加二级分类 `技能` 拦截，技能与魔导书 / 收藏品 / 载具一样不可出售。
+- **随机池 / 掉落**：`POOL-12` 等随机池不得再包含技能石条目；技能只从角色解锁或魔法商店获得，不进入随机掉落。
+- **旧档迁移**：`migrateGS` 的 `migrateLegacySkillStones` 把旧档背包、出货箱、快捷栏、商店库存里的技能石条目换算为对应技能物品（1→1，库存同步名称 / 图标 / 分组），迁移后存档内不保留技能石条目。
+- **技能逻辑不变**：触发器、判定、连携、冷却等技能实现零改动；本次仅改获取与售卖口径。
 
 ## 三、全局状态 schema（GS 对象）
 

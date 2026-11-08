@@ -16,6 +16,7 @@ import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { getBuff } from '../data/buffs.js';
 import { TalentSystem } from './TalentSystem.js';
+import { FieldEffects } from './FieldEffects.js';
 
 // 注：CombatSystem 不直接 import LinkSkillSystem（循环依赖），
 // 而是 emit GE.ELEMENT_DAMAGE_APPLIED 事件，由 LinkSkillSystem 在 main.js 里订阅
@@ -88,6 +89,13 @@ export function calculateDamage(opts) {
   // gs.team.allWishesActive 由 SkillSystem 在技能结算前置位，DaySystem 跨天清除
   if (gs && !realDamage && gs.team?.allWishesActive) {
     rawDamage *= (dmgElement === 'fire') ? 1.2 : 0.9;
+  }
+
+  // ── 2.3 春光好（魔导书）：我方单位造成的草元素伤害 +（2% × 水稻田块数量）──
+  // 只作用于"我方打出去"的伤害（defender 不是玩家本人），真实伤害不受影响。
+  // 倍率可为小数，最终伤害在下面统一 Math.floor。
+  if (gs && !realDamage && dmgElement === 'grass' && defender !== player) {
+    rawDamage *= FieldEffects.grassElementMultiplier(gs);
   }
 
   // ── 2.5 天赋 onDamageDeal 接入 ──

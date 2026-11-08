@@ -5,10 +5,11 @@
 //   - data/*.js 中的设施/技能/状态对象在初始化时调用 HookDispatcher.register()
 //   - systems 层在合适时机只做 HookDispatcher.fire(hookType, params)
 //
-// 10 种 hook 类型（新增时同步到 architecture-spec §2.2）：
+// hook 类型（新增时同步到 architecture-spec §2.2）：
 //   onEnter             角色进入某格（最终停留）
 //   onPass              角色经过某格（路径上所有格 + 最终格）
 //   onBlessed           某格被挂上祝福状态
+//   onTurnStart         回合开始时（回合计数 +1 之后、回合内其它结算之前）
 //   onDailyStart        每日开始时
 //   onSleep             睡觉时
 //   onReplace           地块内容被替换（帐篷专用：旧内容回背包）
@@ -21,6 +22,7 @@ export const HOOK_TYPES = [
   'onEnter',           // 进入时：仅最终停留格
   'onPass',            // 经过时：路径上每一格（含终点，不含起点）
   'onBlessed',         // 受祝福时
+  'onTurnStart',       // 每一回合开始时（移动 / 祈福 / 睡觉以外不推进回合）
   'onDailyStart',      // 每一日开始时
   'onDailyEnd',        // 每一日结束时（穗粒满：小麦田额外 +1）
   'onSleep',           // 睡觉时

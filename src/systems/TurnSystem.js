@@ -3,6 +3,7 @@
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
+import { HookDispatcher } from '../core/HookDispatcher.js';
 import { devLog } from '../core/Logger.js';
 import { MIN_STAMINA } from '../utils/constants.js';
 import { CombatSystem } from './CombatSystem.js';
@@ -23,6 +24,13 @@ export function advanceTurn(gs, cost = 1) {
   // 推进回合计数
   gs.turn += 1;
   EventBus.emit(GE.TURN_ADVANCE, { newTurn: gs.turn });
+
+  // ── 【每回合开始时】───────────────────────────────────────────────
+  // 时序：turn +1 之后、回合内的 buff tick / 冷却递减 / 心力交瘁判定之前。
+  // 只在 advanceTurn 里 fire 一次；本函数是所有回合推进的唯一入口
+  // （移动 → GameDirector.move、载具移动 → GE.MOVE 订阅、祈福 → BlessSystem），
+  // 因此不会重复触发。睡觉换日走 DaySystem，不额外 fire 本 hook。
+  HookDispatcher.fire('onTurnStart', { gs, turn: gs.turn });
 
   // 行动力扣减（注意：MovementSystem 调用 advanceTurn 前已经扣过一次 stamina？
   // 不对——看 task-briefs：TurnSystem.advanceTurn 是 turn++，stamina -= cost；

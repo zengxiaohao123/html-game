@@ -39,7 +39,9 @@ import {
 import { HealSystem } from '../systems/HealSystem.js';
 import { ShopSystem } from '../systems/ShopSystem.js';
 import { StaminaSystem } from '../systems/StaminaSystem.js';
-import { syncPumpkin, hasGrimoire, hasConnectedRice } from '../systems/PassiveItemSystem.js';
+import { syncPumpkin, hasGrimoire } from '../systems/PassiveItemSystem.js';
+import { FieldEffects } from '../systems/FieldEffects.js';
+import { buildEventStory } from './stories.js';
 
 // ── 小工具：判断是否为"我的设施"格 ──
 const isMine = (gs, tileIdx, id) => gs.map.outerTiles[tileIdx]?.contentId === id;
@@ -191,6 +193,9 @@ const FacilityWheat = {
       for (const t of tiles) {
         let qty = 2;
         if (normalizeTerrain(t.terrain) === 'terrain_grass') qty += 1;
+        // 魔导书【庆丰收】：该格视同水稻田块且处在「≥3 相连」的簇内 → 该格产出 +100%
+        // （仓廪实生效时小麦田块也视同水稻田块，同样享受本加成）
+        qty *= FieldEffects.harvestMultiplier(gs, t.idx);
         total += qty;
       }
       if (total > 0) {
@@ -228,14 +233,7 @@ const FacilityRice = {
     // onDailyStart
     HookDispatcher.register('onDailyStart', ({ gs }) => {
       // §13.2：友善超载惩罚「友善类收益归 0」明确排除小麦/水稻 —— 水稻产出不受惩罚影响
-      // B-20：庆丰收翻倍必须按"当日"相连状态即时求值 —— PassiveItemSystem 的 onDailyStart
-      //   hook 注册晚于设施（main.js 顺序），只读 gs.flags.riceDouble 会拿到昨天的值。
-      if (!gs.flags) gs.flags = {};
-      if (hasGrimoire(gs, 'grimoire_harvest_cereal')) {
-        gs.flags.riceDouble = hasConnectedRice(gs, 3);
-      } else {
-        gs.flags.riceDouble = false;
-      }
+      // 魔导书【庆丰收】按"当日相连状态"逐格即时求值（FieldEffects），不缓存跨日 flags
       const tiles = gs.map.outerTiles.filter(t => t.contentId === this.id);
       let totalBase = 0;
       let totalBonusFromBless = 0;
@@ -244,8 +242,8 @@ const FacilityRice = {
         let qty = 1;
         if (normalizeTerrain(t.terrain) === 'terrain_grass') qty += 1;
         if (hasAdjacentWater(gs, t.idx)) qty += 2;
-        // 魔导书【庆丰收】：≥3 个水稻田块相连时，这些水稻田块产出翻倍
-        if (gs.flags?.riceDouble) qty *= 2;
+        // 魔导书【庆丰收】：处在「≥3 个水稻田块相连」簇内的水稻田块，基础产出 +100%
+        qty *= FieldEffects.harvestMultiplier(gs, t.idx);
         totalBase += qty;
 
         // 受祝福 5 日额外 +1（独立的 rice_bless state，与 1 天 blessed state 分离）
@@ -789,6 +787,8 @@ function resolveEventTile(gs, tileIdx, blessed) {
     entry = drawPlaceholderEvent();
     st.eventTodayId = entry.id; // 供受祝福时显示同一事件
     summary = applyPlaceholderEventEffect(gs, entry);
+    // §16.5：真正进入事件点时打开剧情区 + 选项区（占位脚本由条目数据生成，UI 不写死文案）
+    EventBus.emit(GE.STORY_SHOW, { script: buildEventStory(entry) });
   }
   HookDispatcher.fire('onEventResolve', { gs, tileIdx, type: 'event', eventId: entry.id, blessed });
   EventBus.emit(GE.TOAST_SHOW, { text: `🎲 ${entry.name}${summary ? ' → ' + summary : ''}`, duration: 2200 });
