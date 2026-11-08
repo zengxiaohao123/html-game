@@ -40,6 +40,7 @@ import {
 import {
   tulipValue,
   tulipStacks,
+  tulipInitialValue,
   settleTulipValue,
   pickTulip,
 } from '../systems/TulipSystem.js';
@@ -641,9 +642,17 @@ export class InfoPanel {
           const value = tulipValue(tile);
           const stacks = tulipStacks(tile);
           const settled = settleTulipValue(value);
+          // 经济上行：只抬高「初始价值」基线（追溯所有郁金香田块），不改当前价值；
+          // 叠放增量 = 当前基线
+          const baseline = tulipInitialValue(gs);
           createEl('div', {
             style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
             text: `🌷 当前价值：${value}${stacks > 0 ? `（叠放 ${stacks} 层 · 波动 ×${stacks + 1}）` : ''}`,
+            parent: this.bodyWrap,
+          });
+          createEl('div', {
+            style: { fontSize: '12px', color: '#888', marginBottom: '6px' },
+            text: `🌱 初始价值基线：${baseline}（叠放时 +${baseline}）`,
             parent: this.bodyWrap,
           });
           const hint = settled < 0
@@ -1848,6 +1857,8 @@ export class InfoPanel {
     EventBus.on(GE.TURN_ADVANCE, refreshVisibleBody);
     EventBus.on(GE.BUFF_APPLIED, () => { refreshCreatureDetail(); refreshVisibleBody(); });
     EventBus.on(GE.BUFF_REMOVED, () => { refreshCreatureDetail(); refreshVisibleBody(); });
+    // 背包变化（如获得《经济上行》）→ 郁金香初始价值基线等派生数值立即刷新
+    EventBus.on(GE.INVENTORY_CHANGE, refreshVisibleBody);
 
 
     // 农场扩建：外圈 / 栅栏索引整体位移 → 面板缓存的重映射；

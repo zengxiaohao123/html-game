@@ -858,19 +858,26 @@ minesNextId: 1,   // 地雷 id 自增序号（逻辑值，入日初基线）
 
 - 田地字段沿用 `tile.contentState`：土豆 `potatoStored`；郁金香 `tulipValue` / `tulipStacks` / `tulipInit`。
 - `DayBaseline.capture` 为整份 `gs` 深拷贝，`mines` / `minesNextId` 自动入档；`migrate.js` 对旧档补 `mines=[]`、`minesNextId=1`、`tulipStacks=0`、`tulipInit=true`（旧价值不追溯补初始值）。
+- 经济上行的 +6 **只作用于「初始价值」基线**（`tulipInitialValue(gs)` 动态计算，追溯所有郁金香田块含旧档），当前 `tulipValue` 不变；叠放增量按当前基线计算。
 
 ### 10.3 新增 buff
 
 `buffs.js` 新增 `stunned`（晕眩，debuff，target `creature`）：描述逐字取自词条字典「该单位无法行动，持续对应回合数。」
 - 生效：`CreatureSystem.isCreatureStunned(c)`，`stepCreatures` 逻辑步内跳过移动（渲染插值冻结）。
-- 内部计数：`remainingTurns = 2` + `params.displayTurns = 1`，保证跨过一次回合结算后仍覆盖「下一个回合」；UI 显示 1 回合。
+- 内部计数：`remainingTurns = 2` + `params.displayTurns = 1`，保证跨过一次回合结算后仍覆盖「下一个回合」；UI 显示 1 回合。**对外比较一律用 `displayTurns`，不得直接用 `remainingTurns` 与设计值比对。**
 
 ### 10.4 事件与 UI
 
 - 复用既有 `GE.GOLD_CHANGE` / `GE.TILE_UPDATED` / `GE.TILE_CONTENT_CHANGED` / `GE.INVENTORY_CHANGE` / `GE.DAMAGE_DEALT` / `GE.TOAST_SHOW`；未新增事件。
 - `MapView` 新增 `mineLayer`（zIndex 18）并在既有 rAF 循环内 `MineView.paint`，地雷状态（埋藏 / 探出）逐帧实时可见。
-- `InfoPanel` 实时显示：土豆「已储存 / 容量」（薯道难显示共用池）、郁金香「当前价值 / 叠放层数」、金币变化；不新增手动「使用技能」入口。
+- `InfoPanel` 实时显示：土豆「已储存 / 容量」（薯道难显示共用池）、郁金香「当前价值 / 叠放层数 / 初始价值基线（叠放增量）」、金币变化；不新增手动「使用技能」入口。
 
-### 10.5 验收脚本（临时 Node 断言，不入库）
+### 10.5 伤害 / 阵营口径
 
-`tools/` 之外的临时脚本验证：容量 30/40、薯道难共用池与一次取走、地雷伤害口径、5 个上限与 5 回合探出、碰撞火伤 + 晕眩、郁金香初始 3/9、×1.5 取整、叠放与波动倍率、负价值扣金币、< -100 强制拆除、日初基线往返、旧档迁移。
+- **易伤**：`CombatSystem.vulnerableMultiplier(target)` 为唯一实现（同名取最高，返回 `1 + max(strength)`）。角色技能、地块投掷（`applyElementalDamageToCreature`）与土豆地雷（`MineSystem.explodeMine`）统一调用，最后一步 `floor`。
+- **地雷阵营**：`MineSystem.isEnemy` 使用 `data/factions.js` 的 `isHostileTo(FACTION.PARTY, factionOf(c))`，只对敌对生物触发 / 造成伤害；友善生物踩雷不触发、在爆炸半径内也不吃伤害。
+- 地雷伤害仍不走暴击 / 闪避 / 角色天赋，保留「伤害量 = 土豆数量」字面口径；元素免疫先生效（免疫只晕眩）。
+
+### 10.6 验收脚本
+
+`node tools/smoke-crop-grimoire.mjs`（入库）：容量 30/40、薯道难共用池与一次取走、地雷上限 5 / 5 回合探出、敌对触发 / 友善不触发 / 友善在范围内不受伤、易伤同名取最高与 floor、晕眩仅命中敌人、郁金香初始 3/9、经济上行追溯基线、×1.5 取整、叠放与波动倍率、负价值扣金币、< -100 强制拆除。

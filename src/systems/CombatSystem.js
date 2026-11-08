@@ -35,6 +35,23 @@ export function elementImmuneCheck(target, element) {
 }
 
 /**
+ * 受击方【易伤】倍率。
+ * 易伤是**受击方属性**（「受到的伤害增加对应百分比」），与是否有攻击者无关：
+ * 角色技能、地块投掷（卷心菜）、场上实体（土豆地雷）统一走这里。
+ * §15 同名效果取最高，不叠加；返回 1 + max(strength)，由调用方在最后统一 floor。
+ */
+export function vulnerableMultiplier(target) {
+  let strength = 0;
+  for (const b of (target?.activeBuffs || [])) {
+    if (!b || b.id !== 'vulnerable') continue;
+    const def = getBuff('vulnerable');
+    const s = b.params?.strength ?? def?.strength ?? 0.30;
+    if (typeof s === 'number' && s > strength) strength = s;
+  }
+  return 1 + Math.max(0, strength);
+}
+
+/**
  * 计算并应用伤害（完整天赋接入版）
  * @param {object} opts
  * @returns {{ rawDamage: number, finalDamage: number, dodged: boolean, immune: boolean, isCrit: boolean, finalElement: string }}
@@ -227,16 +244,9 @@ export function calculateDamage(opts) {
     }
   }
 
-  // ── 7. 防御方易伤 ── §15：同名效果取最高，不叠加
-  let vulnerableStrength = 0;
-  for (const b of (defender.activeBuffs || [])) {
-    if (b.id !== 'vulnerable') continue;
-    const def = getBuff('vulnerable');
-    const strength = b.params?.strength ?? def?.strength ?? 0.30;
-    if (strength > vulnerableStrength) vulnerableStrength = strength;
-  }
-  let finalDamage = rawDamage * (1 + vulnerableStrength);
-  finalDamage = Math.max(0, Math.floor(finalDamage));
+  // ── 7. 防御方易伤 ── §15：同名效果取最高，不叠加（与地块/地雷伤害共用 vulnerableMultiplier）
+  let finalDamage = Math.floor(rawDamage * vulnerableMultiplier(defender));
+  finalDamage = Math.max(0, finalDamage);
 
   // ── 7.5 涅槃 death immunity ──
   // 仅当受击者就是玩家本人时判定：玩家攻击生物时 player 是攻击方，
@@ -369,6 +379,7 @@ function applyDamage(defender, finalDamage, opts) {
  * 与角色技能伤害的区别（有意为之）：
  *   · 不参与暴击 / 闪避 / 角色天赋 onDamageDeal —— 这些属于角色出手，地块投掷没有角色归属；
  *   · 仍走元素免疫判定，并享受「我方单位」通用的元素伤害加成（如魔导书【春光好】）；
+ *   · 受击方【易伤】照常生效（受击方属性，与攻击者无关）；同名取最高，最后统一 floor；
  *   · 最终伤害向下取整，再交给 applyDamage 落血并广播 DAMAGE_DEALT。
  * 击杀处理不在这里做：调用方（如每日结算）负责把 hp 归 0 的目标交给 PendingDeathQueue flush。
  *
@@ -396,6 +407,9 @@ export function applyElementalDamageToCreature(gs, target, amount, element = 'ph
 
   // 魔导书【春光好】：我方单位造成的草元素伤害 +（2% × 水稻田块数量）
   if (element === 'grass') dmg = Math.floor(dmg * FieldEffects.grassElementMultiplier(gs));
+
+  // 受击方【易伤】：地块伤害同样生效；同名取最高，最后统一 floor
+  dmg = Math.floor(dmg * vulnerableMultiplier(target));
 
   applyDamage(target, dmg, { element, isReal: false, ...extra });
   return { finalDamage: dmg, finalElement: element, immune: false };
@@ -481,6 +495,7 @@ export function tickBuffsOnTarget(target) {
 
 export const CombatSystem = {
   elementImmuneCheck,
+  vulnerableMultiplier,
   calculateDamage,
   applyDeathPenalty,
   applyTrueDamageToPlayer,

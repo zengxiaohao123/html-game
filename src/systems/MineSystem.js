@@ -6,10 +6,12 @@
 //     以 (x, y) 连续坐标 + radius 参与既有「圆-圆重叠」几何体系，不新建第二套碰撞；
 //   · 计时：埋下时 turnsLeft = 5，每次【每回合开始时】减 1；归 0 后探出头（surfaced），
 //     探出前不可被踩爆；
-//   · 触发：任意危险 / 高危生物（圆）与地雷（圆）重叠即爆炸；
-//   · 爆炸范围：以地雷圆心为心、半径 1 米（= 1 格）的圆，与生物圆重叠者全部命中；
+//   · 触发：任意**敌对**生物（圆）与地雷（圆）重叠即爆炸；我方角色 / 友善生物踩上去不触发，
+//     也不吃爆炸伤害（阵营判定统一走 data/factions.js，不另建一套）；
+//   · 爆炸范围：以地雷圆心为心、半径 1 米（= 1 格）的圆，与生物圆重叠的**敌对**生物全部命中；
 //   · 伤害：薯道难 → 土豆储存总数量；否则 → 埋雷来源田块当前储存数量；火元素、固定数值，
 //     不走暴击 / 闪避 / 天赋加成（保证「伤害量 = 土豆数量」字面成立），但尊重元素免疫；
+//     受击方【易伤】照常生效（受击方属性，与攻击者无关；同名取最高，最后统一 floor）；
 //   · 晕眩：命中者附加【晕眩】1 回合（内部 remainingTurns=2，跨过一次回合结算后解除）；
 //   · 触发后地雷消耗；场上至多同时存在 5 个。
 
@@ -17,6 +19,7 @@ import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { fenceRect, circleCenterDistance } from '../core/Geometry.js';
+import { FACTION, factionOf, isHostileTo } from '../data/factions.js';
 import { CombatSystem } from './CombatSystem.js';
 import { PendingDeathQueue } from './PendingDeathQueue.js';
 import { PotatoSystem } from './PotatoSystem.js';
@@ -26,9 +29,8 @@ export const MINE_SURFACE_TURNS = 5;
 export const MINE_RADIUS = 0.35;      // 米（碰撞与视觉半径）
 export const MINE_BLAST_RADIUS = 1;   // 米（「小范围」= 半径 1 格）
 
-const ENEMY_CATEGORIES = new Set(['danger', 'extreme']);
-
-const isEnemy = (c) => !!c && ENEMY_CATEGORIES.has(c.category);
+/** 是否敌对生物（危险 / 高危）；友善生物与我方实体一律不算 */
+const isEnemy = (c) => !!c && isHostileTo(FACTION.PARTY, factionOf(c));
 
 export function countMines(gs) {
   return Array.isArray(gs?.mines) ? gs.mines.length : 0;
@@ -136,7 +138,7 @@ export function stepMineCollisions(gs) {
 export function explodeMine(gs, mine) {
   const center = { x: mine.x, y: mine.y };
   const blast = typeof mine.blastRadius === 'number' ? mine.blastRadius : MINE_BLAST_RADIUS;
-  const damage = PotatoSystem.potatoMineDamage(gs, mine.sourceTileIdx);
+  const baseDamage = PotatoSystem.potatoMineDamage(gs, mine.sourceTileIdx);
 
   const enemies = (gs.creatures || []).filter(
     (c) => c && c.hp > 0 && !c.housed && isEnemy(c) && c.pos,
@@ -146,11 +148,15 @@ export function explodeMine(gs, mine) {
   );
 
   const deaths = new PendingDeathQueue(gs);
+  let maxApplied = 0;
   for (const c of affected) {
     const immune = CombatSystem.elementImmuneCheck(c, 'fire');
+    // 易伤是受击方属性：地雷伤害同样生效；同名取最高，最后统一 floor
+    const damage = Math.floor(baseDamage * CombatSystem.vulnerableMultiplier(c));
     if (!immune && damage > 0) {
       const before = c.hp;
       c.hp = Math.max(0, c.hp - damage);
+      if (before - c.hp > maxApplied) maxApplied = before - c.hp;
       EventBus.emit(GE.DAMAGE_DEALT, {
         targetRef: { type: 'creature', creatureId: c.id },
         damage: before - c.hp,
@@ -177,12 +183,12 @@ export function explodeMine(gs, mine) {
 
   EventBus.emit(GE.TOAST_SHOW, {
     text: affected.length > 0
-      ? `💥 土豆地雷爆炸！${affected.length} 个敌人受到 ${damage} 点火焰伤害并【晕眩】1 回合`
+      ? `💥 土豆地雷爆炸！${affected.length} 个敌人受到 ${maxApplied} 点火焰伤害并【晕眩】1 回合`
       : `💥 土豆地雷爆炸！（范围内没有敌人）`,
     duration: 2200,
   });
-  devLog.info('[MineSystem] 爆炸', mine.id, '伤害', damage, '命中', affected.length);
-  return { damage, hit: affected.map((c) => c.id) };
+  devLog.info('[MineSystem] 爆炸', mine.id, '基础伤害', baseDamage, '命中', affected.length);
+  return { damage: baseDamage, maxApplied, hit: affected.map((c) => c.id) };
 }
 
 export const MineSystem = {
