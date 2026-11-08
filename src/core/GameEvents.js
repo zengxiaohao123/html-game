@@ -12,8 +12,9 @@ export const GE = {
   MOVE_BLOCKED: 'player:moveBlocked',
   SLEEP: 'player:sleep',
   BLESS: 'player:bless',
-  BLESS_START: 'player:blessStart',   // Phase 2B 新增：抽奖动画开始（已扣消耗、已选候选）
-  BLESS_DONE: 'player:blessDone',     // 动画结束、状态已挂、hook 已 fire
+  BLESS_START: 'player:blessStart',   // 抽奖动画开始（按下瞬间已结算完毕，此事件只带表现数据）
+  BLESS_DONE: 'player:blessDone',     // 祈福结算完成（按下瞬间触发：状态已挂、hook 已 fire、回合已推进）
+  BLESS_FINISH: 'player:blessFinish', // 动画结束（只解锁 uiState.blessing，不再结算）
 
   // ── 回合 / 时间 ──
   TURN_ADVANCE: 'turn:advance',
@@ -86,6 +87,12 @@ export const GE = {
   LINK_SKILL_QUEUE:   'linkSkill:queue',
   TASK_COMPLETE:      'task:complete',
   TASK_OPEN:          'task:open',
+
+  // ── 剧情 / 事件（§16.5）──
+  STORY_SHOW:  'story:show',   // 请求播放一段剧情/事件脚本（payload: {script, ctx})
+  STORY_START: 'story:start',  // 剧情区已打开（payload: {id, title})
+  STORY_NODE:  'story:node',   // 推进到某个节点（payload: {id, nodeKey})
+  STORY_END:   'story:end',    // 剧情/事件结束、输入恢复（payload: {id, reason})
 
   // ── 存档 ──
   SAVE_DONE: 'save:done',

@@ -56,12 +56,12 @@ export class DialogBox {
   mount(parent = qs('body')) {
     _activeDialog = this;
     // 遮罩 —— §16.4 选项在信息区：透明遮罩（不压暗主界面），仅承接「点击别处」语义
-    // zIndex 必须高于 PanelHelper 的 6000，取 9000
+    // zIndex 必须高于 PanelHelper 的 6000，且高于剧情区 / 选项区（9000）：确认弹窗 9100
     this.mask = createEl('div', {
       style: {
         position: 'fixed', inset: 0,
         backgroundColor: 'rgba(0,0,0,0)',
-        zIndex: 9000,
+        zIndex: 9100,
         display: 'none',
       },
       parent,

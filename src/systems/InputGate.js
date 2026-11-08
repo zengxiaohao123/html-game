@@ -44,7 +44,9 @@ export function getInputBlockReasons(director) {
   if ((director.openPanels || []).some(isModalPanelKey) || director.settingsPanel?.visible) {
     reasons.push(INPUT_BLOCK.MODAL_PANEL);
   }
-  // DialogBox 同时承担剧情 / 事件的选项与确认：显示期间一律视为「剧情/事件进行中」
+  // 剧情 / 事件进行中（StoryUI，含剧情区与选项区）：禁止移动 / 祈福 / 睡觉
+  if (director.storyUI?.visible) reasons.push(INPUT_BLOCK.STORY);
+  // DialogBox 承担确认弹窗（含剧情跳过确认）：显示期间同样视为「剧情/事件进行中」
   if (director.dialogBox?.visible) reasons.push(INPUT_BLOCK.STORY);
 
   return reasons;

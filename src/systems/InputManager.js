@@ -181,7 +181,7 @@ export class InputManager {
       }
 
       case 'bless':
-        // 祈福走两步式：blessStart 扣消耗 + 选目标 → BlessAnimation 播完 → blessCommit
+        // 祈福按下即结算（blessStart 内完成全部状态变更）→ BlessAnimation 只负责演出
         if (!gs || isBlessBlocked(this.director)) break;
         BlessSystem.blessStart(gs);
         break;
@@ -193,6 +193,8 @@ export class InputManager {
         break;
 
       case 'settings': {
+        // §16.5：剧情 / 事件期间 ESC 归剧情区（打开跳过确认），不得打开设置
+        if (isStoryBlocked(this.director)) break;
         // §16.9：ESC 走 GameDirector 的层级栈逻辑（弹窗门禁在 _handler 里统一处理）
         this.director?.handleESC?.();
         break;

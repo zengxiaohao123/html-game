@@ -27,6 +27,7 @@ import { Toast } from './ui/Toast.js';
 import { SettingsPanel } from './ui/SettingsPanel.js';
 import { BlessAnimation } from './ui/BlessAnimation.js';
 import { DialogBox } from './ui/DialogBox.js';
+import { StoryUI } from './ui/StoryUI.js';
 import { LinkSkillUI } from './ui/LinkSkillUI.js';
 import { TileHighlight } from './ui/TileHighlight.js';
 import { InventoryPanel } from './ui/panels/InventoryPanel.js';
@@ -56,6 +57,8 @@ loadStylesheet('./src/ui/styles/map.css');
 loadStylesheet('./src/ui/styles/panels.css');
 loadStylesheet('./src/ui/styles/hotbar.css');
 loadStylesheet('./src/ui/styles/ui.css');
+// 剧情区 + 选项区（v0.5 §16.5）
+loadStylesheet('./src/ui/styles/story.css');
 // 技能卡所在地块高亮（v0.5 §16.3）
 loadStylesheet('./src/ui/styles/map-highlight.css');
 
@@ -76,6 +79,11 @@ const dialogBox = new DialogBox();
 dialogBox.mount();
 director.dialogBox = dialogBox; // 第 11 批 §16.4：InputManager 据此在弹窗打开时把数字键让给选项模式
 
+// 剧情区 + 选项区（§16.5）：剧情与事件共用同一套 UI，数据来自 src/data/stories.js
+const storyUI = new StoryUI(director);
+storyUI.mount();
+director.storyUI = storyUI;
+
 // 设置面板同时是主菜单的「读取存档」页（8 槽存档管理）
 const settingsPanel = new SettingsPanel(director);
 settingsPanel.mount();
@@ -91,7 +99,7 @@ director.registerPanel('codex', codexPanel);
 const inputManager = new InputManager(director);
 inputManager.bind();
 
-// 4. 获得即生效类物品（收藏品 / 魔导书 / 技能石）；进入游戏后由 BOOT 触发补挂 hook
+// 4. 获得即生效类物品（收藏品 / 魔导书）；进入游戏后由 BOOT 触发补挂 hook
 initPassiveItems(() => director.getGS());
 initUseItems();
 
@@ -158,7 +166,7 @@ function mountGameScene(gs) {
   const infoPanel = new InfoPanel();
   infoPanel.mount();
 
-  // 祈福抽奖动画（订阅 GE.BLESS_START → 2.5s 滚动 → blessCommit）
+  // 祈福抽奖动画（订阅 GE.BLESS_START → 2.5s 滚动 → blessFinish；结算已在按下瞬间完成）
   const blessAnimation = new BlessAnimation();
   blessAnimation.mount();
 
