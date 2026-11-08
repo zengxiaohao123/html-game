@@ -1,24 +1,27 @@
 // src/systems/BlessSystem.js
-// Phase 2B 最终版：
+// 祈福「按下即结算」，动画只是演出（2026-11-08 修正时序）：
 //   blessStart(gs)
 //     → 扣 stamina(-2) + gold(-1)
-//     → 锁定玩家 gs.uiState.blessing=true
+//     → 锁定玩家 gs.uiState.blessing=true（动画期间禁止再次祈福）
 //     → 候选格 = 外圈**全部 8 格**（包括玩家所在格 / 空格 / 家 / 任意 contentId）
 //     → Random.pick 选 targetIdx
-//     → emit GE.BLESS_START（带外圈 8 格的绝对页面坐标，供 BlessAnimation 顺时针轮播）
+//     → 【立即结算】挂 blessed / fire onBlessed / 精灵效果 / 回合推进（含强制睡觉）
+//     → emit GE.BLESS_DONE + GE.TOAST_SHOW + GE.TILE_UPDATED
+//     → emit GE.BLESS_START（只带表现数据，供 BlessAnimation 顺时针轮播）
 //
-//   blessCommit(gs, targetIdx)
+//   settleBless(gs, targetIdx, ctx)（内部函数，按下瞬间执行）
 //     → tile.states 里先查是否已有 blessed
 //       · 已有：remainingDays = Math.max(old, 1)（取更长的那个，不叠加）
 //       · 没有：push {type:'blessed', remainingDays:1, source:'bless'}
 //     → fire HookDispatcher.fire('onBlessed') 让各设施自己处理（wheat 立即 ×3，rice push rice_bless(remainingDays:5)，等等）
 //     → hook 返回后，扫 states 里除 blessed 外、名字以 _bless 结尾且带 remainingDays 的 state
 //       → 把 blessed.remainingDays 更新成 Math.max(blessed.remainingDays, maxHookDays)
-//       目的：边框金色特效要跟持续型效果实际生效时长对齐
-//     → emit GE.BLESS_DONE + GE.TOAST_SHOW + GE.TILE_UPDATED
-//     → 解锁 blessing=false
+//     → 精灵效果 / 每日计数 / 回合推进
 //
-//   对外 bless(gs)：立即两步（无动画，InfoPanel Tab3 按钮用这个简化路径——其实 Tab3 也已改成 blessStart + BlessAnimation 播完再 commit）
+//   blessFinish(gs)（动画结束时调用）
+//     → 只解锁 blessing=false + emit GE.BLESS_FINISH，不再做任何结算
+//
+//   对外 bless(gs)：立即结算并解锁（无动画兼容路径，测试/旧调用用）
 //
 // blessed 状态存储唯一真相源：tile.states[]
 // DaySystem.startNewDay() 遍历 outerTiles[].states.filter(s=>s.type==='blessed') 统一 remainingDays -= 1，清理 <= 0
@@ -121,7 +124,10 @@ export function blessStart(gs) {
   devLog.info('[Bless] start — targetIdx=', targetIdx, 'content:', targetTile.contentId,
     '(玩家格=', targetIdx === gs.player.x, ', 空格=', targetTile.contentId === null, ')');
 
-  // 广播 BLESS_START（BlessAnimation 订阅后顺时针轮播）
+  // 按下即结算：抽取结果 / 收益代价 / 行动力扣减 / 回合推进全部在此完成
+  settleBless(gs, targetIdx, { staminaCost, goldCost, spirit });
+
+  // 动画只是演出：BLESS_START 仅携带表现所需数据，动画期间不再改变任何游戏状态
   EventBus.emit(GE.BLESS_START, {
     targetIdx,
     targetContentId: targetTile.contentId,
@@ -135,14 +141,15 @@ export function blessStart(gs) {
 }
 
 /**
- * 第二步：祈福提交
+ * 祈福结算（内部）：在按下瞬间执行，动画不再调用
  * @param {object} gs
  * @param {number} targetIdx
+ * @param {{staminaCost:number, goldCost:number, spirit:string|null}} ctx
  */
-export function blessCommit(gs, targetIdx) {
+function settleBless(gs, targetIdx, { staminaCost, goldCost, spirit }) {
   const tile = gs.map.outerTiles[targetIdx];
   if (!tile) {
-    devLog.warn('[Bless] commit — invalid targetIdx', targetIdx);
+    devLog.warn('[Bless] settle — invalid targetIdx', targetIdx);
     if (gs.uiState) gs.uiState.blessing = false;
     return;
   }
@@ -189,9 +196,7 @@ export function blessCommit(gs, targetIdx) {
   }
 
   // ── 4. 精灵效果（设计文档 §12.2） ──
-  // momo 减半已在 blessStart 处理；这里处理晴风和芋圆的祈福后效果
-  const activeGroup = gs.team?.groups?.[gs.team?.activeGroup ?? 0];
-  const spirit = activeGroup?.spirit;
+  // momo 减半已在 blessStart 处理；这里处理晴风和芋圆的祈福后效果（spirit 由按下瞬间的上下文传入）
 
   // 更新每日祈福计数器（momo 的首次判断依赖这个，晴风/芋圆累加也需要）
   if (!gs.team.dailyBlessCount) gs.team.dailyBlessCount = 0;
@@ -219,12 +224,9 @@ export function blessCommit(gs, targetIdx) {
     EventBus.emit(GE.TOAST_SHOW, { text: '🟣 芋圆：下次移动免行动力', duration: 2000 });
     devLog.info('[Bless] yuyuan effect: nextMoveNoStamina = true');
   }
-  // momo 的减半已在 blessStart 中处理，commit 无额外效果
+  // momo 的减半已在 blessStart 中处理，结算无额外效果
 
-  // 解锁
-  if (gs.uiState) gs.uiState.blessing = false;
-
-  // 广播事件
+  // 广播结算事件（此时游戏状态已完全落定；动画期间只会读取表现数据）
   const contentId = tile.contentId;
   EventBus.emit(GE.BLESS_DONE, {
     tileIdx: targetIdx,
@@ -245,7 +247,7 @@ export function blessCommit(gs, targetIdx) {
 
   EventBus.emit(GE.TILE_UPDATED, { tileIdx: targetIdx });
 
-  devLog.info('[Bless] commit — done, targetIdx=', targetIdx, 'blessed.remainingDays=', curBlessed?.remainingDays);
+  devLog.info('[Bless] settle — done, targetIdx=', targetIdx, 'blessed.remainingDays=', curBlessed?.remainingDays);
 
   // §5.2：推进回合的行为只有三种——移动 / 祈福 / 睡觉。祈福结算完成后推进 1 回合。
   // 若行动力过低（<= MIN_STAMINA）触发强制睡觉（§5.3），强制睡觉本身也是一次睡觉，同样推进回合。
@@ -256,19 +258,31 @@ export function blessCommit(gs, targetIdx) {
 }
 
 /**
- * 兼容旧调用：bless(gs) —— 立即执行两步（无动画）
+ * 动画结束：只解锁祈福状态，不再结算（结算已在 blessStart 按下瞬间完成）
+ * @returns {boolean} 是否真的解锁了一次进行中的祈福
+ */
+export function blessFinish(gs) {
+  if (!gs?.uiState?.blessing) return false;
+  gs.uiState.blessing = false;
+  EventBus.emit(GE.BLESS_FINISH, {});
+  devLog.info('[Bless] finish — animation ended, state untouched');
+  return true;
+}
+
+/**
+ * 兼容旧调用：bless(gs) —— 立即结算并解锁（无动画路径）
  */
 export function bless(gs) {
   const step1 = blessStart(gs);
   if (!step1.ok) return step1;
-  blessCommit(gs, step1.targetIdx);
+  blessFinish(gs);
   return step1;
 }
 
 export const BlessSystem = {
   bless,
   blessStart,
-  blessCommit,
+  blessFinish,
   BLESS_STAMINA_COST,
   BLESS_GOLD_COST,
 };

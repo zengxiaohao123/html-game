@@ -30,6 +30,19 @@ import { VEHICLES } from '../data/vehicles.js';
 import { VehicleSystem } from '../systems/VehicleSystem.js';
 import { getCreatureDef } from '../data/creatures.js';
 import { syncPumpkin } from '../systems/PassiveItemSystem.js';
+import {
+  hasPotatoHardship,
+  potatoCapacity,
+  potatoStoredOf,
+  potatoTotalStored,
+  harvestPotato,
+} from '../systems/PotatoSystem.js';
+import {
+  tulipValue,
+  tulipStacks,
+  settleTulipValue,
+  pickTulip,
+} from '../systems/TulipSystem.js';
 import { POTIONS } from '../data/potions.js';
 import { getBuff } from '../data/buffs.js';
 import { ITEMS, GLOSSARY } from '../data/items.js';
@@ -1400,7 +1413,7 @@ export class InfoPanel {
   }
 
   // ════════════════════════════════════════════════════════════
-  // Tab —— 祈福（按钮 + 消耗提示 + BlessSystem.blessStart → BlessAnimation → blessCommit）
+  // Tab —— 祈福（按钮 + 消耗提示 + BlessSystem.blessStart（按下即结算）→ BlessAnimation 演出 → blessFinish）
   // ════════════════════════════════════════════════════════════
   _renderBlessTab() {
     const gs = this._getGS();
@@ -1853,6 +1866,11 @@ export class InfoPanel {
         this.currentTileIdx = tileIdx;
         this._renderBody();
       }
+    });
+
+    // 动画结束：只刷新按钮状态（防止一直停留在「抽奖中…」）
+    EventBus.on(GE.BLESS_FINISH, () => {
+      this._renderBody();
     });
 
     EventBus.on(GE.STAMINA_CHANGE, () => {

@@ -97,8 +97,7 @@ head('P0-2 祈福推进回合');
   const turn0 = gs.turn;
   const s1 = BlessSystem.blessStart(gs);
   assert(s1.ok === true, '祈福开始成功', s1.reason);
-  BlessSystem.blessCommit(gs, s1.targetIdx);
-  assert(gs.turn === turn0 + 1, '祈福结算后 turn +1（§5.2）', { turn0, now: gs.turn });
+  assert(gs.turn === turn0 + 1, '祈福按下即结算：turn 立即 +1（§5.2）', { turn0, now: gs.turn });
 }
 
 head('P0-2 睡觉推进回合');

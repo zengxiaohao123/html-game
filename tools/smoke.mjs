@@ -81,7 +81,7 @@ const slime = CreatureSystem.spawnCreature(gs, 'slime_grass', {});
 check(!!slime && slime.category === 'danger', '围栏内生成危险史莱姆');
 check(gs.creatures.some((c) => c.id === slime.id), '史莱姆已登记 gs.creatures');
 
-// 地块 0 放余默斩击技能石，按回合推进冷却直至分出胜负
+// 地块 0 放置余默斩击技能卡，按回合推进冷却直至分出胜负
 gs.map.outerTiles[0].contentId = 'skill_yumo_slash';
 gs.map.outerTiles[0].contentState = {};
 let defeatedEvent = null;
@@ -1181,6 +1181,64 @@ console.log('\n═══ 睡觉行动力恢复：加量语义（2026-11-07） �
         `${exhausted ? '心力交瘁' : '普通'}睡觉不降低非负起点：${start} → ${g.player.stamina}`);
     }
   }
+}
+
+console.log('\n═══ 祈福按下即结算 / 动画仅演出（2026-11-08） ═══');
+{
+  const { isBlessBlocked, isMovementBlocked, isSleepBlocked } = await import('../src/systems/InputGate.js');
+
+  // A. 按下瞬间全部结算；动画结束不再二次结算
+  const g = createInitialState();
+  g.player.gold = 100; g.player.stamina = 8; g.team.dailyBlessCount = 1;
+  const turn0 = g.turn;
+  const r = BlessSystem.blessStart(g);
+  check(r.ok === true, '祈福按下成功');
+  check(g.uiState.blessing === true, '按下后进入动画锁定');
+  check(g.turn === turn0 + 1, `按下瞬间回合已推进（${turn0} → ${g.turn}）`);
+  check(g.player.stamina === 6, `按下瞬间行动力已扣（8 → ${g.player.stamina}）`);
+  check(g.player.gold === 99, `按下瞬间金币已扣（100 → ${g.player.gold}）`);
+  check(g.team.dailyBlessCount === 2, '按下瞬间每日祈福计数已 +1');
+  const tile = g.map.outerTiles[r.targetIdx];
+  check(tile.states.some(s => s.type === 'blessed'), '按下瞬间 blessed 状态已挂');
+
+  const snap = JSON.stringify({
+    turn: g.turn, stamina: g.player.stamina, gold: g.player.gold, atk: g.player.atk,
+    x: g.player.x, count: g.team.dailyBlessCount, states: tile.states,
+  });
+  check(BlessSystem.blessFinish(g) === true, '动画结束解锁成功');
+  check(g.uiState.blessing === false, '动画结束后解除祈福锁定');
+  check(JSON.stringify({
+    turn: g.turn, stamina: g.player.stamina, gold: g.player.gold, atk: g.player.atk,
+    x: g.player.x, count: g.team.dailyBlessCount, states: tile.states,
+  }) === snap, '动画结束不再二次结算（状态零变化）');
+  check(BlessSystem.blessFinish(g) === false, '重复调用结束不生效');
+
+  // B. 动画期间：可移动 / 可睡觉 / 不可再祈福
+  const g2 = createInitialState();
+  g2.player.gold = 100; g2.player.stamina = 8; g2.team.dailyBlessCount = 1;
+  const r2 = BlessSystem.blessStart(g2);
+  check(r2.ok === true, '祈福（动画期间用例）按下成功');
+  const director = { getGS: () => g2, openPanels: [] };
+  check(isBlessBlocked(director) === true, '动画期间禁止再次祈福（输入门禁）');
+  check(isMovementBlocked(director) === false, '动画期间允许移动（输入门禁）');
+  check(isSleepBlocked(director) === false, '动画期间允许睡觉（输入门禁）');
+
+  const beforeRebless = { stamina: g2.player.stamina, gold: g2.player.gold };
+  const again = BlessSystem.blessStart(g2);
+  check(again.ok === false && again.reason === 'inProgress'
+    && g2.player.stamina === beforeRebless.stamina && g2.player.gold === beforeRebless.gold,
+    '动画期间再次祈福被拒且不重复扣费');
+
+  const x0 = g2.player.x;
+  move(g2, 'up');
+  check(g2.player.x !== x0, `动画期间可移动（${x0} → ${g2.player.x}）`);
+  check(g2.uiState.blessing === true, '移动不会解除祈福动画锁定');
+
+  const day0 = g2.day;
+  sleep(g2, false);
+  check(g2.day === day0 + 1, `动画期间可睡觉（day ${day0} → ${g2.day}）`);
+
+  check(BlessSystem.blessFinish(g2) === true, '动画结束后正常解锁');
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} smoke 结果：${pass} 通过 / ${fail} 失败（共 ${pass + fail}）`);

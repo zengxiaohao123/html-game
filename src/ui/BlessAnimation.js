@@ -1,11 +1,11 @@
 // src/ui/BlessAnimation.js
 // Phase 2B 抽奖动画组件：
-//   - 订阅 GE.BLESS_START（BlessSystem.blessStart 扣消耗 + 选目标 + 带候选格坐标）
+//   - 订阅 GE.BLESS_START（BlessSystem 按下瞬间已完成结算，事件只带候选格表现数据）
 //   - 画一个全屏 overlay（pointer-events:none 不挡点击）
 //   - 在 overlay 上给"候选 tile"各自画一个发光光点
 //   - 一个"主光点"以 ease-out 减速在候选格间跳 —— 2.5s 内约 16 次跳转
 //   - 最后停在 targetIdx 上，tile 本身脉冲 1s
-//   - 动画结束 → 调 BlessSystem.blessCommit(gs, targetIdx)
+//   - 动画结束 → 调 BlessSystem.blessFinish(gs)（只解锁，结算已在按下瞬间完成）
 //   - 移除 overlay
 //
 // 注意：overlay 用 position:fixed，坐标 = 候选 tile 的逻辑中心 × 当前每格像素 + MapView 容器自身 left/top
@@ -52,7 +52,7 @@ export class BlessAnimation {
     const mapRect = this._getMapRect();
     if (!mapRect) {
       devLog.warn('[BlessAnim] map-container not found, abort animation');
-      BlessSystem.blessCommit(gs, targetIdx);
+      BlessSystem.blessFinish(gs);
       this._teardown();
       return;
     }
@@ -92,11 +92,11 @@ export class BlessAnimation {
     let step = 0;
     const runStep = () => {
       if (step >= sequence.length) {
-        // 走完 → 停在 target 脉冲 + commit
+        // 走完 → 停在 target 脉冲 + 解锁祈福状态（不结算）
         this._pulseTarget(sequence[sequence.length - 1].pos);
         setTimeout(() => {
           const gs2 = this._getGS();
-          if (gs2) BlessSystem.blessCommit(gs2, targetIdx);
+          if (gs2) BlessSystem.blessFinish(gs2);
           this._teardown();
         }, FINAL_HOLD_MS);
         return;
