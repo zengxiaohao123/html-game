@@ -3,22 +3,22 @@
 // 手工维护的部分只有 tools/lib_meta.json（编号 → id / emoji）。
 
 export const LIB_STAT = {
-  "total": 95,
+  "total": 104,
   "byTier1": {
     "产物": 15,
     "载具": 15,
     "地块内容": 42,
-    "道具": 19,
+    "道具": 28,
     "地形": 4
   },
   "pools": 12,
-  "outputs": 32,
-  "glossary": 36,
+  "outputs": 31,
+  "glossary": 41,
   "creatures": 3,
   "todo": 30
 };
 
-/** 物品总表（95 条）—— 表格第 2 张工作表 */
+/** 物品总表（104 条）—— 表格第 2 张工作表 */
 export const ITEMS = {
   item_wheat: {
   "id": "item_wheat",
@@ -2126,7 +2126,7 @@ export const ITEMS = {
   "traits": [
     "水稻"
   ],
-  "description": "有至少 3 个水稻田块相连时，这些水稻田块产出的作物数量翻倍",
+  "description": "有至少3个水稻田块相连时，它们的产出+100%",
   "triggers": [
     "获得后自动生效"
   ],
@@ -2154,7 +2154,7 @@ export const ITEMS = {
   "traits": [
     "小麦"
   ],
-  "description": "小麦田块获得新特性：【每一日结束时】获得小麦 ×1",
+  "description": "小麦田地获得新特性：【每一日结束时】，获得小麦*1",
   "triggers": [
     "获得后自动生效"
   ],
@@ -2164,58 +2164,6 @@ export const ITEMS = {
   "stackByValue": false,
   "sources": "文档未指定具体途径（9 章、11 章通用说明）",
   "notes": "自带【唯一】；【小麦】为展示标签；魔导书不可出售"
-},
-  skill_stone_zongheng: {
-  "id": "skill_stone_zongheng",
-  "libCode": "ITM-ST-001",
-  "name": "技能石：合纵连横",
-  "emoji": "💎",
-  "icon": null,
-  "tier1": "道具",
-  "tier2": "基础道具",
-  "tier3": "技能石",
-  "hiddenTags": [],
-  "owner": null,
-  "rarity": 1,
-  "value": 1,
-  "valueMode": "固定值",
-  "traits": [],
-  "description": "习得技能【合纵连横】 ×1",
-  "triggers": [
-    "获得后自动生效"
-  ],
-  "stackRule": "同名同价值可叠（单格999）",
-  "stackable": true,
-  "stackMax": 999,
-  "stackByValue": false,
-  "sources": "文档未指定具体途径（9 章、11 章通用说明）",
-  "notes": "允许同名技能石多个存在；技能石不可出售"
-},
-  skill_stone_shift: {
-  "id": "skill_stone_shift",
-  "libCode": "ITM-ST-002",
-  "name": "技能石：移形",
-  "emoji": "💠",
-  "icon": null,
-  "tier1": "道具",
-  "tier2": "基础道具",
-  "tier3": "技能石",
-  "hiddenTags": [],
-  "owner": null,
-  "rarity": 2,
-  "value": 1,
-  "valueMode": "固定值",
-  "traits": [],
-  "description": "习得技能【移形】 ×1",
-  "triggers": [
-    "获得后自动生效"
-  ],
-  "stackRule": "同名同价值可叠（单格999）",
-  "stackable": true,
-  "stackMax": 999,
-  "stackByValue": false,
-  "sources": "文档未指定具体途径（9 章、11 章通用说明）",
-  "notes": "允许同名技能石多个存在；技能石不可出售"
 },
   collectible_sad_pumpkin: {
   "id": "collectible_sad_pumpkin",
@@ -2550,6 +2498,315 @@ export const ITEMS = {
   "stackByValue": false,
   "sources": "只有指定的少数途径可获得（目前未设置）",
   "notes": "本物品特殊，允许叠加，不唯一；商店或魔法商店中不会出现；大部分随机池中不会出现；只能通过指定途径获得；所谓宽度，是指农场的行数增加1行，且扩建时，为了不影响玩家已经放置的部分，扩建逻辑是：先把最上侧1行向上移动1格距离，然后在原来的最上1行（现在已经空了）新增外圈和栅栏内地块（这部分的逻辑仍然遵循外面一圈是外圈，里面所有空间都是栅栏内的底层逻辑）。扩建时若角色恰好在要被移动的地块上，则角色跟随移动（本次移动不视为真正的移动，不触发任何效果）"
+},
+  grimoire_rice_scent: {
+  "id": "grimoire_rice_scent",
+  "libCode": "ITM-BK-005",
+  "name": "稻香远",
+  "emoji": "📖",
+  "icon": null,
+  "tier1": "道具",
+  "tier2": "基础道具",
+  "tier3": "魔导书",
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 2,
+  "value": 8,
+  "valueMode": "固定值",
+  "traits": [
+    "水稻"
+  ],
+  "description": "每回合开始时，角色回复（2*稻草田块数量）点生命值",
+  "triggers": [
+    "获得后自动生效"
+  ],
+  "stackRule": "不可叠放（自带【唯一】）",
+  "stackable": false,
+  "stackMax": 1,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径（9 章、11 章通用说明）",
+  "notes": "自带【唯一】；【水稻】 为展示标签；魔导书不可出售。系列：稻草"
+},
+  grimoire_spring_glow: {
+  "id": "grimoire_spring_glow",
+  "libCode": "ITM-BK-006",
+  "name": "春光好",
+  "emoji": "📖",
+  "icon": null,
+  "tier1": "道具",
+  "tier2": "基础道具",
+  "tier3": "魔导书",
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 3,
+  "value": 12,
+  "valueMode": "固定值",
+  "traits": [
+    "水稻"
+  ],
+  "description": "我方单位造成的草元素伤害+（2%水稻田块数量）",
+  "triggers": [
+    "获得后自动生效"
+  ],
+  "stackRule": "不可叠放（自带【唯一】）",
+  "stackable": false,
+  "stackMax": 1,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径（9 章、11 章通用说明）",
+  "notes": "自带【唯一】；【水稻】 为展示标签；魔导书不可出售。系列：稻草"
+},
+  grimoire_food_first: {
+  "id": "grimoire_food_first",
+  "libCode": "ITM-BK-007",
+  "name": "食为先",
+  "emoji": "📖",
+  "icon": null,
+  "tier1": "道具",
+  "tier2": "基础道具",
+  "tier3": "魔导书",
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 2,
+  "value": 10,
+  "valueMode": "固定值",
+  "traits": [
+    "小麦"
+  ],
+  "description": "角色生命值低于50%时，立即回复（3%*小麦田块数量）生命值，每天限1次",
+  "triggers": [
+    "获得后自动生效"
+  ],
+  "stackRule": "不可叠放（自带【唯一】）",
+  "stackable": false,
+  "stackMax": 1,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径（9 章、11 章通用说明）",
+  "notes": "自带【唯一】；【小麦】 为展示标签；魔导书不可出售。系列：小麦"
+},
+  grimoire_golden_wave: {
+  "id": "grimoire_golden_wave",
+  "libCode": "ITM-BK-008",
+  "name": "黄金浪",
+  "emoji": "📖",
+  "icon": null,
+  "tier1": "道具",
+  "tier2": "基础道具",
+  "tier3": "魔导书",
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 4,
+  "value": 20,
+  "valueMode": "固定值",
+  "traits": [
+    "小麦"
+  ],
+  "description": "有至少3个小麦田块相连时，它们获得新特性：【经过时】，获得小麦*1",
+  "triggers": [
+    "获得后自动生效"
+  ],
+  "stackRule": "不可叠放（自带【唯一】）",
+  "stackable": false,
+  "stackMax": 1,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径（9 章、11 章通用说明）",
+  "notes": "自带【唯一】；【小麦】 为展示标签；魔导书不可出售。系列：小麦"
+},
+  grimoire_granary_full: {
+  "id": "grimoire_granary_full",
+  "libCode": "ITM-BK-009",
+  "name": "仓廪实",
+  "emoji": "📖",
+  "icon": null,
+  "tier1": "道具",
+  "tier2": "基础道具",
+  "tier3": "魔导书",
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 5,
+  "value": 24,
+  "valueMode": "固定值",
+  "traits": [
+    "水稻",
+    "小麦"
+  ],
+  "description": "稻草田块/小麦田块可同时被视作小麦田块/稻草田块，且同时享受两种田块的魔导书效果",
+  "triggers": [
+    "获得后自动生效"
+  ],
+  "stackRule": "不可叠放（自带【唯一】）",
+  "stackable": false,
+  "stackMax": 1,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径（9 章、11 章通用说明）",
+  "notes": "自带【唯一】；【水稻】【小麦】 为展示标签；魔导书不可出售。系列：水稻、小麦"
+},
+  grimoire_potato_hardship: {
+  "id": "grimoire_potato_hardship",
+  "libCode": "ITM-BK-010",
+  "name": "薯道难",
+  "emoji": "📖",
+  "icon": null,
+  "tier1": "道具",
+  "tier2": "基础道具",
+  "tier3": "魔导书",
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 4,
+  "value": 18,
+  "valueMode": "固定值",
+  "traits": [
+    "土豆"
+  ],
+  "description": "所有土豆田块会共用存储容量，【土豆地雷】的伤害量改为土豆储存总数量\n土豆田块的词条修改为：【进入时】可以取走所有土豆田块储存的土豆",
+  "triggers": [
+    "获得后自动生效"
+  ],
+  "stackRule": "不可叠放（自带【唯一】）",
+  "stackable": false,
+  "stackMax": 1,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径（9 章、11 章通用说明）",
+  "notes": "自带【唯一】；【土豆】 为展示标签；魔导书不可出售。系列：土豆"
+},
+  grimoire_potato_mine: {
+  "id": "grimoire_potato_mine",
+  "libCode": "ITM-BK-011",
+  "name": "土豆地雷",
+  "emoji": "📖",
+  "icon": null,
+  "tier1": "道具",
+  "tier2": "基础道具",
+  "tier3": "魔导书",
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 4,
+  "value": 16,
+  "valueMode": "固定值",
+  "traits": [
+    "土豆"
+  ],
+  "description": "土豆田块获得新词条：【每一日开始时】在栅栏内埋下1个【土豆地雷】；【土豆地雷】5回合后探出头来，敌人碰撞到时爆炸造成小范围火元素伤害并使敌人【晕眩】1回合，伤害量为本田块当前储存的土豆数量\n场上至多同时存在5个",
+  "triggers": [
+    "获得后自动生效"
+  ],
+  "stackRule": "不可叠放（自带【唯一】）",
+  "stackable": false,
+  "stackMax": 1,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径（9 章、11 章通用说明）",
+  "notes": "自带【唯一】；【土豆】 为展示标签；魔导书不可出售。系列：土豆"
+},
+  grimoire_fries_quartet: {
+  "id": "grimoire_fries_quartet",
+  "libCode": "ITM-BK-012",
+  "name": "薯条四重奏",
+  "emoji": "📖",
+  "icon": null,
+  "tier1": "道具",
+  "tier2": "基础道具",
+  "tier3": "魔导书",
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 2,
+  "value": 10,
+  "valueMode": "固定值",
+  "traits": [
+    "土豆"
+  ],
+  "description": "土豆田块的数量恰好为4的倍数时，所有土豆田块的储存容量+10",
+  "triggers": [
+    "获得后自动生效"
+  ],
+  "stackRule": "不可叠放（自带【唯一】）",
+  "stackable": false,
+  "stackMax": 1,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径（9 章、11 章通用说明）",
+  "notes": "自带【唯一】；【土豆】 为展示标签；魔导书不可出售。系列：土豆"
+},
+  grimoire_bubble: {
+  "id": "grimoire_bubble",
+  "libCode": "ITM-BK-013",
+  "name": "泡沫",
+  "emoji": "📖",
+  "icon": null,
+  "tier1": "道具",
+  "tier2": "基础道具",
+  "tier3": "魔导书",
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 3,
+  "value": 12,
+  "valueMode": "固定值",
+  "traits": [
+    "郁金香"
+  ],
+  "description": "郁金香花田的波动数值修改：【每一日开始时】价值随机-9～+18\n郁金香的价值可以为负，价值为负时采摘或拆除时会扣除对应价值的金币\n价值低于-50或大于50时，采摘或拆除时价值会*1.5倍\n价值低于-100时会被强制拆除",
+  "triggers": [
+    "获得后自动生效"
+  ],
+  "stackRule": "不可叠放（自带【唯一】）",
+  "stackable": false,
+  "stackMax": 1,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径（9 章、11 章通用说明）",
+  "notes": "自带【唯一】；【郁金香】 为展示标签；魔导书不可出售。系列：郁金香"
+},
+  grimoire_tulip_simple: {
+  "id": "grimoire_tulip_simple",
+  "libCode": "ITM-BK-014",
+  "name": "郁金香，简单！",
+  "emoji": "📖",
+  "icon": null,
+  "tier1": "道具",
+  "tier2": "基础道具",
+  "tier3": "魔导书",
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 3,
+  "value": 14,
+  "valueMode": "固定值",
+  "traits": [
+    "郁金香"
+  ],
+  "description": "郁金香花田的波动方式修改：【每回合开始时】价值随机-4～+9\n现在可以在郁金香田块上叠放新的郁金香田块，效果为：当前郁金香价值增加，增加量等于初始价值，此后本田块郁金香的价值波动效果+1倍",
+  "triggers": [
+    "获得后自动生效"
+  ],
+  "stackRule": "不可叠放（自带【唯一】）",
+  "stackable": false,
+  "stackMax": 1,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径（9 章、11 章通用说明）",
+  "notes": "自带【唯一】；【郁金香】 为展示标签；魔导书不可出售。系列：郁金香"
+},
+  grimoire_economy_up: {
+  "id": "grimoire_economy_up",
+  "libCode": "ITM-BK-015",
+  "name": "经济上行",
+  "emoji": "📖",
+  "icon": null,
+  "tier1": "道具",
+  "tier2": "基础道具",
+  "tier3": "魔导书",
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 2,
+  "value": 9,
+  "valueMode": "固定值",
+  "traits": [
+    "郁金香"
+  ],
+  "description": "郁金香田块中的郁金香初始价值+6",
+  "triggers": [
+    "获得后自动生效"
+  ],
+  "stackRule": "不可叠放（自带【唯一】）",
+  "stackable": false,
+  "stackMax": 1,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径（9 章、11 章通用说明）",
+  "notes": "自带【唯一】；【郁金香】 为展示标签；魔导书不可出售。系列：郁金香"
 },
 };
 
@@ -3492,7 +3749,7 @@ export const POOLS = {
       "weight": null,
       "rarity": 3,
       "placeholder": false,
-      "notes": "当前仅 2 条，待补充"
+      "notes": null
     },
     {
       "libCode": "ITM-BK-002",
@@ -3501,6 +3758,116 @@ export const POOLS = {
       "price": 10,
       "weight": null,
       "rarity": 1,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "ITM-BK-005",
+      "id": "grimoire_rice_scent",
+      "name": "稻香远",
+      "price": 16,
+      "weight": null,
+      "rarity": 2,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "ITM-BK-006",
+      "id": "grimoire_spring_glow",
+      "name": "春光好",
+      "price": 24,
+      "weight": null,
+      "rarity": 3,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "ITM-BK-007",
+      "id": "grimoire_food_first",
+      "name": "食为先",
+      "price": 20,
+      "weight": null,
+      "rarity": 2,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "ITM-BK-008",
+      "id": "grimoire_golden_wave",
+      "name": "黄金浪",
+      "price": 40,
+      "weight": null,
+      "rarity": 4,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "ITM-BK-009",
+      "id": "grimoire_granary_full",
+      "name": "仓廪实",
+      "price": 48,
+      "weight": null,
+      "rarity": 5,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "ITM-BK-010",
+      "id": "grimoire_potato_hardship",
+      "name": "薯道难",
+      "price": 36,
+      "weight": null,
+      "rarity": 4,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "ITM-BK-011",
+      "id": "grimoire_potato_mine",
+      "name": "土豆地雷",
+      "price": 32,
+      "weight": null,
+      "rarity": 4,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "ITM-BK-012",
+      "id": "grimoire_fries_quartet",
+      "name": "薯条四重奏",
+      "price": 20,
+      "weight": null,
+      "rarity": 2,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "ITM-BK-013",
+      "id": "grimoire_bubble",
+      "name": "泡沫",
+      "price": 24,
+      "weight": null,
+      "rarity": 3,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "ITM-BK-014",
+      "id": "grimoire_tulip_simple",
+      "name": "郁金香，简单！",
+      "price": 28,
+      "weight": null,
+      "rarity": 3,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "ITM-BK-015",
+      "id": "grimoire_economy_up",
+      "name": "经济上行",
+      "price": 18,
+      "weight": null,
+      "rarity": 2,
       "placeholder": false,
       "notes": null
     }
@@ -3578,31 +3945,10 @@ export const POOLS = {
   "POOL-11": {
   "code": "POOL-11",
   "name": "魔法商店·技能石池",
-  "title": "POOL-11　魔法商店·技能石池　（2~3件/次）",
-  "drawMin": 2,
-  "drawMax": 3,
-  "entries": [
-    {
-      "libCode": "ITM-ST-001",
-      "id": "skill_stone_zongheng",
-      "name": "技能石：合纵连横",
-      "price": 10,
-      "weight": null,
-      "rarity": 1,
-      "placeholder": false,
-      "notes": "当前仅 1 条，待补充"
-    },
-    {
-      "libCode": "ITM-ST-002",
-      "id": "skill_stone_shift",
-      "name": "技能石：移形",
-      "price": 20,
-      "weight": null,
-      "rarity": 2,
-      "placeholder": false,
-      "notes": null
-    }
-  ]
+  "title": "POOL-11　魔法商店·技能石池（已停用：商店改为直接售卖技能）",
+  "drawMin": null,
+  "drawMax": null,
+  "entries": []
 },
   "POOL-12": {
   "code": "POOL-12",
@@ -4162,16 +4508,6 @@ export const POOLS = {
       "notes": null
     },
     {
-      "libCode": "ITM-ST-001",
-      "id": "skill_stone_zongheng",
-      "name": "技能石：合纵连横",
-      "price": null,
-      "weight": null,
-      "rarity": 1,
-      "placeholder": false,
-      "notes": null
-    },
-    {
       "libCode": "ITM-COL-001",
       "id": "collectible_sad_pumpkin",
       "name": "悲伤的南瓜",
@@ -4272,16 +4608,6 @@ export const POOLS = {
       "notes": null
     },
     {
-      "libCode": "ITM-ST-002",
-      "id": "skill_stone_shift",
-      "name": "技能石：移形",
-      "price": null,
-      "weight": null,
-      "rarity": 2,
-      "placeholder": false,
-      "notes": null
-    },
-    {
       "libCode": "TRN-001",
       "id": "terrain_grass",
       "name": "草地",
@@ -4315,7 +4641,7 @@ export const POOLS = {
 },
 };
 
-/** 产出与掉落（32 条）—— 表格第 5 张工作表 */
+/** 产出与掉落（31 条）—— 表格第 5 张工作表 */
 export const OUTPUTS = [
   {
     "code": "OUT-01",
@@ -4538,16 +4864,6 @@ export const OUTPUTS = [
     "notes": "与 13.3、14.6 一致，已统一为「史莱姆凝胶」"
   },
   {
-    "code": "OUT-23",
-    "fromType": "道具",
-    "source": "技能石：合纵连横",
-    "product": "合纵连横",
-    "amount": "×1",
-    "trigger": "获得时（自动习得，无需使用）",
-    "condition": "允许同名技能石多次获得",
-    "notes": null
-  },
-  {
     "code": "OUT-24",
     "fromType": "道具",
     "source": "初级肥料",
@@ -4639,7 +4955,7 @@ export const OUTPUTS = [
   }
 ];
 
-/** 词条字典（36 条）—— 表格第 4 张工作表 */
+/** 词条字典（41 条）—— 表格第 4 张工作表 */
 export const GLOSSARY = [
   {
     "term": "经过时",
@@ -4728,7 +5044,7 @@ export const GLOSSARY = [
   {
     "term": "使用时",
     "type": "触发时点",
-    "meaning": "主动使用消耗道具时结算（草药、初级肥料）。技能石为获得即习得，不在此结算。",
+    "meaning": "主动使用消耗道具时结算（草药、初级肥料）。",
     "notes": null
   },
   {
@@ -4856,6 +5172,36 @@ export const GLOSSARY = [
     "type": "触发时点",
     "meaning": "角色通过任意途径回复生命值时结算一次（技能、道具、天赋、收藏品、设施效果均算）。",
     "notes": "艾草田地依赖此词条，注意把新的回血来源也挂上订阅"
+  },
+  {
+    "term": "晕眩",
+    "type": "Debuff",
+    "meaning": "该单位无法行动，持续对应回合数。",
+    "notes": "魔导书【土豆地雷】施加，持续 1 回合"
+  },
+  {
+    "term": "土豆地雷",
+    "type": "系统机制",
+    "meaning": "土豆田块埋下的爆炸物：5 回合后探出头来，敌人碰撞时爆炸，造成小范围火元素伤害并施加【晕眩】1 回合，伤害量为该田块当前储存的土豆数量；场上至多同时存在 5 个。",
+    "notes": "魔导书【土豆地雷】赋予土豆田块"
+  },
+  {
+    "term": "每回合开始时",
+    "type": "触发时点",
+    "meaning": "每完成一个回合（移动 / 祈福 / 睡觉等行动）时结算。",
+    "notes": "魔导书【稻香远】【郁金香，简单！】使用；对应 hook 待实现"
+  },
+  {
+    "term": "土豆",
+    "type": "展示标签",
+    "meaning": "仅用于展示的标签，不代表实际机制（提示效果与哪类设施相关）。",
+    "notes": "薯道难、土豆地雷、薯条四重奏"
+  },
+  {
+    "term": "郁金香",
+    "type": "展示标签",
+    "meaning": "仅用于展示的标签，不代表实际机制（提示效果与哪类设施相关）。",
+    "notes": "泡沫、郁金香，简单！、经济上行"
   }
 ];
 
@@ -5121,8 +5467,8 @@ export const TODO_LIST = [
     "no": 24,
     "title": "技能石「获得即习得」口径残留",
     "type": "命名不一致",
-    "detail": "已修正三处：技能 19 条获取途径、产出与掉落 OUT-23 触发时点、词条字典「使用时」",
-    "where": "SKL-A-001~012、SKL-L-001~007、ITM-ST-001",
+    "detail": "已修正三处：技能 19 条获取途径、产出与掉落 OUT-23 触发时点、词条字典「使用时」；2026-11-08 技能石条目整体删除，本项归档。",
+    "where": "SKL-A-001~012、SKL-L-001~007",
     "priority": "中",
     "status": "已补"
   },
@@ -5157,19 +5503,19 @@ export const TODO_LIST = [
     "no": 28,
     "title": "魔导书数量不足（商店最低需 3 条）",
     "type": "内容待补",
-    "detail": "当前仅 ITM-BK-001/002 共 2 条，魔法商店魔导书类最低抽 3~4 条",
+    "detail": "已新增 11 条魔导书（ITM-BK-005~015），魔导书池现 13 条。",
     "where": "POOL-09",
     "priority": "高",
-    "status": "待补"
+    "status": "已补"
   },
   {
     "no": 29,
     "title": "技能石数量不足（商店最低需 2 条）",
     "type": "内容待补",
-    "detail": "当前仅 ITM-ST-001 共 1 条，魔法商店技能石类最低抽 2~3 条",
+    "detail": "2026-11-08 起技能石条目整体删除，商店改为直接售卖技能，本项作废。",
     "where": "POOL-11",
     "priority": "高",
-    "status": "已补"
+    "status": "已废弃"
   },
   {
     "no": 30,
