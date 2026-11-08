@@ -25,6 +25,7 @@ const { addItem } = await import('../src/systems/InventorySystem.js');
 const { placeContent, enterBuildMode } = await import('../src/systems/BuildSystem.js');
 const { startNewDay } = await import('../src/systems/DaySystem.js');
 const ShopSystem = await import('../src/systems/ShopSystem.js');
+const { ITEMS, POOLS } = await import('../src/data/items.js');
 const { CREATURES } = await import('../src/data/creatures.js');
 
 let pass = 0, fail = 0;
@@ -183,7 +184,13 @@ const catCount = {};
 for (const it of stock) catCount[it.group] = (catCount[it.group] || 0) + 1;
 assert(catCount['魔导书'] >= 3 && catCount['魔导书'] <= 4, '魔导书 3~4', catCount);
 assert(catCount['消耗道具'] >= 2 && catCount['消耗道具'] <= 4, '消耗品 2~4', catCount);
-assert(catCount['技能石'] >= 2 && catCount['技能石'] <= 3, '技能石 2~3', catCount);
+assert(catCount['技能'] >= 2 && catCount['技能'] <= 3, '技能 2~3', catCount);
+const skillSlots = stock.filter((it) => it.group === '技能');
+assert(skillSlots.every((s) => ITEMS[s.id]?.tier2 === '技能'), '技能货架售卖技能本体', skillSlots.map((s) => s.id));
+assert(skillSlots.every((s) => typeof s.price === 'number' && s.price > 0), '技能货架带有效价格', skillSlots);
+assert(!stock.some((s) => /技能石|stone/i.test(`${s.id}${s.name}`)), '魔法商店无技能石残留');
+assert(!Object.values(ITEMS).some((i) => /技能石|skill_stone/i.test(`${i.id}${i.name}`)), '物品总表无技能石残留');
+assert(!Object.values(POOLS).some((p) => p.entries.some((e) => /技能石|stone/i.test(`${e.id}${e.name}`))), '随机池无技能石残留');
 assert(catCount['载具'] >= 1 && catCount['载具'] <= 3, '载具 1~3', catCount);
 
 head('魔法商店与商店状态独立');

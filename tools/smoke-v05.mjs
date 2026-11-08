@@ -20,6 +20,7 @@ const { addItem, removeItem, countItem } = await import('../src/systems/Inventor
 const { drawFromPool, resolveCandidates, PLACEHOLDER_IDS } = await import('../src/systems/RandomPool.js');
 const { startNewDay } = await import('../src/systems/DaySystem.js');
 const { VEHICLES } = await import('../src/data/vehicles.js');
+const { ITEMS } = await import('../src/data/items.js');
 const { distanceOf } = await import('../src/core/Distance.js').catch(() => ({ distanceOf: null }));
 
 let pass = 0, fail = 0;
@@ -95,12 +96,12 @@ for (const d of [0, 1, 2, 3]) plainMax = Math.max(plainMax, resolvePath(plainMap
 assert(plainMax === 1, '普通地形只走 1 格', plainMax);
 
 head('随机池占位补足');
-const need = 4;
-const pool09 = resolveCandidates('POOL-09', need);   // 魔导书池只有 2 条
-assert(pool09.realCount === 2, 'POOL-09 实际候选 2 条', pool09.realCount);
-assert(pool09.placeholderUsed === true, '候选不足 → 启用占位');
-assert(pool09.candidates.length > pool09.realCount, '占位已补入候选');
-const drawn = drawFromPool('POOL-09', need);
+const need = 7;
+const pool07 = resolveCandidates('POOL-07', need);   // 收藏品池 6 条 + 1 条占位，抽 7 件时补占位
+assert(pool07.realCount === 6, 'POOL-07 实际候选 6 条', pool07.realCount);
+assert(pool07.placeholderUsed === true, '候选不足 → 启用占位');
+assert(pool07.candidates.length > pool07.realCount, '占位已补入候选');
+const drawn = drawFromPool('POOL-07', need);
 assert(drawn.length === need, `能抽满 ${need} 件`, drawn.length);
 const enoughPool = resolveCandidates('POOL-06', 2);   // 作物池 11 条，充足
 assert(enoughPool.placeholderUsed === false, '候选充足时不启用占位（占位权重为 0）');
@@ -201,6 +202,22 @@ assert(mshop.stock.length === 10, '魔法商店共 10 格', mshop.stock.length);
 const mg = {};
 for (const s of mshop.stock) mg[s.group] = (mg[s.group] || 0) + 1;
 assert((mg['魔导书'] || 0) >= 3, '魔导书至少 3 格（靠占位补足）', mg);
+assert((mg['技能'] || 0) >= 2 && (mg['技能'] || 0) <= 3, '技能 2~3 格', mg);
+const skillSlots = mshop.stock.filter((s) => s.group === '技能');
+assert(skillSlots.every((s) => ITEMS[s.id]?.tier2 === '技能'), '技能货架展示技能本体', skillSlots.map((s) => s.id));
+assert(!mshop.stock.some((s) => /技能石|stone/i.test(`${s.id}${s.name}`)), '魔法商店无技能石');
+
+// 购买技能 → 直接入背包；该格售罄，无需二次「使用」
+const skillSlot = mshop.stock.findIndex((s) => s.group === '技能' && !s.sold);
+assert(skillSlot >= 0, '存在可购买的技能货位', skillSlot);
+const skillId = mshop.stock[skillSlot].id;
+const skillBefore = countItem(gs, skillId);
+gs.player.gold = 1000;
+const sb = buy(gs, 2, skillSlot);
+assert(sb.ok, '购买技能成功', sb);
+assert(countItem(gs, skillId) === skillBefore + 1, '购买后背包直接出现该技能物品', { skillId, before: skillBefore, after: countItem(gs, skillId) });
+assert(mshop.stock[skillSlot].sold === true, '技能售出后该格售罄');
+assert(!sell(gs, skillId).ok, '技能不可出售');
 
 head('每周一自动刷新');
 shop.refreshUsed = 3;
@@ -213,14 +230,17 @@ assert(getShop(gs, 1).stock.length === 12, '周一重新抽满 12 格');
 head('日历');
 assert(CalendarSystem.formatCalendar(gs) === '1 年 3 月 8 日 星期一', '日历显示正确', CalendarSystem.formatCalendar(gs));
 
-head('获得即生效：技能石 / 收藏品 / 魔导书');
+head('获得即生效：技能 / 收藏品 / 魔导书');
 const { initPassiveItems, hasConnectedRice } = await import('../src/systems/PassiveItemSystem.js');
 const { HookDispatcher } = await import('../src/core/HookDispatcher.js');
 initPassiveItems(() => gs);
 
-addItem(gs, 'skill_stone_shift', 1);
-assert(countItem(gs, 'skill_stone_shift') === 0, '技能石被消耗');
-assert(countItem(gs, 'skill_link_shift') === 1, '获得即习得【移形】');
+const skillHeldBefore = countItem(gs, 'skill_link_shift');
+addItem(gs, 'skill_link_shift', 1);
+assert(countItem(gs, 'skill_link_shift') === skillHeldBefore + 1, '技能物品直接留在背包（不再经中间物品兑换）', {
+  before: skillHeldBefore,
+  after: countItem(gs, 'skill_link_shift'),
+});
 
 gs.player.hp = 50;
 gs.player.maxHp = 100;
@@ -312,7 +332,6 @@ gs.map.outerTiles[1].contentId = 'resource_magic_shop';
 gs.inventory.items = [];
 
 const { generateStock } = await import('../src/systems/ShopSystem.js');
-const { ITEMS } = await import('../src/data/items.js');
 // 直接验证"排除集合"生效：把所有唯一物品都排除，生成的新库存不应包含它们
 const allUnique = new Set(
   Object.keys(ITEMS).filter((id) => isUniqueItem(id))

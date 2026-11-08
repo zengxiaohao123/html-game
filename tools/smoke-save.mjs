@@ -213,6 +213,41 @@ head('S6 旧档迁移（旧实时档 → 日初基线）');
   Storage.clearSlot(5);
 }
 
+head('S6b 旧档技能石换算为技能物品');
+{
+  const oldGs = createInitialState();
+  oldGs.inventory.items = [
+    { itemId: 'skill_stone_zongheng', qty: 2, value: 1 },
+    { itemId: 'item_wheat', qty: 1, value: 2 },
+  ];
+  oldGs.inventory.outbox = [{ itemId: 'skill_stone_shift', qty: 1, value: 1 }];
+  oldGs.hotbar = Array(10).fill(null);
+  oldGs.hotbar[0] = { itemId: 'skill_stone_zongheng' };
+  oldGs.map.outerTiles[2].contentId = 'resource_magic_shop';
+  oldGs.map.outerTiles[2].contentState = {
+    shop: {
+      kind: 'magic',
+      weekKey: '1-1',
+      refreshUsed: 0,
+      visited: false,
+      freeRefreshPending: 0,
+      leftAtTurn: -1,
+      stock: [{ id: 'skill_stone_shift', name: '技能石：移形', emoji: '💠', price: 20, value: 1, rarity: 2, group: '技能石', sold: false }],
+    },
+  };
+
+  migrateGS(oldGs);
+  check(oldGs.inventory.items[0].itemId === 'skill_zongheng' && oldGs.inventory.items[0].qty === 2,
+    '背包技能石 → 对应技能（数量保留）', oldGs.inventory.items[0]);
+  check(oldGs.inventory.items[1].itemId === 'item_wheat', '非技能石条目不受影响');
+  check(oldGs.inventory.outbox[0].itemId === 'skill_link_shift', '出货箱技能石 → 对应技能');
+  check(oldGs.hotbar[0].itemId === 'skill_zongheng', '快捷栏技能石 → 对应技能');
+  const slot = oldGs.map.outerTiles[2].contentState.shop.stock[0];
+  check(slot.id === 'skill_link_shift' && slot.name === '移形' && slot.group === '技能',
+    '商店库存技能石 → 技能商品（名称/分组同步）', slot);
+  check(!/技能石|skill_stone/.test(json(oldGs)), '迁移后存档内无技能石残留');
+}
+
 head('S7 槽位机制（8 槽，1 号自动）');
 {
   const slots = Storage.listSlots();

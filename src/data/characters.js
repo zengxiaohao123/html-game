@@ -562,7 +562,7 @@ export const SKILLS = {
     description: ITEMS.skill_link_luyouyou_rise_wind.description,
   },
 
-  // ── SKL-L-008 移形（通用连携技，技能石获得）──
+  // ── SKL-L-008 移形（通用连携技，魔法商店购买技能物品）──
   skill_link_shift: {
     id: 'skill_link_shift',
     name: '移形',

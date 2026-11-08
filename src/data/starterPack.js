@@ -69,7 +69,7 @@ export const STARTER_ITEMS = [
   ['item_farm_expand_length', 3],
   ['item_farm_expand_width', 3],
 
-  // ── 基础道具（技能石"获得即习得"只在游戏内获得时触发；开局直接给技能本体）──
+  // ── 技能与魔导书（技能在未放置前即物品；开局直接给技能本体）──
   ['skill_link_shift', 1],
   ['grimoire_grain_full', 1],
 

@@ -269,8 +269,11 @@ head('9. 感恩节的晚餐：友善生物当日视同敌人（既有例外保�
 head('10. 生物攻击型技能核对：当前没有任何生物攻击型技能生效');
 {
   const defs = Object.values(CREATURES);
-  check(defs.every(d => !Array.isArray(d.skills) && !d.attackSkill && !d.attack),
-    '生物数据表没有 skills / attackSkill / attack 字段（无攻击型技能）');
+  check(defs.every(d => !d.attackSkill && !d.attack),
+    '生物数据表无 attackSkill / attack 字段（无攻击结算入口）');
+  const skillIsPassive = (s) => !s || (!('damage' in s) && !('atk' in s));
+  const allSkillsPassive = defs.every((d) => !Array.isArray(d.skills) || d.skills.every(skillIsPassive));
+  check(allSkillsPassive, '生物 skills 仅为描述性被动，无攻击数值字段');
   check(defs.filter(d => d.category === 'friendly').every(d => d.atk === 0),
     '友善生物攻击力全部为 0（不攻击）');
 

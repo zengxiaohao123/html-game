@@ -18,7 +18,7 @@ import {
   TODO_LIST,
 } from './generated/library.js';
 
-/** 物品总表：id → 物品定义（93 条，按表格顺序） */
+/** 物品总表：id → 物品定义（104 条，按表格顺序） */
 export const ITEMS = LIB_ITEMS;
 
 /** 全部物品 id（稳定顺序，便于遍历渲染） */

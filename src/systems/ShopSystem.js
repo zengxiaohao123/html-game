@@ -6,12 +6,14 @@
 //   * 每周一自动刷新（免费，不计入手动次数）
 //   * 手动刷新每周 3 次，价格 4 / 8 / 12 逐个递增
 //   * 买到的东西每格只有 1 件；卖价 = 物品本身价值；售出后不再上架
-//   * 魔导书 / 技能石 / 收藏品 / 载具不可出售
+//   * 魔导书 / 技能 / 收藏品 / 载具不可出售
 //   * 离开后本回合内不能再进同一家店
 //
 // 差异：
 //   商店 12 格：载具 1~3、设施/资源 2~3、作物 2~3、收藏品 4~7
-//   魔法商店 10 格：魔导书 3~4、消耗道具 2~4、技能石 2~3、载具 1~3
+//   魔法商店 10 格：魔导书 3~4、消耗道具 2~4、技能 2~3、载具 1~3
+//
+// 技能货架：直接售卖技能物品本身，购买后直接入背包。
 //
 // 抽取：先各类抽到下限，剩余格数逐格随机分给"未达上限"的类别（§11.1 算法），
 //       候选不足时由 RandomPool 自动补入占位物品（野生种子 / 回忆录）。
@@ -25,6 +27,12 @@ import * as InventorySystem from './InventorySystem.js';
 import { VehicleSystem } from './VehicleSystem.js';
 import { ITEM_TO_VEHICLE } from '../data/vehicles.js';
 import { weekKey } from './CalendarSystem.js';
+
+/** 魔法商店直接售卖的技能货架（沿用旧版售价；id 取自物品库现有技能条目） */
+export const SHOP_SKILLS = [
+  { id: 'skill_zongheng', price: 10 },
+  { id: 'skill_link_shift', price: 20 },
+];
 
 /** 两类商店的配置 */
 export const SHOP_KINDS = {
@@ -46,14 +54,15 @@ export const SHOP_KINDS = {
     groups: [
       { pool: 'POOL-09', min: 3, max: 4, label: '魔导书' },
       { pool: 'POOL-10', min: 2, max: 4, label: '消耗道具' },
-      { pool: 'POOL-11', min: 2, max: 3, label: '技能石' },
+      { pool: 'SHOP_SKILL', min: 2, max: 3, label: '技能' },
       { pool: 'POOL-08', min: 1, max: 3, label: '载具' },
     ],
   },
 };
 
-/** 不可出售的一级/三级分类 */
-const UNSELLABLE_TIER3 = new Set(['魔导书', '技能石', '收藏品']);
+/** 不可出售的一级/二级/三级分类 */
+const UNSELLABLE_TIER3 = new Set(['魔导书', '收藏品']);
+const UNSELLABLE_TIER2 = new Set(['技能']);
 const UNSHELLABLE_TIER1 = new Set(['载具']);
 
 /** 会员卡等折扣（0 = 无折扣） */
@@ -72,6 +81,7 @@ export function isSellable(itemId) {
   const it = ITEMS[itemId];
   if (!it) return false;
   if (UNSHELLABLE_TIER1.has(it.tier1)) return false;
+  if (UNSELLABLE_TIER2.has(it.tier2)) return false;
   if (UNSELLABLE_TIER3.has(it.tier3)) return false;
   return true;
 }
@@ -136,6 +146,15 @@ export function planCounts(cfg, rand = Math.random) {
   return counts;
 }
 
+/** 技能货架抽取：每个货位独立从 SHOP_SKILLS 等权抽取，允许重复（同一技能可购买多份） */
+function drawShopSkills(count, rand = Math.random) {
+  const picked = [];
+  for (let i = 0; i < count; i++) {
+    picked.push(SHOP_SKILLS[Math.floor(rand() * SHOP_SKILLS.length)]);
+  }
+  return picked;
+}
+
 /** 生成一批商品 */
 export function generateStock(kind, rand = Math.random, opts = {}) {
   const exclude = opts.exclude || null;
@@ -144,7 +163,9 @@ export function generateStock(kind, rand = Math.random, opts = {}) {
   const stock = [];
 
   cfg.groups.forEach((g, i) => {
-    const picked = drawFromPool(g.pool, counts[i], { unique: false, exclude });
+    const picked = g.pool === 'SHOP_SKILL'
+      ? drawShopSkills(counts[i], rand)
+      : drawFromPool(g.pool, counts[i], { unique: false, exclude });
     for (const p of picked) {
       if (!p.id) continue;
       const def = ITEMS[p.id];
@@ -386,6 +407,7 @@ export function refreshLeft(shop) {
 
 export const ShopSystem = {
   SHOP_KINDS,
+  SHOP_SKILLS,
   isSellable,
   shopKindOfContent,
   generateStock,

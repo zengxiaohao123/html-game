@@ -40,7 +40,7 @@ export const SHOP_GRID = { cols: 4, cell: 112, gap: 10 };
 /** 商人立绘占位（美术未接入：iconEl 预留 PNG 入口，先回退大号 emoji + 对话框） */
 const MERCHANT = {
   shop: { iconId: 'merchant_shop', emoji: '\u{1F9D1}\u200D\u{1F33E}', name: '杂货商人', line: '看看有什么需要的吧，都是好东西。' },
-  magic: { iconId: 'merchant_magic', emoji: '🧙', name: '魔法商人', line: '魔导书和技能石……你确定付得起吗？' },
+  magic: { iconId: 'merchant_magic', emoji: '🧙', name: '魔法商人', line: '魔导书和技能……你确定付得起吗？' },
 };
 
 const UI = {

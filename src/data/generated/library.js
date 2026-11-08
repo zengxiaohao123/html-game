@@ -1408,7 +1408,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "获得角色时自动获得；获得对应技能石时自动习得（技能石获得即习得，无需使用）",
+  "sources": "获得角色时自动获得",
   "notes": "两词条并列是「或」关系"
 },
   skill_yumo_desperate: {
@@ -1437,7 +1437,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "获得角色时自动获得；获得对应技能石时自动习得（技能石获得即习得，无需使用）",
+  "sources": "获得角色时自动获得",
   "notes": null
 },
   skill_yumo_pioneer: {
@@ -1466,7 +1466,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "获得角色时自动获得；获得对应技能石时自动习得（技能石获得即习得，无需使用）",
+  "sources": "获得角色时自动获得",
   "notes": "小范围半径 0.3 米（以敌人位置为中心）"
 },
   skill_xiayang_inspire_lv1: {
@@ -1496,7 +1496,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "获得角色时自动获得；获得对应技能石时自动习得（技能石获得即习得，无需使用）",
+  "sources": "获得角色时自动获得",
   "notes": "技能带等级，羁绊等级提升时对应升级"
 },
   skill_xiayang_flame_strike: {
@@ -1525,7 +1525,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "获得角色时自动获得；获得对应技能石时自动习得（技能石获得即习得，无需使用）",
+  "sources": "获得角色时自动获得",
   "notes": null
 },
   skill_xiayang_ignite: {
@@ -1554,7 +1554,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "获得角色时自动获得；获得对应技能石时自动习得（技能石获得即习得，无需使用）",
+  "sources": "获得角色时自动获得",
   "notes": null
 },
   skill_xiayang_all_wishes: {
@@ -1583,7 +1583,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "获得角色时自动获得；获得对应技能石时自动习得（技能石获得即习得，无需使用）",
+  "sources": "获得角色时自动获得",
   "notes": null
 },
   skill_xiayang_blast_carnival: {
@@ -1612,7 +1612,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "获得角色时自动获得；获得对应技能石时自动习得（技能石获得即习得，无需使用）",
+  "sources": "获得角色时自动获得",
   "notes": null
 },
   skill_luyouyou_careful_shot: {
@@ -1641,7 +1641,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "获得角色时自动获得；获得对应技能石时自动习得（技能石获得即习得，无需使用）",
+  "sources": "获得角色时自动获得",
   "notes": null
 },
   skill_luyouyou_breathe_aim: {
@@ -1670,7 +1670,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "获得角色时自动获得；获得对应技能石时自动习得（技能石获得即习得，无需使用）",
+  "sources": "获得角色时自动获得",
   "notes": "陆悠悠实际为风元素（12.9 代码警告）"
 },
   skill_luyouyou_wind_stop: {
@@ -1699,7 +1699,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "获得角色时自动获得；获得对应技能石时自动习得（技能石获得即习得，无需使用）",
+  "sources": "获得角色时自动获得",
   "notes": null
 },
   skill_zongheng: {
@@ -1726,7 +1726,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "获得技能石「合纵连横」时自动习得（技能石获得即习得，无需使用）",
+  "sources": "魔法商店购买（购买即获得该技能物品）",
   "notes": "隐藏词条不含角色归属，为通用技能"
 },
   skill_link_yumo_drain: {
@@ -1754,7 +1754,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "获得角色时自动获得；获得对应技能石时自动习得（技能石获得即习得，无需使用）",
+  "sources": "获得角色时自动获得",
   "notes": "不按则放弃且不进入冷却；冷却按回合计数"
 },
   skill_link_xiayang_scorch: {
@@ -1782,7 +1782,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "获得角色时自动获得；获得对应技能石时自动习得（技能石获得即习得，无需使用）",
+  "sources": "获得角色时自动获得",
   "notes": null
 },
   skill_link_xiayang_annihilate: {
@@ -1810,7 +1810,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "获得角色时自动获得；获得对应技能石时自动习得（技能石获得即习得，无需使用）",
+  "sources": "获得角色时自动获得",
   "notes": "计数来自夏阳全部技能使用"
 },
   skill_link_luyouyou_weak_point: {
@@ -1838,7 +1838,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "获得角色时自动获得；获得对应技能石时自动习得（技能石获得即习得，无需使用）",
+  "sources": "获得角色时自动获得",
   "notes": "【蓄力】为敌人专属状态，具体在敌人技能中说明"
 },
   skill_link_luyouyou_storm_eye: {
@@ -1866,7 +1866,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "获得角色时自动获得；获得对应技能石时自动习得（技能石获得即习得，无需使用）",
+  "sources": "获得角色时自动获得",
   "notes": null
 },
   skill_link_luyouyou_hunt: {
@@ -1894,7 +1894,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "获得角色时自动获得；获得对应技能石时自动习得（技能石获得即习得，无需使用）",
+  "sources": "获得角色时自动获得",
   "notes": "每次弹射在当前目标半径 0.3 米内随机 1 名敌人（含自身），允许重复"
 },
   skill_link_luyouyou_rise_wind: {
@@ -1922,7 +1922,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "获得角色时自动获得；获得对应技能石时自动习得（技能石获得即习得，无需使用）",
+  "sources": "获得角色时自动获得",
   "notes": null
 },
   skill_link_shift: {
@@ -1948,7 +1948,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "获得对应技能石时自动习得（技能石获得即习得，无需使用）",
+  "sources": "魔法商店购买（购买即获得该技能物品）",
   "notes": "隐藏词条不含角色归属，为通用技能。本日内移动过的距离为曼哈顿距离计算，使用本技能不清零，在下一日开始时清零。技能倍率是指“50%”，每次+5%"
 },
   item_herb: {
@@ -3944,8 +3944,8 @@ export const POOLS = {
 },
   "POOL-11": {
   "code": "POOL-11",
-  "name": "魔法商店·技能石池",
-  "title": "POOL-11　魔法商店·技能石池（已停用：商店改为直接售卖技能）",
+  "name": "魔法商店·技能货架",
+  "title": "POOL-11　魔法商店·技能货架（已停用：技能由 ShopSystem 代码货架直接售卖）",
   "drawMin": null,
   "drawMax": null,
   "entries": []
@@ -5465,9 +5465,9 @@ export const TODO_LIST = [
   },
   {
     "no": 24,
-    "title": "技能石「获得即习得」口径残留",
+    "title": "技能获取口径残留",
     "type": "命名不一致",
-    "detail": "已修正三处：技能 19 条获取途径、产出与掉落 OUT-23 触发时点、词条字典「使用时」；2026-11-08 技能石条目整体删除，本项归档。",
+    "detail": "已修正三处：技能 19 条获取途径、产出与掉落 OUT-23 触发时点、词条字典「使用时」；2026-11-08 技能改为购买/获得即入背包，本项归档。",
     "where": "SKL-A-001~012、SKL-L-001~007",
     "priority": "中",
     "status": "已补"
@@ -5510,9 +5510,9 @@ export const TODO_LIST = [
   },
   {
     "no": 29,
-    "title": "技能石数量不足（商店最低需 2 条）",
+    "title": "魔法商店技能货架数量",
     "type": "内容待补",
-    "detail": "2026-11-08 起技能石条目整体删除，商店改为直接售卖技能，本项作废。",
+    "detail": "2026-11-08 起技能改为直接售卖，技能货架由 ShopSystem（SHOP_SKILLS）提供，本项作废。",
     "where": "POOL-11",
     "priority": "高",
     "status": "已废弃"

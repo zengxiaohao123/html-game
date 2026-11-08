@@ -227,6 +227,7 @@ head('any（巧遇）最短环路径');
   setStrawberry(gs, 7);
   setStrawberry(gs, 0);
   equip(gs, 'vehicle_chance');
+  gs.team.groups[gs.team.activeGroup || 0].roles = ['xiayang']; // 巧遇为天赋限定载具：持有者夏阳需在队
   const r = VehicleSystem.tryMove(gs, { targetIdx: 0 });
   assert(r.ok, '巧遇移动成功', r.reason);
   assert(pathText(r.path) === '[7,0]', '模拟路径 = [7,0]', r.path);
