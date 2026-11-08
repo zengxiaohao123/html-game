@@ -193,6 +193,24 @@ export function onItemGained(gs, itemId) {
       case 'grimoire_granary_full':
         toast('📖 仓廪实：水稻田块与小麦田块互为视同');
         break;
+      case 'grimoire_potato_hardship':
+        toast('📖 薯道难：土豆田块共用储存容量；地雷伤害=土豆总量');
+        break;
+      case 'grimoire_potato_mine':
+        toast('📖 土豆地雷：每日在栅栏内埋雷（场上至多 5 个）');
+        break;
+      case 'grimoire_fries_quartet':
+        toast('📖 薯条四重奏：土豆田块数为 4 的倍数时容量 +10');
+        break;
+      case 'grimoire_bubble':
+        toast('📖 泡沫：郁金香日波动 -9~+18（价值可为负）');
+        break;
+      case 'grimoire_tulip_simple':
+        toast('📖 郁金香，简单！：改为每回合波动，可叠放郁金香');
+        break;
+      case 'grimoire_economy_up':
+        toast('📖 经济上行：郁金香初始价值 +6');
+        break;
       default:
         break;
     }

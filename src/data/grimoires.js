@@ -131,6 +131,123 @@ export const GRIMOIRES = {
       unique: true,
     },
   },
+  // ── 土豆系列（土豆田块 = facility_potato）─────────────────────────────
+
+  grimoire_potato_hardship: {
+    id: 'grimoire_potato_hardship',
+    itemId: 'grimoire_potato_hardship',
+    name: '薯道难',
+    emoji: '📖',
+    description: ITEMS.grimoire_potato_hardship.description,
+    triggerCondition: 'passive_potato_storage', // 常驻：土豆储存共用容量 + 地雷伤害口径 + 进入词条改写
+    effectType: 'potato_shared_storage',
+    effectParams: {
+      facilityId: 'facility_potato',
+      sharedCapacity: true,                  // 所有土豆田块共用一份容量池（基础 30，薯条四重奏 +10）
+      mineDamageSource: 'total_stored',       // 【土豆地雷】伤害量 = 土豆储存总数量
+      enterTrait: 'take_all_potato',          // 土豆田块词条改为【进入时】可取走所有土豆田块储存
+      unique: true,
+    },
+  },
+
+  grimoire_potato_mine: {
+    id: 'grimoire_potato_mine',
+    itemId: 'grimoire_potato_mine',
+    name: '土豆地雷',
+    emoji: '📖',
+    description: ITEMS.grimoire_potato_mine.description,
+    triggerCondition: 'onDailyStart',        // 【每一日开始时】每个土豆田块埋 1 个地雷
+    effectType: 'spawn_field_mine',
+    effectParams: {
+      facilityId: 'facility_potato',
+      minePerTile: 1,
+      maxOnField: 5,                          // 场上至多同时存在 5 个
+      surfaceTurns: 5,                        // 埋下 5 回合后探出头
+      triggerAxis: 'creature_collision',      // 敌人碰撞触发
+      damageSource: 'tile_stored_potato',     // 伤害量 = 本田块当前储存的土豆数量
+      element: 'fire',
+      blastRadius: 1,                         // 小范围 = 半径 1 米（= 1 格）
+      stunTurns: 1,                           // 命中者【晕眩】1 回合
+      unique: true,
+    },
+  },
+
+  grimoire_fries_quartet: {
+    id: 'grimoire_fries_quartet',
+    itemId: 'grimoire_fries_quartet',
+    name: '薯条四重奏',
+    emoji: '📖',
+    description: ITEMS.grimoire_fries_quartet.description,
+    triggerCondition: 'passive_tile_count',  // 常驻：田块数量实时判定
+    effectType: 'potato_capacity_bonus',
+    effectParams: {
+      facilityId: 'facility_potato',
+      countMultiple: 4,                       // 数量恰为 4 的倍数
+      capacityBonus: 10,                      // 所有土豆田块储存容量 +10
+      unique: true,
+    },
+  },
+
+  // ── 郁金香系列（郁金香花田 = facility_tulip）───────────────────────────
+
+  grimoire_bubble: {
+    id: 'grimoire_bubble',
+    itemId: 'grimoire_bubble',
+    name: '泡沫',
+    emoji: '📖',
+    description: ITEMS.grimoire_bubble.description,
+    triggerCondition: 'onDailyStart',        // 【每一日开始时】价值波动 -9~+18
+    effectType: 'tulip_value_volatility',
+    effectParams: {
+      facilityId: 'facility_tulip',
+      mode: 'daily',
+      deltaMin: -9,
+      deltaMax: 18,
+      allowNegative: true,                    // 价值可为负
+      negativePickup: 'deduct_gold',          // 负价值采摘/拆除扣金币（允许负数金币）
+      highLowMultiplier: 1.5,                 // |价值|>50 时采摘/拆除结算 ×1.5
+      highLowThreshold: 50,
+      forceRemoveBelow: -100,                 // 价值 < -100 强制拆除
+      unique: true,
+    },
+  },
+
+  grimoire_tulip_simple: {
+    id: 'grimoire_tulip_simple',
+    itemId: 'grimoire_tulip_simple',
+    name: '郁金香，简单！',
+    emoji: '📖',
+    description: ITEMS.grimoire_tulip_simple.description,
+    triggerCondition: 'onTurnStart',         // 【每回合开始时】价值波动 -4~+9
+    effectType: 'tulip_value_volatility',
+    effectParams: {
+      facilityId: 'facility_tulip',
+      mode: 'turn',
+      deltaMin: -4,
+      deltaMax: 9,
+      allowStacking: true,                    // 可叠放新郁金香田块
+      stackValue: 'initial_value',            // 当前价值 += 初始价值（3 / 经济上行 9）
+      stackVolatilityMultiplierPerStack: 1,    // 此后波动效果 +1 倍 / 层
+      precedenceOver: ['grimoire_bubble'],    // 与泡沫同时拥有时以本魔导书为准
+      unique: true,
+    },
+  },
+
+  grimoire_economy_up: {
+    id: 'grimoire_economy_up',
+    itemId: 'grimoire_economy_up',
+    name: '经济上行',
+    emoji: '📖',
+    description: ITEMS.grimoire_economy_up.description,
+    triggerCondition: 'passive_tulip_initial_value',
+    effectType: 'tulip_initial_value_bonus',
+    effectParams: {
+      facilityId: 'facility_tulip',
+      initialValueBonus: 6,                   // 郁金香初始价值 +6（3 → 9）
+      applyTo: 'new_tulip_tiles',             // 只影响之后放置 / 叠放的郁金香
+      unique: true,
+    },
+  },
 };
 
 export const ALL_GRIMOIRE_IDS = Object.keys(GRIMOIRES);

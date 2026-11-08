@@ -119,7 +119,7 @@ function getCreatureStates(c) {
       tone: 'neutral',
       meaning: stateMeaning(bDef?.name || b.id, bDef?.description),
       strength,
-      remainingTurns: b.remainingTurns ?? null,
+      remainingTurns: (b.params?.displayTurns ?? b.remainingTurns) ?? null,
       remainingDays: b.remainingDays ?? null,
     });
   }
@@ -523,11 +523,14 @@ export class InfoPanel {
       switch (contentId) {
         case 'facility_potato': {
           // 🥔 土豆田：onTile 时显示滑动条收获（L-04：不在该格时整块不渲染）
+          // 薯道难：所有土豆田块共用容量池，可一次取走全部田块的土豆
           if (!onTile) break;
-          const stored = tile.contentState?.potatoStored ?? 0;
+          const sharedPool = hasPotatoHardship(gs);
+          const stored = sharedPool ? potatoTotalStored(gs) : potatoStoredOf(tile);
+          const cap = potatoCapacity(gs);
           createEl('div', {
             style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
-            text: `🥔 已储存 ${stored} / 30`,
+            text: `🥔 已储存 ${stored} / ${cap}${sharedPool ? '（所有土豆田块共用）' : ''}`,
             parent: this.bodyWrap,
           });
           const range = this._mkHarvestSlider(this.bodyWrap, stored);
@@ -548,15 +551,9 @@ export class InfoPanel {
             onclick: () => {
               const qty = parseInt(range.value, 10) || 0;
               if (qty <= 0) return;
-              const curTile = gs.map.outerTiles[tileIdx];
-              const cs = curTile.contentState || (curTile.contentState = {});
-              const actually = Math.min(qty, cs.potatoStored || 0);
-              InventorySystem.addItem(gs, 'item_potato', actually);
-              cs.potatoStored = (cs.potatoStored || 0) - actually;
-              syncPumpkin(gs); // A-12：取走储存 → 同步悲恸南瓜
-              EventBus.emit(GE.INVENTORY_CHANGE);
-              EventBus.emit(GE.TILE_UPDATED, { tileIdx });
-              EventBus.emit(GE.TOAST_SHOW, { text: `🥔 收获 +${actually} 土豆`, duration: 1800 });
+              const { actual } = harvestPotato(gs, tileIdx, qty);
+              if (actual <= 0) return;
+              EventBus.emit(GE.TOAST_SHOW, { text: `🥔 收获 +${actual} 土豆`, duration: 1800 });
               this._renderBody();
             },
           });
@@ -640,12 +637,32 @@ export class InfoPanel {
 
         case 'facility_tulip': {
           // 🌷 郁金香：随时可点采摘
-          const value = Math.max(0, tile.contentState?.tulipValue || 0);
+          // 魔导书体系：价值可为负；|价值|>50 结算 ×1.5；负价值采摘扣金币；< -100 日初强制拆除
+          const value = tulipValue(tile);
+          const stacks = tulipStacks(tile);
+          const settled = settleTulipValue(value);
           createEl('div', {
             style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
-            text: `🌷 当前价值：${value}`,
+            text: `🌷 当前价值：${value}${stacks > 0 ? `（叠放 ${stacks} 层 · 波动 ×${stacks + 1}）` : ''}`,
             parent: this.bodyWrap,
           });
+          const hint = settled < 0
+            ? `采摘将扣除 ${-settled} 金币（金币可为负）`
+            : settled > 0
+              ? `采摘获得价值 ${settled} 的郁金香`
+              : '采摘获得 0 价值郁金香';
+          createEl('div', {
+            style: { fontSize: '12px', color: settled < 0 ? '#b04040' : '#666', marginBottom: '6px' },
+            text: hint,
+            parent: this.bodyWrap,
+          });
+          if (value < -100) {
+            createEl('div', {
+              style: { fontSize: '12px', color: '#b04040', marginBottom: '6px' },
+              text: '⚠ 价值低于 -100：下一日开始时将被强制拆除',
+              parent: this.bodyWrap,
+            });
+          }
           createEl('button', {
             class: 'action-btn',
             style: { width: '100%', fontSize: '13px', background: '#ffe0f0' },
@@ -653,14 +670,7 @@ export class InfoPanel {
             parent: this.bodyWrap,
             onclick: () => {
               const curTile = gs.map.outerTiles[tileIdx];
-              const v = Math.max(0, curTile.contentState?.tulipValue || 0);
-              // 任何时候都能采摘（价值 ≤ 0 时按 0 算，玩家亏金币但花田清空）
-              InventorySystem.addItem(gs, 'item_tulip', 1, { value: v });
-              curTile.contentId = null;
-              curTile.contentState = {};
-              EventBus.emit(GE.TILE_UPDATED, { tileIdx });
-              EventBus.emit(GE.INVENTORY_CHANGE);
-              EventBus.emit(GE.TOAST_SHOW, { text: `🌷 采摘成功！获得价值 ${v} 的郁金香`, duration: 2000 });
+              pickTulip(gs, curTile);
               this._renderBody();
             },
           });

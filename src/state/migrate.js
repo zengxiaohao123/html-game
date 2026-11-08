@@ -8,8 +8,54 @@
 import { createInitialState } from './gameState.js';
 import { devLog } from '../core/Logger.js';
 import { getCreatureDef } from '../data/creatures.js';
+import { ITEMS } from '../data/items.js';
 import { DEFAULT_CREATURE_RADIUS, FENCE_ORIGIN_X, FENCE_ORIGIN_Y } from '../core/Geometry.js';
 import { applyCapacityLimits } from '../systems/CapacitySystem.js';
+
+/** 旧版「技能石」→ 对应技能物品（仅用于旧档迁移；新版不再产生技能石） */
+const LEGACY_SKILL_STONE_TO_SKILL = {
+  skill_stone_zongheng: 'skill_zongheng',
+  skill_stone_shift: 'skill_link_shift',
+};
+
+/**
+ * 旧档里的技能石统一换算为对应技能物品（1 个技能石 → 1 个技能）。
+ * 覆盖背包、出货箱、快捷栏与商店库存；换算后不再保留技能石条目。
+ * @returns {number} 换算的条目数
+ */
+function migrateLegacySkillStones(gs) {
+  let converted = 0;
+  const convertEntry = (entry) => {
+    const next = entry && LEGACY_SKILL_STONE_TO_SKILL[entry.itemId];
+    if (!next) return;
+    entry.itemId = next;
+    converted += 1;
+  };
+
+  for (const bag of [gs.inventory?.items, gs.inventory?.outbox]) {
+    if (Array.isArray(bag)) bag.forEach(convertEntry);
+  }
+  if (Array.isArray(gs.hotbar)) gs.hotbar.forEach(convertEntry);
+
+  for (const tile of gs.map?.outerTiles || []) {
+    const stock = tile?.contentState?.shop?.stock;
+    if (!Array.isArray(stock)) continue;
+    for (const item of stock) {
+      const next = LEGACY_SKILL_STONE_TO_SKILL[item?.id];
+      if (!next) continue;
+      const def = ITEMS[next];
+      item.id = next;
+      if (def) {
+        item.name = def.name;
+        item.emoji = def.emoji;
+        item.value = def.value;
+      }
+      item.group = '技能';
+      converted += 1;
+    }
+  }
+  return converted;
+}
 
 /**
  * 判断一个值是否是 plain object（非数组、非 null）
@@ -156,6 +202,12 @@ export function migrateGS(loadedGs) {
 
   // ── 语义迁移（字段含义变化，不能只靠补默认值） ──
 
+  // 技能石概念已删除：旧档里的技能石条目换算为对应技能物品（背包 / 出货箱 / 快捷栏 / 商店库存）
+  const stoneConverted = migrateLegacySkillStones(loadedGs);
+  if (stoneConverted > 0) {
+    devLog.info('[migrateGS] 旧技能石条目已换算为技能物品:', stoneConverted);
+  }
+
   // B-3：技能冷却键从 `skill_<id>_<tileIdx>` 改为 `skill_<id>`（§12.3 技能卡移动后冷却保留）
   if (isPlainObject(loadedGs.skillCooldowns)) {
     const next = {};
@@ -289,6 +341,36 @@ export function migrateGS(loadedGs) {
         }
       }
     }
+  }
+
+  // 魔导书 batch（土豆地雷 / 郁金香价值体系）：补全旧档缺失字段
+  //   · 地雷实体：gs.mines / minesNextId（旧档没有；已存在的不改数值）
+  //   · 郁金香：tulipStacks（叠放层数，旧档按 0）与 tulipInit 标记（旧档保持当前价值，不追补初始值）
+  if (!Array.isArray(loadedGs.mines)) loadedGs.mines = [];
+  if (typeof loadedGs.minesNextId !== 'number' || !Number.isFinite(loadedGs.minesNextId)) {
+    loadedGs.minesNextId = 1;
+  }
+  for (const m of loadedGs.mines) {
+    if (!isPlainObject(m)) continue;
+    if (typeof m.radius !== 'number' || m.radius <= 0) m.radius = 0.35;
+    if (!Number.isFinite(m.x)) m.x = FENCE_ORIGIN_X + 0.5;
+    if (!Number.isFinite(m.y)) m.y = FENCE_ORIGIN_Y + 0.5;
+    if (!Number.isFinite(m.turnsLeft)) m.turnsLeft = 5;
+    if (typeof m.surfaced !== 'boolean') m.surfaced = m.turnsLeft <= 0;
+    if (!Number.isFinite(m.blastRadius)) m.blastRadius = 1;
+    if (!m.id) m.id = `mine_${loadedGs.minesNextId++}`;
+  }
+  for (const tile of loadedGs.map?.outerTiles || []) {
+    if (tile?.contentId !== 'facility_tulip') continue;
+    const cs = tile.contentState || (tile.contentState = {});
+    if (!Number.isFinite(cs.tulipValue)) cs.tulipValue = 0;
+    if (!Number.isFinite(cs.tulipStacks) || cs.tulipStacks < 0) cs.tulipStacks = 0;
+    if (typeof cs.tulipInit !== 'boolean') cs.tulipInit = true; // 旧档不追溯补初始价值
+  }
+  for (const tile of loadedGs.map?.outerTiles || []) {
+    if (tile?.contentId !== 'facility_potato') continue;
+    const cs = tile.contentState || (tile.contentState = {});
+    if (!Number.isFinite(cs.potatoStored) || cs.potatoStored < 0) cs.potatoStored = 0;
   }
 
   // 容量上限只由栅栏面积决定：读档时按实际尺寸重算，保证读档首帧容量 UI 即为正确值

@@ -40,6 +40,17 @@ import { HealSystem } from '../systems/HealSystem.js';
 import { ShopSystem } from '../systems/ShopSystem.js';
 import { StaminaSystem } from '../systems/StaminaSystem.js';
 import { syncPumpkin, hasGrimoire } from '../systems/PassiveItemSystem.js';
+import {
+  POTATO_BLESS_ADD,
+  addPotatoStored,
+  potatoCapacity,
+  potatoStoredOf,
+  potatoTotalStored,
+  hasPotatoHardship,
+} from '../systems/PotatoSystem.js';
+import {
+  applyTulipFluctuation,
+} from '../systems/TulipSystem.js';
 import { FieldEffects } from '../systems/FieldEffects.js';
 import { PendingDeathQueue } from '../systems/PendingDeathQueue.js';
 import { buildEventStory } from './stories.js';
@@ -289,11 +300,10 @@ const FacilityRice = {
 
 // ════════════════════════════════════════════════════════════════
 // 5. FacilityPotato  🥔  —— 土豆田
-// 【每一日开始时】储存土豆 ×3（至多 30）—— 储存量存在 tile.contentState.potatoStored
-// 【进入时】可以取走储存的土豆
+// 【每一日开始时】储存土豆 ×3（容量 30；薯道难 → 全程共用容量池）
+// 【进入时】可以取走储存的土豆（薯道难：可一次取走所有土豆田块的土豆）
 // 【受祝福时】储存土豆 ×5
 // ════════════════════════════════════════════════════════════════
-const POTATO_MAX_STORED = 30;
 const FacilityPotato = {
   id: 'facility_potato',
   name: '土豆田块',
@@ -302,7 +312,8 @@ const FacilityPotato = {
   description: ITEMS.facility_potato.description,
 
   register() {
-    // onDailyStart：所有土豆田 +3（受祝福则 +5），上限 30
+    // onDailyStart：所有土豆田 +3（受祝福则 +5）
+    // 魔导书：薯道难 → 全部土豆田共用容量池；薯条四重奏 → 田块数为 4 的倍数时每块 +10
     HookDispatcher.register('onDailyStart', ({ gs }) => {
       const tiles = gs.map.outerTiles.filter(t => t.contentId === this.id);
       for (const t of tiles) {
@@ -311,12 +322,11 @@ const FacilityPotato = {
         if (t.dailyFlags[key]) continue;
         t.dailyFlags[key] = true;
 
-        const state = t.contentState || (t.contentState = {});
         let add = 3;
         const blessed = t.states?.some(s => s.type === 'blessed');
         if (blessed) add = 5;
-        state.potatoStored = Math.min(POTATO_MAX_STORED, (state.potatoStored || 0) + add);
-        devLog.info('[potato] tile', t.idx, 'stored →', state.potatoStored);
+        addPotatoStored(gs, t, add);
+        devLog.info('[potato] tile', t.idx, 'stored →', potatoStoredOf(t), '/', potatoCapacity(gs));
       }
       // A-12：田间储存变化 → 同步悲恸南瓜加成
       syncPumpkin(gs);
@@ -329,13 +339,14 @@ const FacilityPotato = {
       devLog.info('[potato] onEnter (manual harvest via InfoPanel now)');
     }, this);
 
-    // onBlessed：储存 +5（立即触发，跳过每日 flag 检查）
+    // onBlessed：储存 +5（立即触发，跳过每日 flag 检查；按容量截断）
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
       const tile = gs.map.outerTiles[tileIdx];
-      const state = tile.contentState || (tile.contentState = {});
-      state.potatoStored = Math.min(POTATO_MAX_STORED, (state.potatoStored || 0) + 5);
-      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 祝福储存 +5 土豆（现 ${state.potatoStored}/${POTATO_MAX_STORED}）`, duration: 2000 });
+      const added = addPotatoStored(gs, tile, POTATO_BLESS_ADD);
+      const cap = potatoCapacity(gs);
+      const cur = hasPotatoHardship(gs) ? potatoTotalStored(gs) : potatoStoredOf(tile);
+      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 祝福储存 +${added} 土豆（现 ${cur}/${cap}）`, duration: 2000 });
       EventBus.emit(GE.TILE_UPDATED, { tileIdx });
       syncPumpkin(gs); // A-12
     }, this);
@@ -356,29 +367,26 @@ const FacilityTulip = {
   description: ITEMS.facility_tulip.description,
 
   register() {
+    // 【每一日开始时】波动：
+    //   默认 -4~+10（历史值）；魔导书「泡沫」→ -9~+18；「郁金香，简单！」改为每回合波动（此处跳过）
+    //   叠放层数 ×（1 + 层数）；价值 < -100 强制拆除（applyTulipFluctuation 内部处理）
     HookDispatcher.register('onDailyStart', ({ gs }) => {
       const tiles = gs.map.outerTiles.filter(t => t.contentId === this.id);
       for (const t of tiles) {
         const key = flagKey(this.id, 'onDailyStart');
         if (t.dailyFlags[key]) continue;
         t.dailyFlags[key] = true;
-        const state = t.contentState || (t.contentState = {});
-        const delta = Math.floor(Math.random() * 15) - 4; // -4 ~ +10
-        state.tulipValue = (state.tulipValue || 0) + delta;
-        devLog.info('[tulip] tile', t.idx, 'value +', delta, '→', state.tulipValue);
+        const value = applyTulipFluctuation(gs, t, 'daily');
+        devLog.info('[tulip] tile', t.idx, 'value →', value);
       }
     }, this);
 
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
       const tile = gs.map.outerTiles[tileIdx];
-      // 立即触发 2 次每日效果
-      for (let i = 0; i < 2; i++) {
-        const state = tile.contentState || (tile.contentState = {});
-        const delta = Math.floor(Math.random() * 15) - 4;
-        state.tulipValue = (state.tulipValue || 0) + delta;
-      }
-      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 郁金香祝福 +2 次每日效果，当前值 ${Math.max(0, tile.contentState.tulipValue)}`, duration: 2000 });
+      // 立即触发 2 次波动（叠放倍率 / 泡沫区间 / 简单！回合区间都按当前生效规则）
+      const value = applyTulipFluctuation(gs, tile, 'bless');
+      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 郁金香祝福 +2 次波动，当前值 ${value}`, duration: 2000 });
       EventBus.emit(GE.TILE_UPDATED, { tileIdx });
     }, this);
   },

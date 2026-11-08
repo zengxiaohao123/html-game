@@ -832,3 +832,45 @@ friendly → （无）
 - 自身技能（鼓舞 / 屏息瞄准）在**没有敌人**时也能触发；
 - 危险 / 高危生物的阵营只能指向我方，不会指向友善；
 - 【不分敌我】当前技能库计数为 0。
+
+---
+
+## 十、土豆 / 郁金香魔导书系统（2026-11-08）
+
+### 10.1 新增模块
+
+| 文件 | 职责 | 对外 API |
+|---|---|---|
+| `src/systems/PotatoSystem.js` | 土豆储存容量 / 共用池 / 收获 / 地雷伤害口径 | `potatoCapacity` `potatoTotalStored` `addPotatoStored` `harvestPotato` `potatoMineDamage` `hasPotatoHardship` `hasFriesQuartet` |
+| `src/systems/TulipSystem.js` | 郁金香初始价值 / 波动 / 叠放 / 结算 / 强制拆除 | `tulipInitialValue` `initTulipTile` `stackTulip` `applyTulipFluctuation` `settleTulipValue` `pickTulip` `removeTulip` `maybeForceRemoveTulip` |
+| `src/systems/MineSystem.js` | 土豆地雷场上实体：埋设 / 倒计时 / 碰撞 / 爆炸 / 消耗 | `plantMine` `tickMines` `stepMineCollisions` `explodeMine` `ensureMines` |
+| `src/systems/CropGrimoireHooks.js` | 魔导书 hook 接线（onDailyStart / onTurnStart / onPlace / MAP_EXPANDED / RealtimeClock.onStep） | `initCropGrimoires(getGS)` `rewireCropGrimoires()` |
+| `src/ui/MineView.js` | 地雷渲染层（zIndex 18，低于生物层 20） | `new MineView(layer).paint(gs, tileSize)` |
+
+**复用约定**：【每回合开始时】统一使用 `HookDispatcher.onTurnStart`（`TurnSystem` 已提供），不新建第二套回合 hook；碰撞判定使用 `Geometry.circleCenterDistance` 的圆-圆重叠，不新建第二套碰撞。
+
+### 10.2 GS 字段（`createInitialState`）
+
+```js
+mines: [],        // 场上实体：{ id, sourceTileIdx, x, y, radius, blastRadius, turnsLeft, surfaced }
+minesNextId: 1,   // 地雷 id 自增序号（逻辑值，入日初基线）
+```
+
+- 田地字段沿用 `tile.contentState`：土豆 `potatoStored`；郁金香 `tulipValue` / `tulipStacks` / `tulipInit`。
+- `DayBaseline.capture` 为整份 `gs` 深拷贝，`mines` / `minesNextId` 自动入档；`migrate.js` 对旧档补 `mines=[]`、`minesNextId=1`、`tulipStacks=0`、`tulipInit=true`（旧价值不追溯补初始值）。
+
+### 10.3 新增 buff
+
+`buffs.js` 新增 `stunned`（晕眩，debuff，target `creature`）：描述逐字取自词条字典「该单位无法行动，持续对应回合数。」
+- 生效：`CreatureSystem.isCreatureStunned(c)`，`stepCreatures` 逻辑步内跳过移动（渲染插值冻结）。
+- 内部计数：`remainingTurns = 2` + `params.displayTurns = 1`，保证跨过一次回合结算后仍覆盖「下一个回合」；UI 显示 1 回合。
+
+### 10.4 事件与 UI
+
+- 复用既有 `GE.GOLD_CHANGE` / `GE.TILE_UPDATED` / `GE.TILE_CONTENT_CHANGED` / `GE.INVENTORY_CHANGE` / `GE.DAMAGE_DEALT` / `GE.TOAST_SHOW`；未新增事件。
+- `MapView` 新增 `mineLayer`（zIndex 18）并在既有 rAF 循环内 `MineView.paint`，地雷状态（埋藏 / 探出）逐帧实时可见。
+- `InfoPanel` 实时显示：土豆「已储存 / 容量」（薯道难显示共用池）、郁金香「当前价值 / 叠放层数」、金币变化；不新增手动「使用技能」入口。
+
+### 10.5 验收脚本（临时 Node 断言，不入库）
+
+`tools/` 之外的临时脚本验证：容量 30/40、薯道难共用池与一次取走、地雷伤害口径、5 个上限与 5 回合探出、碰撞火伤 + 晕眩、郁金香初始 3/9、×1.5 取整、叠放与波动倍率、负价值扣金币、< -100 强制拆除、日初基线往返、旧档迁移。

@@ -23,6 +23,7 @@ import { SKILLS } from '../data/characters.js';
 import { InventorySystem } from './InventorySystem.js';
 import { LinkSkillSystem, getActiveGroupRoles } from './LinkSkillSystem.js';
 import { removeCreaturesOwnedByTile } from './CreatureSystem.js';
+import { TulipSystem, stackTulip, removeTulip } from './TulipSystem.js';
 import { fenceDimsOf } from '../core/Distance.js';
 import { devLog } from '../core/Logger.js';
 
@@ -209,6 +210,28 @@ export function placeContent(gs, tileIdx, contentId) {
     return { ok: false, reason: 'noItem' };
   }
 
+  // ── 郁金香叠放（魔导书《郁金香，简单！》）──
+  //   在既有郁金香田块上再放一个郁金香：消耗 1 个物品，当前价值 += 初始价值，
+  //   波动倍率 +1 倍；不触发替换清理（contentState 必须保留）。
+  if (contentId === TulipSystem.TULIP_ID
+    && oldContentId === TulipSystem.TULIP_ID
+    && TulipSystem.hasTulipSimple(gs)) {
+    const removed = InventorySystem.removeItem(gs, contentId, 1);
+    if (removed < 1) {
+      EventBus.emit(GE.TOAST_SHOW, { text: '🛠️ 库存不足（请稍后重试）', duration: 1800 });
+      return { ok: false, reason: 'noItem' };
+    }
+    const { value, stacks } = stackTulip(gs, tile);
+    EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+    EventBus.emit(GE.INVENTORY_CHANGE, { type: 'stack', tileIdx, contentId });
+    EventBus.emit(GE.TOAST_SHOW, {
+      text: `🌷 叠放郁金香：当前价值 ${value}（叠放 ${stacks} 层，波动 ×${stacks + 1}）`,
+      duration: 2200,
+    });
+    devLog.info('[Build] tulip stacked at tile', tileIdx, '→ value', value, 'stacks', stacks);
+    return { ok: true, stacked: true };
+  }
+
   // 永恒词条保护
   if (oldContentId && UNREPLACEABLE.has(oldContentId)) {
     EventBus.emit(GE.TOAST_SHOW, { text: '🏠 家拥有【永恒】词条，不可替换', duration: 2000 });
@@ -243,6 +266,10 @@ export function placeContent(gs, tileIdx, contentId) {
       devLog.info('[Build] skill card returned to inventory:', oldContentId);
     } else {
       devLog.info('[Build] old content', oldContentId, 'discarded');
+    }
+    // 郁金香被替换 = 拆除：负价值按 ×1.5 规则扣金币（正价值不产出）
+    if (oldContentId === TulipSystem.TULIP_ID) {
+      removeTulip(gs, tile);
     }
     HookDispatcher.fire('onReplace', { gs, tileIdx, oldContentId, newContentId: contentId });
   }
@@ -296,6 +323,10 @@ export function clearContent(gs, tileIdx) {
   const removedId = tile.contentId;
   // 生物类内容被拆除：归属生物全部死亡并移除（含 housed；无掉落），容量实时下降
   removeCreaturesOwnedByTile(gs, tile, { reason: 'facilityCleared' });
+  // 郁金香拆除：负价值按 ×1.5 规则扣金币（正价值不产出，与既有拆除口径一致）
+  if (removedId === TulipSystem.TULIP_ID) {
+    removeTulip(gs, tile);
+  }
   tile.contentId = null;
   tile.contentState = {};
 

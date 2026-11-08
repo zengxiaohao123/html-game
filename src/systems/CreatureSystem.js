@@ -1097,6 +1097,16 @@ export function isFacilityDoorOpen(gs, tileIdx) {
 }
 
 /**
+ * 【晕眩】判定（词条：该单位无法行动，持续对应回合数）
+ * 生物当前无主动攻击系统，因此「无法行动」的实际表现为：停止移动 / 改变位置。
+ */
+export function isCreatureStunned(creature) {
+  const buffs = creature?.activeBuffs;
+  if (!Array.isArray(buffs)) return false;
+  return buffs.some((b) => b && b.id === 'stunned' && (b.remainingTurns ?? 1) > 0);
+}
+
+/**
  * 一个逻辑步（200ms）：按 Idle ⇄ Walk 状态机推进 pos（判定权威位置）。
  * 回合 / 技能结算期间由 RealtimeClock 跳过本函数（pos 冻结），渲染位置照常推进。
  * @param {object} gs
@@ -1112,6 +1122,15 @@ export function stepCreatures(gs, dtSec) {
     if (!c || c.hp <= 0) continue;
     if (c.housed) continue; // 收纳入设施：不参与移动
     if (!c.pos || !Number.isFinite(c.pos.x) || !Number.isFinite(c.pos.y)) continue;
+
+    // 【晕眩】：该单位无法行动 —— 逻辑步内冻结移动（渲染插值停在当前 pos）
+    if (isCreatureStunned(c)) {
+      c.renderFrom = { x: c.pos.x, y: c.pos.y };
+      c.renderT = 0;
+      c.renderDur = dtSec;
+      continue;
+    }
+
     const profile = resolveBehavior(c);
     const inner = fenceInner(gs, creatureRadius(c));
     if (inner.x1 < inner.x0 || inner.y1 < inner.y0) continue;

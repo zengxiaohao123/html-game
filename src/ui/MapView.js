@@ -17,6 +17,7 @@ import { BuildSystem } from '../systems/BuildSystem.js';
 import { ItemTargeting } from '../systems/ItemTargeting.js';
 import { SKILLS } from '../data/characters.js';
 import { CreatureView } from './CreatureView.js';
+import { MineView } from './MineView.js';
 import * as Geometry from '../core/Geometry.js';
 import { createEl, qs, iconEl } from './dom.js';
 
@@ -48,6 +49,9 @@ export class MapView {
     // 生物层：按 renderPos 逐帧绘制，节点缓存、只更新 transform（不每帧重建 DOM）
     this.creatureLayer = null;
     this.creatureView = null;       // 纯色圆形表现层（节点缓存）
+    // 场上实体【土豆地雷】层（zIndex 18，低于生物层）
+    this.mineLayer = null;
+    this.mineView = null;
     this._creatureRafId = null;
     this._rafSyncProbe = false;
     // §16.3 视角缩放/拖拽平移（纯视觉，不影响数值；点击命中仍走 tile 自身事件）
@@ -86,6 +90,7 @@ export class MapView {
     this.renderAllTiles(gs);
     this.renderFence(gs);
     this.renderPlayer(gs);
+    this._ensureMineLayer(gs);
     this._ensureCreatureLayer(gs);
     this._startCreatureLoop();
 
@@ -119,6 +124,7 @@ export class MapView {
     this.renderAllTiles(gs);
     this.renderFence(gs);
     this.renderPlayer(gs);
+    this._ensureMineLayer(gs);
     this._ensureCreatureLayer(gs);
   }
 
@@ -716,6 +722,34 @@ export class MapView {
 
   // ── 生物逐帧渲染（renderPos → 像素，rAF；逻辑位置由 RealtimeClock 推进） ──
 
+  /** 场上实体层（土豆地雷）：zIndex 18，低于生物层，高于地块 */
+  _ensureMineLayer(gs) {
+    if (!this.root) return;
+    const dims = Geometry.mapDims(gs);
+    const mapW = dims.cols * this.tileSize;
+    const mapH = dims.rows * this.tileSize;
+    if (this.mineLayer) {
+      this.mineLayer.style.width = `${mapW}px`;
+      this.mineLayer.style.height = `${mapH}px`;
+      this.root.appendChild(this.mineLayer);
+      return;
+    }
+    this.mineLayer = createEl('div', {
+      class: ['mine-layer'],
+      style: {
+        position: 'absolute',
+        left: '0px',
+        top: '0px',
+        width: `${mapW}px`,
+        height: `${mapH}px`,
+        pointerEvents: 'none',
+        zIndex: '18',
+      },
+      parent: this.root,
+    });
+    this.mineView = new MineView(this.mineLayer);
+  }
+
   _ensureCreatureLayer(gs) {
     if (!this.root) return;
     const dims = Geometry.mapDims(gs);
@@ -761,6 +795,7 @@ export class MapView {
 
   /** 按 renderPos 逐帧画所有生物；完全重叠的两只各自保留独立节点 */
   _paintCreatures() {
+    if (this.mineView) this.mineView.paint(this.gs, this.tileSize);
     if (!this.creatureView) return;
     this.creatureView.paint(this.gs, this.tileSize);
   }

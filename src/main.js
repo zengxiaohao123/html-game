@@ -36,6 +36,7 @@ import { TeamPanel } from './ui/panels/TeamPanel.js';
 import { ForgePanel } from './ui/panels/ForgePanel.js';
 import { ShopPanel } from './ui/panels/ShopPanel.js';
 import { initPassiveItems } from './systems/PassiveItemSystem.js';
+import { initCropGrimoires } from './systems/CropGrimoireHooks.js';
 import { initUseItems } from './systems/UseItemSystem.js';
 import { VehiclePanel } from './ui/panels/VehiclePanel.js';
 import { TaskPanel } from './ui/panels/TaskPanel.js';
@@ -101,6 +102,7 @@ inputManager.bind();
 
 // 4. 获得即生效类物品（收藏品 / 魔导书）；进入游戏后由 BOOT 触发补挂 hook
 initPassiveItems(() => director.getGS());
+initCropGrimoires(() => director.getGS());
 initUseItems();
 
 // ════════════════════════════════════════════════════════════

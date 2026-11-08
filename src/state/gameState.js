@@ -101,6 +101,11 @@ export function createInitialState() {
     // ── 生物 ──
     creatures: [],
 
+    // ── 场上实体：土豆地雷（魔导书《土豆地雷》，栅栏内实体，非地块内容） ──
+    //    每项 { id, sourceTileIdx, x, y, radius, blastRadius, turnsLeft, surfaced }
+    mines: [],
+    minesNextId: 1,
+
     // ── 背包 ──
     inventory: {
       items: createStarterInventory(),   // 开局测试包（见 data/starterPack.js）

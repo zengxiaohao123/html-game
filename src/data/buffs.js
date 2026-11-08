@@ -103,6 +103,19 @@ export const BUFFS = {
     phase2AImplemented: false,
     phase3Implemented: true,
   },
+
+  // 魔导书《土豆地雷》附带状态：词条字典已定义，此处登记为真实生效的 debuff
+  stunned: {
+    id: 'stunned',
+    name: '晕眩',
+    emoji: '🌀',
+    type: 'debuff',
+    target: 'creature',
+    description: '该单位无法行动，持续对应回合数。',
+    duration: 1,
+    phase2AImplemented: false,
+    phase3Implemented: true,
+  },
 };
 
 export const ALL_BUFF_IDS = Object.keys(BUFFS);
