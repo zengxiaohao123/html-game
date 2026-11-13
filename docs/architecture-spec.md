@@ -46,7 +46,7 @@ src/
 │   ├── BlessSystem.js        # 祈福（按下即结算：2 行动力 + 1 金币 + 随机祝福；动画仅演出）
 │   ├── InventorySystem.js    # 背包 + 出货箱 + 快捷栏 + 拖拽放置
 │   ├── GoldSystem.js         # 金币唯一写入口：区间 [-999999, 999999] 统一夹取 / 允许负债
-│   ├── CropHarvest.js        # 拆除 / 替换储存类·采摘类田块前的统一自动采摘
+│   ├── CropHarvest.js        # 拆除 / 替换储存类·采摘类地块内容（含鸡舍存蛋）前的统一自动采摘
 │   ├── CombatSystem.js       # 伤害计算 + 闪避 + 元素免疫 + 范围
 │   ├── SkillSystem.js        # 技能触发（进入时/经过时/受祝福时）
 │   ├── LinkSkillSystem.js    # 连携技（解锁检测 + 8 秒窗口 + 队列）
@@ -898,14 +898,16 @@ minesNextId: 1,   // 地雷 id 自增序号（逻辑值，入日初基线）
 
 ### 10.6 验收脚本
 
-`node tools/smoke-crop-grimoire.mjs`（入库）：容量 30/40、薯道难共用池与一次取走、地雷上限 5 / 5 回合探出、敌对触发 / 友善不触发 / 友善在范围内不受伤、易伤同名取最高与 floor、晕眩仅命中敌人、郁金香初始 3/9、经济上行追溯基线、×1.5 取整、叠放与波动倍率、三日负价值示例、无《泡沫》夹 0 / 有《泡沫》扣金币、< -100 强制拆除（读真实值）。
+`node tools/smoke-crop-grimoire.mjs`（入库）：容量 30/40、薯道难共用池与一次取走、地雷上限 5 / 5 回合探出、敌对触发 / 友善不触发 / 友善在范围内不受伤、易伤同名取最高与 floor、晕眩仅命中敌人、郁金香初始 3/9、经济上行追溯基线、×1.5 取整、叠放与波动倍率、三日负价值示例、无《泡沫》夹 0 / 有《泡沫》扣金币、强制拆除（读显示值：无《泡沫》内部 -150 不拆 / 有《泡沫》拆）。
 
 ### 10.7 经济与拆除口径（2026-11-13）
 
 | 项 | 实现 | 验收 |
 |---|---|---|
-| 拆除前自动采摘 | `CropHarvest.harvestCropBeforeRemove` 在 `BuildSystem.clearContent` / `placeContent` 的最前面调用；覆盖土豆 / 草莓 / 豌豆 / 郁金香 / 蒲公英 / 幽怜草，结算口径与手动采摘完全一致 | `tools/smoke-economy-crops.mjs` §1 |
+| 拆除前自动采摘 | `CropHarvest.harvestCropBeforeRemove` 在 `BuildSystem.clearContent` / `placeContent` 的最前面调用；覆盖土豆 / 草莓 / 豌豆 / 郁金香 / 蒲公英 / 幽怜草 / 鸡舍（`eggStored` + `eggStoredGolden`），结算口径与手动采摘完全一致 | `tools/smoke-economy-crops.mjs` §1 |
 | 郁金香显示 / 结算 | 内部真实值（可为负，绝不中途夹 0）；`tulipDisplayValue` 无《泡沫》→ max(0, v)；`tulipSettleValue` 先按真实值 ×1.5，再按《泡沫》决定负值是否生效 | 同上 §2 + `smoke-crop-grimoire` |
+| 郁金香强制拆除 | `maybeForceRemoveTulip` 读**显示值**：无《泡沫》显示值恒 ≥ 0 → 永不触发；有《泡沫》显示值=真实值 → `< -100` 触发。与结算的 `|v| > 50 → ×1.5`（读真实值）是两条独立判定 | 同上 §2 + `smoke-crop-grimoire` |
+| 史莱姆黏液 | 黏液是史莱姆**击杀掉落**（BIO-003 `drops` → `item_slime_gel`，经 `grantKillDrops` 进背包），史莱姆屋不储存黏液、拆除不结算 | 同上 §1（回归断言） |
 | 金币区间 | `GoldSystem.addGold/setGold/clampGold`，常量 `GOLD_MIN=-999999` / `GOLD_MAX=999999`；读取与读档同样夹取；事件扣款最多扣到 0，不会在负金币时反向加钱 | 同上 §3 |
 | 地形可出售 | 物品库地形 `value=1`（回收价）；`ShopSystem.SHOP_TERRAINS`（`{ id, price }`）维护购买价，当前为空；`SHOP_TERRAIN` 货架通路已预留 | 同上 §4 |
 | 普通商店无技能 | `SHOP_KINDS.shop` 无 `SHOP_SKILL`；魔法商店保留 | 同上 §5 |

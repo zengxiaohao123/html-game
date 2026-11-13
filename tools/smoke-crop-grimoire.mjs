@@ -6,7 +6,7 @@
 //   3) 土豆地雷：上限 5、5 回合探出、敌对触发、友善不触发
 //   4) 爆炸范围：友善生物在半径内不吃伤害 / 不晕眩，敌对生物正常受伤 + 晕眩
 //   5) 易伤：受击方属性，地雷伤害同样生效；同名取最高，最后统一 floor
-//   6) 泡沫 / 简单！：波动区间、叠放倍率、×1.5 结算、负价值扣金币、< -100 强制拆除
+//   6) 泡沫 / 简单！：波动区间、叠放倍率、×1.5 结算（读真实值）、负价值扣金币、强制拆除（读显示值）
 //   7) 经济上行：追溯抬高「初始价值」基线，但不改当前价值；叠放增量按新基线
 // 用法：node tools/smoke-crop-grimoire.mjs
 
@@ -388,11 +388,28 @@ head('6. 郁金香价值体系：波动 / 叠放 / 结算 / 负价值 / 强制�
   check(pick.debt === 40 && gs.player.gold === -30, '负价值 -40 +《泡沫》→ 扣 40 金币（金币可为负）', [pick.debt, gs.player.gold]);
   check(pick.itemValue === 0, '负价值采摘物品价值 0', pick.itemValue);
 
-  // < -100 强制拆除
+  // 强制拆除读【显示值】：无《泡沫》显示值恒 ≥ 0 → 内部 -150 也不拆
   reset();
   put(0, TULIP);
-  tile(0).contentState = { tulipValue: -101, tulipStacks: 0, tulipInit: true };
-  check(TulipSystem.maybeForceRemoveTulip(gs, tile(0)) === true, '价值 < -100 → 强制拆除', tile(0).contentId);
+  tile(0).contentState = { tulipValue: -146, tulipStacks: 0, tulipInit: true };
+  const keepRandom3 = Math.random;
+  Math.random = () => 0;                                      // 日波动 -4 → 内部 -150
+  TulipSystem.applyTulipFluctuation(gs, tile(0), 'daily');
+  Math.random = keepRandom3;
+  check(TulipSystem.tulipValue(tile(0)) === -150, '无《泡沫》：内部累到 -150', TulipSystem.tulipValue(tile(0)));
+  check(TulipSystem.tulipDisplayValue(gs, tile(0)) === 0, '无《泡沫》：显示 0');
+  check(tile(0).contentId === TULIP, '无《泡沫》：显示值 0 → 不被强制拆除', tile(0).contentId);
+
+  // 有《泡沫》：显示值 = 真实值 → 正常触发
+  reset();
+  put(0, TULIP);
+  give(BUBBLE);
+  tile(0).contentState = { tulipValue: -141, tulipStacks: 0, tulipInit: true };
+  const keepRandom4 = Math.random;
+  Math.random = () => 0;                                      // 泡沫日波动 -9 → 内部 -150
+  TulipSystem.applyTulipFluctuation(gs, tile(0), 'daily');
+  Math.random = keepRandom4;
+  check(tile(0).contentId === null, '有《泡沫》：显示值 -150 → 被强制拆除', tile(0).contentId);
 }
 
 // ════════════════════════════════════════════════════════════

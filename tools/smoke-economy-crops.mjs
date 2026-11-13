@@ -1,8 +1,10 @@
 // tools/smoke-economy-crops.mjs —— 经济与田块冒烟（本次六项任务）
 //
 // 覆盖：
-//   1) 通用规则：拆除 / 替换「储存类 / 采摘类」田块前自动采摘
-//   2) 郁金香价值：内部真实值 / 显示夹 0 / 结算夹 0（仅《泡沫》允许负结算）
+//   1) 通用规则：拆除 / 替换「储存类 / 采摘类」田块（含鸡舍存蛋）前自动采摘
+//   2) 郁金香价值：内部真实值 / 显示夹 0 / 结算夹 0（仅《泡沫》允许负结算）；
+//      强制拆除读显示值（无《泡沫》永不触发）
+//   2b) 史莱姆黏液与史莱姆屋无关（击杀掉落，拆除设施不结算）
 //   3) 金币区间 [-999999, 999999]：所有入口夹取、允许负债、负金币下不产生反直觉加钱
 //   4) 地形可出售：价值统一 1、价格与价值分离、商店地形货架预留为空
 //   5) 普通商店不售卖技能（魔法商店技能直售保留）
@@ -90,6 +92,7 @@ import * as TulipSystem from '../src/systems/TulipSystem.js';
 import * as ShopSystem from '../src/systems/ShopSystem.js';
 import { applyEventEffects } from '../src/systems/EventEffects.js';
 import { applyDeathPenalty } from '../src/systems/CombatSystem.js';
+import { grantKillDrops } from '../src/systems/CreatureSystem.js';
 import { AUTO_HARVEST_ON_REMOVE, harvestCropBeforeRemove } from '../src/systems/CropHarvest.js';
 import { addGold, getGold, setGold, GOLD_MIN, GOLD_MAX } from '../src/systems/GoldSystem.js';
 import { INITIAL_GOLD, TERRAIN_VALUE } from '../src/utils/constants.js';
@@ -127,11 +130,12 @@ const give = (id, qty = 1) => InventorySystem.addItem(gs, id, qty);
 head('1. 拆除 / 替换前自动采摘（通用规则）');
 {
   reset();
-  check(AUTO_HARVEST_ON_REMOVE.size === 6, '自动采摘集合 = 6 种田块',
+  check(AUTO_HARVEST_ON_REMOVE.size === 7, '自动采摘集合 = 7 种地块内容',
     [...AUTO_HARVEST_ON_REMOVE]);
   check(['facility_potato', 'facility_strawberry', 'facility_pea', 'facility_tulip',
-    'facility_dandelion', 'facility_ghost_grass'].every((id) => AUTO_HARVEST_ON_REMOVE.has(id)),
-  '土豆 / 草莓 / 豌豆 / 郁金香 / 蒲公英 / 幽怜草 均覆盖');
+    'facility_dandelion', 'facility_ghost_grass', 'facility_henhouse'].every((id) => AUTO_HARVEST_ON_REMOVE.has(id)),
+  '土豆 / 草莓 / 豌豆 / 郁金香 / 蒲公英 / 幽怜草 / 鸡舍 均覆盖');
+  check(!AUTO_HARVEST_ON_REMOVE.has('facility_slimehouse'), '史莱姆屋不在自动采摘集合内（不储存黏液）');
 
   // 土豆：拆除时把本块存量带回背包
   put(0, 'facility_potato', { potatoStored: 7 });
@@ -191,11 +195,34 @@ head('1. 拆除 / 替换前自动采摘（通用规则）');
     check(gs.inventory.items.length === before, `${id} 拆除不产生物品（产出直接进背包，田内无存量）`);
   }
 
-  // 鸡舍 / 史莱姆屋：属于设施而非田块，蛋/黏液按 §10.4 随设施消失
+  // 鸡舍：储存的鸡蛋 / 优质鸡蛋（共享上限 10）在拆除前自动收获进背包
   reset();
-  put(0, 'facility_henhouse', { eggStored: true, eggStoredGolden: true });
+  put(0, 'facility_henhouse', { eggStored: 3, eggStoredGolden: 2 });
   BuildSystem.clearContent(gs, 0);
-  check(InventorySystem.countItem(gs, 'item_egg') === 0, '鸡舍拆除不自动收蛋（设施产出随设施消失）');
+  check(InventorySystem.countItem(gs, 'item_egg') === 3, '拆除鸡舍 → 自动收获 3 个鸡蛋',
+    InventorySystem.countItem(gs, 'item_egg'));
+  check(InventorySystem.countItem(gs, 'item_golden_egg') === 2, '拆除鸡舍 → 自动收获 2 个优质鸡蛋',
+    InventorySystem.countItem(gs, 'item_golden_egg'));
+  check(tile(0).contentId === null, '鸡舍拆除后地块为空');
+
+  // 替换鸡舍（placeContent 先拆后放）同样自动收获
+  reset();
+  put(0, 'facility_henhouse', { eggStored: 1 });
+  give('facility_slimehouse');
+  BuildSystem.placeContent(gs, 0, 'facility_slimehouse');
+  check(InventorySystem.countItem(gs, 'item_egg') === 1, '替换鸡舍 → 旧蛋先收进背包');
+
+  // 史莱姆屋：不储存黏液，拆除不产生任何黏液物品
+  reset();
+  put(0, 'facility_slimehouse', { slimeBless: true });
+  const beforeSlime = gs.inventory.items.length;
+  BuildSystem.clearContent(gs, 0);
+  check(gs.inventory.items.length === beforeSlime, '拆除史莱姆屋不产出黏液（设施不储存黏液）');
+
+  // 黏液唯一来源：史莱姆死亡时的击杀掉落（BIO-003 → item_slime_gel）
+  reset();
+  grantKillDrops(gs, { kind: 'slime_fire' });
+  check(InventorySystem.countItem(gs, 'item_slime_gel') === 1, '史莱姆死亡 → 击杀掉落 1 个黏液');
 }
 
 // ════════════════════════════════════════════════════════════
@@ -220,11 +247,31 @@ head('2. 郁金香：内部真实值 / 显示夹 0 / 结算夹 0');
   gs.inventory.items = gs.inventory.items.filter((e) => e.itemId !== TulipSystem.GRIMOIRE_BUBBLE);
   check(TulipSystem.tulipSettleValue(gs, tile(0)) === 0, '无《泡沫》结算 0');
 
-  // 强制拆除读真实值：显示 0 但 -101 仍会触发
+  // 强制拆除读【显示值】（§16.5.4）：无《泡沫》显示值恒 ≥ 0 → 永不触发
   reset();
-  put(0, 'facility_tulip', { tulipValue: -101, tulipStacks: 0, tulipInit: true });
-  check(TulipSystem.tulipDisplayValue(gs, tile(0)) === 0, '内部 -101 显示 0');
-  check(TulipSystem.maybeForceRemoveTulip(gs, tile(0)) === true, '内部 -101 仍触发强制拆除（读真实值）');
+  put(0, 'facility_tulip', { tulipValue: -150, tulipStacks: 0, tulipInit: true });
+  check(TulipSystem.tulipValue(tile(0)) === -150, '内部值真实累到 -150（未被夹 0）');
+  check(TulipSystem.tulipDisplayValue(gs, tile(0)) === 0, '无《泡沫》：显示值 0');
+  check(TulipSystem.maybeForceRemoveTulip(gs, tile(0)) === false, '无《泡沫》：显示值 0 → 不触发强制拆除');
+  check(tile(0).contentId === 'facility_tulip', '无《泡沫》：田块仍在');
+
+  // 有《泡沫》时显示值 = 真实值 → 正常触发
+  reset();
+  put(0, 'facility_tulip', { tulipValue: -150, tulipStacks: 0, tulipInit: true });
+  give(TulipSystem.GRIMOIRE_BUBBLE);
+  check(TulipSystem.tulipDisplayValue(gs, tile(0)) === -150, '有《泡沫》：显示值 -150');
+  check(TulipSystem.maybeForceRemoveTulip(gs, tile(0)) === true, '有《泡沫》：显示值 -150 → 触发强制拆除');
+  check(tile(0).contentId === null, '有《泡沫》：田块已被拆除');
+
+  // 日初波动链路同样读显示值（无书时内部跌破 -100 也不拆）
+  reset();
+  put(0, 'facility_tulip', { tulipValue: -146, tulipStacks: 0, tulipInit: true });
+  const keepRandom2 = Math.random;
+  Math.random = () => 0; // 日波动 -4 → 内部 -150
+  TulipSystem.applyTulipFluctuation(gs, tile(0), 'daily');
+  Math.random = keepRandom2;
+  check(TulipSystem.tulipValue(tile(0)) === -150, '日波动后内部 -150');
+  check(tile(0).contentId === 'facility_tulip', '无《泡沫》日波动跌破 -100 也不强拆');
 
   // 无《泡沫》时负价值拆除：不扣金币、产出 0 价值花
   reset();

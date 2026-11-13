@@ -38,7 +38,6 @@ import {
   harvestPotato,
 } from '../systems/PotatoSystem.js';
 import {
-  tulipValue,
   tulipStacks,
   tulipInitialValue,
   tulipDisplayValue,
@@ -640,7 +639,6 @@ export class InfoPanel {
         case 'facility_tulip': {
           // 🌷 郁金香：随时可点采摘
           // 魔导书体系：内部价值可为负（真实累加）；无《泡沫》时对外显示 max(0, 价值)、按 0 结算
-          const value = tulipValue(tile);
           const displayValue = tulipDisplayValue(gs, tile);
           const stacks = tulipStacks(tile);
           const settled = tulipSettleValue(gs, tile);
@@ -667,7 +665,8 @@ export class InfoPanel {
             text: hint,
             parent: this.bodyWrap,
           });
-          if (value < -100) {
+          // 强制拆除判定读显示值（§16.5.4）：没有《泡沫》时显示值恒 ≥ 0，永远不会触发
+          if (displayValue < -100) {
             createEl('div', {
               style: { fontSize: '12px', color: '#b04040', marginBottom: '6px' },
               text: '⚠ 价值低于 -100：下一日开始时将被强制拆除',

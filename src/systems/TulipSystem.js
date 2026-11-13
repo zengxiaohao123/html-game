@@ -11,7 +11,10 @@
 //     采摘/拆除时若结算值为负 → 仅当拥有《泡沫》才按负值结算（扣金币，金币可为负）；
 //     没有《泡沫》时对外显示 max(0, 价值) 且按 max(0, 结算值) 结算，不扣金币；
 //   · 内部价值永远按真实数值累加（波动/叠放/经济上行都在真实值上加减），绝不中途夹 0；
-//   · 价值 < -100 时，日初波动结算后强制拆除（读真实值；不产出、不扣金币）。
+//   · 价值 < -100 时，日初波动结算后强制拆除（读【显示值】；不产出、不扣金币）。
+//     没有《泡沫》时显示值恒为 max(0, 内部值) ≥ 0 → 永远不会触发强制拆除；
+//     有《泡沫》时显示值 = 真实值，正常触发。
+//     注意：这条与 settleTulipValue 的 |价值| > 50 → ×1.5 不同，后者读的是真实值。
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
@@ -114,10 +117,14 @@ export function applyTulipFluctuation(gs, tile, mode = 'daily') {
   return v;
 }
 
-/** 价值 < -100：强制拆除（不产出、不扣金币） */
+/**
+ * 价值 < -100：强制拆除（不产出、不扣金币）。
+ * 判定读【显示值】：没有《泡沫》时显示值恒为 max(0, 内部值) ≥ 0，永远不会触发；
+ * 有《泡沫》时显示值即真实值，内部值 < -100 时正常触发。
+ */
 export function maybeForceRemoveTulip(gs, tile) {
   if (!tile || tile.contentId !== TULIP_ID) return false;
-  if (tulipValue(tile) >= TULIP_FORCE_REMOVE_THRESHOLD) return false;
+  if (tulipDisplayValue(gs, tile) >= TULIP_FORCE_REMOVE_THRESHOLD) return false;
 
   tile.contentId = null;
   tile.contentState = {};
