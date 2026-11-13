@@ -27,6 +27,7 @@ import * as InventorySystem from './InventorySystem.js';
 import { VehicleSystem } from './VehicleSystem.js';
 import { ITEM_TO_VEHICLE } from '../data/vehicles.js';
 import { weekKey } from './CalendarSystem.js';
+import { addGold, getGold } from './GoldSystem.js';
 
 /** 魔法商店直接售卖的技能货架（沿用旧版售价；id 取自物品库现有技能条目） */
 export const SHOP_SKILLS = [
@@ -34,8 +35,27 @@ export const SHOP_SKILLS = [
   { id: 'skill_link_shift', price: 20 },
 ];
 
+/**
+ * 地形货架（预留）：当前不上架任何地形，只保留"可出售"通路。
+ * 语义拆分：value = 回收价基准（所有地形统一 TERRAIN_VALUE = 1，在物品库）；
+ *           price = 购买价，各地形可不同，只在这里维护。
+ * 上架时往这里加 { id, price }，并在对应 SHOP_KINDS 的 groups 里加一行
+ * `{ pool: 'SHOP_TERRAIN', min, max, label: '地形' }` 即可。
+ */
+export const SHOP_TERRAINS = [];
+
+/** 地形货架抽取（预留通路，当前货架为空 → 抽不到任何商品） */
+function drawShopTerrains(count, rand = Math.random) {
+  const picked = [];
+  for (let i = 0; i < count && SHOP_TERRAINS.length > 0; i++) {
+    picked.push(SHOP_TERRAINS[Math.floor(rand() * SHOP_TERRAINS.length)]);
+  }
+  return picked;
+}
+
 /** 两类商店的配置 */
 export const SHOP_KINDS = {
+  // 普通商店不售卖技能（技能只在魔法商店直售，见 magic.groups 的 SHOP_SKILL）
   shop: {
     kind: 'shop',
     label: '商店',
@@ -165,7 +185,9 @@ export function generateStock(kind, rand = Math.random, opts = {}) {
   cfg.groups.forEach((g, i) => {
     const picked = g.pool === 'SHOP_SKILL'
       ? drawShopSkills(counts[i], rand)
-      : drawFromPool(g.pool, counts[i], { unique: false, exclude });
+      : g.pool === 'SHOP_TERRAIN'
+        ? drawShopTerrains(counts[i], rand)
+        : drawFromPool(g.pool, counts[i], { unique: false, exclude });
     for (const p of picked) {
       if (!p.id) continue;
       const def = ITEMS[p.id];
@@ -258,13 +280,12 @@ export function refreshShop(gs, tileIdx, opts = {}) {
     EventBus.emit(GE.TOAST_SHOW, { text: '🏪 本周刷新次数已用完', duration: 1600 });
     return { ok: false, reason: 'noRefreshLeft' };
   }
-  if (gs.player.gold < cost) {
+  if (getGold(gs) < cost) {
     EventBus.emit(GE.TOAST_SHOW, { text: `🏪 金币不足（需 ${cost}）`, duration: 1600 });
     return { ok: false, reason: 'noGold' };
   }
 
-  gs.player.gold -= cost;
-  EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: -cost });
+  addGold(gs, -cost, 'shop:refresh');
   // C-12：RES-006 备注——免费指 0 金币，但正常消耗刷新次数
   if (cost === 0 && (shop.freeRefreshReady || 0) > 0) shop.freeRefreshReady -= 1;
   shop.refreshUsed += 1;
@@ -321,13 +342,12 @@ export function buy(gs, tileIdx, slotIdx) {
   if (!item || item.sold) return { ok: false, reason: 'soldOut' };
 
   const price = effectivePrice(gs, item);
-  if (gs.player.gold < price) {
+  if (getGold(gs) < price) {
     EventBus.emit(GE.TOAST_SHOW, { text: `💰 金币不足（需 ${price}）`, duration: 1600 });
     return { ok: false, reason: 'noGold' };
   }
 
-  gs.player.gold -= price;
-  EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: -price });
+  addGold(gs, -price, 'shop:buy');
 
   // 载具直接进载具页面，不进背包
   const vehId = ITEM_TO_VEHICLE[item.id];
@@ -360,8 +380,7 @@ export function sell(gs, itemId, opts = {}) {
 
   const value = opts.value ?? ITEMS[itemId]?.value ?? 0;
   const total = value * qty;
-  gs.player.gold += total;
-  EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: total });
+  addGold(gs, total, 'shop:sell');
   EventBus.emit(GE.TOAST_SHOW, {
     text: `💰 卖出 ${ITEMS[itemId]?.name || itemId}${qty > 1 ? ` ×${qty}` : ''}（+${total}）`,
     duration: 1500,
@@ -408,6 +427,7 @@ export function refreshLeft(shop) {
 export const ShopSystem = {
   SHOP_KINDS,
   SHOP_SKILLS,
+  SHOP_TERRAINS,
   isSellable,
   shopKindOfContent,
   generateStock,

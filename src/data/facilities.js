@@ -28,6 +28,7 @@ import { SKILLS } from './characters.js';
 import { normalizeTerrain } from './terrains.js';
 import { ITEMS, POOLS } from './items.js';
 import { ITEM_TO_VEHICLE, VEHICLES } from './vehicles.js';
+import { addGold } from '../systems/GoldSystem.js';
 import { drawFromPool } from '../systems/RandomPool.js';
 import {
   EVENT_POOL_PLACEHOLDER,
@@ -49,6 +50,7 @@ import {
 } from '../systems/PotatoSystem.js';
 import {
   applyTulipFluctuation,
+  tulipDisplayValue,
 } from '../systems/TulipSystem.js';
 import { FieldEffects } from '../systems/FieldEffects.js';
 import { PendingDeathQueue } from '../systems/PendingDeathQueue.js';
@@ -88,8 +90,7 @@ const FacilityHome = {
       const key = flagKey(this.id, 'onPass');
       if (gs.map.outerTiles[tileIdx].dailyFlags[key]) return;
       gs.map.outerTiles[tileIdx].dailyFlags[key] = true;
-      gs.player.gold += 1;
-      EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: 1 });
+      addGold(gs, 1, 'facility_home:onPass');
       EventBus.emit(GE.TOAST_SHOW, { text: '🏠 经过家 +1 🪙', duration: 1500 });
     }, this);
 
@@ -99,16 +100,14 @@ const FacilityHome = {
       const key = flagKey(this.id, 'onEnter');
       if (gs.map.outerTiles[tileIdx].dailyFlags[key]) return;
       gs.map.outerTiles[tileIdx].dailyFlags[key] = true;
-      gs.player.gold += 1;
-      EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: 1 });
+      addGold(gs, 1, 'facility_home:onEnter');
       EventBus.emit(GE.TOAST_SHOW, { text: '🏠 进入家 +1 🪙', duration: 1500 });
     }, this);
 
     // 受祝福时：获得 1 金币（不限次）
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
-      gs.player.gold += 1;
-      EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: 1 });
+      addGold(gs, 1, 'facility_home:onBlessed');
       EventBus.emit(GE.TOAST_SHOW, { text: '✨ 家受祝福 +1 🪙', duration: 1500 });
     }, this);
 
@@ -384,8 +383,9 @@ const FacilityTulip = {
       if (!isMine(gs, tileIdx, this.id)) return;
       const tile = gs.map.outerTiles[tileIdx];
       // 立即触发 2 次波动（叠放倍率 / 泡沫区间 / 简单！回合区间都按当前生效规则）
-      const value = applyTulipFluctuation(gs, tile, 'bless');
-      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 郁金香祝福 +2 次波动，当前值 ${value}`, duration: 2000 });
+      applyTulipFluctuation(gs, tile, 'bless');
+      const shown = tulipDisplayValue(gs, tile);
+      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 郁金香祝福 +2 次波动，当前值 ${shown}`, duration: 2000 });
       EventBus.emit(GE.TILE_UPDATED, { tileIdx });
     }, this);
   },

@@ -38,6 +38,7 @@ import { MIN_STAMINA } from '../utils/constants.js';
 import { StaminaSystem } from './StaminaSystem.js';
 import { TurnSystem } from './TurnSystem.js';
 import { SleepSystem } from './SleepSystem.js';
+import { addGold, getGold } from './GoldSystem.js';
 
 /** 祈福消耗：2 行动力 + 1 金币 */
 export const BLESS_STAMINA_COST = 2;
@@ -80,7 +81,7 @@ export function blessStart(gs) {
     devLog.info('[Bless] stamina at min');
     return { ok: false, targetIdx: null, candidates: [], reason: 'stamina' };
   }
-  if (gs.player.gold < goldCost) {
+  if (getGold(gs) < goldCost) {
     EventBus.emit(GE.TOAST_SHOW, { text: `🧘 金币不足（需 ${goldCost}）`, duration: 2000 });
     devLog.info('[Bless] gold not enough');
     return { ok: false, targetIdx: null, candidates: [], reason: 'gold' };
@@ -95,8 +96,7 @@ export function blessStart(gs) {
 
   // 扣消耗（锁定）：允许透支为负，但不低于下限（超出下限的部分夹掉）
   StaminaSystem.spendStaminaActive(gs, staminaCost, { reason: 'bless' });
-  gs.player.gold -= goldCost;
-  EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: -goldCost });
+  addGold(gs, -goldCost, 'bless');
 
   // 锁 blessing 状态
   if (!gs.uiState) gs.uiState = {};

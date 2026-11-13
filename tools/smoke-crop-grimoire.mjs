@@ -344,13 +344,48 @@ head('6. 郁金香价值体系：波动 / 叠放 / 结算 / 负价值 / 强制�
   check(TulipSystem.settleTulipValue(-51) === -77, '-51 × 1.5 → -ceil(76.5) = -77', TulipSystem.settleTulipValue(-51));
   check(TulipSystem.settleTulipValue(50) === 50, '50 不触发 ×1.5', TulipSystem.settleTulipValue(50));
 
-  // 负价值采摘 → 扣金币（允许为负）；物品价值 0
+  // 三日示例（任务 2 关键断言）：内部真实值累加，无《泡沫》时显示/结算夹 0，但绝不在中途把内部值夹 0
+  reset();
+  put(0, TULIP);
+  TulipSystem.initTulipTile(gs, tile(0));                      // 初始 3
+  const keepRandom = Math.random;
+  Math.random = () => 0;                                        // 日波动 -4
+  TulipSystem.applyTulipFluctuation(gs, tile(0), 'daily');
+  check(TulipSystem.tulipValue(tile(0)) === -1, '三日示例①：3 + (-4) → 内部 -1',
+    TulipSystem.tulipValue(tile(0)));
+  check(TulipSystem.tulipDisplayValue(gs, tile(0)) === 0, '三日示例①：无《泡沫》显示 0',
+    TulipSystem.tulipDisplayValue(gs, tile(0)));
+  Math.random = () => 0.3;                                      // 日波动 0
+  TulipSystem.applyTulipFluctuation(gs, tile(0), 'daily');
+  check(TulipSystem.tulipValue(tile(0)) === -1, '三日示例②：波动 0 → 内部仍 -1（未被夹 0）',
+    TulipSystem.tulipValue(tile(0)));
+  check(TulipSystem.tulipDisplayValue(gs, tile(0)) === 0, '三日示例②：显示仍 0');
+  Math.random = () => 0.4;                                      // 日波动 +2
+  TulipSystem.applyTulipFluctuation(gs, tile(0), 'daily');
+  Math.random = keepRandom;
+  check(TulipSystem.tulipValue(tile(0)) === 1, '三日示例③：-1 + 2 → 内部 1（不是 2，证明没有中途夹 0）',
+    TulipSystem.tulipValue(tile(0)));
+  check(TulipSystem.tulipDisplayValue(gs, tile(0)) === 1, '三日示例③：显示 1',
+    TulipSystem.tulipDisplayValue(gs, tile(0)));
+
+  // 负价值 + 无《泡沫》：显示 0，按 0 结算，不扣金币
   reset();
   put(0, TULIP);
   gs.player.gold = 10;
   tile(0).contentState = { tulipValue: -40, tulipStacks: 0, tulipInit: true };
+  const pickNoBook = TulipSystem.pickTulip(gs, tile(0));
+  check(pickNoBook.debt === 0 && gs.player.gold === 10, '负价值 -40 无《泡沫》→ 按 0 结算、不扣金币',
+    [pickNoBook.debt, gs.player.gold]);
+  check(pickNoBook.itemValue === 0, '无《泡沫》负价值采摘物品价值 0', pickNoBook.itemValue);
+
+  // 负价值 + 有《泡沫》：按负价值结算，金币可被扣为负
+  reset();
+  put(0, TULIP);
+  give(BUBBLE);
+  gs.player.gold = 10;
+  tile(0).contentState = { tulipValue: -40, tulipStacks: 0, tulipInit: true };
   const pick = TulipSystem.pickTulip(gs, tile(0));
-  check(pick.debt === 40 && gs.player.gold === -30, '负价值 -40 → 扣 40 金币（金币可为负）', [pick.debt, gs.player.gold]);
+  check(pick.debt === 40 && gs.player.gold === -30, '负价值 -40 +《泡沫》→ 扣 40 金币（金币可为负）', [pick.debt, gs.player.gold]);
   check(pick.itemValue === 0, '负价值采摘物品价值 0', pick.itemValue);
 
   // < -100 强制拆除

@@ -21,6 +21,7 @@ import { Random } from '../core/Random.js';
 import { ITEMS } from '../data/items.js';
 import { getCreatureDef } from '../data/creatures.js';
 import { InventorySystem } from './InventorySystem.js';
+import { addGold } from './GoldSystem.js';
 
 // ── lazy init helpers ──
 function ensureTeamField(gs, key, defaultVal) {
@@ -393,8 +394,7 @@ export function onCreatureDefeated(gs, creature) {
     if (Random.chance(params.extraGoldChance ?? 0.5)) {
       const extraGold = drops.reduce((sum, d) => sum + (ITEMS[d.itemId]?.value ?? 0) * (d.qty || 1), 0);
       if (extraGold > 0) {
-        gs.player.gold += extraGold;
-        EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: extraGold });
+        addGold(gs, extraGold, 'talent:curiosity');
         EventBus.emit(GE.TOAST_SHOW, { text: `🪙 好奇心：额外金币 +${extraGold}`, duration: 1500 });
       }
     }

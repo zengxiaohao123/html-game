@@ -20,6 +20,7 @@
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
+import { addGold } from './GoldSystem.js';
 import { Random } from '../core/Random.js';
 import { VEHICLES } from '../data/vehicles.js';
 import { ITEMS } from '../data/items.js';
@@ -440,8 +441,7 @@ export function tryMove(gs, opts = {}) {
     EventBus.emit(GE.TOAST_SHOW, { text: `${def.emoji} ${def.name} 行动力 +${def.staminaGain}`, duration: 1500 });
   }
   if (def.goldOnArrive) {
-    gs.player.gold += def.goldOnArrive;
-    EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: def.goldOnArrive });
+    addGold(gs, def.goldOnArrive, 'vehicle:arrive');
   }
 
   // 结算【进入时】：仅最终停留格

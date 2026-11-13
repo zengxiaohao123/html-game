@@ -247,7 +247,7 @@ const { DaySystem } = await import('../src/systems/DaySystem.js');
 const { UseItemSystem } = await import('../src/systems/UseItemSystem.js');
 const { PassiveItemSystem } = await import('../src/systems/PassiveItemSystem.js');
 const { GameDirector } = await import('../src/systems/GameDirector.js');
-const { STARTER_GOLD } = await import('../src/data/starterPack.js');
+const { INITIAL_GOLD, GOLD_MIN, GOLD_MAX } = await import('../src/utils/constants.js');
 const { SKILLS } = await import('../src/data/characters.js');
 const { HookDispatcher } = await import('../src/core/HookDispatcher.js');
 
@@ -550,9 +550,12 @@ console.log('\n═══ 25. 心力交瘁：持续 1 日 / 睡觉移除 / 睡觉
 
 console.log('\n═══ 26. 开局：金币 0 / 初始包无未知物品（§5.3） ═══');
 {
-  check(STARTER_GOLD === 0, 'STARTER_GOLD = 0（§5.3 金币初始为 0）');
+  check(INITIAL_GOLD === 0, 'INITIAL_GOLD = 0（§5.3 金币初始为 0）');
+  check(GOLD_MIN === -999999 && GOLD_MAX === 999999, '金币区间 = [-999999, 999999]');
   const fresh = createInitialState();
   check(fresh.player.gold === 0, `新开局金币 0（实际 ${fresh.player.gold}）`);
+  check(createInitialState({ gold: 123 }).player.gold === 123, '测试可用 createInitialState({ gold }) 覆盖初始金币');
+  check(createInitialState({ gold: -9999999 }).player.gold === GOLD_MIN, '初始金币覆盖值也会被夹取');
   check(!fresh.inventory.items.some((e) => e.itemId === 'skill_heart_force'),
     '初始包不含未知物品 skill_heart_force');
 }
@@ -1191,7 +1194,11 @@ console.log('\n═══ 祈福按下即结算 / 动画仅演出（2026-11-08）
   const g = createInitialState();
   g.player.gold = 100; g.player.stamina = 8; g.team.dailyBlessCount = 1;
   const turn0 = g.turn;
+  // 固定祝福目标：Random.pick 抽到【家】会额外 +1 金币（onBlessed），会让下面的金币断言随机失败
+  const keepRand = Math.random;
+  Math.random = () => 0;
   const r = BlessSystem.blessStart(g);
+  Math.random = keepRand;
   check(r.ok === true, '祈福按下成功');
   check(g.uiState.blessing === true, '按下后进入动画锁定');
   check(g.turn === turn0 + 1, `按下瞬间回合已推进（${turn0} → ${g.turn}）`);

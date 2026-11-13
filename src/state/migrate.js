@@ -11,6 +11,7 @@ import { getCreatureDef } from '../data/creatures.js';
 import { ITEMS } from '../data/items.js';
 import { DEFAULT_CREATURE_RADIUS, FENCE_ORIGIN_X, FENCE_ORIGIN_Y } from '../core/Geometry.js';
 import { applyCapacityLimits } from '../systems/CapacitySystem.js';
+import { clampGold } from '../systems/GoldSystem.js';
 
 /** 旧版「技能石」→ 对应技能物品（仅用于旧档迁移；新版不再产生技能石） */
 const LEGACY_SKILL_STONE_TO_SKILL = {
@@ -372,6 +373,9 @@ export function migrateGS(loadedGs) {
     const cs = tile.contentState || (tile.contentState = {});
     if (!Number.isFinite(cs.potatoStored) || cs.potatoStored < 0) cs.potatoStored = 0;
   }
+
+  // 金币区间 [-999999, 999999]：旧档或外部写入的越界值统一夹取（金币允许为负）
+  loadedGs.player.gold = clampGold(loadedGs.player?.gold ?? 0);
 
   // 容量上限只由栅栏面积决定：读档时按实际尺寸重算，保证读档首帧容量 UI 即为正确值
   //（旧档可能来自扩建机制加入前，存的仍是基础容量 4/4）

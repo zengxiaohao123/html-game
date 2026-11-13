@@ -6,16 +6,19 @@
 //   所有系统修改 GS 前先 EventBus.emit(GE.XXX_CHANGE, payload)，再直接改 GS 属性。
 //   UI 层只订阅事件刷新 DOM，不直接读/写 GS（只读）。
 
-import { FENCE_ROW_COLS_INITIAL, CAPACITY_FRIENDLY_INITIAL, CAPACITY_DANGER_INITIAL } from '../utils/constants.js';
-import { createStarterInventory, STARTER_GOLD } from '../data/starterPack.js';
+import { FENCE_ROW_COLS_INITIAL, CAPACITY_FRIENDLY_INITIAL, CAPACITY_DANGER_INITIAL, INITIAL_GOLD } from '../utils/constants.js';
+import { createStarterInventory } from '../data/starterPack.js';
+import { clampGold } from '../systems/GoldSystem.js';
 
 /**
  * 创建初始 GS 对象
  * 地图初始 3×3，外圈 8 格全为 'none' 地形/虚空/无内容，
  * 左下 idx=6 自动放【家】(facility_home)。
  * 玩家初始位置在左下（家的位置 idx=6）。
+ *
+ * @param {{gold?: number}} [opts] 测试可覆盖初始金币（正式版默认 INITIAL_GOLD = 0）
  */
-export function createInitialState() {
+export function createInitialState(opts = {}) {
   const size = 3;
   const ring = size - 1; // = 2
   const outerTiles = [];
@@ -73,7 +76,7 @@ export function createInitialState() {
       stamina: 8,
       maxStamina: 8,
       minStamina: -3,
-      gold: STARTER_GOLD,   // 开发期给 50，便于验证商店刷新（4/8/12）
+      gold: clampGold(opts.gold ?? INITIAL_GOLD),   // 正式版 0；测试脚本可传 { gold } 覆盖
       position: 'outer',
       // Phase 4 天赋相关字段
       dodgeRate: 0,              // 蹁跹天赋

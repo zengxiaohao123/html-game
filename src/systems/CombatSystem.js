@@ -17,6 +17,7 @@ import { devLog } from '../core/Logger.js';
 import { getBuff } from '../data/buffs.js';
 import { TalentSystem } from './TalentSystem.js';
 import { FieldEffects } from './FieldEffects.js';
+import { addGold, getGold } from './GoldSystem.js';
 
 // 注：CombatSystem 不直接 import LinkSkillSystem（循环依赖），
 // 而是 emit GE.ELEMENT_DAMAGE_APPLIED 事件，由 LinkSkillSystem 在 main.js 里订阅
@@ -315,10 +316,11 @@ export function applyDeathPenalty(gs, player) {
     player.stamina = 0;
     EventBus.emit(GE.STAMINA_CHANGE, { newValue: 0, reason: 'death_penalty' });
   }
-  const goldLoss = Math.max(0, Math.min(1000, Math.floor((player.gold || 0) * 0.1)));
+  // 金币允许为负：负金币时 10% 只会更负，按 0 处理（不额外扣）
+  const state = gs || { player };
+  const goldLoss = Math.max(0, Math.min(1000, Math.floor(getGold(state) * 0.1)));
   if (goldLoss > 0) {
-    player.gold -= goldLoss;
-    EventBus.emit(GE.GOLD_CHANGE, { newValue: player.gold, delta: -goldLoss, reason: 'death_penalty' });
+    addGold(state, -goldLoss, 'death_penalty');
   }
   if (gs) {
     gs.flags = gs.flags || {};

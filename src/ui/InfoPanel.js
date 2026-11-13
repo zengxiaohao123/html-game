@@ -41,7 +41,8 @@ import {
   tulipValue,
   tulipStacks,
   tulipInitialValue,
-  settleTulipValue,
+  tulipDisplayValue,
+  tulipSettleValue,
   pickTulip,
 } from '../systems/TulipSystem.js';
 import { POTIONS } from '../data/potions.js';
@@ -638,16 +639,17 @@ export class InfoPanel {
 
         case 'facility_tulip': {
           // 🌷 郁金香：随时可点采摘
-          // 魔导书体系：价值可为负；|价值|>50 结算 ×1.5；负价值采摘扣金币；< -100 日初强制拆除
+          // 魔导书体系：内部价值可为负（真实累加）；无《泡沫》时对外显示 max(0, 价值)、按 0 结算
           const value = tulipValue(tile);
+          const displayValue = tulipDisplayValue(gs, tile);
           const stacks = tulipStacks(tile);
-          const settled = settleTulipValue(value);
+          const settled = tulipSettleValue(gs, tile);
           // 经济上行：只抬高「初始价值」基线（追溯所有郁金香田块），不改当前价值；
           // 叠放增量 = 当前基线
           const baseline = tulipInitialValue(gs);
           createEl('div', {
             style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
-            text: `🌷 当前价值：${value}${stacks > 0 ? `（叠放 ${stacks} 层 · 波动 ×${stacks + 1}）` : ''}`,
+            text: `🌷 当前价值：${displayValue}${stacks > 0 ? `（叠放 ${stacks} 层 · 波动 ×${stacks + 1}）` : ''}`,
             parent: this.bodyWrap,
           });
           createEl('div', {

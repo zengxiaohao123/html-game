@@ -8,6 +8,15 @@ export const MIN_STAMINA = -3;
 export const MAX_HP_DEFAULT = 100;
 export const ATK_DEFAULT = 10;
 
+// ── 金币 ──
+// 取值范围含端点；所有增减入口统一经 GoldSystem 夹取，禁止越界。
+export const GOLD_MIN = -999999;
+export const GOLD_MAX = 999999;
+// 正式版初始金币；测试脚本可通过 createInitialState({ gold }) 覆盖，不要在别处硬编码。
+export const INITIAL_GOLD = 0;
+// 地形回收价值（价值 = 回收价基准；购买价由商店侧单独维护，见 ShopSystem.SHOP_TERRAINS）
+export const TERRAIN_VALUE = 1;
+
 // ── 地图初始值 ──
 export const MAP_SIZE_INITIAL = 3;
 export const FENCE_ROW_COLS_INITIAL = 1;

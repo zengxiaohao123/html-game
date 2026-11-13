@@ -17,11 +17,12 @@ import { InventorySystem } from '../systems/InventorySystem.js';
 import { StaminaSystem } from '../systems/StaminaSystem.js';
 import { HealSystem } from '../systems/HealSystem.js';
 import { EVENT_DEFS } from './events.js';
+import { addGold } from '../systems/GoldSystem.js';
 
 /**
  * 事件池（占位）：每项 { id, name, weight, effect }
  * effect.type：'gold' | 'item' | 'stamina' | 'heal' | 'nothing'
-
+ *
  * 2026-11-13 起事件改为选项驱动（设计文档 §18）：带 nodes / start 的条目
  * 由 buildEventStory 直接使用节点表，结算挂在选项 effects 上，进入不再结算；
  * 不带 nodes 的旧条目退化为通用占位结构（effect 挂到「顺手拿走」选项）。
@@ -80,15 +81,6 @@ export function drawPlaceholderReward(blessed) {
     value: e,
   }));
   return Random.weightedPick(pairs);
-}
-
-function addGold(gs, delta, reason) {
-  if (!delta) return 0;
-  const actual = delta < 0 ? Math.max(delta, -(gs.player.gold || 0)) : delta;
-  if (!actual) return 0;
-  gs.player.gold = (gs.player.gold || 0) + actual;
-  EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: actual, reason });
-  return actual;
 }
 
 /**

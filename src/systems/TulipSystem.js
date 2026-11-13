@@ -8,13 +8,16 @@
 //   · 叠放：简单！生效时可在郁金香上再叠一个郁金香，价值 += 初始价值，波动倍率 +1 倍；
 //     波动量 = 区间随机值 ×（1 + 叠放层数），四舍五入取整；
 //   · 结算：价值 > 50 时 ×1.5（向下取整），< -50 时 ×1.5（向上取整为负债）；
-//     采摘/拆除时若结算值为负，扣除等额金币（金币允许为负）；
-//   · 价值 < -100 时，日初波动结算后强制拆除（不产出、不扣金币）。
+//     采摘/拆除时若结算值为负 → 仅当拥有《泡沫》才按负值结算（扣金币，金币可为负）；
+//     没有《泡沫》时对外显示 max(0, 价值) 且按 max(0, 结算值) 结算，不扣金币；
+//   · 内部价值永远按真实数值累加（波动/叠放/经济上行都在真实值上加减），绝不中途夹 0；
+//   · 价值 < -100 时，日初波动结算后强制拆除（读真实值；不产出、不扣金币）。
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { InventorySystem } from './InventorySystem.js';
 import { hasGrimoire, syncPumpkin } from './PassiveItemSystem.js';
+import { addGold } from './GoldSystem.js';
 
 export const TULIP_ID = 'facility_tulip';
 export const TULIP_BASE_INITIAL = 3;
@@ -128,7 +131,7 @@ export function maybeForceRemoveTulip(gs, tile) {
   return true;
 }
 
-/** 结算价值：|价值| > 50 时 ×1.5 */
+/** 结算价值：|价值| > 50 时 ×1.5（读传入的真实值，不做显示夹取） */
 export function settleTulipValue(raw) {
   let v = Math.round(Number(raw) || 0);
   if (v > TULIP_HIGH_THRESHOLD) v = Math.floor(v * 1.5);
@@ -136,10 +139,22 @@ export function settleTulipValue(raw) {
   return v;
 }
 
-function payGold(gs, delta) {
-  gs.player.gold = (gs.player.gold || 0) + delta;
-  EventBus.emit(GE.GOLD_CHANGE, { delta, gold: gs.player.gold });
-  return gs.player.gold;
+/**
+ * 对外显示值：没有《泡沫》时显示 max(0, 内部真实值)；有《泡沫》时显示真实值（可为负）。
+ * 注意只影响显示，不修改内部值。
+ */
+export function tulipDisplayValue(gs, tile) {
+  const v = tulipValue(tile);
+  return hasBubble(gs) ? v : Math.max(0, v);
+}
+
+/**
+ * 实际结算值：先按真实值算 ×1.5，再按是否拥有《泡沫》决定负值是否生效。
+ * 没有《泡沫》→ max(0, settled)；有《泡沫》→ 真实 settled（可为负）。
+ */
+export function tulipSettleValue(gs, tile) {
+  const settled = settleTulipValue(tulipValue(tile));
+  return hasBubble(gs) ? settled : Math.max(0, settled);
 }
 
 function clearTulipTile(tile) {
@@ -148,17 +163,21 @@ function clearTulipTile(tile) {
 }
 
 /**
- * 采摘郁金香：结算价值 → 正价值写入花朵物品的 value；负价值当场扣金币（金币可为负）。
- * @returns {{ settled: number, debt: number, itemValue: number }}
+ * 采摘郁金香：结算价值 → 正价值写入花朵物品的 value；
+ * 负价值仅在拥有《泡沫》时扣金币（金币可为负），否则按 0 结算、不扣金币。
+ * @param {{silent?: boolean}} [opts] silent：不弹采摘 toast（拆除前自动采摘用）
+ * @returns {{ settled: number, rawSettled: number, debt: number, itemValue: number }}
  */
-export function pickTulip(gs, tile) {
-  if (!tile || tile.contentId !== TULIP_ID) return { settled: 0, debt: 0, itemValue: 0 };
-  const settled = settleTulipValue(tulipValue(tile));
+export function pickTulip(gs, tile, opts = {}) {
+  const { silent = false } = opts;
+  if (!tile || tile.contentId !== TULIP_ID) return { settled: 0, rawSettled: 0, debt: 0, itemValue: 0 };
+  const rawSettled = settleTulipValue(tulipValue(tile));
+  const settled = hasBubble(gs) ? rawSettled : Math.max(0, rawSettled);
   let itemValue = 0;
   let debt = 0;
   if (settled < 0) {
     debt = -settled;
-    payGold(gs, settled);
+    addGold(gs, settled, 'tulip:pick');
   } else {
     itemValue = settled;
   }
@@ -169,6 +188,7 @@ export function pickTulip(gs, tile) {
   EventBus.emit(GE.TILE_CONTENT_CHANGED, { tileIdx: tile.idx });
   EventBus.emit(GE.TILE_UPDATED, { tileIdx: tile.idx });
   EventBus.emit(GE.INVENTORY_CHANGE);
+  if (silent) return { settled, rawSettled, debt, itemValue };
   if (debt > 0) {
     EventBus.emit(GE.TOAST_SHOW, {
       text: `🌷 采摘负价值郁金香，扣除 ${debt} 金币（获得 0 价值郁金香）`,
@@ -180,37 +200,12 @@ export function pickTulip(gs, tile) {
       duration: 2000,
     });
   }
-  return { settled, debt, itemValue };
+  return { settled, rawSettled, debt, itemValue };
 }
 
-/**
- * 拆除 / 被替换时的结算：只处理负价值负债（正价值不产出，与既有拆除口径一致）。
- * @returns {{ settled: number, debt: number }}
- */
-export function removeTulip(gs, tile, { silent = false } = {}) {
-  if (!tile || tile.contentId !== TULIP_ID) return { settled: 0, debt: 0 };
-  const settled = settleTulipValue(tulipValue(tile));
-  let debt = 0;
-  if (settled < 0) {
-    debt = -settled;
-    payGold(gs, settled);
-  }
-  clearTulipTile(tile);
-  syncPumpkin(gs);
-  EventBus.emit(GE.TILE_CONTENT_CHANGED, { tileIdx: tile.idx });
-  EventBus.emit(GE.TILE_UPDATED, { tileIdx: tile.idx });
-  if (debt > 0 && !silent) {
-    EventBus.emit(GE.TOAST_SHOW, {
-      text: `🌷 拆除负价值郁金香，扣除 ${debt} 金币`,
-      duration: 2400,
-    });
-  }
-  return { settled, debt };
-}
-
-/** UI 用：当前价值 + 叠放层数 */
-export function tulipInfo(tile) {
-  return { value: tulipValue(tile), stacks: tulipStacks(tile) };
+/** UI 用：当前内部价值 + 对外显示值 + 叠放层数 */
+export function tulipInfo(gs, tile) {
+  return { value: tulipValue(tile), display: tulipDisplayValue(gs, tile), stacks: tulipStacks(tile) };
 }
 
 export const TulipSystem = {
@@ -229,8 +224,9 @@ export const TulipSystem = {
   applyTulipFluctuation,
   maybeForceRemoveTulip,
   settleTulipValue,
+  tulipDisplayValue,
+  tulipSettleValue,
   pickTulip,
-  removeTulip,
   tulipInfo,
 };
 

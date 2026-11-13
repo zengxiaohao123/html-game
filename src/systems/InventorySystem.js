@@ -18,6 +18,7 @@ import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { ITEMS } from '../data/items.js';
 import { OUTBOX_SLOTS } from '../utils/constants.js';
+import { addGold } from './GoldSystem.js';
 
 /** Outbox 格数 = 12；每格一个 itemId（不叠放，符合"最多 12 格"定义） */
 const OUTBOX_MAX = OUTBOX_SLOTS;
@@ -179,9 +180,9 @@ export function loadFromOutbox(gs) {
     clearedItems.push({ itemId: entry.itemId, qty: entry.qty, unitValue });
   }
 
+  // 出货结算沿用既有口径：只结算正收益，负价值物品不会反向扣钱
   if (earnedGold > 0) {
-    gs.player.gold += earnedGold;
-    EventBus.emit(GE.GOLD_CHANGE, { newValue: gs.player.gold, delta: earnedGold });
+    addGold(gs, earnedGold, 'outbox');
     EventBus.emit(GE.TOAST_SHOW, { text: `📦 出货自动结算 → +${earnedGold} 🪙`, duration: 2200 });
     devLog.info('[Inventory] loadFromOutbox earned gold =', earnedGold);
   } else {

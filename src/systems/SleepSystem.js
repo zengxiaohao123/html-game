@@ -16,6 +16,7 @@ import { TalentSystem } from './TalentSystem.js';
 import { StaminaSystem } from './StaminaSystem.js';
 import { DayBaseline } from '../state/DayBaseline.js';
 import { Storage } from '../state/storage.js';
+import { addGold, getGold } from './GoldSystem.js';
 
 /** 金币惩罚上下限 */
 const GOLD_PENALTY_MIN = 0;
@@ -117,14 +118,10 @@ export function sleep(gs, isAuto = false) {
   // 6. 强制睡觉金币惩罚
   let goldPenalty = 0;
   if (isAuto) {
-    const rawPenalty = Math.floor(gs.player.gold * SLEEP_STAMINA_PENALTY_GOLD_RATIO);
+    const rawPenalty = Math.floor(getGold(gs) * SLEEP_STAMINA_PENALTY_GOLD_RATIO);
     goldPenalty = Math.max(GOLD_PENALTY_MIN, Math.min(GOLD_PENALTY_MAX, rawPenalty));
     if (goldPenalty > 0) {
-      gs.player.gold -= goldPenalty;
-      EventBus.emit(GE.GOLD_CHANGE, {
-        newValue: gs.player.gold,
-        delta: -goldPenalty,
-      });
+      addGold(gs, -goldPenalty, 'auto_sleep');
       EventBus.emit(GE.TOAST_SHOW, { text: `心力交瘁自动睡觉，扣 🪙 ${goldPenalty}`, duration: 2500 });
       devLog.info('[SleepSystem] 强制睡觉金币惩罚:', goldPenalty);
     }
