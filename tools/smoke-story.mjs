@@ -1,4 +1,4 @@
-// tools/smoke-story.mjs —— §16.5 剧情区 + 选项区冒烟
+﻿// tools/smoke-story.mjs —— §16.5 剧情区 + 选项区冒烟
 // 用法：node tools/smoke-story.mjs
 //
 // 覆盖口径（用户要求）：
@@ -265,7 +265,7 @@ check(ui.nodeKey === 'pick', 'C-10 推进被拒绝后节点不变');
 
 // 首次点击 = 待确认
 ui.optionBtns[0].click();
-check(ConfirmAction.isArmed(ui.optionBtns[0]) === true, 'C-11 首次点击进入待确认态');
+check(ConfirmAction.isArmed(ui.optionBars[0]) === true, 'C-11 首次点击进入待确认态');
 check(ui.optionBtns[0].textContent.includes('你确定这么做？'), 'C-12 待确认文案出现在卡片内');
 check(ui._hints[0].style.display === 'block', 'C-13 卡片内确认提示可见');
 check(ui._confirmBtns[0].style.display === 'inline-flex', 'C-14 选中后出现圆形确认钮');
@@ -287,13 +287,13 @@ check(ui.advance() === true && ui.visible === false, 'C-19 结果节点推进到
 ui.show(optionStory);
 ui.advance();
 ui.optionBtns[1].click();
-check(ConfirmAction.isArmed(ui.optionBtns[1]) === false, 'C-20 禁用选项点击不进待确认');
+check(ConfirmAction.isArmed(ui.optionBars[1]) === false, 'C-20 禁用选项点击不进待确认');
 key('2');
-check(ConfirmAction.isArmed(ui.optionBtns[1]) === false, 'C-21 禁用选项数字键无效');
+check(ConfirmAction.isArmed(ui.optionBars[1]) === false, 'C-21 禁用选项数字键无效');
 
 // 数字键选择 + 「离开」同样需要二次确认（无 safe 单击例外）
 key('3');
-check(ui.visible === true && ConfirmAction.isArmed(ui.optionBtns[2]) === true,
+check(ui.visible === true && ConfirmAction.isArmed(ui.optionBars[2]) === true,
   'C-22 数字键 3 选中「离开」→ 只进入待确认，不立即生效');
 check(ui.optionBtns[2].textContent.includes('你确定这么做？'), 'C-22b 「离开」也显示确认文案');
 key('3');

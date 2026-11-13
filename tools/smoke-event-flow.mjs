@@ -1,4 +1,4 @@
-// tools/smoke-event-flow.mjs —— 事件「选项驱动结算 + 多级状态机」冒烟
+﻿// tools/smoke-event-flow.mjs —— 事件「选项驱动结算 + 多级状态机」冒烟
 // 用法：node tools/smoke-event-flow.mjs
 //
 // 覆盖口径（本次任务要求）：
@@ -265,7 +265,7 @@ head('C. 单层事件：不同选项产生不同结果');
   const wheat0 = qty('item_wheat');
   openAtChoice(simpleDef);
   ui.optionBtns[2].click();
-  check(ui.visible === true && ConfirmAction.isArmed(ui.optionBtns[2]) === true,
+  check(ui.visible === true && ConfirmAction.isArmed(ui.optionBars[2]) === true,
     'C-06 「离开」首次点击只进入待确认，不立即生效');
   ui.optionBtns[2].click();
   await tick(10);

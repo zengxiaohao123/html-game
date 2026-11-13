@@ -66,6 +66,7 @@ export class StoryUI {
 
     this._options = [];
     this.optionBtns = [];
+    this.optionBars = [];
     this._hints = [];
     this._confirmBtns = [];
     this._confirming = false;   // 确认后的淡出期（禁止再次选择）
@@ -116,7 +117,7 @@ export class StoryUI {
 
     // 选项待确认态的唯一复位入口（点别处 / ESC / disarmAll）
     this._offDisarm = ConfirmAction.onDisarm((btn) => {
-      if (!this.optionBtns.includes(btn)) return;
+      if (!this.optionBars.includes(btn)) return;
       this._resetArmedCard(btn);
     });
 
@@ -387,6 +388,7 @@ export class StoryUI {
   _clearOptions() {
     this._options = [];
     this.optionBtns = [];
+    this.optionBars = [];
     this._hints = [];
     this._confirmBtns = [];
     if (this.optionAreaEl) {
@@ -417,6 +419,7 @@ export class StoryUI {
 
       // 白色选项条：参考图里只有主标题在条内，描述在条下的暗色背景上
       const bar = createEl('div', { class: ['story-option-bar'], parent: card });
+      this.optionBars.push(bar);
       createEl('div', {
         class: ['story-option-label'],
         text: String(opt.label || '选项'),
@@ -477,12 +480,18 @@ export class StoryUI {
   _chooseOption(i) {
     if (!this.visible || this._confirming) return;
     const opt = this._options[i];
-    const btn = this.optionBtns[i];
-    if (!opt || !btn || opt.disabled) return;
+    const card = this.optionBtns[i];
+    const bar = this.optionBars[i];
+    if (!opt || !card || opt.disabled) return;
     // 所有选项（包括「离开」）一律二次确认：没有单击即生效的例外
-    // 状态唯一依据 = 共享 ConfirmAction 是否处于待确认态
-    if (ConfirmAction.isArmed(btn)) { this._applyOption(i); return; }
-    if (!ConfirmAction.arm(btn, { hintEl: this._hints[i], text: CONFIRM_TEXT })) return;
+    // 状态唯一依据 = 共享 ConfirmAction 是否处于待确认态（挂白色选项条上，避免整块卡片被涂色）
+    if (ConfirmAction.isArmed(bar)) { this._applyOption(i); return; }
+    if (!ConfirmAction.arm(bar, {
+      hintEl: this._hints[i],
+      text: CONFIRM_TEXT,
+      armedBackground: 'linear-gradient(180deg, #f6fbf1 0%, #e8f2e0 52%, #d8e7cd 100%)',
+      armedBorderColor: '#7fa982',
+    })) return;
     this._showArmedAffordance(i);
   }
 
@@ -495,7 +504,7 @@ export class StoryUI {
   }
 
   _resetArmedCard(btn) {
-    const i = this.optionBtns.indexOf(btn);
+    const i = this.optionBars.indexOf(btn);
     if (i < 0) return;
     const confirmBtn = this._confirmBtns[i];
     const hint = this._hints[i];
@@ -507,12 +516,18 @@ export class StoryUI {
   _applyOption(i) {
     if (!this.visible || this._confirming) return false;
     const opt = this._options[i];
-    const btn = this.optionBtns[i];
+    const btn = this.optionBars[i];
+    const card = this.optionBtns[i];
     if (!opt || !btn || opt.disabled) return false;
 
     this._confirming = true;
     if (!ConfirmAction.isArmed(btn)) {
-      ConfirmAction.arm(btn, { hintEl: this._hints[i], text: CONFIRM_TEXT });
+      ConfirmAction.arm(btn, {
+        hintEl: this._hints[i],
+        text: CONFIRM_TEXT,
+        armedBackground: 'linear-gradient(180deg, #f6fbf1 0%, #e8f2e0 52%, #d8e7cd 100%)',
+        armedBorderColor: '#7fa982',
+      });
     }
     this._showArmedAffordance(i);
     // 淡出期间整块选项区不再响应点击（重复点击无效）
@@ -532,7 +547,7 @@ export class StoryUI {
       this._pending = pending;
       if (pending.kind === 'node') this._renderPendingNode(pending.key);
     }, {
-      fadeTarget: btn,
+      fadeTarget: card,
       fadeMs: this.confirmFadeMs,
       onFaded: () => {
         this._confirming = false;

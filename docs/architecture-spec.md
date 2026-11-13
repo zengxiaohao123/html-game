@@ -416,13 +416,16 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 - **文件**：`src/ui/StoryUI.js`（`StoryUI` 类）、`src/ui/styles/story.css`、`src/data/stories.js`、
   `src/data/events.js`（事件节点表）、`src/systems/EventEffects.js`（选项结算执行器）。
 - **两个分区**（2026-11-13 再次按参考图对齐，比例取自 `docs/_art-references/事件ui点击前.jpg` / `事件ui一次点击.jpg`）：
-  - 剧情区 `.story-panel`：**屏幕底部通栏、无卡片外框**，只有底部由透明到近黑的渐变；
-    左侧 `.story-emblem` 圆形徽记（约 `11.7vw`，左下），右侧 `.story-body` = `.story-title` 事件标题
-    （浅青绿 `#a6d5c3`、`3vh`）+ `.story-text` 正文（浅灰白 `#d8dada`、`2.45vh`、行高 `1.38`、列宽约 `52vw`）。
+  - 剧情区 `.story-panel`：**屏幕底部通栏、无卡片外框**，底部由透明到近黑的渐变 + 中央暗角；
+    左侧 `.story-emblem` 圆形徽记（约 `11.2vw`，左下，深绿渐变 + 细金环），右侧 `.story-body` **绝对定位**：
+    `left 22.5vw / top 70.6vh / width 52vw`，顶边不随文本行数浮动。
+    `.story-title` 松林青绿 `#b3e0c9` / `3vh`；`.story-text` 暖米白 `#e4dfd5` / `2.45vh` / 行高 `1.38`。
     右下 `.story-close`（✖，跳过入口）。**没有推进提示**：不显示「继续」「请选择」。
   - 选项区 `.option-area`：右侧竖排（`right:10.9vw / top:22.5vh`，宽 `23.8vw`）；
-    每个 `.story-option` 是透明容器，内含白色 `.story-option-bar`（高 `4.6vh`）+ 条下 `.story-option-detail`；
-    条内标题 `3vh / #1b1b1b / 700`，条下描述 `2.25vh / #cfd2d3`，`sub / detail` 全部常驻渲染，不渲染数字徽章。
+    每个 `.story-option` 是透明容器，**固定占位 `20.62vh`**（条顶间距与参考图 179px/868 对齐，描述多一行也不推移下一条），
+    内含米白纸感 `.story-option-bar`（高 `4.6vh`，纸面渐变 + 茶金内边线 + 柔光投影）+ 条下描述；
+    条内标题 `3vh / #241f16 / 700`，条下描述 `2.35vh / #d9d3c5`，`sub / detail` 全部常驻渲染，不渲染数字徽章。
+    待确认浅绿底色只涂在 `.story-option-bar` 上（`ConfirmAction` 的 arm 目标是选项条，不是整块容器）。
 - **数据驱动**：`STORY_SHOW {script, ctx}` 播放；`script = {id,title,start,nodes,onEnd}`，
   `nodes[key] = {text,options?,next?,end?,onEnter?}`，`Option = {id,label,sub,detail,disabled,disabledReason,effects,next,end,onSelect}`。
   事件点（RES-001）由 `buildEventStory(entry)` 生成脚本：条目带 `nodes` 时直接使用节点表（`src/data/events.js`），
