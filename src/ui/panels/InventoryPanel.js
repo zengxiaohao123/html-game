@@ -581,7 +581,7 @@ export class InventoryPanel {
   /** 物品图标（iconEl）：group 按物品库 tier1/tier2 归类，原 emoji 作回退 */
   _iconElFor(itemId, size) {
     const d = ITEMS[itemId];
-    const group = d?.tier2 === '设施' ? 'facilities'
+    const group = (d?.tier2 === '田块' || d?.tier2 === '设施') ? 'facilities'
       : d?.tier2 === '资源' ? 'resources'
       : d?.tier1 === '地形' ? 'terrains'
       : 'items';

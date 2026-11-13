@@ -131,7 +131,7 @@ assert(Object.keys(gs.map.outerTiles[3].contentState).length === 0, '旧 content
 head('载具 15 种定义');
 assert(Object.keys(VEHICLES).length === 15, '载具 15 种', Object.keys(VEHICLES).length);
 assert(VEHICLES.vehicle_horse.movePattern === 'range', '马匹 = 距离型');
-assert(VEHICLES.vehicle_tractor.landFilter?.tier2 === '设施', '拖拉机落点必须是设施');
+assert(JSON.stringify(VEHICLES.vehicle_tractor.landFilter?.tier2) === JSON.stringify(['田块', '设施']), '拖拉机落点必须是田块或设施');
 assert(VEHICLES.vehicle_chance.persistent === true, '巧遇不因次数耗尽消失');
 
 head('每日重置');

@@ -14,9 +14,10 @@ import { createEl } from './dom.js';
 const tier2Is = (t) => (id) => ITEMS[id]?.tier2 === t;
 const tier1Is = (t) => (id) => ITEMS[id]?.tier1 === t;
 
-/** 8 个分类（顺序即展示顺序，总览含全部，其余互斥） */
+/** 9 个分类（顺序即展示顺序，总览含全部，其余互斥） */
 export const CATEGORY_TABS = [
   { id: 'all', label: '总览', match: () => true },
+  { id: 'field', label: '田块', match: tier2Is('田块') },
   { id: 'facility', label: '设施', match: tier2Is('设施') },
   { id: 'resource', label: '资源', match: tier2Is('资源') },
   { id: 'skill', label: '技能', match: tier2Is('技能') },

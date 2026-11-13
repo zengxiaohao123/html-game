@@ -25,7 +25,7 @@ const EMOJI_FONT = '"Segoe UI Emoji",sans-serif';
 
 /** 按物品库归类取 iconEl 的 group（与 ForgePanel 同约定） */
 function iconGroupOfItem(it) {
-  if (it?.tier2 === '设施') return 'facilities';
+  if (it?.tier2 === '田块' || it?.tier2 === '设施') return 'facilities';
   if (it?.tier2 === '资源') return 'resources';
   if (it?.tier1 === '地形') return 'terrains';
   return 'items';

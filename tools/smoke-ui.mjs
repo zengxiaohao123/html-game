@@ -618,11 +618,11 @@ head_('§16.4 InfoPanel：1/4 宽 + 动态 tab（按选中对象生成）+ 面�
   assert(infoPanel._panelOpen === false, 'UI_PANEL_CLOSE(info) → 滑出');
 }
 
-head_('§16.15 InventoryPanel：8 tab + 出货箱 + 幂等 OPEN');
+head_('§16.15 InventoryPanel：9 tab + 出货箱 + 幂等 OPEN');
 {
   EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'inventory' });
   assert(inventoryPanel.visible === true, 'OPEN(inventory) → 显示');
-  for (const t of ['总览', '设施', '资源', '技能', '地形', '产物', '道具', '杂物']) {
+  for (const t of ['总览', '田块', '设施', '资源', '技能', '地形', '产物', '道具', '杂物']) {
     assert(hasText(inventoryPanel.mask, t), `tab「${t}」存在`);
   }
   assert(hasText(inventoryPanel.mask, '出货箱'), '出货箱区存在');
@@ -631,11 +631,11 @@ head_('§16.15 InventoryPanel：8 tab + 出货箱 + 幂等 OPEN');
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });
 }
 
-head_('§16.13 ForgePanel：6 tab（无技能）+ 右上>右下');
+head_('§16.13 ForgePanel：7 tab（无技能）+ 右上>右下');
 {
   EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'forge' });
   assert(forgePanel.helper?.visible === true, 'OPEN(forge) → 显示');
-  for (const t of ['总览', '设施', '资源', '地形', '产物', '道具']) {
+  for (const t of ['总览', '田块', '设施', '资源', '地形', '产物', '道具']) {
     assert(hasText(forgePanel.helper.root, t), `tab「${t}」存在`);
   }
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'forge' });
@@ -998,7 +998,7 @@ head_('第 8 批：商店/魔法商店逐项 UI（选项齐全/正方格/留白/
     && shopPanel.catBarEl.children[0].classList.contains('tab-bar'),
     '分类栏复用背包同一 DOM（.tab-bar）', shopPanel.catBarEl.children.length);
   const catBtns = shopPanel.catBarBtns;
-  assert(catBtns.length === 8, '分类栏 8 个分组（与背包一致）', catBtns.length);
+  assert(catBtns.length === 9, '分类栏 9 个分组（与背包一致）', catBtns.length);
   assert(catBtns.every((b) => b.classList.contains('tab-btn')),
     '分类按钮复用背包样式（.tab-btn）');
   const sellCatLabels = catBtns.map((b) => b._text);
@@ -1010,9 +1010,9 @@ head_('第 8 批：商店/魔法商店逐项 UI（选项齐全/正方格/留白/
   assert(catBtns[0].classList.contains('active'), '默认「总览」选中态');
   assert(catBtns.filter((c) => c.classList.contains('active')).length === 1, '分类栏选中态唯一');
 
-  catBtns[5].click();   // 产物（点击后分类栏重建，选中态取新按钮）
-  assert(shopPanel.sellCat === 5, '点击分类 → 分类索引切换', shopPanel.sellCat);
-  assert(shopPanel.catBarBtns[5].classList.contains('active'), '点击分类 → 选中态切换');
+  catBtns[6].click();   // 产物（点击后分类栏重建，选中态取新按钮）
+  assert(shopPanel.sellCat === 6, '点击分类 → 分类索引切换', shopPanel.sellCat);
+  assert(shopPanel.catBarBtns[6].classList.contains('active'), '点击分类 → 选中态切换');
   assert(shopPanel.gridEl.children.length === 1, '产物分类仅显示 1 个可售物品格', shopPanel.gridEl.children.length);
 
   // 5.1.1) 刷新按钮只属于购买页：售卖 tab 必须消失（不是禁用/灰化）（§16.21）
@@ -1801,7 +1801,7 @@ head_('第 10 批任务 B：InventoryPanel 切 tab（点击触发状态变化）
 {
   EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'inventory' });
   buttonsWithText(inventoryPanel.mask, '资源')[0].click();
-  assert(inventoryPanel.selectedTabIdx === 2, '点资源 tab → selectedTabIdx=2', inventoryPanel.selectedTabIdx);
+  assert(inventoryPanel.selectedTabIdx === 3, '点资源 tab → selectedTabIdx=3', inventoryPanel.selectedTabIdx);
   buttonsWithText(inventoryPanel.mask, '总览')[0].click();
   assert(inventoryPanel.selectedTabIdx === 0, '点总览 tab → selectedTabIdx=0');
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'inventory' });

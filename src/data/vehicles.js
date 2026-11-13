@@ -10,7 +10,7 @@
 //                'range'       曼哈顿距离 ≤ maxRange 任意格
 //                'any'         任意格
 //                'random'      随机一格（系统自选，不需要玩家指定目标）
-//   landFilter   落点必须是"设施 / 资源 / 技能"等，null 表示无限制
+//   landFilter   落点必须是"田块 / 设施 / 资源 / 技能"等（tier2 可为数组），null 表示无限制
 //   freeStamina  本次移动不消耗行动力
 //   staminaGain  到达后额外回复的行动力（允许超出上限，次日清除）
 //   goldOnArrive 到达后获得金币
@@ -168,7 +168,7 @@ export const VEHICLES = {
     movePattern: 'line',
     maxRange: null,
     canCrossIllegal: false,
-    landFilter: { tier2: '设施' },
+    landFilter: { tier2: ['田块', '设施'] },
     usageCount: 1,
     rarity: 1,
   },

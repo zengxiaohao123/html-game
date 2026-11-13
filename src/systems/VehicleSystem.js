@@ -102,14 +102,17 @@ function manhattan(gs, a, b) {
   return Math.abs(pa.x - pb.x) + Math.abs(pa.y - pb.y);
 }
 
-/** 落点是否满足该载具的 landFilter（设施 / 资源 / 技能 / 指定 contentId） */
+/** 落点是否满足该载具的 landFilter（田块 / 设施 / 资源 / 技能 / 指定 contentId） */
 export function landOk(gs, idx, def) {
   const filter = def?.landFilter;
   if (!filter) return true;
   const tile = gs.map.outerTiles[idx];
   if (!tile || !tile.contentId) return false;
   if (filter.contentIds) return filter.contentIds.includes(tile.contentId);
-  if (filter.tier2) return ITEMS[tile.contentId]?.tier2 === filter.tier2;
+  if (filter.tier2) {
+    const want = Array.isArray(filter.tier2) ? filter.tier2 : [filter.tier2];
+    return want.includes(ITEMS[tile.contentId]?.tier2);
+  }
   return true;
 }
 

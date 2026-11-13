@@ -23,7 +23,7 @@ function itName(id) { return ITEMS[id]?.name || id; }
 /** 按物品库归类取 iconEl 的 group（参考数据 tier1/tier2） */
 function iconGroupOf(itemId) {
   const d = ITEMS[itemId];
-  if (d?.tier2 === '设施') return 'facilities';
+  if (d?.tier2 === '田块' || d?.tier2 === '设施') return 'facilities';
   if (d?.tier2 === '资源') return 'resources';
   if (d?.tier1 === '地形') return 'terrains';
   return 'items';
@@ -35,6 +35,7 @@ function recipeOutDef(r) { return ITEMS[r.outputs?.[0]?.itemId] || null; }
 /** §16.13：无「技能」tab —— 技能不可合成 */
 const TABS = [
   { id: 'all',      label: '总览', match: () => true },
+  { id: 'field',    label: '田块', match: (d) => d?.tier2 === '田块' },
   { id: 'facility', label: '设施', match: (d) => d?.tier2 === '设施' },
   { id: 'resource', label: '资源', match: (d) => d?.tier2 === '资源' },
   { id: 'terrain',  label: '地形', match: (d) => d?.tier1 === '地形' },

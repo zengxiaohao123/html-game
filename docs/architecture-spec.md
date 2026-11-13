@@ -28,7 +28,7 @@ src/
 │   ├── map.js                # 地图/外圈/栅栏的状态切片
 │   └── storage.js            # localStorage 8 槽位存档读写
 ├── data/                     # 静态数据表（纯常量，无逻辑）
-│   ├── facilities.js         # 10 种设施定义（含 hook 注册）
+│   ├── facilities.js         # 10 种田块/设施定义（含 hook 注册）
 │   ├── resources.js          # 5 种资源类地块内容定义
 │   ├── characters.js         # 3 个角色 + 精灵 + 技能定义
 │   ├── creatures.js          # 生物定义（小鸡/鸡/史莱姆 7 变体）
@@ -68,7 +68,7 @@ src/
 │   ├── panels/
 │   │   ├── MainMenu.js       # 主菜单（新游戏/读档/图鉴）
 │   │   ├── SettingsPanel.js  # ESC 设置（存档/读档/回主菜单）
-│   │   ├── InventoryPanel.js # B 键背包（8 tab + 出货箱 2×6）
+│   │   ├── InventoryPanel.js # B 键背包（9 tab + 出货箱 2×6）
 │   │   ├── RolePanel.js      # C 键角色页面（全屏）
 │   │   ├── TeamPanel.js      # L 键编队页面（4 组）
 │   │   ├── ForgePanel.js     # F 键合成页面
@@ -295,8 +295,8 @@ placeFenceTerrain(gs, row, col, terrainId) // 栅栏内行/列号（0 起）→ 
 ```
 
 - **地形允许进栅栏**：栅栏格与外围格一样有 `terrain / terrainAmount`；`placeFenceTerrain` 校验栅栏行列范围、库存后写入地形并扣 1 个道具，广播 `GE.FENCE_TILE_UPDATED`。重复施加同种地形 = 回满元素量（与 `placeTerrain` 同口径）。
-- **设施/资源/技能仍限外圈**：`placeContent` 只接受外圈 `tileIdx`；`placeFenceTerrain` 只接受 `terrains.js` 里登记的地形 id，传入 `facility_*` / `skill_*` 一律按 `unknownTerrain` 拒绝。
-- **拖拽入口**：`MapView` 的 drop 只认外圈坐标，栅栏内拖拽由独立模块 `src/ui/FenceTerrainDrop.js` 在容器捕获阶段接管（只处理 `terrain_` 前缀并 `stopPropagation`，避免误弹"只能放在外圈"）；放置成功后调用 `mapView.renderFence(gs)` 局部重绘栅栏背景层。设施/技能等其它内容仍走 `MapView` 原逻辑被拒绝。
+- **田块/设施/资源/技能仍限外圈**：`placeContent` 只接受外圈 `tileIdx`；`placeFenceTerrain` 只接受 `terrains.js` 里登记的地形 id，传入 `facility_*` / `skill_*` 一律按 `unknownTerrain` 拒绝。
+- **拖拽入口**：`MapView` 的 drop 只认外圈坐标，栅栏内拖拽由独立模块 `src/ui/FenceTerrainDrop.js` 在容器捕获阶段接管（只处理 `terrain_` 前缀并 `stopPropagation`，避免误弹"只能放在外圈"）；放置成功后调用 `mapView.renderFence(gs)` 局部重绘栅栏背景层。田块/设施/技能等其它内容仍走 `MapView` 原逻辑被拒绝。
 - **信息区**：`InfoPanel` 订阅 `GE.FENCE_TILE_UPDATED`，正在查看该栅栏格时重渲染「地块内容 / 状态」tab。
 - **验收**：`node tools/smoke-expand.mjs` 的 X2/X5（新栅栏格随机地形、初始格不回溯）与 X10（地形可放置、扣减、回满、越界拒绝、设施/技能不可）。
 
@@ -523,7 +523,19 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 - **随机池 / 掉落**：`POOL-12` 等随机池不得再包含技能石条目；技能只从角色解锁或魔法商店获得，不进入随机掉落。
 - **旧档迁移**：`migrateGS` 的 `migrateLegacySkillStones` 把旧档背包、出货箱、快捷栏、商店库存里的技能石条目换算为对应技能物品（1→1，库存同步名称 / 图标 / 分组），迁移后存档内不保留技能石条目。
 - **技能逻辑不变**：触发器、判定、连携、冷却等技能实现零改动；本次仅改获取与售卖口径。
-- **普通商店不售卖技能（2026-11-13）**：`SHOP_KINDS.shop` 四类货架（载具 / 设施资源 / 作物 / 收藏品）不含 `SHOP_SKILL`，`generateStock('shop')` 不会产出二级分类＝技能的条目；技能只在魔法商店直售。回归断言见 `tools/smoke-economy-crops.mjs`。
+- **普通商店不售卖技能（2026-11-13）**：`SHOP_KINDS.shop` 四类货架（载具 / 地块内容（田块、设施、资源）/ 作物 / 收藏品）不含 `SHOP_SKILL`，`generateStock('shop')` 不会产出二级分类＝技能的条目；技能只在魔法商店直售。回归断言见 `tools/smoke-economy-crops.mjs`。
+
+### 2.10 地块内容二级分类拆分「田块 / 设施」（2026-11-13）
+
+> 对应设计文档 §3.5 / §9.5 / §10.1 / §11.1 / §16.1 / §19.8；数据源为《转盘农场_物品库.xlsx》「物品总表」二级分类列。
+
+- **分类口径**：地块内容由「设施 / 资源 / 技能」三类改为**田块 / 设施 / 资源 / 技能**四类。田块＝所有植物类田块（花田同属此类）；设施＝生物类设施（鸡舍、史莱姆屋），家 / 帐篷 / 野生种子等非植物类地块内容也归入设施。
+- **数据生成**：`tools/gen_library.py` 机械搬运表格，不改代码逻辑；`tier2` 值随表格变为 `田块`（FAC-003~008、011、012、014~016 共 11 条）与 `设施`（FAC-001、002、009、010、013 共 5 条）。
+- **分类 tab**：`src/ui/CategoryBar.js` 的 `CATEGORY_TABS` 增加 `田块`，顺序为总览 → 田块 → 设施 → 资源 → 技能 → 地形 → 产物 → 道具 → 杂物。背包（9 tab）与商店售卖页共用该常量，自动同步。
+- **合成页**：`ForgePanel.TABS` 增加 `田块`（7 tab），`iconGroupOf` 与 `CodexPanel` / `InventoryPanel` 的图标分组把 `田块` 与 `设施` 一并映射到 `facilities` 资产组（`facility_*` 的图标 / emoji 仍在该组）。
+- **载具落点**：`VehicleSystem.landOk` 的 `landFilter.tier2` 支持数组；VEH-010 拖拉机改为 `['田块','设施']`，保持拆分前「任意设施所在地块」的落点范围不变。
+- **不变项**：随机池（POOL-01 等）按条目编号列举，不随 `tier2` 变化；`初级肥料` 的 `PLANT_FACILITIES` 与魔导书田块统计仍按 contentId 判定，行为零改动；玩家可见文本（含拖拉机描述）逐字照物品库，不改写。
+- **验收**：`node tools/smoke-ui.mjs`（背包 9 tab / 售卖页 9 tab / 合成 7 tab 文案与顺序）、`node tools/smoke-v05.mjs`（拖拉机 landFilter 含田块与设施）。
 
 ## 三、全局状态 schema（GS 对象）
 
