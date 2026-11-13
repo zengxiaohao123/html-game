@@ -21,6 +21,13 @@
   -webkit-user-select: none;
 }
 
+/* ── 事件期间快捷栏让位 ──
+ * 文本块已下移到屏幕底部（参考图底部信息栏腾出的位置），快捷栏正好压在文字上；
+ * 事件期间快捷栏本来就被输入封锁（§18.3），因此整体隐藏，避免文字叠在格子上。 */
+body.story-active .hotbar-wrapper {
+  display: none;
+}
+
 /* ── 事件文本块（左下；锚点固定，不随行数浮动） ── */
 .story-panel {
   position: absolute;

@@ -433,6 +433,8 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
   - 确认行 `.story-option-confirm-row`：描述下方**始终占位**的 `3.6vh` 行（`margin-top:auto` 贴卡底），内含「你确定这么做？」与圆形印章；
     出现时不压字、不顶开描述、不推移其它选项。
 - **背景无暗斑**：`.story-mask` 只有一层 `rgba(14,20,24,.34)` 平铺色；旧的 `.story-wash` 与 `.option-scrim`（径向渐变椭圆暗斑）**已删除**。
+- **快捷栏让位**：`StoryUI.show()` 给 `document.body` 加 `story-active`，`_hide()` 移除；`story.css` 中 `body.story-active .hotbar-wrapper{display:none}`
+  （快捷栏根 `.hotbar` 带 inline `display:flex`，所以隐藏外层 wrapper）。原因：文本块已下移到屏幕底部，快捷栏正压在该区域，且事件期间快捷栏本就被输入封锁。
 - **数据驱动**：`STORY_SHOW {script, ctx}` 播放；`script = {id,title,start,nodes,onEnd}`，
   `nodes[key] = {text,options?,next?,end?,onEnter?}`，`Option = {id,label,sub,detail,disabled,disabledReason,effects,next,end,onSelect}`。
   事件点（RES-001）由 `buildEventStory(entry)` 生成脚本：条目带 `nodes` 时直接使用节点表（`src/data/events.js`），

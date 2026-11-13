@@ -242,6 +242,9 @@ export class StoryUI {
     this.visible = true;
     this.mask.style.display = 'block';
     this.layer.style.display = 'block';
+    // 事件期间快捷栏整体让位：文本块已下移到屏幕底部（参考图信息栏的位置），
+    // 而快捷栏正压在这块区域上；事件期间快捷栏本来就不可用（§18.3 输入封锁）。
+    document.body?.classList?.add('story-active');
 
     // §18.3：信息区等会改动数据的界面不允许在事件期间保持打开（会盖在选项区之上），
     // 进入剧情时立即收起；背包 / 角色 / 任务 / 图鉴（纯查看）与设置（存读档）保留。
@@ -720,6 +723,7 @@ export class StoryUI {
     this._exitResultMode();
     if (this.mask) this.mask.style.display = 'none';
     if (this.layer) this.layer.style.display = 'none';
+    document.body?.classList?.remove('story-active');
     this._clearOptions();
   }
 
