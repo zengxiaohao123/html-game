@@ -3,14 +3,16 @@
 //
 // 版式逐项量取自 docs/_art-references/事件ui点击前.jpg / 事件ui一次点击.jpg（1920×868）：
 //   · 事件文本块（左下）
-//       - 标题墨迹 70.8%–73.0%H；正文首行墨迹 74.9%H，行距 3.17%H，末行 86.3%H
-//       - 文字左边界 22.5%W、右边界 60.0%W；圆形徽记直径约 8.6%W，圆心 (14.7%W, 76.3%H)
-//       - 文字块与右侧选项区之间保留 5vw 以上空档，任何情况下不重叠
-//   · 选项文本块（右侧）
-//       - 白条 x 65.3%–89.3%W（宽 24vw），条高 4.7%H
-//       - 三条条顶 22.5% / 43.1% / 63.7%H，节距 20.6%H
-//       - 标题在条内（左内边距 1.5vw），描述在条下 1.2vw 缩进处常驻显示
-//       - 确认提示与确认印章在描述下方的预留行内，不压字、不顶开下一条
+//       - 参考图标题墨迹 70.8%–73.0%H、正文首行 74.9%H、行距 3.17%H、末行 86.3%H
+//       - 参考图底部还有一条本作不需要的信息栏，因此整块下移 7vh：块顶 79.2%H、标题墨迹约 79.7%H
+//       - 文字左边界 22.5%W、右边界 60.0%W；圆形徽记直径约 8.6%W，圆心约 (14.7%W, 85.1%H)
+//       - 正文按 4 个整行高度裁切（max-height = 4 × 1.38 × 字号），绝不出现半行被切掉
+//   · 选项区（右侧整列）
+//       - x 65.3vw–94.4vw；不透明深松林卡片，白字标题 + 浅苔绿描述，不使用透明底或暗斑
+//       - 整列自下而上排布，**最后一项底边与正文末行底边动态对齐**（正文行数变化时重算）
+//       - 参考节距 20.6vh（卡高 17.6 + 间距 3），四选项时收紧
+//       - 确认提示与确认印章在卡片底部预留行内，不压字、不顶开其它选项
+//   · 跳过入口在正文块右上角（右缘 60vw），右侧整列完全留给选项
 //
 // 交互：
 //   · 第一次点击选项 = 进入待确认（整张选项卡都是点击目标，含标题条与描述）；
@@ -79,7 +81,6 @@ export class StoryUI {
     this.director = director;
     this.mask = null;           // 暗色薄纱（拦截地图点击）
     this.layer = null;          // 剧情区 + 选项区容器（pointer-events:none）
-    this.washEl = null;         // 底部渐变布幔（装饰，不接点击）
     this.storyPanel = null;     // 事件文本块（可点击推进）
     this.emblemEl = null;       // 圆形徽记
     this.emblemGlyphEl = null;  // 徽记内的图标
@@ -144,15 +145,13 @@ export class StoryUI {
       parent,
     });
 
-    // 底部渐变布幔：只负责把场景压暗、给正文让位（参考图无卡片外框）
-    this.washEl = createEl('div', { class: ['story-wash'], parent: this.layer });
-
     this._mountStoryPanel();
     this._mountSkipButton();
     this._mountOptionArea();
 
     document.addEventListener('click', this._onDocClick);
     window.addEventListener('keydown', this._onKeyDownBound);
+    window.addEventListener('resize', () => this._syncOptionBottom());
 
     EventBus.on(GE.STORY_SHOW, (p = {}) => this.show(p.script || p, p.ctx || {}));
     // 读档 / 重开：丢弃剧情演出，静默关闭（不触发 onEnd 结算）
@@ -187,12 +186,13 @@ export class StoryUI {
   }
 
   _mountSkipButton() {
-    // 右下角出口：跳过入口（低调圆形印章样式），点击 = 跳过确认
+    // 事件文本块右上角的跳过入口（右侧整列属于选项，因此不贴屏幕右缘）
     const closeBtn = createEl('button', {
       class: ['story-skip'],
       attrs: { type: 'button', title: '跳过 / 关闭（需确认）', 'aria-label': '跳过剧情' },
       parent: this.layer,
     });
+    createEl('span', { class: ['story-skip-label'], text: '跳过', parent: closeBtn });
     createEl('span', { class: ['story-skip-x'], text: '✕', parent: closeBtn });
     closeBtn.onclick = (e) => {
       if (e?.stopPropagation) e.stopPropagation();
@@ -201,7 +201,6 @@ export class StoryUI {
   }
 
   _mountOptionArea() {
-    this.optionScrimEl = createEl('div', { class: ['option-scrim'], parent: this.layer });
     this.optionAreaEl = createEl('div', {
       class: ['option-area'],
       parent: this.layer,
@@ -434,7 +433,6 @@ export class StoryUI {
       this.optionAreaEl.style.display = 'none';
       this.optionAreaEl.style.pointerEvents = '';
     }
-    if (this.optionScrimEl) this.optionScrimEl.style.display = 'none';
   }
 
   _renderOptions() {
@@ -450,12 +448,9 @@ export class StoryUI {
 
     area.style.display = 'flex';
     area.style.pointerEvents = '';
-    if (this.optionScrimEl) this.optionScrimEl.style.display = 'block';
-    // 3 个选项严格照参考图 20.62vh 节距；4 个选项等比压缩，保证不越出屏幕下沿
+    // 3 个选项照参考图节距（卡高 17.6 + 间距 3 ≈ 20.6vh）；4 个选项收紧，保证不越出上沿
     const four = this._options.length >= 4;
-    area.style.setProperty('--opt-pitch', four ? '19.5vh' : '20.62vh');
-    area.style.transform = four ? 'scale(0.84)' : '';
-    area.style.transformOrigin = 'top left';
+    area.classList.toggle('is-four', four);
 
     this._options.forEach((opt, i) => {
       const card = createEl('div', {
@@ -505,6 +500,24 @@ export class StoryUI {
       this._hints.push(hint);
       this._confirmBtns.push(confirmBtn);
     });
+
+    // 参考图核心关系：最后一项选项的底边与事件文本块的最底部平齐
+    this._syncOptionBottom();
+  }
+
+  /**
+   * 把选项列的下沿贴到当前正文块的最底部（正文行数变化时同步重算）。
+   * 选项列自下而上排列，所以「最后一项底边 === 正文末行底边」恒成立。
+   */
+  _syncOptionBottom() {
+    const area = this.optionAreaEl;
+    if (!area || !this.textEl) return;
+    if (area.style.display === 'none') return;
+    const rect = this.textEl.getBoundingClientRect();
+    if (!rect || !rect.height) return;
+    const bottom = Math.max(0, window.innerHeight - rect.bottom);
+    area.style.bottom = `${bottom.toFixed(1)}px`;
+    area.style.top = 'auto';
   }
 
   _renderDescription(card, opt) {
