@@ -415,16 +415,25 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 
 - **文件**：`src/ui/StoryUI.js`（`StoryUI` 类）、`src/ui/styles/story.css`、`src/data/stories.js`、
   `src/data/events.js`（事件节点表）、`src/systems/EventEffects.js`（选项结算执行器）。
-- **两个分区**（2026-11-13 第二轮修订，比例逐块量自 `docs/_art-references/事件ui点击前.jpg` / `事件ui一次点击.jpg`，1920×868，两图一致）：
-  - 剧情区 `.story-panel`：**屏幕左下、无卡片外框 / 无底板**，只靠全屏单色薄纱 + 文字暗影；
-    **参考图底部那条信息栏本作没有，整块下移 `7vh`**：`left 22.5vw / top 79.2vh / width 37.5vw / min-height 14vh`，
+- **两个分区**（2026-11-13 第三轮修订，比例逐块量自 `docs/_art-references/事件ui点击前.jpg` / `事件ui一次点击.jpg`，1920×868，两图一致）：
+  - 剧情区 `.story-panel`：**屏幕左下**，文字列 `left 22.5vw / top 79.2vh / width 37.5vw / min-height 14vh`，
     名义顶边固定（短文本不浮动），超长文本时由 `_layout()` 整块上移。
+    **深色底板 `.story-scroll`（2026-11-13 第三轮新增）**：文字不再直接压在地图上；该层是**纯装饰**
+    （绝对定位、不参与 `_layout()` 的 rect 测量，版式数值一律不变）：
+    `left:-6.4vw / right:-2.2vw / top:-3vh / bottom:-2.4vh`，整体 `rotate(-0.35deg)`，左缘吃进圆形徽记右半边。
+    `::before` 用 `clip-path: polygon(...)`（约 45 个点、`1%–5%` 抖动）画**撕纸轮廓**，叠 8 层背景：
+    顶部暖光 / 两团墨渍 / 右上茶金晕染 + 左下暖褐晕染 / 竖横纤维纹 / 四周压暗 / 深松林墨绿主渐变
+    （`#2a3d35 → #20312b → #192722 → #131e19`，**不是主地图的黄绿背景**，也不是纯色平涂）；
+    `::after` 是 `inset 5.2% 2.4%` 的茶金细内框 `rgba(214,182,120,.34)` + 四角金点；
+    `filter: drop-shadow(...)` 挂在 `.story-scroll` 上（不能挂在被 `clip-path` 裁切的同一层），暗影才贴合撕边轮廓。
+    配色取信息区（HUD）的茶金 / 暖米 `#FFF8E6` 与选项卡的深松林，三者同族。
+    层级：底板 `z-index:0`、徽记与正文列 `2`、跳过按钮 `3`。
     左侧 `.story-emblem` 圆形徽记（`min(8.6vw,17.2vh)`，圆心约 `(14.7vw,85.1vh)`，深绿渐变 + 细金环 + 反光），
     右侧 `.story-body`：`.story-title` 松林青绿 `#afe4c9` / `2.65vh`（墨迹约 `79.7vh`）；
     `.story-text` 暖米白 `#f4f1e8` / `2.3vh` / 行高 `1.38` / 行距约 `3.17vh`，
     **不设 `max-height`、不设 `overflow`，正文按自然高度完整铺开，绝不裁字**。
     `_layout()` 的安全线 `STORY_MAX_BOTTOM = 0.955`：正文自然底边超过 `95.5%H` 时，把 `.story-panel` 的 `top`
-    改成 `名义 top - 超出量`（标题 / 徽记 / 跳过一起上移），正文一个字都不切，块底仍在安全线内。
+    改成 `名义 top - 超出量`（标题 / 徽记 / 跳过 / 底板一起上移），正文一个字都不切，块底仍在安全线内。
     `.story-skip`（`跳过 ✕` 胶囊）挂在 `.story-panel` 内、贴**文本块右上角**（`right:0 / top:0`，即右缘 `60vw`），
     随整块上移，**不贴屏幕右缘**（右侧整列属于选项）。**没有推进提示**：不显示「继续」「请选择」。
   - 选项区 `.option-area`：右侧竖排（`left:65.3vw / right:5.6vw`，不再为跳过预留右侧空间），
@@ -438,9 +447,13 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
     自然高度总和仍超出可用高度时，`_layout()` 依次尝试 `3 / 2.4 / 1.8 / 1.2 / 0.6 / 0vh` 间距直到 `scrollHeight <= clientHeight`，
     保证最后一项不越过正文块底边。
     卡内：`.story-option-bar` 标题行（`2.8vh / 700 / #f8f3e3` 暖白 + 茶金细分隔线）+ `.story-option-desc` 描述（`2.2vh / #d7e2d3`，`sub / detail` 全部常驻，不渲染数字徽章）。
+    **待确认态（一次点击）**：`.story-option.is-armed` 用 `transform: translateX(-1.7vw)` 向左"被拉出"一段
+    （实测卡左缘 `65.7%W → 64.0%W`），左缘 `::before` 同时长出一枚金色把手（`grip-in 0.16s`），阴影加重向右投射；
+    位移只走 `transform`（不参与布局），因此最后一项底边与正文块底边的对齐、其它卡的位置都不受影响。
   - 确认行 `.story-option-confirm-row`：描述下方**始终占位**的 `3.6vh` 行（`margin-top:auto` 贴卡底），内含「你确定这么做？」与圆形印章；
     出现时不压字、不顶开描述、不推移其它选项。
 - **背景无暗斑**：`.story-mask` 只有一层 `rgba(14,20,24,.34)` 平铺色；旧的 `.story-wash` 与 `.option-scrim`（径向渐变椭圆暗斑）**已删除**。
+  （第三轮新增的 `.story-scroll` 是**有明确撕边轮廓的正文底板**，不是铺在背景上的暗斑。）
 - **快捷栏让位**：`StoryUI.show()` 给 `document.body` 加 `story-active`，`_hide()` 移除；`story.css` 中 `body.story-active .hotbar-wrapper{display:none}`
   （快捷栏根 `.hotbar` 带 inline `display:flex`，所以隐藏外层 wrapper）。原因：文本块已下移到屏幕底部，快捷栏正压在该区域，且事件期间快捷栏本就被输入封锁。
 - **数据驱动**：`STORY_SHOW {script, ctx}` 播放；`script = {id,title,start,nodes,onEnd}`，

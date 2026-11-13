@@ -8,6 +8,8 @@
 //       - 文字左边界 22.5%W、右边界 60.0%W；圆形徽记直径约 8.6%W，圆心约 (14.7%W, 85.1%H)
 //       - 正文**不裁切**、按自然高度完整铺开；底部安全线 95.5%H，
 //         超长时整块（文本块 + 选项列）一起上移，绝不把文字切掉
+//       - 正文落在一块深色「旧纸卷」底板上（.story-scroll，纯装饰层）：
+//         深松林墨绿渐变 + 墨渍 / 茶金晕染 / 纤维纹 + clip-path 手撕边 + 茶金细内框
 //   · 选项区（右侧整列）
 //       - x 65.3vw–94.4vw；不透明深松林卡片，白字标题 + 浅苔绿描述，不使用透明底或暗斑
 //       - 整列自下而上排布，**最后一项底边与正文末行底边动态对齐**（正文行数变化时重算）
@@ -178,6 +180,10 @@ export class StoryUI {
       if (this._resultMode) { this._finish('result-dismiss'); return; }
       this.advance();
     };
+
+    // 正文底板：深墨绿「旧纸卷」，撕边 + 纤维纹 + 茶金内框（纯装饰层）。
+    // 绝对定位、不参与 _layout() 的 rect 测量，版式数值与对齐关系不受影响。
+    createEl('div', { class: ['story-scroll'], parent: this.storyPanel });
 
     this.emblemEl = createEl('div', { class: ['story-emblem'], parent: this.storyPanel });
     createEl('div', { class: ['story-emblem-ring'], parent: this.emblemEl });

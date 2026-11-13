@@ -11,8 +11,9 @@
  *   · 选项卡为不透明深松林底 + 茶金细边，白字标题 / 浅苔绿描述 / 预留确认行
  *   · 跳过入口在正文块右上角（挂块内，右缘 60vw），不占右侧选项列
  *
- * 美术：深松林色实底卡 + 茶金描边 + 松林绿标题 + 少量高光，
- *       与《转盘农场》手绘田园风一致；不使用纯色块与默认字体，也不使用大面积暗斑。 */
+ * 美术：深墨绿「旧纸卷」底板（撕边 + 纤维纹 + 茶金内框）+ 深松林色实底卡 + 茶金描边，
+ *       底色取信息区（HUD）的深棕近黑与茶金，材质与选项卡同族；不使用纯色块与默认字体，
+ *       也不使用大面积暗斑。 */
 
 .story-layer {
   font-family: "LXGW WenKai TC", "YouYuan", "Microsoft YaHei", "PingFang SC", sans-serif;
@@ -39,9 +40,83 @@ body.story-active .hotbar-wrapper {
   animation: story-rise 0.24s ease-out;
 }
 
+/* ── 正文底板：深墨绿「旧纸卷」 ──
+ * 深色底 + 撕边轮廓，文字不再直接压在地图上；纯装饰层，绝对定位、不影响 _layout() 测量。
+ *  · 底色：深松林墨绿三层渐变（与选项卡同族），绝不是主地图的黄绿背景；
+ *  · 质感：纤维竖纹 / 横纹 + 两团墨渍 + 右上茶金晕染 + 四周压暗，避免死板平涂；
+ *  · 边缘：clip-path 撕纸轮廓（约 35 点，1%–5% 抖动），再叠一圈茶金细内框与四角金点，
+ *    呼应信息区（HUD）的茶金 / 暖米手绘描边语言；
+ *  · 整体轻旋 -0.35°，底板略宽于文字列，左缘吃进圆形徽记右半边，像压在卷轴上的火漆。
+ * 投影用 filter: drop-shadow（作用在父层），撕边轮廓才有贴合形状的暗影。 */
+.story-scroll {
+  position: absolute;
+  left: -6.4vw;
+  right: -2.2vw;
+  top: -3vh;
+  bottom: -2.4vh;
+  z-index: 0;
+  pointer-events: none;
+  transform: rotate(-0.35deg);
+  transform-origin: 50% 62%;
+  filter:
+    drop-shadow(0 0.28vh 0.32vh rgba(4, 10, 8, 0.55))
+    drop-shadow(0 1.1vh 1.8vh rgba(0, 0, 0, 0.5));
+}
+
+.story-scroll::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(
+    1.2% 2.1%, 7% 3.6%, 13% 0.9%, 20% 4.2%, 27% 1.6%, 33% 4.9%, 40% 2.2%,
+    47% 0.7%, 54% 3.8%, 61% 1.2%, 68% 4.6%, 75% 1.9%, 82% 4.1%, 89% 0.8%,
+    95% 3.4%, 99.2% 1.4%,
+    99.2% 9%, 98.3% 18%, 99.4% 27%, 98.5% 36%, 99.3% 45%, 98.4% 54%,
+    99.2% 63%, 98.6% 72%, 99.4% 81%, 98.5% 90%, 99.1% 97.6%,
+    91% 95.2%, 84% 97.6%, 77% 95.5%, 70% 98.6%, 63% 96.2%, 56% 98.9%,
+    49% 95.5%, 42% 98.4%, 35% 96.4%, 28% 99.1%, 21% 95.7%, 14% 98.4%,
+    7% 96.1%, 1% 98.8%,
+    1.4% 90%, 0.6% 81%, 1.5% 72%, 0.7% 63%, 1.4% 54%, 0.6% 45%,
+    1.3% 36%, 0.7% 27%, 1.5% 18%, 0.8% 9%
+  );
+  background:
+    /* 顶部暖光（纸面受光） */
+    linear-gradient(180deg, rgba(255, 232, 186, 0.10) 0%, rgba(255, 232, 186, 0) 30%),
+    /* 两团墨渍：一暖一冷，打破平涂 */
+    radial-gradient(ellipse at 16% 22%, rgba(66, 104, 86, 0.5) 0%, rgba(66, 104, 86, 0) 62%),
+    radial-gradient(ellipse at 82% 78%, rgba(8, 16, 14, 0.6) 0%, rgba(8, 16, 14, 0) 66%),
+    /* 右上茶金晕染 + 左下暖褐晕染，呼应信息区暖色 */
+    radial-gradient(ellipse at 88% 10%, rgba(214, 168, 96, 0.17) 0%, rgba(214, 168, 96, 0) 62%),
+    radial-gradient(ellipse at 24% 94%, rgba(126, 84, 38, 0.16) 0%, rgba(126, 84, 38, 0) 58%),
+    /* 纤维：竖纹 + 横纹（各 1px） */
+    repeating-linear-gradient(92deg, rgba(255, 255, 255, 0.022) 0 1px, rgba(0, 0, 0, 0) 1px 5px),
+    repeating-linear-gradient(2deg, rgba(0, 0, 0, 0.05) 0 1px, rgba(0, 0, 0, 0) 1px 7px),
+    /* 四周压暗 */
+    radial-gradient(ellipse at 50% 44%, rgba(0, 0, 0, 0) 42%, rgba(3, 9, 7, 0.55) 100%),
+    /* 底色：深松林墨绿 */
+    linear-gradient(163deg, #2a3d35 0%, #20312b 42%, #192722 70%, #131e19 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 238, 198, 0.06);
+}
+
+/* 内框：茶金细线 + 四角金点（撕边内侧的一圈"裱边"） */
+.story-scroll::after {
+  content: "";
+  position: absolute;
+  inset: 5.2% 2.4%;
+  border: 1px solid rgba(214, 182, 120, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(255, 240, 208, 0.05);
+  background:
+    radial-gradient(circle at 0 0, rgba(255, 226, 164, 0.8) 0 0.38vh, rgba(255, 226, 164, 0) 0.5vh),
+    radial-gradient(circle at 100% 0, rgba(255, 226, 164, 0.65) 0 0.32vh, rgba(255, 226, 164, 0) 0.44vh),
+    radial-gradient(circle at 0 100%, rgba(255, 226, 164, 0.6) 0 0.3vh, rgba(255, 226, 164, 0) 0.42vh),
+    radial-gradient(circle at 100% 100%, rgba(255, 226, 164, 0.5) 0 0.28vh, rgba(255, 226, 164, 0) 0.4vh);
+  pointer-events: none;
+}
+
 /* 左侧圆形徽记：双层环 + 内辉光 + 高点反光（圆心 76.3%H） */
 .story-emblem {
   position: absolute;
+  z-index: 2;
   left: -11.8vw;
   top: -2.7vh;
   width: min(8.6vw, 17.2vh);
@@ -103,6 +178,7 @@ body.story-active .hotbar-wrapper {
 /* 正文列：标题与正文按参考图行距顺序排布（标题墨迹 66.4%H，正文首行 70.2%H） */
 .story-body {
   position: relative;
+  z-index: 2;
   min-width: 0;
 }
 
@@ -161,6 +237,7 @@ body.story-active .hotbar-wrapper {
 /* ── 跳过入口：正文块右上角（挂在 .story-panel 内，随整块上移；右缘 60vw） ── */
 .story-skip {
   position: absolute;
+  z-index: 3;
   right: 0;
   top: 0;
   display: flex;
@@ -412,8 +489,12 @@ body.story-active .hotbar-wrapper {
   transform: translateY(-0.1vh);
 }
 
-/* 待确认：整卡转暖金边 + 底面上提，标题与分界线同步提亮 */
-.story-option.is-armed {
+/* 待确认：整卡向左「被拉出」一段 + 暖金边 + 底面上提，标题与分界线同步提亮
+ * 位移只走 transform（不参与布局），最后一项底边与正文块底边的对齐不受影响；
+ * 左侧伸出一枚金色把手，强化"抽屉被拉开"的实体感。 */
+.story-option.is-armed,
+.story-option.is-armed:hover {
+  transform: translateX(-1.7vw);
   border-color: #ffd98d;
   background:
     linear-gradient(180deg, rgba(255, 244, 214, 0.14) 0%, rgba(255, 255, 255, 0) 42%),
@@ -423,9 +504,27 @@ body.story-active .hotbar-wrapper {
     0 0 0 2px rgba(255, 216, 138, 0.75),
     0 0 3vh rgba(255, 196, 96, 0.3),
     0 2px 0 rgba(9, 16, 12, 0.45),
-    0 10px 24px rgba(0, 0, 0, 0.35),
+    0 1.2vh 2.2vh rgba(0, 0, 0, 0.42),
+    0 2vh 3.4vh rgba(0, 0, 0, 0.34),
     inset 0.28vw 0 0 rgba(255, 209, 128, 0.85),
     inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+/* 待确认卡左侧的金色把手（贴在外沿，随卡左移一起出来） */
+.story-option.is-armed::before {
+  content: "";
+  position: absolute;
+  left: -0.62vw;
+  top: 26%;
+  bottom: 26%;
+  width: max(4px, 0.34vw);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffeab8 0%, #d8a94f 52%, #8f5f1c 100%);
+  box-shadow:
+    0 0 1.2vh rgba(255, 206, 110, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  pointer-events: none;
+  animation: grip-in 0.16s ease-out;
 }
 
 .story-option.is-armed .story-option-label {
@@ -487,6 +586,12 @@ body.story-active .hotbar-wrapper {
   0%   { opacity: 0; transform: scale(0.72); }
   70%  { opacity: 1; transform: scale(1.06); }
   100% { opacity: 1; transform: scale(1); }
+}
+
+/* 待确认卡左侧把手：从左缘"长出来" */
+@keyframes grip-in {
+  from { opacity: 0; transform: translateX(0.5vw) scaleY(0.4); }
+  to   { opacity: 1; transform: translateX(0) scaleY(1); }
 }
 
 @keyframes emblem-drift {
