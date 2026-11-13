@@ -417,18 +417,26 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
   `src/data/events.js`（事件节点表）、`src/systems/EventEffects.js`（选项结算执行器）。
 - **两个分区**（2026-11-13 第二轮修订，比例逐块量自 `docs/_art-references/事件ui点击前.jpg` / `事件ui一次点击.jpg`，1920×868，两图一致）：
   - 剧情区 `.story-panel`：**屏幕左下、无卡片外框 / 无底板**，只靠全屏单色薄纱 + 文字暗影；
-    **参考图底部那条信息栏本作没有，整块下移 `7vh`**：`left 22.5vw / top 79.2vh / width 37.5vw / min-height 14vh`，顶边不随文本行数浮动。
+    **参考图底部那条信息栏本作没有，整块下移 `7vh`**：`left 22.5vw / top 79.2vh / width 37.5vw / min-height 14vh`，
+    名义顶边固定（短文本不浮动），超长文本时由 `_layout()` 整块上移。
     左侧 `.story-emblem` 圆形徽记（`min(8.6vw,17.2vh)`，圆心约 `(14.7vw,85.1vh)`，深绿渐变 + 细金环 + 反光），
     右侧 `.story-body`：`.story-title` 松林青绿 `#afe4c9` / `2.65vh`（墨迹约 `79.7vh`）；
     `.story-text` 暖米白 `#f4f1e8` / `2.3vh` / 行高 `1.38` / 行距约 `3.17vh`，
-    **高度按整行裁切 `max-height: calc(4 * 1.38 * max(13px, 2.3vh))`**（只显示完整 4 行，绝不切掉半行；超出块内滚动，无底部渐隐）。
-    `.story-skip`（`跳过 ✕` 胶囊）在**文本块右上角**：`right:40vw`（右缘 `60vw`）+ `top:79.2vh`，**不贴屏幕右缘**（右侧整列属于选项）。
-    **没有推进提示**：不显示「继续」「请选择」。
+    **不设 `max-height`、不设 `overflow`，正文按自然高度完整铺开，绝不裁字**。
+    `_layout()` 的安全线 `STORY_MAX_BOTTOM = 0.955`：正文自然底边超过 `95.5%H` 时，把 `.story-panel` 的 `top`
+    改成 `名义 top - 超出量`（标题 / 徽记 / 跳过一起上移），正文一个字都不切，块底仍在安全线内。
+    `.story-skip`（`跳过 ✕` 胶囊）挂在 `.story-panel` 内、贴**文本块右上角**（`right:0 / top:0`，即右缘 `60vw`），
+    随整块上移，**不贴屏幕右缘**（右侧整列属于选项）。**没有推进提示**：不显示「继续」「请选择」。
   - 选项区 `.option-area`：右侧竖排（`left:65.3vw / right:5.6vw`，不再为跳过预留右侧空间），
-    **`display:flex` + `justify-content:flex-end` 自下而上排布**，`bottom` 由 `_syncOptionBottom()` 按正文 rect 动态写入
-    （`bottom = innerHeight - textEl.bottom`），因此**最后一项卡片底边 === 事件文本块最底部**；正文换行 / 窗口 resize 时重算。
+    **上沿固定 `top:22.5vh`（参考图首条位置）**，`bottom` 由 `_layout()` 按正文 rect 动态写入
+    （`bottom = innerHeight - textEl.bottom`），`display:flex; flex-direction:column; justify-content:space-between`
+    把上下两端定死后多出来的高度**均摊进卡片间距**（整列向上铺满，不再是堆在下方的一坨）；
+    因此**最后一项卡片底边 === 事件文本块最底部**，正文换行 / 窗口 resize 时重算。
     每个 `.story-option` 是**不透明深松林青绿卡片**（`#2e4844→#243a37→#1c2f2d` 纵向渐变 + 暖色顶部薄高光 + 1px 竖纹 + 茶金细边 + 左侧茶金内条），
-    `min-height:17.6vh`、间距 `3vh`（参考节距 `20.6vh`）；四项时 `.option-area.is-four` 收到 `16vh` / `2.2vh`，整列最上沿约 `22%H`。
+    `flex:0 0 auto` + `min-height:17.6vh`、最小间距 `3vh`（参考节距 `20.6vh` 是参考作品在 `83%H` 收尾的短列数值，本作只沿用首条 `22.5vh` 与卡高）；
+    实测三项长文本：首条 `22.6%H`、节距约 `27.7vh`、间距约 `10.4vh`。四项时 `.option-area.is-four` 收到 `16vh` / `2.2vh`。
+    自然高度总和仍超出可用高度时，`_layout()` 依次尝试 `3 / 2.4 / 1.8 / 1.2 / 0.6 / 0vh` 间距直到 `scrollHeight <= clientHeight`，
+    保证最后一项不越过正文块底边。
     卡内：`.story-option-bar` 标题行（`2.8vh / 700 / #f8f3e3` 暖白 + 茶金细分隔线）+ `.story-option-desc` 描述（`2.2vh / #d7e2d3`，`sub / detail` 全部常驻，不渲染数字徽章）。
   - 确认行 `.story-option-confirm-row`：描述下方**始终占位**的 `3.6vh` 行（`margin-top:auto` 贴卡底），内含「你确定这么做？」与圆形印章；
     出现时不压字、不顶开描述、不推移其它选项。

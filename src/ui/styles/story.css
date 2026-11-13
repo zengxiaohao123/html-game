@@ -4,12 +4,12 @@
  * 版式：逐块量取自 docs/_art-references/事件ui点击前.jpg / 事件ui一次点击.jpg（1920×868，两图数值一致）
  *   · 事件文本块：文字左边界 22.5vw、右边界 60.0vw（块宽 37.5vw）
  *   · 标题墨迹 70.8vh–73.0vh；正文首行墨迹 74.9vh，行距 3.17vh，末行 86.3vh（参考图含底部信息栏）
- *   · 本作没有底部信息栏，整块下移约 7vh：标题墨迹约 79.7vh，正文最多 4 行、末行约 96.8vh
- *   · 正文按 4 个整行高度裁切（max-height = 4 × 1.38 × 字号），绝不出现半行被切掉；超出时块内滚动
- *   · 圆形徽记：直径约 8.6vw / 17.2vh，圆心 (14.7vw, 76.3vh)，与文字列左缘空 3vw
- *   · 选项区：65.3vw–94.4vw，自下而上排布，**最后一项底边 === 正文末行底边**（动态对齐）
+ *   · 本作没有底部信息栏，整块下移约 7vh：标题墨迹约 79.7vh
+ *   · 正文不裁切、按自然高度完整铺开；底边越过安全线 95.5%H 时整块（含选项列）一起上移
+ *   · 圆形徽记：直径约 8.6vw / 17.2vh，圆心 (14.7vw, 85.1vh)，与文字列左缘空 3vw
+ *   · 选项区：65.3vw–94.4vw，自下而上排布，**最后一项底边 === 正文块最底部**（动态对齐）
  *   · 选项卡为不透明深松林底 + 茶金细边，白字标题 / 浅苔绿描述 / 预留确认行
- *   · 跳过入口在正文块右上角（右缘 60vw），不占右侧选项列
+ *   · 跳过入口在正文块右上角（挂块内，右缘 60vw），不占右侧选项列
  *
  * 美术：深松林色实底卡 + 茶金描边 + 松林绿标题 + 少量高光，
  *       与《转盘农场》手绘田园风一致；不使用纯色块与默认字体，也不使用大面积暗斑。 */
@@ -28,7 +28,7 @@ body.story-active .hotbar-wrapper {
   display: none;
 }
 
-/* ── 事件文本块（左下；锚点固定，不随行数浮动） ── */
+/* ── 事件文本块（左下；名义顶边 79.2vh，正文过长时由 JS 整块上移） ── */
 .story-panel {
   position: absolute;
   left: 22.5vw;
@@ -144,38 +144,25 @@ body.story-active .hotbar-wrapper {
   pointer-events: none;
 }
 
-/* 事件正文：暖米白，双层暗影，行距 1.38（对齐参考图 3.17vh 行距） */
+/* 事件正文：暖米白，双层暗影，行距 1.38（对齐参考图 3.17vh 行距）
+ * **不裁切**：不设 max-height / overflow，正文按自然高度完整铺开；
+ * 底边越过安全线 95.5%H 时由 StoryUI._layout() 把整块上移，绝不切字。 */
 .story-text {
   font-size: clamp(13px, 2.3vh, 26px);
   line-height: 1.38;
   letter-spacing: 0.025em;
   color: #f4f1e8;
   white-space: pre-wrap;
-  /* 4 个整行高度（行高 1.38 × 字号），任何分辨率下都不会露出半行 */
-  max-height: calc(4 * 1.38 * max(13px, 2.3vh));
-  overflow-y: auto;
-  overscroll-behavior: contain;
   text-shadow:
     0 1px 2px rgba(0, 0, 0, 0.92),
     0 0 1.4vh rgba(0, 0, 0, 0.7);
-  scrollbar-width: thin;
-  scrollbar-color: rgba(214, 188, 128, 0.35) transparent;
 }
 
-.story-text::-webkit-scrollbar {
-  width: 4px;
-}
-
-.story-text::-webkit-scrollbar-thumb {
-  background: rgba(214, 188, 128, 0.35);
-  border-radius: 2px;
-}
-
-/* ── 跳过入口：正文块右上角（右缘与正文列右缘对齐 60vw，右侧整列留给选项） ── */
+/* ── 跳过入口：正文块右上角（挂在 .story-panel 内，随整块上移；右缘 60vw） ── */
 .story-skip {
   position: absolute;
-  right: 40vw;
-  top: 79.2vh;
+  right: 0;
+  top: 0;
   display: flex;
   align-items: center;
   gap: 0.55vw;
@@ -213,15 +200,19 @@ body.story-active .hotbar-wrapper {
   color: #c9b68c;
 }
 
-/* ── 选项区（右侧竖列；自下而上排布，最后一项底边与正文末行底边对齐） ── */
+/* ── 选项区（右侧竖列） ──
+ * 上沿锚在参考图首条位置 22.5vh，下沿由 JS 贴着正文块底边（bottom 用 px 覆盖）；
+ * space-between 把多出来的高度摊到卡片之间（间距拉开、整体向上铺开），
+ * 卡片自身保持 17.6vh 的自然高度，最后一项底边仍与正文块底边严格平齐。 */
 .option-area {
   position: absolute;
   left: 65.3vw;
   right: 5.6vw;
+  top: 22.5vh;
   bottom: 4vh;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 3vh;
   pointer-events: auto;
 }

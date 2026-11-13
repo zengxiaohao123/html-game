@@ -6,7 +6,8 @@
 //       - 参考图标题墨迹 70.8%–73.0%H、正文首行 74.9%H、行距 3.17%H、末行 86.3%H
 //       - 参考图底部还有一条本作不需要的信息栏，因此整块下移 7vh：块顶 79.2%H、标题墨迹约 79.7%H
 //       - 文字左边界 22.5%W、右边界 60.0%W；圆形徽记直径约 8.6%W，圆心约 (14.7%W, 85.1%H)
-//       - 正文按 4 个整行高度裁切（max-height = 4 × 1.38 × 字号），绝不出现半行被切掉
+//       - 正文**不裁切**、按自然高度完整铺开；底部安全线 95.5%H，
+//         超长时整块（文本块 + 选项列）一起上移，绝不把文字切掉
 //   · 选项区（右侧整列）
 //       - x 65.3vw–94.4vw；不透明深松林卡片，白字标题 + 浅苔绿描述，不使用透明底或暗斑
 //       - 整列自下而上排布，**最后一项底边与正文末行底边动态对齐**（正文行数变化时重算）
@@ -42,6 +43,9 @@ export const STORY_Z = {
   MASK: 5700,
   LAYER: 5750,
 };
+
+/** 正文块底部安全线：正文底边最多到这里（占视口高度比例），超出则整块上移 */
+const STORY_MAX_BOTTOM = 0.955;
 
 /** 正文规范化：数组 = 多段（段间空一行），字符串保留自身换行 */
 function normalizeText(text) {
@@ -151,7 +155,7 @@ export class StoryUI {
 
     document.addEventListener('click', this._onDocClick);
     window.addEventListener('keydown', this._onKeyDownBound);
-    window.addEventListener('resize', () => this._syncOptionBottom());
+    window.addEventListener('resize', () => this._layout());
 
     EventBus.on(GE.STORY_SHOW, (p = {}) => this.show(p.script || p, p.ctx || {}));
     // 读档 / 重开：丢弃剧情演出，静默关闭（不触发 onEnd 结算）
@@ -186,11 +190,12 @@ export class StoryUI {
   }
 
   _mountSkipButton() {
-    // 事件文本块右上角的跳过入口（右侧整列属于选项，因此不贴屏幕右缘）
-    const closeBtn = createEl('button', {
+    // 事件文本块右上角的跳过入口：挂在文本块内部，块整体上移时跟着走；
+    // 右缘 = 文本块右缘（60vw），右侧整列属于选项，因此不贴屏幕右缘。
+    const closeBtn = this.skipEl = createEl('button', {
       class: ['story-skip'],
       attrs: { type: 'button', title: '跳过 / 关闭（需确认）', 'aria-label': '跳过剧情' },
-      parent: this.layer,
+      parent: this.storyPanel,
     });
     createEl('span', { class: ['story-skip-label'], text: '跳过', parent: closeBtn });
     createEl('span', { class: ['story-skip-x'], text: '✕', parent: closeBtn });
@@ -258,6 +263,10 @@ export class StoryUI {
     if (this.storyPanel) this.storyPanel.setAttribute('aria-label', String(script.title || ''));
 
     this._renderNode();
+    // 字体异步加载完成后行高可能变化，重新对齐一次（浏览器无 document.fonts 时跳过）
+    if (document.fonts?.ready?.then) {
+      document.fonts.ready.then(() => { if (this.visible) this._layout(); }).catch(() => {});
+    }
     EventBus.emit(GE.STORY_START, { id: script.id, title: script.title });
     devLog.info('[StoryUI] show', script.id, 'start=', script.start);
     return true;
@@ -323,6 +332,7 @@ export class StoryUI {
     this._options = this._collectOptions(node);
     this._renderOptions();
     this._syncResultMode();
+    this._layout();
     return true;
   }
 
@@ -366,6 +376,7 @@ export class StoryUI {
     this._options = this._collectOptions(node);
     this._renderOptions();
     this._syncResultMode();
+    this._layout();
     if (typeof node.onEnter === 'function') {
       try { node.onEnter(this.ctx); } catch (err) { devLog.error('[StoryUI.onEnter]', err); }
     }
@@ -387,6 +398,7 @@ export class StoryUI {
     this.ctx.nodeKey = key;
     this.textEl.textContent = normalizeText(node.text);
     EventBus.emit(GE.STORY_NODE, { id: this.script?.id, nodeKey: key });
+    this._layout();
     return true;
   }
 
@@ -505,22 +517,48 @@ export class StoryUI {
     });
 
     // 参考图核心关系：最后一项选项的底边与事件文本块的最底部平齐
-    this._syncOptionBottom();
+    this._layout();
   }
 
   /**
-   * 把选项列的下沿贴到当前正文块的最底部（正文行数变化时同步重算）。
-   * 选项列自下而上排列，所以「最后一项底边 === 正文末行底边」恒成立。
+   * 重新排布文本块与选项列（正文渲染后 / 选项重建后 / 窗口尺寸变化时调用）。
+   *
+   * 规则：
+   *  1. 正文**永远完整显示**（CSS 不再有 max-height / overflow），先让块停在名义位置 `top:79.2vh` 量出自然底边；
+   *  2. 底边越过安全线 `95.5%H` 时，整块按超出量上移（标题、徽记、跳过一起走），正文一个字都不切；
+   *  3. 选项列上沿固定 `22.5vh`、下沿贴正文块底边，中间用 `space-between` 摊开，所以它向上铺满整列；
+   *  4. 选项自然高度总和超过可用高度时逐级压缩间距，保证最后一项底边不越过正文块底边。
    */
-  _syncOptionBottom() {
+  _layout() {
+    const panel = this.storyPanel;
     const area = this.optionAreaEl;
-    if (!area || !this.textEl) return;
-    if (area.style.display === 'none') return;
+    if (!panel || !this.textEl) return;
+
+    // 1) 回到名义位置再量（避免上一轮的位移累加）
+    panel.style.top = '';
+    const nominalTop = panel.getBoundingClientRect().top;
+    const naturalBottom = this.textEl.getBoundingClientRect().bottom;
+
+    // 2) 超出安全线则整块上移同样的距离
+    const vh = window.innerHeight || 0;
+    const overflow = naturalBottom - vh * STORY_MAX_BOTTOM;
+    if (overflow > 0.5 && vh > 0) {
+      const top = Math.max(0, nominalTop - overflow);
+      panel.style.top = `${top.toFixed(1)}px`;
+    }
+
+    // 3) 选项列下沿贴正文块底边
+    if (!area || area.style.display === 'none') return;
     const rect = this.textEl.getBoundingClientRect();
     if (!rect || !rect.height) return;
-    const bottom = Math.max(0, window.innerHeight - rect.bottom);
-    area.style.bottom = `${bottom.toFixed(1)}px`;
-    area.style.top = 'auto';
+    area.style.bottom = `${Math.max(0, vh - rect.bottom).toFixed(1)}px`;
+
+    // 4) 卡片撑不下时压缩间距（3 → 2.4 → … → 0），避免最后一项越过正文块底边
+    const base = area.classList.contains('is-four') ? 2.2 : 3;
+    for (const ratio of [1, 0.8, 0.6, 0.4, 0.2, 0]) {
+      area.style.gap = `${(base * ratio).toFixed(2)}vh`;
+      if (area.scrollHeight <= area.clientHeight + 1) break;
+    }
   }
 
   _renderDescription(card, opt) {
