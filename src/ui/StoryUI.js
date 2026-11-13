@@ -15,7 +15,9 @@
 //
 // 数据驱动（见 src/data/stories.js）：UI 不写死任何文案；
 // 脚本节点提供 text / next / end / options，选项提供 label / sub / detail /
-// disabled / safe / next / end / onSelect。
+// disabled / safe / effects / next / end / onSelect。
+// 事件结算由选项驱动：只有选项确认时才执行其 effects（同一选项一次事件只执行一次），
+// 进入事件 / 推进正文 / 跳过都不产生任何结算。
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
@@ -23,6 +25,7 @@ import { devLog } from '../core/Logger.js';
 import { createEl, qs, clearChildren } from './dom.js';
 import * as ConfirmAction from './ConfirmAction.js';
 import { CONFIRM_TEXT, CONFIRM_FADE_MS } from './ConfirmAction.js';
+import { applyEventEffects } from '../systems/EventEffects.js';
 
 /** 选项上限（本轮需求 1~4 个） */
 export const MAX_OPTIONS = 4;
@@ -58,6 +61,7 @@ export class StoryUI {
     this._confirmBtns = [];
     this._confirming = false;   // 确认后的淡出期（禁止再次选择）
     this._pending = null;       // 选项结算后的去向 {kind:'node'|'end', key}
+    this._settled = new Set();  // 本次事件已结算的选项键（防止同一选项重复结算）
     this._outsideArmedIdx = -1;
     this._offDisarm = null;
 
@@ -201,6 +205,7 @@ export class StoryUI {
     ConfirmAction.disarmAll();
     this._confirming = false;
     this._pending = null;
+    this._settled = new Set();
     this._clearOptions();
 
     this.script = script;
@@ -513,7 +518,9 @@ export class StoryUI {
 
     const pending = this._resolveNext(opt, i);
     const started = ConfirmAction.trigger(btn, () => {
-      // 业务先于动画：回调 + 正文立即切换
+      // 业务先于动画：结算效果 + 回调 + 正文立即切换
+      // 事件结算只在这里发生；跳过 / 推进正文都不会触发
+      this._settleOption(opt);
       try {
         if (typeof opt.onSelect === 'function') opt.onSelect({ ...this.ctx, option: opt });
       } catch (err) {
@@ -539,6 +546,43 @@ export class StoryUI {
       return false;
     }
     return true;
+  }
+
+  /**
+   * 选项驱动的结算入口。
+   * 只在选项确认的同一 tick 调用；同一事件里同一节点同一选项只结算一次。
+   * 词表与执行逻辑在 src/systems/EventEffects.js，UI 不写死任何数值规则。
+   * @returns {string[]} 效果摘要（空数组 = 该选项没有结算效果）
+   */
+  _settleOption(opt) {
+    const effects = Array.isArray(opt?.effects) ? opt.effects : [];
+    if (effects.length === 0) return [];
+    const gs = this.ctx.gs || this.director?.getGS?.() || null;
+    if (!gs) {
+      devLog.warn('[StoryUI] 无 gs，跳过事件结算', opt);
+      return [];
+    }
+    // 选项 id 在单个事件内唯一；缺省时退回「节点 + 文案」保证可去重
+    const key = opt.id
+      ? `option:${opt.id}`
+      : `option:${this.nodeKey}:${opt.label}`;
+    if (this._settled.has(key)) {
+      devLog.warn('[StoryUI] 选项已结算，忽略重复执行', key);
+      return [];
+    }
+    this._settled.add(key);
+    const summary = applyEventEffects(gs, effects, {
+      ...this.ctx,
+      gs,
+      option: opt,
+      script: this.script,
+      nodeKey: this.nodeKey,
+    });
+    this.ctx.settlement = { nodeKey: this.nodeKey, optionId: opt.id || null, summary };
+    if (summary.length > 0) {
+      EventBus.emit(GE.TOAST_SHOW, { text: `🎲 ${summary.join(' / ')}`, duration: 2400 });
+    }
+    return summary;
   }
 
   _resolveNext(opt, i) {

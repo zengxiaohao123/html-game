@@ -34,6 +34,7 @@ src/
 │   ├── creatures.js          # 生物定义（小鸡/鸡/史莱姆 7 变体）
 │   ├── items.js              # 产出物品表（小麦/鸡蛋/生肉...）
 │   ├── buffs.js              # 6 种 debuff/buff 定义
+│   ├── events.js             # 事件节点表 EVENT_DEFS（选项驱动 / 多级状态机数据源）
 │   └── terrains.js           # 4 种地形定义
 ├── systems/                  # 游戏逻辑系统（读取/修改 GS，触发 EventBus）
 │   ├── GameDirector.js       # 主循环导演（回合制 + 连携技实时窗口）
@@ -44,12 +45,15 @@ src/
 │   ├── MovementSystem.js     # 移动（WASD）+ 经过/进入触发
 │   ├── BlessSystem.js        # 祈福（按下即结算：2 行动力 + 1 金币 + 随机祝福；动画仅演出）
 │   ├── InventorySystem.js    # 背包 + 出货箱 + 快捷栏 + 拖拽放置
+│   ├── GoldSystem.js         # 金币唯一写入口：区间 [-999999, 999999] 统一夹取 / 允许负债
+│   ├── CropHarvest.js        # 拆除 / 替换储存类·采摘类田块前的统一自动采摘
 │   ├── CombatSystem.js       # 伤害计算 + 闪避 + 元素免疫 + 范围
 │   ├── SkillSystem.js        # 技能触发（进入时/经过时/受祝福时）
 │   ├── LinkSkillSystem.js    # 连携技（解锁检测 + 8 秒窗口 + 队列）
 │   ├── RealtimeClock.js      # 统一实时时钟（200ms 逻辑步 + 渲染插值 + 结算快照冻结）
 │   ├── CreatureSystem.js     # 生物连续积分移动（3~6 秒/格）+ 投喂 + 成长 + 心情
 │   ├── CapacitySystem.js     # 容量上限即时同步（栅栏面积 → 友善/危险上限 +1/格）
+│   ├── EventEffects.js       # 事件选项结算唯一入口（金币/物品/行动力/治疗/地形/buff/生物）
 │   └── BuildSystem.js        # 建造模式 + 放置/替换地块内容
 ├── ui/                       # UI 渲染层（订阅 EventBus，更新 DOM）
 │   ├── UIController.js       # UI 总控（模式切换 + 页面管理）
@@ -409,24 +413,34 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 
 > 对应设计文档 §16.5 / §16.5.1。剧情与事件共用同一套 UI；UI 不写死任何文案。
 
-- **文件**：`src/ui/StoryUI.js`（`StoryUI` 类）、`src/ui/styles/story.css`、`src/data/stories.js`。
+- **文件**：`src/ui/StoryUI.js`（`StoryUI` 类）、`src/ui/styles/story.css`、`src/data/stories.js`、
+  `src/data/events.js`（事件节点表）、`src/systems/EventEffects.js`（选项结算执行器）。
 - **两个分区**：
   - 剧情区 `.story-panel`：屏幕下方居中（`left:50% / bottom:104px / translateX(-50%)`，宽 `min(880px,66vw)`），
     左侧 `.story-emblem` 圆形徽记 + 右侧 `.story-text` 正文（`white-space:pre-wrap`，最高 24vh 内滚），
     右下 `.story-foot` 推进指示（`继续` / `请选择`），右上 `.story-close`（✖，跳过入口）。
   - 选项区 `.option-area`：右侧中部（`right:26px / top:50%`，宽 340px，最高 64vh 滚动），竖排 `.story-option`。
 - **数据驱动**：`STORY_SHOW {script, ctx}` 播放；`script = {id,title,start,nodes,onEnd}`，
-  `nodes[key] = {text,options?,next?,end?,onEnter?}`，`Option = {id,label,sub,detail,disabled,disabledReason,safe,next,end,onSelect}`。
-  事件点（RES-001）由 `buildEventStory(entry)` 生成占位脚本，不带任何硬编码文案。
+  `nodes[key] = {text,options?,next?,end?,onEnter?}`，`Option = {id,label,sub,detail,disabled,disabledReason,safe,effects,next,end,onSelect}`。
+  事件点（RES-001）由 `buildEventStory(entry)` 生成脚本：条目带 `nodes` 时直接使用节点表（`src/data/events.js`），
+  否则退化为通用占位结构。UI 不写死任何文案。
+- **多级状态机**：`option.next` 可指向任意节点，目标节点可再次带 `options`，深度不限；
+  节点 / 选项 id 与层级关系**只存在于数据**，不上屏（选项区只渲染 `label/sub/detail`，键位徽章只表示 `1~4` 快捷键）。
+  没有 `options` 且没有 `next` 的节点是终止节点，`advance()` 即关闭事件。
+- **选项驱动结算**：事件**进入不结算**；只有选项确认时，`StoryUI._settleOption(opt)` 调
+  `applyEventEffects(gs, opt.effects, ctx)`，在确认的同一 tick 执行，同一事件内同一 `option.id` 只执行一次。
+  效果词表：`gold / item / stamina / heal / terrain / buff / creature`；执行器内部复用
+  `InventorySystem` / `StaminaSystem` / `HealSystem` / `CreatureSystem` / 地形写入及既有 EventBus 事件，
+  不新建平行数值系统。跳过、推进正文、静默关闭均不结算。
 - **公共 API**：`show(script, ctx)` / `advance()` / `skip()` / `requestSkip()` / `refresh()` / `closeSilently(reason)`；
   只读 `visible` 供 InputGate 使用。`refresh()` 不重建待确认 / 淡出中的选项，避免打断玩家手势。
 - **推进**：`advance()` 在选项节点直接返回 `false`（不可越过选择）；节点 `end` 或无 `next` → 结束。
   结束统一走 `_finish(reason)`，先 `_hide()` 再广播 `STORY_END {id,reason}`，最后调 `script.onEnd(ctx)`。
 - **二次确认**：完全复用 `ConfirmAction`（`arm / isArmed / trigger`），不再写第二套状态机；
   只有 `safe:true` 的选项单击即生效（与 DialogBox 安全选项同口径）。
-  确认后**业务先于动画**：`onSelect` + 正文切换同一 tick 完成，卡片 1.5 秒淡出，淡出期整块选项区 `pointer-events:none`。
+  确认后**业务先于动画**：`effects` 结算 + `onSelect` + 正文切换同一 tick 完成，卡片 1.5 秒淡出，淡出期整块选项区 `pointer-events:none`。
 - **跳过**：`.story-close` / ESC → `DIALOG_SHOW` 二次确认；`skip()` 沿 `next` 前进，
-  遇到 `options` 节点停下（选项节点上跳过被拒绝并 Toast 提示），无后续节点则结束。
+  遇到 `options` 节点停下（选项节点上跳过被拒绝并 Toast 提示），无后续节点则结束；跳过永不执行 `effects`。
 - **键盘**：空格 / 回车 / 点剧情区 = 推进；`1~4` = 选项（与鼠标同入口）；ESC = 跳过入口；
   `DialogBox.visible` 时让渡键盘（跳过确认期间不拦截）。
 - **输入门控**：`InputGate` 读 `director.storyUI?.visible` → `INPUT_BLOCK.STORY`，
@@ -434,9 +448,12 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
   `InputManager` 在 `settings` 分支增加 `isStoryBlocked()` 守卫，避免剧情中 ESC 打开设置页。
 - **层级**：薄纱 `.story-mask` 8950（拦截地图点击、替代缺失的事件背景图）；剧情区 / 选项区 9000；
   `DialogBox` 由 9000 抬到 **9100**，保证跳过确认弹窗压在剧情 UI 之上。
-- **生命周期**：`STATE_RESET` / `BOOT` → `closeSilently()`，静默关闭且**不**结算 `onEnd`（读档 / 重开不重复结算）。
+- **生命周期**：`STATE_RESET` / `BOOT` → `closeSilently()`，静默关闭且**不**结算 `onEnd`（读档 / 重开不重复结算）；
+  事件中途状态不入存档，读档视为事件未发生（设计文档 §18.5）。
 - **验收**：`node tools/smoke-story.mjs`（无选项旁白、有选项、选项回调、二次确认、禁用态、键位、
-  推进到底关闭、跳过只停在选项处、期间输入封锁、结束后恢复、数据驱动与 `refresh()` 实时刷新）。
+  推进到底关闭、跳过只停在选项处、期间输入封锁、结束后恢复、数据驱动与 `refresh()` 实时刷新）；
+  `node tools/smoke-event-flow.mjs`（进入不结算、不同选项不同结果、两层分支、选项文本不泄露编号、
+  跳过不越过分支、无选项节点终止、效果只生效一次、结算词表、静默打断）。
 
 ---
 
@@ -451,6 +468,7 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 - **随机池 / 掉落**：`POOL-12` 等随机池不得再包含技能石条目；技能只从角色解锁或魔法商店获得，不进入随机掉落。
 - **旧档迁移**：`migrateGS` 的 `migrateLegacySkillStones` 把旧档背包、出货箱、快捷栏、商店库存里的技能石条目换算为对应技能物品（1→1，库存同步名称 / 图标 / 分组），迁移后存档内不保留技能石条目。
 - **技能逻辑不变**：触发器、判定、连携、冷却等技能实现零改动；本次仅改获取与售卖口径。
+- **普通商店不售卖技能（2026-11-13）**：`SHOP_KINDS.shop` 四类货架（载具 / 设施资源 / 作物 / 收藏品）不含 `SHOP_SKILL`，`generateStock('shop')` 不会产出二级分类＝技能的条目；技能只在魔法商店直售。回归断言见 `tools/smoke-economy-crops.mjs`。
 
 ## 三、全局状态 schema（GS 对象）
 
@@ -842,7 +860,7 @@ friendly → （无）
 | 文件 | 职责 | 对外 API |
 |---|---|---|
 | `src/systems/PotatoSystem.js` | 土豆储存容量 / 共用池 / 收获 / 地雷伤害口径 | `potatoCapacity` `potatoTotalStored` `addPotatoStored` `harvestPotato` `potatoMineDamage` `hasPotatoHardship` `hasFriesQuartet` |
-| `src/systems/TulipSystem.js` | 郁金香初始价值 / 波动 / 叠放 / 结算 / 强制拆除 | `tulipInitialValue` `initTulipTile` `stackTulip` `applyTulipFluctuation` `settleTulipValue` `pickTulip` `removeTulip` `maybeForceRemoveTulip` |
+| `src/systems/TulipSystem.js` | 郁金香初始价值 / 波动 / 叠放 / 显示值 / 结算 / 强制拆除 | `tulipInitialValue` `initTulipTile` `stackTulip` `applyTulipFluctuation` `settleTulipValue` `tulipDisplayValue` `tulipSettleValue` `pickTulip` `maybeForceRemoveTulip` |
 | `src/systems/MineSystem.js` | 土豆地雷场上实体：埋设 / 倒计时 / 碰撞 / 爆炸 / 消耗 | `plantMine` `tickMines` `stepMineCollisions` `explodeMine` `ensureMines` |
 | `src/systems/CropGrimoireHooks.js` | 魔导书 hook 接线（onDailyStart / onTurnStart / onPlace / MAP_EXPANDED / RealtimeClock.onStep） | `initCropGrimoires(getGS)` `rewireCropGrimoires()` |
 | `src/ui/MineView.js` | 地雷渲染层（zIndex 18，低于生物层 20） | `new MineView(layer).paint(gs, tileSize)` |
@@ -870,7 +888,7 @@ minesNextId: 1,   // 地雷 id 自增序号（逻辑值，入日初基线）
 
 - 复用既有 `GE.GOLD_CHANGE` / `GE.TILE_UPDATED` / `GE.TILE_CONTENT_CHANGED` / `GE.INVENTORY_CHANGE` / `GE.DAMAGE_DEALT` / `GE.TOAST_SHOW`；未新增事件。
 - `MapView` 新增 `mineLayer`（zIndex 18）并在既有 rAF 循环内 `MineView.paint`，地雷状态（埋藏 / 探出）逐帧实时可见。
-- `InfoPanel` 实时显示：土豆「已储存 / 容量」（薯道难显示共用池）、郁金香「当前价值 / 叠放层数 / 初始价值基线（叠放增量）」、金币变化；不新增手动「使用技能」入口。
+- `InfoPanel` 实时显示：土豆「已储存 / 容量」（薯道难显示共用池）、郁金香「当前价值（无《泡沫》显示 max(0, 值)）/ 叠放层数 / 初始价值基线（叠放增量）」、金币变化；不新增手动「使用技能」入口。
 
 ### 10.5 伤害 / 阵营口径
 
@@ -880,4 +898,17 @@ minesNextId: 1,   // 地雷 id 自增序号（逻辑值，入日初基线）
 
 ### 10.6 验收脚本
 
-`node tools/smoke-crop-grimoire.mjs`（入库）：容量 30/40、薯道难共用池与一次取走、地雷上限 5 / 5 回合探出、敌对触发 / 友善不触发 / 友善在范围内不受伤、易伤同名取最高与 floor、晕眩仅命中敌人、郁金香初始 3/9、经济上行追溯基线、×1.5 取整、叠放与波动倍率、负价值扣金币、< -100 强制拆除。
+`node tools/smoke-crop-grimoire.mjs`（入库）：容量 30/40、薯道难共用池与一次取走、地雷上限 5 / 5 回合探出、敌对触发 / 友善不触发 / 友善在范围内不受伤、易伤同名取最高与 floor、晕眩仅命中敌人、郁金香初始 3/9、经济上行追溯基线、×1.5 取整、叠放与波动倍率、三日负价值示例、无《泡沫》夹 0 / 有《泡沫》扣金币、< -100 强制拆除（读真实值）。
+
+### 10.7 经济与拆除口径（2026-11-13）
+
+| 项 | 实现 | 验收 |
+|---|---|---|
+| 拆除前自动采摘 | `CropHarvest.harvestCropBeforeRemove` 在 `BuildSystem.clearContent` / `placeContent` 的最前面调用；覆盖土豆 / 草莓 / 豌豆 / 郁金香 / 蒲公英 / 幽怜草，结算口径与手动采摘完全一致 | `tools/smoke-economy-crops.mjs` §1 |
+| 郁金香显示 / 结算 | 内部真实值（可为负，绝不中途夹 0）；`tulipDisplayValue` 无《泡沫》→ max(0, v)；`tulipSettleValue` 先按真实值 ×1.5，再按《泡沫》决定负值是否生效 | 同上 §2 + `smoke-crop-grimoire` |
+| 金币区间 | `GoldSystem.addGold/setGold/clampGold`，常量 `GOLD_MIN=-999999` / `GOLD_MAX=999999`；读取与读档同样夹取；事件扣款最多扣到 0，不会在负金币时反向加钱 | 同上 §3 |
+| 地形可出售 | 物品库地形 `value=1`（回收价）；`ShopSystem.SHOP_TERRAINS`（`{ id, price }`）维护购买价，当前为空；`SHOP_TERRAIN` 货架通路已预留 | 同上 §4 |
+| 普通商店无技能 | `SHOP_KINDS.shop` 无 `SHOP_SKILL`；魔法商店保留 | 同上 §5 |
+| 初始金币 | `constants.INITIAL_GOLD = 0`；`createInitialState({ gold })` 仅测试覆盖 | 同上 §6 |
+
+**旧存档兼容**：地形原本就有 `value`（物品库）与 `price`（商店池）两个字段，无需迁移；旧档 `player.gold` 若越界，`migrateGS` 会夹取到新区间。原有负价值郁金香物品的 `value` 不改写（只有拥有《泡沫》才可能产生负值物品）。

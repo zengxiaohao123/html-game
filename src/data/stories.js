@@ -25,33 +25,52 @@
 //
 // Option 结构：
 //   {
-//     id?:      选项 id
+//     id?:      选项 id（仅代码使用，永不上屏）
 //     label:    主标题（必填）
 //     sub?:     副标题（代价 / 后果，一行灰字）
 //     detail?:  选中后展开的详情（参考图第二张的展开文案）
 //     disabled?: true = 灰化不可选
 //     disabledReason?: 禁用原因（随副标题一起显示）
 //     safe?:    true = 单击即生效，不走二次确认（如「离开」）
-//     next?:    跳转节点
+//     effects?: EventEffect[]  选项确认的同一 tick 执行（且只执行一次），词表见
+//               src/systems/EventEffects.js；事件结算只允许走这里
+//     next?:    跳转节点（任意深度，可指向另一个含 options 的节点）
 //     end?:     true = 选择后结束脚本
 //     onSelect?: (ctx) => void
 //   }
 //
-// ctx = { gs, script, nodeKey, option, ui }
+// ctx = { gs, script, nodeKey, option, ui, settlement? }
+//
+// 事件可选直接提供节点表（src/data/events.js 的 EventDef）：
+//   { id, name, icon, start, nodes } → buildEventStory 原样使用，分支任意深度。
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** 占位正文（正式事件池定稿后整段替换，UI 无需改动） */
 const PH_BODY = '（占位正文：事件与剧情的正式文案待事件池定稿后录入，此处仅用于验证剧情区排版与逐段推进。）';
 
 /**
- * 由占位事件池条目生成一段事件脚本（RES-001 事件点进入时调用）。
+ * 由事件条目生成一段事件脚本（RES-001 事件点进入时调用）。
  * 文案全部来自条目自身字段，不在 UI 层写死。
- * @param {{id:string,name:string}} entry 占位事件池条目
+ *
+ * 事件条目带 nodes（src/data/events.js 的 EventDef）时原样使用其节点表；
+ * 否则退化为旧的通用占位结构（条目 effect 挂到「顺手拿走」选项上，进入不再结算）。
+ * @param {{id:string,name:string,nodes?:object,start?:string,icon?:string,effect?:object}} entry
  * @param {{onEnd?:Function}} [opts]
  * @returns {object} StoryScript
  */
 export function buildEventStory(entry, opts = {}) {
   const name = entry?.name || '占位事件';
+  if (entry?.nodes && typeof entry.nodes === 'object') {
+    const keys = Object.keys(entry.nodes);
+    return {
+      id: `story_${entry.id || 'ph'}`,
+      title: name,
+      icon: entry.icon || '🎲',
+      start: entry.start || keys[0],
+      nodes: entry.nodes,
+      onEnd: opts.onEnd,
+    };
+  }
   return {
     id: `story_${entry?.id || 'ph'}`,
     title: name,
@@ -80,6 +99,7 @@ export function buildEventStory(entry, opts = {}) {
             label: '顺手拿走',
             sub: '能拿的东西就先拿着',
             detail: `${PH_BODY}`,
+            effects: entry?.effect ? [{ ...entry.effect }] : [],
             next: 'taken',
           },
           {

@@ -32,7 +32,6 @@ import { drawFromPool } from '../systems/RandomPool.js';
 import {
   EVENT_POOL_PLACEHOLDER,
   drawPlaceholderEvent,
-  applyPlaceholderEventEffect,
   drawPlaceholderReward,
   grantPlaceholderReward,
 } from './placeholderPools.js';
@@ -787,6 +786,9 @@ const FacilityCabbage = {
 // 备注：不观测不抽取，只在即将进入或显示时才真正抽取（懒抽取）。
 // 2026-11-04 裁决⑥：事件池正式条目未定稿前，使用独立占位数据表（src/data/placeholderPools.js）
 //   让流程可跑通；条目均为占位，正式池录入后整组替换该表即可，本函数无需改动。
+// 2026-11-13 事件结算改为选项驱动（设计文档 §18.1/§18.5）：
+//   进入事件只展示正文，不再在此处结算；结算效果由玩家确认选项后
+//   StoryUI → applyEventEffects 执行，同一选项只执行一次。受祝福预览不结算。
 function resolveEventTile(gs, tileIdx, blessed) {
   // 懒抽取：只在此处（即将进入 / 受祝福显示）才真正抽取
   const st = (gs.map.outerTiles[tileIdx].contentState ||= {});
@@ -801,9 +803,12 @@ function resolveEventTile(gs, tileIdx, blessed) {
   } else {
     entry = drawPlaceholderEvent();
     st.eventTodayId = entry.id; // 供受祝福时显示同一事件
-    summary = applyPlaceholderEventEffect(gs, entry);
-    // §16.5：真正进入事件点时打开剧情区 + 选项区（占位脚本由条目数据生成，UI 不写死文案）
-    EventBus.emit(GE.STORY_SHOW, { script: buildEventStory(entry) });
+    // §16.5 / §18.1：真正进入事件点时打开剧情区 + 选项区（节点表由条目数据生成，UI 不写死文案）
+    // 进入即不结算：数值/物品/地形等变化一律由玩家确认的选项 effects 决定。
+    EventBus.emit(GE.STORY_SHOW, {
+      script: buildEventStory(entry),
+      ctx: { tileIdx, eventId: entry.id, option: null },
+    });
   }
   HookDispatcher.fire('onEventResolve', { gs, tileIdx, type: 'event', eventId: entry.id, blessed });
   EventBus.emit(GE.TOAST_SHOW, { text: `🎲 ${entry.name}${summary ? ' → ' + summary : ''}`, duration: 2200 });

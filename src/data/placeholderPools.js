@@ -16,10 +16,16 @@ import { Random } from '../core/Random.js';
 import { InventorySystem } from '../systems/InventorySystem.js';
 import { StaminaSystem } from '../systems/StaminaSystem.js';
 import { HealSystem } from '../systems/HealSystem.js';
+import { EVENT_DEFS } from './events.js';
 
 /**
  * 事件池（占位）：每项 { id, name, weight, effect }
  * effect.type：'gold' | 'item' | 'stamina' | 'heal' | 'nothing'
+
+ * 2026-11-13 起事件改为选项驱动（设计文档 §18）：带 nodes / start 的条目
+ * 由 buildEventStory 直接使用节点表，结算挂在选项 effects 上，进入不再结算；
+ * 不带 nodes 的旧条目退化为通用占位结构（effect 挂到「顺手拿走」选项）。
+ * `effect` 字段对节点表条目仅作兼容占位，不再被结算逻辑读取。
  */
 export const EVENT_POOL_PLACEHOLDER = [
   { id: 'evt_ph_01', name: '占位事件·一小堆金币', weight: 1, effect: { type: 'gold', amount: 5 } },
@@ -29,6 +35,16 @@ export const EVENT_POOL_PLACEHOLDER = [
   { id: 'evt_ph_05', name: '占位事件·清爽的风', weight: 1, effect: { type: 'stamina', amount: 1 } },
   { id: 'evt_ph_06', name: '占位事件·温暖的阳光', weight: 1, effect: { type: 'heal', percent: 0.1 } },
   { id: 'evt_ph_07', name: '占位事件·什么也没发生', weight: 1, effect: { type: 'nothing' } },
+  // 节点表事件（简单单层 / 两层嵌套示例，见 src/data/events.js）
+  ...EVENT_DEFS.map((def) => ({
+    id: def.id,
+    name: def.name,
+    icon: def.icon,
+    weight: def.weight ?? 1,
+    start: def.start,
+    nodes: def.nodes,
+    effect: { type: 'nothing' },
+  })),
 ];
 
 /**
