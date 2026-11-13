@@ -203,6 +203,12 @@ check(storyEnds.length === 1 && storyEnds[0].id === 't_narr' && storyEnds[0].rea
   'A-09 结束事件携带脚本 id 与原因', storyEnds[0]);
 check(ui.mask.style.display === 'none', 'A-10 结束后薄纱收起');
 
+// 事件标题上屏（参考图正文上方的浅青绿标题行）
+ui.show({ id: 't_title', title: '沉寂之屋', start: 'a', nodes: { a: { text: '正文。', end: true } } });
+check(ui.titleEl.textContent === '沉寂之屋' && ui.titleEl.style.display !== 'none',
+  'A-11 事件标题显示在正文上方');
+ui.closeSilently('test');
+
 // ════════════════════════════════════════════════════════════
 head('B. 输入封锁：剧情期间禁止移动 / 祈福 / 睡觉，结束后恢复');
 // ════════════════════════════════════════════════════════════
@@ -234,7 +240,7 @@ const optionStory = {
       options: [
         { id: 'o1', label: '选项一', sub: '消耗：一点点代价', detail: '展开详情占位。', next: 'done', onSelect: () => { hits += 1; } },
         { id: 'o2', label: '选项二', sub: '禁用示例', disabled: true, disabledReason: '条件未满足', next: 'done' },
-        { id: 'o3', label: '离开', sub: '多事不如少一事', safe: true, end: true },
+        { id: 'o3', label: '离开', sub: '多事不如少一事', end: true },
       ],
     },
     done: { text: '你已经做出了选择。', end: true },
@@ -285,12 +291,16 @@ check(ConfirmAction.isArmed(ui.optionBtns[1]) === false, 'C-20 禁用选项点�
 key('2');
 check(ConfirmAction.isArmed(ui.optionBtns[1]) === false, 'C-21 禁用选项数字键无效');
 
-// 数字键选择 + 安全选项单击生效
+// 数字键选择 + 「离开」同样需要二次确认（无 safe 单击例外）
+key('3');
+check(ui.visible === true && ConfirmAction.isArmed(ui.optionBtns[2]) === true,
+  'C-22 数字键 3 选中「离开」→ 只进入待确认，不立即生效');
+check(ui.optionBtns[2].textContent.includes('你确定这么做？'), 'C-22b 「离开」也显示确认文案');
 key('3');
 await tick(20);
-check(ui.visible === false, 'C-22 数字键 3 选中「离开」→ 单击生效并结束');
+check(ui.visible === false, 'C-22c 再次确认「离开」后才结束');
 check(storyEnds[storyEnds.length - 1].id === 't_opt',
-  'C-23 安全选项结束后输入恢复事件已广播');
+  'C-23 「离开」结束后输入恢复事件已广播');
 check(InputGate.isMovementBlocked(director) === false, 'C-24 选项剧情结束后移动恢复');
 
 // ════════════════════════════════════════════════════════════
@@ -349,14 +359,14 @@ check(ui.visible === false, 'E-08 确认跳过后旁白脚本结束');
 // ════════════════════════════════════════════════════════════
 head('F. 数据驱动 + 实时刷新');
 // ════════════════════════════════════════════════════════════
-const entry = { id: 'evt_ph_01', name: '占位事件·一小堆金币' };
+const entry = { id: 'evt_ph_01', name: '一小堆金币' };
 const evtScript = buildEventStory(entry);
 check(evtScript.title === entry.name && evtScript.id === 'story_evt_ph_01',
   'F-01 事件脚本 id / 标题来自事件条目');
 check(JSON.stringify(evtScript.nodes.intro.text).includes(entry.name),
   'F-02 正文包含条目名（UI 不写死文案）');
 check(evtScript.nodes.intro.options.length === 3 && !evtScript.nodes.choice,
-  'F-03 占位事件描述节点直接带 3 个选项（无多余过渡节点）');
+  'F-03 通用事件描述节点直接带 3 个选项（无多余过渡节点）');
 const demo = demoStory();
 check(demo.nodes.b.options.length === 3
   && demo.nodes.b.options.some((o) => o.disabled === true),
@@ -392,12 +402,14 @@ check(ui.layer.style.zIndex === '5750' && ui.mask.style.zIndex === '5700',
   'G-01 事件层 5700/5750（低于面板 6000，高于快捷栏 5600）');
 check(ui.layer.style.pointerEvents === 'none' && ui.storyPanel.style.pointerEvents === 'auto',
   'G-02 层容器不吞点击，仅面板可交互');
-check(ui.storyPanel.getAttribute('title') === '' , 'G-03 脚本无 title 时不写入（本轮不显示标题行）');
+check(ui.titleEl.textContent === '' && ui.titleEl.style.display === 'none',
+  'G-03 脚本无 title 时标题行隐藏');
 // 叙事态：点薄纱 = 推进会话（无「继续」提示也可靠点击推进）
 ui.mask.click();
 check(ui.nodeKey === 'b', 'G-04 叙事态点击屏幕推进一段');
-// 结果态：薄纱抬到 8000，点屏幕任意处关闭
-check(ui.mask.style.zIndex === '8000', 'G-05 结果态薄纱抬到 8000（盖住面板与快捷栏）');
+// 结果态：薄纱层级与深浅保持不变（结果阶段不得再压暗整屏）
+check(ui.mask.style.zIndex === '5700', 'G-05 结果态薄纱仍为 5700（不抬层级、不额外变暗）');
+check(ui.mask.style.backgroundColor === 'rgba(14, 20, 24, 0.34)', 'G-05b 结果态薄纱颜色 / 浓度未变');
 ui.mask.click();
 check(ui.visible === false
   && storyEnds[storyEnds.length - 1].reason === 'result-dismiss',

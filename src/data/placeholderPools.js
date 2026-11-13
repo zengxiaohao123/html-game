@@ -29,13 +29,13 @@ import { addGold } from '../systems/GoldSystem.js';
  * `effect` 字段对节点表条目仅作兼容占位，不再被结算逻辑读取。
  */
 export const EVENT_POOL_PLACEHOLDER = [
-  { id: 'evt_ph_01', name: '占位事件·一小堆金币', weight: 1, effect: { type: 'gold', amount: 5 } },
-  { id: 'evt_ph_02', name: '占位事件·丢失的钱袋', weight: 1, effect: { type: 'gold', amount: -3 } },
-  { id: 'evt_ph_03', name: '占位事件·遗落的饲料', weight: 1, effect: { type: 'item', itemId: 'item_wheat', qty: 1 } },
-  { id: 'evt_ph_04', name: '占位事件·野果丛', weight: 1, effect: { type: 'item', itemId: 'item_strawberry', qty: 1 } },
-  { id: 'evt_ph_05', name: '占位事件·清爽的风', weight: 1, effect: { type: 'stamina', amount: 1 } },
-  { id: 'evt_ph_06', name: '占位事件·温暖的阳光', weight: 1, effect: { type: 'heal', percent: 0.1 } },
-  { id: 'evt_ph_07', name: '占位事件·什么也没发生', weight: 1, effect: { type: 'nothing' } },
+  { id: 'evt_ph_01', name: '一小堆金币', weight: 1, effect: { type: 'gold', amount: 5 } },
+  { id: 'evt_ph_02', name: '丢失的钱袋', weight: 1, effect: { type: 'gold', amount: -3 } },
+  { id: 'evt_ph_03', name: '遗落的饲料', weight: 1, effect: { type: 'item', itemId: 'item_wheat', qty: 1 } },
+  { id: 'evt_ph_04', name: '野果丛', weight: 1, effect: { type: 'item', itemId: 'item_strawberry', qty: 1 } },
+  { id: 'evt_ph_05', name: '清爽的风', weight: 1, effect: { type: 'stamina', amount: 1 } },
+  { id: 'evt_ph_06', name: '温暖的阳光', weight: 1, effect: { type: 'heal', percent: 0.1 } },
+  { id: 'evt_ph_07', name: '安静的午后', weight: 1, effect: { type: 'nothing' } },
   // 节点表事件（简单单层 / 两层嵌套示例，见 src/data/events.js）
   ...EVENT_DEFS.map((def) => ({
     id: def.id,
@@ -53,13 +53,13 @@ export const EVENT_POOL_PLACEHOLDER = [
  * highValue=true 为「高价值」条目 —— 奖励点受祝福时其权重 ×REWARD_BLESS_WEIGHT_MULT。
  */
 export const REWARD_POOL_PLACEHOLDER = [
-  { id: 'rwd_ph_01', name: '占位奖励·小麦', itemId: 'item_wheat', qty: 2, weight: 3, highValue: false },
-  { id: 'rwd_ph_02', name: '占位奖励·稻草', itemId: 'item_rice_straw', qty: 2, weight: 3, highValue: false },
-  { id: 'rwd_ph_03', name: '占位奖励·土豆', itemId: 'item_potato', qty: 2, weight: 2, highValue: false },
-  { id: 'rwd_ph_04', name: '占位奖励·金币袋', gold: 10, weight: 2, highValue: false },
-  { id: 'rwd_ph_05', name: '占位奖励·鸡蛋', itemId: 'item_egg', qty: 2, weight: 2, highValue: false },
-  { id: 'rwd_ph_06', name: '占位奖励(高价值)·优质蛋', itemId: 'item_golden_egg', qty: 1, weight: 1, highValue: true },
-  { id: 'rwd_ph_07', name: '占位奖励(高价值)·大金币袋', gold: 30, weight: 1, highValue: true },
+  { id: 'rwd_ph_01', name: '小麦', itemId: 'item_wheat', qty: 2, weight: 3, highValue: false },
+  { id: 'rwd_ph_02', name: '稻草', itemId: 'item_rice_straw', qty: 2, weight: 3, highValue: false },
+  { id: 'rwd_ph_03', name: '土豆', itemId: 'item_potato', qty: 2, weight: 2, highValue: false },
+  { id: 'rwd_ph_04', name: '金币袋', gold: 10, weight: 2, highValue: false },
+  { id: 'rwd_ph_05', name: '鸡蛋', itemId: 'item_egg', qty: 2, weight: 2, highValue: false },
+  { id: 'rwd_ph_06', name: '优质蛋', itemId: 'item_golden_egg', qty: 1, weight: 1, highValue: true },
+  { id: 'rwd_ph_07', name: '大金币袋', gold: 30, weight: 1, highValue: true },
 ];
 
 /** 受祝福时高价值条目的权重倍数 */

@@ -219,13 +219,13 @@ head('裁决⑤ 巴士站轮子不限次数（每次进入 +1）');
 }
 
 // ════════════════════════════════════════════════════════════
-head('裁决⑥ 事件池/奖励池占位表：可抽取、可结算、均标注占位');
+head('裁决⑥ 事件池/奖励池：可抽取、可结算、名称均为玩家可见文案');
 // ════════════════════════════════════════════════════════════
 {
   assert(EVENT_POOL_PLACEHOLDER.length >= 5, '事件池占位条目 ≥5', EVENT_POOL_PLACEHOLDER.length);
   assert(REWARD_POOL_PLACEHOLDER.length >= 5, '奖励池占位条目 ≥5', REWARD_POOL_PLACEHOLDER.length);
-  assert([...EVENT_POOL_PLACEHOLDER, ...REWARD_POOL_PLACEHOLDER].every((e) => e.name.includes('占位')),
-    '所有条目名称均标注「占位」（非最终文案）');
+  assert([...EVENT_POOL_PLACEHOLDER, ...REWARD_POOL_PLACEHOLDER].every((e) => !e.name.includes('占位')),
+    '所有条目名称均为玩家可见文案（不含「占位」字样）');
 
   // 抽取稳定性：多次抽取均返回表内条目
   const evIds = new Set(EVENT_POOL_PLACEHOLDER.map((e) => e.id));
@@ -256,7 +256,7 @@ head('裁决⑥ 事件池/奖励池占位表：可抽取、可结算、均标注
   HookDispatcher.fire('onEnter', { gs, tileIdx: 0 });
   const evLast = resolved[resolved.length - 1];
   assert(!!evLast && evLast.type === 'event' && typeof evLast.eventId === 'string' && evIds.has(evLast.eventId),
-    '事件点进入：onEventResolve 携带占位池 eventId', evLast?.eventId);
+    '事件点进入：onEventResolve 携带事件池 eventId', evLast?.eventId);
 
   // 奖励池：受祝福提升高价值权重（同一随机数下抽取结果不同）
   Math.random = () => 0.8;
@@ -276,7 +276,7 @@ head('裁决⑥ 事件池/奖励池占位表：可抽取、可结算、均标注
   const rwLast = resolved[resolved.length - 1];
   const rwIds = new Set(REWARD_POOL_PLACEHOLDER.map((e) => e.id));
   assert(!!rwLast && rwLast.type === 'reward' && rwIds.has(rwLast.rewardId) && rwLast.blessed === true,
-    '奖励点进入：携带祝福结算并返回占位池 rewardId', rwLast?.rewardId);
+    '奖励点进入：携带祝福结算并返回奖励池 rewardId', rwLast?.rewardId);
   const goldAfter = gs.player.gold;
   const invAfter = gs.inventory.items.reduce((s, x) => s + (x.qty || 0), 0);
   assert(goldAfter > goldBefore || invAfter > invBefore,

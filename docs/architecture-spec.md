@@ -75,7 +75,7 @@ src/
 │   │   ├── VehiclePanel.js   # T 键载具页面
 │   │   └── ShopPanel.js      # 商店页面（地块功能进入）
 │   ├── DialogBox.js          # 确认弹窗（含剧情跳过确认，z 9100）
-│   ├── StoryUI.js            # 剧情区 + 选项区（§18.2，z 5700/5750，结果态 8000）
+│   ├── StoryUI.js            # 剧情区 + 选项区（§18.2，z 5700/5750，结果态不改层级）
 │   ├── ConfirmAction.js      # 统一二次确认状态机（arm/disarm/trigger + 快捷键绑定）
 │   ├── Toast.js              # 中央弹窗提示（物品+1、心力交瘁等）
 │   └── styles/
@@ -415,16 +415,18 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 
 - **文件**：`src/ui/StoryUI.js`（`StoryUI` 类）、`src/ui/styles/story.css`、`src/data/stories.js`、
   `src/data/events.js`（事件节点表）、`src/systems/EventEffects.js`（选项结算执行器）。
-- **两个分区**（2026-11-13 按参考图返工）：
-  - 剧情区 `.story-panel`：**屏幕底部通栏**（`left/right:2vw / bottom:20px`，宽度≈屏幕宽度），
-    左侧 `.story-emblem` 圆形徽记 + 右侧 `.story-text` 正文（17px / `white-space:pre-wrap`，最高 28vh 内滚），
-    右上 `.story-close`（✖，跳过入口）。**没有 `.story-foot` 推进指示**：不显示「继续」「请选择」。
-  - 选项区 `.option-area`：右侧竖排（`right:2.5vw / top:max(84px,13vh)`，宽 `clamp(300px,27vw,420px)`，最高 50vh 滚动）；
-    主标题 19px，`label / sub / detail` 全部常驻渲染，不渲染数字徽章。
+- **两个分区**（2026-11-13 再次按参考图对齐，比例取自 `docs/_art-references/事件ui点击前.jpg` / `事件ui一次点击.jpg`）：
+  - 剧情区 `.story-panel`：**屏幕底部通栏、无卡片外框**，只有底部由透明到近黑的渐变；
+    左侧 `.story-emblem` 圆形徽记（约 `11.7vw`，左下），右侧 `.story-body` = `.story-title` 事件标题
+    （浅青绿 `#a6d5c3`、`3vh`）+ `.story-text` 正文（浅灰白 `#d8dada`、`2.45vh`、行高 `1.38`、列宽约 `52vw`）。
+    右下 `.story-close`（✖，跳过入口）。**没有推进提示**：不显示「继续」「请选择」。
+  - 选项区 `.option-area`：右侧竖排（`right:10.9vw / top:22.5vh`，宽 `23.8vw`）；
+    每个 `.story-option` 是透明容器，内含白色 `.story-option-bar`（高 `4.6vh`）+ 条下 `.story-option-detail`；
+    条内标题 `3vh / #1b1b1b / 700`，条下描述 `2.25vh / #cfd2d3`，`sub / detail` 全部常驻渲染，不渲染数字徽章。
 - **数据驱动**：`STORY_SHOW {script, ctx}` 播放；`script = {id,title,start,nodes,onEnd}`，
-  `nodes[key] = {text,options?,next?,end?,onEnter?}`，`Option = {id,label,sub,detail,disabled,disabledReason,safe,effects,next,end,onSelect}`。
+  `nodes[key] = {text,options?,next?,end?,onEnter?}`，`Option = {id,label,sub,detail,disabled,disabledReason,effects,next,end,onSelect}`。
   事件点（RES-001）由 `buildEventStory(entry)` 生成脚本：条目带 `nodes` 时直接使用节点表（`src/data/events.js`），
-  否则退化为通用占位结构。UI 不写死任何文案。
+  否则退化为通用三选项结构。UI 不写死任何文案。
 - **多级状态机**：`option.next` 可指向任意节点，目标节点可再次带 `options`，深度不限；
   节点 / 选项 id 与层级关系**只存在于数据**，不上屏（选项区只渲染 `label/sub/detail`，数字键 `1~4` 只作隐藏快捷键）。
   没有 `options` 且没有 `next` 的节点是终止节点：正文即为结果文本，进入结果态，点击屏幕任意处关闭事件（`result-dismiss`）。
@@ -440,7 +442,7 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 - **推进**：`advance()` 在选项节点直接返回 `false`（不可越过选择）；节点 `end` 或无 `next` → 结束。
   结束统一走 `_finish(reason)`，先 `_hide()` 再广播 `STORY_END {id,reason}`，最后调 `script.onEnd(ctx)`。
 - **二次确认**：完全复用 `ConfirmAction`（`arm / isArmed / trigger`），不再写第二套状态机；
-  只有 `safe:true` 的选项单击即生效（与 DialogBox 安全选项同口径）。
+  **所有选项（包括「离开」）一律二次确认**，没有单击即生效的例外（`Option.safe` 已移除）。
   待确认态**只多一行**「你确定这么做？」＋绝对定位圆形确认钮（`position:absolute`，不撑高卡片）；
   `detail` 常驻显示，禁止在点击后才展开（卡片高度不得突变）。
   确认后**业务先于动画**：`effects` 结算 + `onSelect` + 正文切换同一 tick 完成，卡片 1.5 秒淡出，淡出期整块选项区 `pointer-events:none`。
@@ -458,14 +460,14 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
   - `InfoPanel`：`_isStoryLocked()` 时拒绝 `selectTile / showBlessTab / TILE_CLICKED / FENCE_TILE_CLICKED`；
     信息区一禁，经信息区进入的商店自然不可达。
 - **层级**：薄纱 `.story-mask` **5700**、剧情区 / 选项区 **5750**（高于地图 / 快捷栏 5600 / 信息区 100，
-  低于面板 6000 与设置 6200）；结果态薄纱临时抬到 **8000**，用于「点屏幕任意处关闭」；
-  `DialogBox` **9100** 始终最高。
+  低于面板 6000 与设置 6200）；**结果态不改变层级与薄纱浓度**（避免把剧情区一起压暗），
+  点击任意处关闭由 `5700` 薄纱 + 剧情区点击共同承接；`DialogBox` **9100** 始终最高。
 - **受祝福预览**：`facilities.resolveEventTile(gs, idx, true)` 不再发中央 Toast，只写
   `contentState.eventPreviewId / eventPreviewName`；信息区「地块内容」展示事件名；真正进入时复用同一条目并消费预览。
 - **生命周期**：`STATE_RESET` / `BOOT` → `closeSilently()`，静默关闭且**不**结算 `onEnd`（读档 / 重开不重复结算）；
   事件中途状态不入存档，读档视为事件未发生（设计文档 §18.5）。
 - **验收**：`node tools/smoke-story.mjs`（无选项旁白、有选项、选项回调、二次确认、禁用态、
-  详情常驻 / 无键位徽章 / 无「继续·请选择」提示、结果态点任意处关闭、层级 5700/5750/8000、
+  详情常驻 / 无键位徽章 / 无「继续·请选择」提示、结果态点任意处关闭、层级 5700/5750（结果态不抬层级）、
   推进到底关闭、跳过只停在选项处、期间输入封锁、结束后恢复、数据驱动与 `refresh()` 实时刷新）；
   `node tools/smoke-event-flow.mjs`（进入不结算、描述与选项同屏、不同选项不同结果、两层直落选项、
   选项文本不泄露编号、跳过不越过分支、无选项节点终止、效果只生效一次、结算词表、静默打断）。

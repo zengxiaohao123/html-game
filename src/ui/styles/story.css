@@ -1,102 +1,124 @@
 /* src/ui/styles/story.css
  * §18.2 事件 / 剧情 UI（剧情区 + 选项区）
- * 布局对照 docs/_art-references/事件ui点击前.jpg / 事件ui点击一次.jpg：
- *   · 剧情区 = 屏幕底部通栏，宽度≈屏幕宽度，正文大字号
- *   · 选项区 = 右侧竖排大字号选项卡片，描述常驻显示
- * 配色沿用本项目「奶油纸牌 + 深棕粗描边 + 糖果色」语言（与 panels.css 一致）。
+ *
+ * 版式逐项对照 docs/_art-references/事件ui点击前.jpg / 事件ui一次点击.jpg
+ * （参考图 1920×868，下列比例按参考图像素量取，换算为 vw / vh）：
+ *   · 事件标题：正文上方，浅青绿色 #a6d5c3，字号 3vh，左边缘 22.5vw
+ *   · 事件正文：浅灰白 #d8dada，字号 2.45vh，行高 1.38，左边缘 22.5vw，右边界 74.5vw
+ *   · 选项条：右侧竖排白色横条（4.6vh 高、23.8vw 宽、右边缘 89.1vw），
+ *             条内标题近黑 #1b1b1b、字号 3vh、左内边距 2.1vw
+ *   · 选项描述：白条下方浅灰 #cfd2d3、字号 2.25vh，常驻显示
+ *   · 剧情区没有卡片外框：只在屏幕底部铺一层黑色渐变，文字直接压在场景上
  */
 
-/* ── 剧情区（屏幕底部通栏） ── */
+/* ── 剧情区（屏幕底部通栏，无外框） ── */
 .story-panel {
-  left: 2vw;
-  right: 2vw;
-  bottom: 20px;
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  min-height: 140px;
-  padding: 20px 28px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 38vh;
   box-sizing: border-box;
-  background: linear-gradient(135deg, rgba(255, 251, 240, 0.97) 0%, rgba(255, 243, 196, 0.97) 100%);
-  border: 4px solid #3a3a3a;
-  border-radius: 20px;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.38), inset 0 0 0 2px rgba(255, 255, 255, 0.55);
-  font-family: "LXGW WenKai TC", "Microsoft YaHei", sans-serif;
-  color: #3a2e20;
+  padding: 0 2vw 12vh 22.5vw;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: linear-gradient(to top, rgba(4, 6, 6, 0.92) 0%, rgba(4, 6, 6, 0.78) 42%, rgba(4, 6, 6, 0) 100%);
+  font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+  color: #d8dada;
   animation: story-rise 0.22s ease-out;
   user-select: none;
 }
 
-/* 左侧圆形事件徽记 */
+/* 左侧圆形事件徽记（参考图直径约 11.7vw，圆心在 17.5vw / 79.7vh） */
 .story-emblem {
-  width: 68px;
-  height: 68px;
-  flex-shrink: 0;
+  position: absolute;
+  left: 11vw;
+  bottom: 8vh;
+  width: 11vw;
+  height: 11vw;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 30px;
+  font-size: 4.6vw;
   line-height: 1;
-  background: radial-gradient(circle at 34% 30%, #fff7d4 0%, #ffd66b 55%, #f2b23c 100%);
-  border: 4px solid #3a3a3a;
-  box-shadow: 0 0 0 6px rgba(255, 236, 178, 0.5), 0 6px 14px rgba(0, 0, 0, 0.22);
+  background: radial-gradient(circle at 38% 32%, rgba(96, 168, 152, 0.55) 0%, rgba(24, 60, 54, 0.9) 62%, rgba(8, 20, 18, 0.95) 100%);
+  border: 1px solid rgba(168, 226, 208, 0.45);
+  box-shadow: 0 0 3.2vw rgba(96, 200, 176, 0.35);
 }
 
-/* 正文容器：占满剩余宽度（≈屏幕宽度），内容多时内部滚动，外框尺寸稳定 */
+/* 正文容器：宽度上限按参考图（正文右边界约 74.5vw） */
 .story-body {
-  flex: 1;
-  min-width: 0;
   display: flex;
   flex-direction: column;
+  max-width: 52vw;
+  min-width: 0;
 }
 
+/* 事件标题（浅青绿，参考图「沉寂之屋」） */
+.story-title {
+  font-size: 3vh;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  color: #a6d5c3;
+  margin-bottom: 1vh;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+}
+
+/* 事件正文（浅灰白，参考图 4 行内不滚动；超出时内部滚动，外框高度不变） */
 .story-text {
-  font-size: 17px;
-  line-height: 1.9;
-  color: #3a2e20;
+  font-size: 2.45vh;
+  line-height: 1.38;
+  color: #d8dada;
   white-space: pre-wrap;
-  max-height: 28vh;
+  max-height: 22vh;
   overflow-y: auto;
-  padding-right: 4px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 
-/* 右上 ✖：沿用现有面板的关闭钮形制（奶白底 + 深棕描边 + 小圆角） */
+/* 右下角 ✖：跳过入口，做成参考图右下的低调出口样式 */
 .story-close {
   position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 30px;
-  height: 30px;
-  border: 2px solid #3a3a3a;
-  border-radius: 8px;
-  background: #fffbe6;
-  color: #3a2e20;
-  font-size: 15px;
-  font-weight: 700;
+  right: 1.6vw;
+  bottom: 2.4vh;
+  width: 4.2vh;
+  height: 4.2vh;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 2vh;
   line-height: 1;
   cursor: pointer;
-  z-index: 2;
-  transition: background-color 0.12s ease, transform 0.1s ease;
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 .story-close:hover {
-  background: #ffd04b;
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
 }
 
-/* ── 选项区（右侧竖排，大字号） ── */
+/* ── 选项区（右侧竖排；条顶从 22.5vh 起，右边缘 89.1vw，宽 23.8vw） ── */
 .option-area {
   position: absolute;
-  right: 2.5vw;
-  top: max(84px, 13vh); /* 让开顶部功能区（设置 / 角色 / 背包等图标） */
-  width: clamp(300px, 27vw, 420px);
-  max-height: 50vh;
+  right: 10.9vw;
+  top: 22.5vh;
+  width: 23.8vw;
+  min-width: 220px;
+  max-width: 460px;
+  max-height: 72vh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 2px;
+  gap: 6vh;
   pointer-events: auto;
+  scrollbar-width: none;
+}
+
+.option-area::-webkit-scrollbar {
+  display: none;
 }
 
 /* 有选项时点正文 → 轻轻抖一下（无提示文本，仅动效反馈） */
@@ -108,106 +130,114 @@
   animation: option-nudge 0.3s ease;
 }
 
-/* 单张选项卡 */
+/* 单个选项：透明容器，白条 + 条下描述；min-height 固定条间距，确认态不长高 */
 .story-option {
   position: relative;
-  padding: 14px 64px 14px 16px; /* 右侧留出圆形确认钮的位置 */
-  border: 3px solid #3a3a3a;
-  border-radius: 16px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.97) 0%, rgba(255, 253, 244, 0.97) 62%, rgba(255, 238, 194, 0.97) 100%);
-  box-shadow: 4px 4px 0 rgba(58, 46, 32, 0.22);
+  min-height: 14.6vh;
   cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
   animation: story-option-in 0.18s ease-out;
+  transition: transform 0.12s ease;
 }
 
 .story-option:hover {
   transform: translateX(-6px);
-  box-shadow: 6px 6px 0 rgba(58, 46, 32, 0.26);
-  background: linear-gradient(90deg, #ffffff 0%, #fff8dc 62%, #ffe4a3 100%);
 }
 
-/* 主标题：参考图里选项文本明显大于正文 */
+/* 白色选项条（参考图：4.6vh 高、锐角、近白底、轻微投影） */
+.story-option-bar {
+  display: flex;
+  align-items: center;
+  min-height: 4.6vh;
+  padding: 0 2.1vw;
+  box-sizing: border-box;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #ffffff 0%, #f7f7f5 52%, #e9e9e7 100%);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+  transition: background 0.12s ease;
+}
+
+.story-option:hover .story-option-bar {
+  background: linear-gradient(180deg, #ffffff 0%, #ffffff 52%, #f2f2ef 100%);
+}
+
+/* 选项标题（参考图：近黑粗体，字号与事件标题同级） */
 .story-option-label {
-  font-size: 19px;
-  font-weight: 800;
-  line-height: 1.4;
-  color: #3a2e20;
+  font-size: 3vh;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #1b1b1b;
 }
 
-/* 副标题：代价 / 后果（常驻显示） */
-.story-option-sub {
-  margin-top: 6px;
-  font-size: 13px;
-  line-height: 1.5;
-  color: #7b6a56;
-}
-
-.story-option-reason {
-  color: #b05a4a;
-}
-
-/* 详情（常驻显示，不在点击后才展开） */
+/* 选项描述：白条下方，浅灰、常驻显示（sub / detail 同一视觉参数） */
+.story-option-sub,
 .story-option-detail {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed #c9b88e;
-  font-size: 13px;
-  line-height: 1.6;
-  color: #5a4a34;
+  margin-top: 1.1vh;
+  padding-left: 2.1vw;
+  font-size: 2.35vh;
+  line-height: 1.5;
+  color: #cfd2d3;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
   white-space: pre-wrap;
 }
 
-/* 待确认文案（点击后唯一新增的一行） */
-.story-option-hint {
-  margin-top: 8px;
-  font-size: 14px;
-  font-weight: 700;
-  color: #2f7f42;
+.story-option-reason {
+  color: #e39a8b;
 }
 
-/* 圆形确认钮（绝对定位，不撑高卡片） */
+/* 待确认文案（点击后唯一新增的一行；绝对定位在条下间隙，不改变条间距） */
+.story-option-hint {
+  position: absolute;
+  left: 2.1vw;
+  top: 100%;
+  margin-top: 0.6vh;
+  font-size: 2.35vh;
+  line-height: 1.4;
+  color: #8fe3a0;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+
+/* 圆形确认钮（绝对定位，不撑高选项） */
 .story-option-confirm {
   position: absolute;
-  right: 12px;
-  bottom: 12px;
-  width: 40px;
-  height: 40px;
+  right: 0.8vw;
+  top: 0.6vh;
+  width: 3.4vh;
+  height: 3.4vh;
   align-items: center;
   justify-content: center;
   padding: 0;
-  border: 3px solid #3a3a3a;
+  border: 1px solid rgba(255, 255, 255, 0.55);
   border-radius: 50%;
-  background: #f7d674;
-  color: #3a2e20;
-  font-size: 17px;
-  font-weight: 800;
+  background: rgba(20, 24, 24, 0.55);
+  color: #ffffff;
+  font-size: 1.9vh;
+  font-weight: 700;
   line-height: 1;
   cursor: pointer;
 }
 
 .story-option-confirm:hover {
-  background: #ffd04b;
+  background: rgba(48, 120, 84, 0.85);
 }
 
 /* 禁用态 */
 .story-option.disabled {
   opacity: 0.45;
   cursor: not-allowed;
-  background: #efe9dc;
-  box-shadow: none;
 }
 
 .story-option.disabled:hover {
   transform: none;
-  box-shadow: none;
-  background: #efe9dc;
+}
+
+.story-option.disabled .story-option-bar {
+  background: #9a9a97;
 }
 
 /* ── 动画 ── */
 @keyframes story-rise {
-  from { opacity: 0; transform: translateY(14px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 @keyframes story-option-in {

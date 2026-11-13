@@ -177,8 +177,6 @@ function creatureCount() {
 }
 /** 普通选项：两次点击 = 确认 */
 function choose(btn) { btn.click(); btn.click(); }
-/** 安全选项：单击 */
-function chooseSafe(btn) { btn.click(); }
 /** 打开事件并推进到第一个选项节点 */
 function openAtChoice(def) {
   const ok = ui.show(buildEventStory(def), { tileIdx: 0, eventId: def.id });
@@ -200,8 +198,8 @@ function assertNoLeak(def, nodeKey, tokenSet) {
 head('A. 数据完整性：示例事件结构');
 // ════════════════════════════════════════════════════════════
 check(EVENT_DEFS.length >= 2, 'A-01 至少 2 个示例事件', EVENT_DEFS.length);
-const simpleDef = getEventDef('evt_ph_08');
-const nestedDef = getEventDef('evt_ph_09');
+const simpleDef = getEventDef('evt_bag_01');
+const nestedDef = getEventDef('evt_crossroad_01');
 check(!!simpleDef && !!nestedDef, 'A-02 单层 / 两层示例事件都存在');
 check(Object.keys(simpleDef.nodes).length >= 3, 'A-03 单层事件包含多个节点（描述 + 结果）');
 // 2026-11-13 返工：描述节点直接带选项，不再有「你打算怎么处理？」过渡节点
@@ -243,7 +241,7 @@ head('C. 单层事件：不同选项产生不同结果');
   const gold0 = gs.player.gold;
   const wheat0 = qty('item_wheat');
   openAtChoice(simpleDef);
-  assertNoLeak(simpleDef, simpleChoice, ['evt_ph_08', 'search', 'purse', 'leave', 'A.1', '第一段', '第二段', '选项1', '选项2']);
+  assertNoLeak(simpleDef, simpleChoice, ['evt_bag_01', 'search', 'purse', 'leave', 'A.1', '第一段', '第二段', '选项1', '选项2']);
   choose(ui.optionBtns[1]);
   check(gs.player.gold === gold0 + 6, 'C-01 选「拿走钱袋」→ 金币 +6', gs.player.gold - gold0);
   check(qty('item_wheat') === wheat0, 'C-02 同一选项不产生其它结果');
@@ -262,13 +260,16 @@ head('C. 单层事件：不同选项产生不同结果');
 }
 
 {
-  // C3「原样离开」→ 无结算 + 安全选项单击生效
+  // C3「离开」→ 无结算，且和其他选项一样必须二次确认
   const gold0 = gs.player.gold;
   const wheat0 = qty('item_wheat');
   openAtChoice(simpleDef);
-  chooseSafe(ui.optionBtns[2]);
+  ui.optionBtns[2].click();
+  check(ui.visible === true && ConfirmAction.isArmed(ui.optionBtns[2]) === true,
+    'C-06 「离开」首次点击只进入待确认，不立即生效');
+  ui.optionBtns[2].click();
   await tick(10);
-  check(ui.visible === false, 'C-06 安全选项单击 → 事件结束');
+  check(ui.visible === false, 'C-06b 「离开」再次点击确认后事件结束');
   check(gs.player.gold === gold0 && qty('item_wheat') === wheat0,
     'C-07 无结算选项不改变任何数值');
 }

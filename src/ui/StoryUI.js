@@ -1,24 +1,26 @@
 // src/ui/StoryUI.js
 // §16.5 剧情区 + 选项区（剧情与事件共用同一套 UI）
 //
-// 结构（对照 docs/_art-references/事件ui点击前.jpg / 事件ui点击一次.jpg）：
-//   · 剧情区：屏幕底部通栏（左右各留 2vw），左侧圆形事件徽记 + 右侧正文
-//     - 正文宽度≈屏幕宽度，字号大于旧版；不显示标题行（title 只用于日志 / aria）
+// 结构（逐项对照 docs/_art-references/事件ui点击前.jpg / 事件ui一次点击.jpg）：
+//   · 剧情区：屏幕底部黑色渐变（无卡片外框），左侧圆形事件徽记 + 右侧标题 + 正文
+//     - 事件标题上屏（浅青绿 3vh），正文浅灰白 2.45vh，正文右边界约 74.5vw
 //     - **不显示「继续」「请选择」等提示文本**：叙事段落靠点击 / 空格 / 回车推进
-//     - 右上 ✖ = 跳过入口，点击后走 DialogBox 二次确认（§16.5）
-//   · 选项区：右侧竖排选项卡片（主标题 + 副标题 + 详情，全部常驻显示）
+//     - 右下 ✖ = 跳过入口，点击后走 DialogBox 二次确认（§16.5）
+//   · 选项区：右侧竖排白色横条（标题在条内，描述常驻在条下）
 //     - 与正文同节点出现：描述完立即给选项，不再多一次点击
 //     - 鼠标点击 / 数字键 1~4 等价（§16.4 选项模式）；不渲染数字徽章
-//     - 首次点击 = 待确认：浅绿底 + **只多一行**「你确定这么做？」（+ 绝对定位确认钮，
-//       不改变卡片高度）；详情不会在点击后才出现
-//     - 再次点击（或点确认钮）= 同一 tick 立即生效，随后该卡 1.5 秒淡出
+//     - 首次点击 = 待确认：条下**只多一行**「你确定这么做？」（+ 绝对定位确认钮，
+//       不改变条间距）；描述不会在点击后才出现
+//     - 所有选项（包括「离开」）都必须二次确认，没有单击即生效的例外
+//     - 再次点击（或点确认钮）= 同一 tick 立即生效，随后该条 1.5 秒淡出
 //     - 禁用态灰化、不可点、不进待确认
-//   · 结果态：节点既无选项、也无 next 时，点击屏幕任意处关闭事件
+//   · 结果态：节点既无选项、也无 next 时，点击屏幕任意处关闭事件；
+//     结果态**不改变薄纱层级 / 深浅**（不允许整屏再暗一层）
 //   · 输入封锁：由 InputGate 读取 this.visible → INPUT_BLOCK.STORY
 //
 // 数据驱动（见 src/data/stories.js）：UI 不写死任何文案；
 // 脚本节点提供 text / next / end / options，选项提供 label / sub / detail /
-// disabled / safe / effects / next / end / onSelect。
+// disabled / effects / next / end / onSelect。
 // 事件结算由选项驱动：只有选项确认时才执行其 effects（同一选项一次事件只执行一次），
 // 进入事件 / 推进正文 / 跳过都不产生任何结算。
 
@@ -37,7 +39,6 @@ export const MAX_OPTIONS = 4;
 export const STORY_Z = {
   MASK: 5700,
   LAYER: 5750,
-  RESULT_MASK: 8000, // 结果态点任意处关闭（仍低于 DialogBox 9100）
 };
 
 /** 正文规范化：数组 = 多段（段间空一行），字符串保留自身换行 */
@@ -52,6 +53,7 @@ export class StoryUI {
     this.mask = null;          // 暗色薄纱（拦截地图点击，替代缺失的事件背景图）
     this.layer = null;         // 剧情区 + 选项区容器（pointer-events:none）
     this.storyPanel = null;    // 剧情区
+    this.titleEl = null;       // 事件标题
     this.textEl = null;        // 正文
     this.emblemEl = null;      // 圆形徽记
     this.optionAreaEl = null;  // 选项区
@@ -81,7 +83,7 @@ export class StoryUI {
     // 薄纱：没有事件背景图，用暗色遮罩保证正文可读，并拦截地图 / 快捷栏点击
     // 层级（§18.2 / §19）：高于地图、快捷栏、功能区（≤5600）与信息区（100），
     // 但 **低于** 背包 / 角色 / 编队 / 任务等面板（6000）与设置（6200）。
-    // 结果文本态把薄纱临时抬到 8000，用于「点屏幕任意处关闭」（仍低于 DialogBox 9100）。
+    // 结果文本态只把 cursor 改成 pointer，**不抬层级、不加暗**（否则整屏会被再压暗一层）。
     this.mask = createEl('div', {
       class: ['story-mask'],
       style: {
@@ -131,7 +133,7 @@ export class StoryUI {
   }
 
   _mountStoryPanel() {
-    // 底部通栏：宽度≈屏幕宽度（左右各留 2vw），位置 / 字号见 story.css
+    // 底部黑色渐变：无卡片外框，文字直接压在场景上（参考图排版）
     this.storyPanel = createEl('div', {
       class: ['story-panel'],
       style: {
@@ -145,7 +147,6 @@ export class StoryUI {
     // 左侧圆形徽记
     this.emblemEl = createEl('div', {
       class: ['story-emblem'],
-      style: { flexShrink: '0' },
       parent: this.storyPanel,
     });
 
@@ -154,13 +155,18 @@ export class StoryUI {
       parent: this.storyPanel,
     });
 
+    // 事件标题：参考图正文上方的浅青绿标题行
+    this.titleEl = createEl('div', {
+      class: ['story-title'],
+      parent: body,
+    });
+
     this.textEl = createEl('div', {
       class: ['story-text'],
       parent: body,
     });
 
-    // 注意：不创建「继续 / 请选择」提示（参考图没有，且属于无用提示文本）
-    // 右上 ✖：与现有面板统一（奶白底 + 深棕描边），点击 = 跳过入口
+    // 右下 ✖：跳过入口（低调出口样式），点击 = 跳过确认
     const closeBtn = createEl('button', {
       class: ['story-close'],
       text: '✖',
@@ -218,7 +224,9 @@ export class StoryUI {
     this.mask.style.display = 'block';
     this.layer.style.display = 'block';
     this.emblemEl.textContent = String(script.icon || '🎲');
-    this.storyPanel.setAttribute('title', String(script.title || ''));
+    this.titleEl.textContent = String(script.title || '');
+    this.titleEl.style.display = script.title ? '' : 'none';
+    this.storyPanel.setAttribute('aria-label', String(script.title || ''));
 
     this._renderNode();
     EventBus.emit(GE.STORY_START, { id: script.id, title: script.title });
@@ -358,18 +366,13 @@ export class StoryUI {
   _enterResultMode() {
     if (this._resultMode) return;
     this._resultMode = true;
-    if (this.mask) {
-      this.mask.style.zIndex = String(STORY_Z.RESULT_MASK); // 盖住面板也盖住快捷栏：点任意处关闭
-      this.mask.style.cursor = 'pointer';
-    }
+    // 只改指针反馈：**不抬层级、不改薄纱深浅**，结果阶段屏幕亮度与叙事阶段一致
+    if (this.mask) this.mask.style.cursor = 'pointer';
   }
 
   _exitResultMode() {
     this._resultMode = false;
-    if (this.mask) {
-      this.mask.style.zIndex = String(STORY_Z.MASK);
-      this.mask.style.cursor = '';
-    }
+    if (this.mask) this.mask.style.cursor = '';
   }
 
   _pulseOptions() {
@@ -412,16 +415,23 @@ export class StoryUI {
         parent: area,
       });
 
-      // 只渲染玩家可见文本：label 为唯一主文本，不渲染数字徽章 / 分支编号
+      // 白色选项条：参考图里只有主标题在条内，描述在条下的暗色背景上
+      const bar = createEl('div', { class: ['story-option-bar'], parent: card });
       createEl('div', {
         class: ['story-option-label'],
         text: String(opt.label || '选项'),
-        parent: card,
+        parent: bar,
       });
 
-      if (opt.sub) {
-        createEl('div', { class: ['story-option-sub'], text: String(opt.sub), parent: card });
-      }
+      // 选项描述（sub / detail 同一视觉参数，全部常驻显示）
+      const detail = createEl('div', {
+        class: ['story-option-detail'],
+        text: String(opt.detail || opt.sub || ''),
+        parent: card,
+      });
+      if (!opt.detail && !opt.sub) detail.style.display = 'none';
+      else if (opt.sub && opt.detail) detail.textContent = `${opt.sub}\n${opt.detail}`;
+
       if (opt.disabled && opt.disabledReason) {
         createEl('div', {
           class: ['story-option-sub', 'story-option-reason'],
@@ -430,15 +440,7 @@ export class StoryUI {
         });
       }
 
-      // 详情常驻显示（不再点击后才展开——点击前后卡片高度只差一行确认文案）
-      const detail = createEl('div', {
-        class: ['story-option-detail'],
-        text: String(opt.detail || ''),
-        parent: card,
-      });
-      if (!opt.detail) detail.style.display = 'none';
-
-      // 圆形确认钮：绝对定位，出现时不撑高卡片（参考图第二张右侧）
+      // 圆形确认钮：绝对定位，出现时不撑高选项（参考图第二张右侧）
       const confirmBtn = createEl('button', {
         class: ['story-option-confirm'],
         text: '✓',
@@ -451,7 +453,7 @@ export class StoryUI {
         this._applyOption(i);
       };
 
-      // 待确认文案只在卡片内（§16.4，禁止悬浮到角落）；点击后**只多这一行**
+      // 待确认文案只在选项内（§16.4，禁止悬浮到角落）；点击后**只多这一行**
       const hint = createEl('div', {
         class: ['story-option-hint'],
         text: CONFIRM_TEXT,
@@ -477,7 +479,7 @@ export class StoryUI {
     const opt = this._options[i];
     const btn = this.optionBtns[i];
     if (!opt || !btn || opt.disabled) return;
-    if (opt.safe) { this._applyOption(i); return; }
+    // 所有选项（包括「离开」）一律二次确认：没有单击即生效的例外
     // 状态唯一依据 = 共享 ConfirmAction 是否处于待确认态
     if (ConfirmAction.isArmed(btn)) { this._applyOption(i); return; }
     if (!ConfirmAction.arm(btn, { hintEl: this._hints[i], text: CONFIRM_TEXT })) return;
