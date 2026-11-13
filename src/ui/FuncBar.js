@@ -44,7 +44,10 @@ export class FuncBar {
         width: 'fit-content',
         maxWidth: '100vw',
         flexWrap: 'nowrap',
-        zIndex: 5600,   // 第 8 批：§16.21 商店内功能区仍可见、可点（高于商店 5500）
+        // 5760：仍高于商店 5500 / 快捷栏 5600，但低于面板 6000；
+        // 高于事件层 5700/5750，保证事件期间「设置（存读档）/ 背包 / 角色」入口仍可点，
+        // 其余会改数据的入口由 _onAction 统一拦截（§18.3）。
+        zIndex: 5760,
       },
       parent,
     });
@@ -78,6 +81,17 @@ export class FuncBar {
   }
 
   _onAction(action) {
+    // §18.3 事件 / 剧情期间：只放行「纯查看」与「存读档」入口。
+    // 查看：背包 / 角色 / 任务；例外：设置（存读档）；其余（睡觉 / 编队 / 合成 / 建造 / 载具）
+    // 都会改动游戏数据，直接拦截。信息区入口不在这里（由 InfoPanel 自身门控）。
+    if (this.director?.storyUI?.visible) {
+      const allowed = new Set(['openSettings', 'toggleInventory', 'openRole', 'openTask']);
+      if (!allowed.has(action)) {
+        EventBus.emit(GE.TOAST_SHOW, { text: '🎲 事件进行中，暂时无法进行这个操作', duration: 1500 });
+        return;
+      }
+    }
+
     // 建造模式下拦截：不能睡觉、不能祈福（祈福按钮在 FuncBar 没有，只拦睡觉）
     // TODO(第 9 批)：设计文档未明说建造模式下睡觉按钮是否拦截；保持现状（拦截并提示），待裁决后再定
     const gs = this.director?.getGS?.();

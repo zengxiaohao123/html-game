@@ -53,6 +53,13 @@ export function startNewDay(gs) {
   // 2. 清除所有每日限次标记（每格的 dailyFlags）
   for (const tile of gs.map.outerTiles) {
     tile.dailyFlags = {};
+    // 事件点的「今日事件预览」只在当天有效（受祝福锁定的事件不得跨天复用）
+    const st = tile.contentState;
+    if (st) {
+      st.eventPreviewId = null;
+      st.eventPreviewName = null;
+      st.eventTodayId = null;
+    }
   }
   for (const fenceTile of gs.map.fence) {
     if (fenceTile.dailyFlags) fenceTile.dailyFlags = {};

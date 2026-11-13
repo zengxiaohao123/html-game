@@ -75,7 +75,7 @@ src/
 │   │   ├── VehiclePanel.js   # T 键载具页面
 │   │   └── ShopPanel.js      # 商店页面（地块功能进入）
 │   ├── DialogBox.js          # 确认弹窗（含剧情跳过确认，z 9100）
-│   ├── StoryUI.js            # 剧情区 + 选项区（§16.5，z 9000）
+│   ├── StoryUI.js            # 剧情区 + 选项区（§18.2，z 5700/5750，结果态 8000）
 │   ├── ConfirmAction.js      # 统一二次确认状态机（arm/disarm/trigger + 快捷键绑定）
 │   ├── Toast.js              # 中央弹窗提示（物品+1、心力交瘁等）
 │   └── styles/
@@ -415,18 +415,21 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 
 - **文件**：`src/ui/StoryUI.js`（`StoryUI` 类）、`src/ui/styles/story.css`、`src/data/stories.js`、
   `src/data/events.js`（事件节点表）、`src/systems/EventEffects.js`（选项结算执行器）。
-- **两个分区**：
-  - 剧情区 `.story-panel`：屏幕下方居中（`left:50% / bottom:104px / translateX(-50%)`，宽 `min(880px,66vw)`），
-    左侧 `.story-emblem` 圆形徽记 + 右侧 `.story-text` 正文（`white-space:pre-wrap`，最高 24vh 内滚），
-    右下 `.story-foot` 推进指示（`继续` / `请选择`），右上 `.story-close`（✖，跳过入口）。
-  - 选项区 `.option-area`：右侧中部（`right:26px / top:50%`，宽 340px，最高 64vh 滚动），竖排 `.story-option`。
+- **两个分区**（2026-11-13 按参考图返工）：
+  - 剧情区 `.story-panel`：**屏幕底部通栏**（`left/right:2vw / bottom:20px`，宽度≈屏幕宽度），
+    左侧 `.story-emblem` 圆形徽记 + 右侧 `.story-text` 正文（17px / `white-space:pre-wrap`，最高 28vh 内滚），
+    右上 `.story-close`（✖，跳过入口）。**没有 `.story-foot` 推进指示**：不显示「继续」「请选择」。
+  - 选项区 `.option-area`：右侧竖排（`right:2.5vw / top:max(84px,13vh)`，宽 `clamp(300px,27vw,420px)`，最高 50vh 滚动）；
+    主标题 19px，`label / sub / detail` 全部常驻渲染，不渲染数字徽章。
 - **数据驱动**：`STORY_SHOW {script, ctx}` 播放；`script = {id,title,start,nodes,onEnd}`，
   `nodes[key] = {text,options?,next?,end?,onEnter?}`，`Option = {id,label,sub,detail,disabled,disabledReason,safe,effects,next,end,onSelect}`。
   事件点（RES-001）由 `buildEventStory(entry)` 生成脚本：条目带 `nodes` 时直接使用节点表（`src/data/events.js`），
   否则退化为通用占位结构。UI 不写死任何文案。
 - **多级状态机**：`option.next` 可指向任意节点，目标节点可再次带 `options`，深度不限；
-  节点 / 选项 id 与层级关系**只存在于数据**，不上屏（选项区只渲染 `label/sub/detail`，键位徽章只表示 `1~4` 快捷键）。
-  没有 `options` 且没有 `next` 的节点是终止节点，`advance()` 即关闭事件。
+  节点 / 选项 id 与层级关系**只存在于数据**，不上屏（选项区只渲染 `label/sub/detail`，数字键 `1~4` 只作隐藏快捷键）。
+  没有 `options` 且没有 `next` 的节点是终止节点：正文即为结果文本，进入结果态，点击屏幕任意处关闭事件（`result-dismiss`）。
+- **描述与选项同屏**：事件首节点直接带 `options`，不得新增「你打算怎么做？」类过渡问句节点；
+  选项确认后直接落到下一层描述（同样带 `options`），中间不再插一层需要点击的文本。
 - **选项驱动结算**：事件**进入不结算**；只有选项确认时，`StoryUI._settleOption(opt)` 调
   `applyEventEffects(gs, opt.effects, ctx)`，在确认的同一 tick 执行，同一事件内同一 `option.id` 只执行一次。
   效果词表：`gold / item / stamina / heal / terrain / buff / creature`；执行器内部复用
@@ -438,22 +441,34 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
   结束统一走 `_finish(reason)`，先 `_hide()` 再广播 `STORY_END {id,reason}`，最后调 `script.onEnd(ctx)`。
 - **二次确认**：完全复用 `ConfirmAction`（`arm / isArmed / trigger`），不再写第二套状态机；
   只有 `safe:true` 的选项单击即生效（与 DialogBox 安全选项同口径）。
+  待确认态**只多一行**「你确定这么做？」＋绝对定位圆形确认钮（`position:absolute`，不撑高卡片）；
+  `detail` 常驻显示，禁止在点击后才展开（卡片高度不得突变）。
   确认后**业务先于动画**：`effects` 结算 + `onSelect` + 正文切换同一 tick 完成，卡片 1.5 秒淡出，淡出期整块选项区 `pointer-events:none`。
 - **跳过**：`.story-close` / ESC → `DIALOG_SHOW` 二次确认；`skip()` 沿 `next` 前进，
   遇到 `options` 节点停下（选项节点上跳过被拒绝并 Toast 提示），无后续节点则结束；跳过永不执行 `effects`。
-- **键盘**：空格 / 回车 / 点剧情区 = 推进；`1~4` = 选项（与鼠标同入口）；ESC = 跳过入口；
-  `DialogBox.visible` 时让渡键盘（跳过确认期间不拦截）。
-- **输入门控**：`InputGate` 读 `director.storyUI?.visible` → `INPUT_BLOCK.STORY`，
-  移动 / 祈福 / 睡觉 / 数字键 / 面板快捷键全部停用；`STORY_END` 后自动恢复（门控每次按键实时计算，无缓存）。
-  `InputManager` 在 `settings` 分支增加 `isStoryBlocked()` 守卫，避免剧情中 ESC 打开设置页。
-- **层级**：薄纱 `.story-mask` 8950（拦截地图点击、替代缺失的事件背景图）；剧情区 / 选项区 9000；
-  `DialogBox` 由 9000 抬到 **9100**，保证跳过确认弹窗压在剧情 UI 之上。
+- **键盘**：空格 / 回车 / 点剧情区或空白薄纱 = 推进；结果态点任意处 = 关闭；`1~4` = 选项（与鼠标同入口）；
+  ESC = 跳过入口；`DialogBox.visible` 时让渡键盘（跳过确认期间不拦截）。
+- **输入门控（§18.3）**：`InputGate` 读 `director.storyUI?.visible` → `INPUT_BLOCK.STORY`，
+  移动 / 祈福 / 睡觉 / 数字键 / 快捷栏停用；`STORY_END` 后自动恢复（门控每次按键实时计算，无缓存）。
+  - `InputManager`：面板快捷键白名单 `STORY_VIEW_PANELS = inventory/role/task/codex`；编队 / 合成 / 载具拒绝；
+    `buildMode` 增加 `isStoryBlocked()` 守卫；`settings`（ESC）仍归剧情跳过。
+  - `FuncBar`（`z 5760`，高于事件层、低于面板）：事件期间只放行 `openSettings / toggleInventory / openRole / openTask`，
+    其余（睡觉 / 编队 / 合成 / 建造 / 载具）Toast 拦截 —— 存读档走设置入口，是数据侧唯一例外。
+  - `InventoryPanel`：事件期间 `_renderActionZone()` 直接返回（不渲染放置 / 使用 / 出货箱等改数据按钮），只保留查看。
+  - `InfoPanel`：`_isStoryLocked()` 时拒绝 `selectTile / showBlessTab / TILE_CLICKED / FENCE_TILE_CLICKED`；
+    信息区一禁，经信息区进入的商店自然不可达。
+- **层级**：薄纱 `.story-mask` **5700**、剧情区 / 选项区 **5750**（高于地图 / 快捷栏 5600 / 信息区 100，
+  低于面板 6000 与设置 6200）；结果态薄纱临时抬到 **8000**，用于「点屏幕任意处关闭」；
+  `DialogBox` **9100** 始终最高。
+- **受祝福预览**：`facilities.resolveEventTile(gs, idx, true)` 不再发中央 Toast，只写
+  `contentState.eventPreviewId / eventPreviewName`；信息区「地块内容」展示事件名；真正进入时复用同一条目并消费预览。
 - **生命周期**：`STATE_RESET` / `BOOT` → `closeSilently()`，静默关闭且**不**结算 `onEnd`（读档 / 重开不重复结算）；
   事件中途状态不入存档，读档视为事件未发生（设计文档 §18.5）。
-- **验收**：`node tools/smoke-story.mjs`（无选项旁白、有选项、选项回调、二次确认、禁用态、键位、
+- **验收**：`node tools/smoke-story.mjs`（无选项旁白、有选项、选项回调、二次确认、禁用态、
+  详情常驻 / 无键位徽章 / 无「继续·请选择」提示、结果态点任意处关闭、层级 5700/5750/8000、
   推进到底关闭、跳过只停在选项处、期间输入封锁、结束后恢复、数据驱动与 `refresh()` 实时刷新）；
-  `node tools/smoke-event-flow.mjs`（进入不结算、不同选项不同结果、两层分支、选项文本不泄露编号、
-  跳过不越过分支、无选项节点终止、效果只生效一次、结算词表、静默打断）。
+  `node tools/smoke-event-flow.mjs`（进入不结算、描述与选项同屏、不同选项不同结果、两层直落选项、
+  选项文本不泄露编号、跳过不越过分支、无选项节点终止、效果只生效一次、结算词表、静默打断）。
 
 ---
 

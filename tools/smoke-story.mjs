@@ -145,6 +145,14 @@ function check(cond, msg, extra) {
 }
 function head(t) { console.log(`\n═══ ${t} ═══`); }
 
+/** 深度收集带指定 class 的元素（FakeEl 没有 querySelector） */
+function findAll(el, cls, out = []) {
+  if (!el) return out;
+  if (el.classList?.contains?.(cls)) out.push(el);
+  for (const c of el.children || []) findAll(c, cls, out);
+  return out;
+}
+
 const gs = { buildMode: false, uiState: { blessing: false }, player: {}, map: { outerTiles: [] } };
 const director = {
   getGS: () => gs,
@@ -183,8 +191,10 @@ check(ui.textEl.textContent.includes('第一段。') && ui.textEl.textContent.in
   'A-04 多段正文按段渲染（段间空行）', ui.textEl.textContent);
 check(ui.optionBtns.length === 0 && ui.optionAreaEl.style.display === 'none',
   'A-05 无选项时选项区隐藏');
-check(ui.promptTextEl.textContent === '继续' && ui.promptArrowEl.style.display !== 'none',
-  'A-06 显示「继续」推进指示');
+check(findAll(ui.storyPanel, 'story-prompt-text').length === 0
+  && !ui.storyPanel.textContent.includes('继续')
+  && !ui.storyPanel.textContent.includes('请选择'),
+  'A-06 不显示「继续 / 请选择」提示文本');
 
 ui.advance();
 check(ui.nodeKey === 'b' && ui.textEl.textContent === '第三段。', 'A-07 推进到下一段');
@@ -237,11 +247,13 @@ check(ui.optionAreaEl.style.display === 'flex', 'C-03 选项区显示');
 check(ui.optionBtns.length === 3, 'C-04 三个选项渲染', ui.optionBtns.length);
 check(ui.optionBtns[0].textContent.includes('选项一')
   && ui.optionBtns[0].textContent.includes('消耗：一点点代价')
-  && ui.optionBtns[0].textContent.includes('1'),
-  'C-05 选项卡含主标题 / 副标题 / 键位徽章');
+  && ui.optionBtns[0].textContent.includes('展开详情占位。'),
+  'C-05 选项卡含主标题 / 副标题 / 详情（详情常驻）');
+check(findAll(ui.optionBtns[0], 'story-option-key').length === 0,
+  'C-05b 不渲染数字徽章（参考图无编号）');
 check(ui.optionBtns[1].classList.contains('disabled'), 'C-06 禁用选项灰化');
 check(ui.optionBtns[1].getAttribute('aria-disabled') === 'true', 'C-07 禁用选项无障碍标记');
-check(ui.promptTextEl.textContent === '请选择', 'C-08 有选项时指示改为「请选择」');
+check(!ui.storyPanel.textContent.includes('请选择'), 'C-08 有选项时也不出现提示文本');
 check(ui.advance() === false, 'C-09 有选项时不允许越过选择推进');
 check(ui.nodeKey === 'pick', 'C-10 推进被拒绝后节点不变');
 
@@ -251,6 +263,9 @@ check(ConfirmAction.isArmed(ui.optionBtns[0]) === true, 'C-11 首次点击进入
 check(ui.optionBtns[0].textContent.includes('你确定这么做？'), 'C-12 待确认文案出现在卡片内');
 check(ui._hints[0].style.display === 'block', 'C-13 卡片内确认提示可见');
 check(ui._confirmBtns[0].style.display === 'inline-flex', 'C-14 选中后出现圆形确认钮');
+const detailBeforeClick = findAll(ui.optionBtns[0], 'story-option-detail')[0];
+check(!!detailBeforeClick && detailBeforeClick.style.display !== 'none',
+  'C-14b 详情在点击前就是常驻显示（点击只多一行确认文案）');
 check(hits === 0, 'C-15 待确认阶段尚未执行业务');
 
 // 再次点击 = 同一 tick 立即生效
@@ -340,7 +355,8 @@ check(evtScript.title === entry.name && evtScript.id === 'story_evt_ph_01',
   'F-01 事件脚本 id / 标题来自事件条目');
 check(JSON.stringify(evtScript.nodes.intro.text).includes(entry.name),
   'F-02 正文包含条目名（UI 不写死文案）');
-check(evtScript.nodes.choice.options.length === 3, 'F-03 占位事件提供 3 个选项');
+check(evtScript.nodes.intro.options.length === 3 && !evtScript.nodes.choice,
+  'F-03 占位事件描述节点直接带 3 个选项（无多余过渡节点）');
 const demo = demoStory();
 check(demo.nodes.b.options.length === 3
   && demo.nodes.b.options.some((o) => o.disabled === true),
@@ -372,11 +388,20 @@ check(ui.visible === false && ended === 0, 'F-07 STATE_RESET 静默关闭且不�
 head('G. 关闭入口与层级');
 // ════════════════════════════════════════════════════════════
 ui.show(narration);
-check(ui.layer.style.zIndex === '9000', 'G-01 剧情区 / 选项区层级 9000');
+check(ui.layer.style.zIndex === '5750' && ui.mask.style.zIndex === '5700',
+  'G-01 事件层 5700/5750（低于面板 6000，高于快捷栏 5600）');
 check(ui.layer.style.pointerEvents === 'none' && ui.storyPanel.style.pointerEvents === 'auto',
   'G-02 层容器不吞点击，仅面板可交互');
 check(ui.storyPanel.getAttribute('title') === '' , 'G-03 脚本无 title 时不写入（本轮不显示标题行）');
-ui.closeSilently('test');
+// 叙事态：点薄纱 = 推进会话（无「继续」提示也可靠点击推进）
+ui.mask.click();
+check(ui.nodeKey === 'b', 'G-04 叙事态点击屏幕推进一段');
+// 结果态：薄纱抬到 8000，点屏幕任意处关闭
+check(ui.mask.style.zIndex === '8000', 'G-05 结果态薄纱抬到 8000（盖住面板与快捷栏）');
+ui.mask.click();
+check(ui.visible === false
+  && storyEnds[storyEnds.length - 1].reason === 'result-dismiss',
+  'G-06 结果文本态点击任意处关闭事件');
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);

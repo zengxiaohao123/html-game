@@ -2528,17 +2528,34 @@ head_('第 15 批：同键二次按下 = ESC（专属快捷键页面）');
   key('b');
   assert(!inventoryPanel.visible && director.openPanels.length === 0, '跨-4 背包为栈顶时再按 B 才关闭');
 
-  // ── 剧情 / 事件期间仍被拦 ──
+  // ── 确认弹窗（DialogBox）期间仍全拦 ──
   const dlgK = trackDlg(new DialogBox());
   dlgK.mount();
   const prevDlgK = director.dialogBox;
   director.dialogBox = dlgK;
-  dlgK.show({ title: '剧情封锁', options: [{ label: '继续', onSelect: () => {} }] });
+  dlgK.show({ title: '确认弹窗', options: [{ label: '继续', onSelect: () => {} }] });
   key('b');
   assert(!inventoryPanel.visible && director.openPanels.length === 0 &&
-    !director.openPanels.includes('inventory'), '门控-1 剧情/事件期间按 B 被拦截', director.openPanels);
+    !director.openPanels.includes('inventory'), '门控-1 确认弹窗期间按 B 被拦截', director.openPanels);
   dlgK.hide();
   director.dialogBox = prevDlgK;
+
+  // ── 事件 / 剧情期间：纯查看放行，改数据面板拦截（§18.3） ──
+  const prevStoryUI = director.storyUI;
+  director.storyUI = { visible: true };
+  key('b');
+  assert(inventoryPanel.visible && director.openPanels.includes('inventory'),
+    '门控-1b 事件期间按 B 可查看背包', director.openPanels);
+  key('b');
+  assert(!inventoryPanel.visible && director.openPanels.length === 0,
+    '门控-1c 事件期间再按 B 关闭背包');
+  key('f');
+  assert(!director.openPanels.includes('forge'),
+    '门控-1d 事件期间按 F 不开合成（会改数据）', director.openPanels);
+  key('l');
+  assert(!director.openPanels.includes('team'),
+    '门控-1e 事件期间按 L 不开编队（会改数据）', director.openPanels);
+  director.storyUI = prevStoryUI;
 
   // ── 建造模式：打开背包不退出建造，同键关闭仍生效 ──
   BuildSystem.enterBuildMode(gs);

@@ -112,6 +112,9 @@ export class InventoryPanel {
 
   // ─────────────────────── 事件订阅 ───────────────────────
   _subscribeEvents() {
+    // 事件开始 / 结束时刷新行动区（事件期间行动区不渲染，结束后恢复）
+    EventBus.on(GE.STORY_START, () => this.visible && this._reRender());
+    EventBus.on(GE.STORY_END, () => this.visible && this._reRender());
     EventBus.on(GE.INVENTORY_CHANGE, () => this.visible && this._reRender());
     EventBus.on(GE.STATE_RESET, () => this.visible && this._reRender());
     EventBus.on(GE.UI_PANEL_OPEN, ({ panel }) => {
@@ -334,6 +337,10 @@ export class InventoryPanel {
   // ─────────────────────── 右中：行动区（固定存在，点物品才激活） ───────────────────────
   _renderActionZone() {
     this.actionEl.innerHTML = '';
+
+    // §18.3 事件 / 剧情期间背包只允许查看：行动区（放入出货箱 / 取回 / 放置 / 使用药水）
+    // 全部会改动游戏数据，这里直接不渲染，避免玩家在事件中改变存档数据。
+    if (this.director?.storyUI?.visible) return;
 
     if (!this.selectedItemId) {
       createEl('div', {

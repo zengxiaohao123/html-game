@@ -17,18 +17,18 @@
 // StoryNode 结构：
 //   {
 //     text:    正文；字符串或字符串数组（数组按段渲染，段间空一行）；支持 \n 换行
-//     options?: Option[]    存在即进入「选项区等待选择」，不显示「继续」指示
+//     options?: Option[]    存在即进入「选项区等待选择」（与正文同节点，不再加过渡问句）
 //     next?:   无选项时的下一节点；缺省 = 本脚本结束
-//     end?:    true = 本节点结束脚本
+//     end?:    true = 本节点结束脚本（结果文本出现后点屏幕任意处关闭）
 //     onEnter?: (ctx) => void
 //   }
 //
 // Option 结构：
 //   {
 //     id?:      选项 id（仅代码使用，永不上屏）
-//     label:    主标题（必填）
-//     sub?:     副标题（代价 / 后果，一行灰字）
-//     detail?:  选中后展开的详情（参考图第二张的展开文案）
+//     label:    主标题（必填，唯一上屏的选项文本；UI 不渲染数字徽章）
+//     sub?:     副标题（代价 / 后果，一行灰字，常驻显示）
+//     detail?:  详情（常驻显示，不在点击后才展开）
 //     disabled?: true = 灰化不可选
 //     disabledReason?: 禁用原因（随副标题一起显示）
 //     safe?:    true = 单击即生效，不走二次确认（如「离开」）
@@ -82,10 +82,6 @@ export function buildEventStory(entry, opts = {}) {
           '你在这块地方停下了脚步。',
           `${name}。\n${PH_BODY}`,
         ],
-        next: 'choice',
-      },
-      choice: {
-        text: '你打算怎么做？',
         options: [
           {
             id: 'look',
@@ -113,17 +109,11 @@ export function buildEventStory(entry, opts = {}) {
       },
       looked: {
         text: `${PH_BODY}\n看完之后，你把这里恢复成原样。`,
-        next: 'choice2',
+        end: true,
       },
       taken: {
         text: `${PH_BODY}\n你把东西塞进了背包。`,
-        next: 'choice2',
-      },
-      choice2: {
-        text: '该走了。',
-        options: [
-          { id: 'back', label: '继续赶路', sub: '今天还有别的事要做', safe: true, end: true },
-        ],
+        end: true,
       },
     },
     onEnd: opts.onEnd,

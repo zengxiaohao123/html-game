@@ -54,6 +54,12 @@ const setTile = (idx, contentId) => {
 const resolved = [];
 HookDispatcher.register('onEventResolve', (p) => resolved.push(p));
 
+// 捕获冒泡 / 剧情打开（§18.2：受祝福信息只进信息区，不再发中央冒泡）
+const toasts = [];
+const shownEvents = [];
+EventBus.on(GE.TOAST_SHOW, (p) => toasts.push(p?.text || ''));
+EventBus.on(GE.STORY_SHOW, (p) => shownEvents.push(p));
+
 // ════════════════════════════════════════════════════════════
 head('RES-005 巴士站：行动力每日限一次，轮子每次进入都给');
 // ════════════════════════════════════════════════════════════
@@ -94,6 +100,23 @@ HookDispatcher.fire('onBlessed', { gs, tileIdx: 2 });
 assert(resolved.length === evBefore + 2, '受祝福 → 显示今日事件内容（再解析一次，blessed）');
 assert(resolved[resolved.length - 1].blessed === true, '祝福解析载荷 blessed=true');
 assert(gs.map.outerTiles[2].contentState.eventBlessed === true, 'eventBlessed 状态已记账');
+const previewName = gs.map.outerTiles[2].contentState.eventPreviewName;
+assert(!!previewName, '受祝福把「今日事件」写入信息区地块内容（eventPreviewName）', previewName);
+assert(!toasts.some((t) => t.includes(previewName)),
+  '受祝福信息不再发屏幕中间的冒泡提醒', toasts.slice(-3));
+
+head('RES-001 受祝福预览：进入时复用锁定的条目，跨天失效');
+setTile(6, 'resource_event');
+HookDispatcher.fire('onBlessed', { gs, tileIdx: 6 });
+const previewId = gs.map.outerTiles[6].contentState.eventPreviewId;
+assert(!!previewId, '受祝福锁定 eventPreviewId', previewId);
+const shownBefore = shownEvents.length;
+HookDispatcher.fire('onEnter', { gs, tileIdx: 6 });
+assert(shownEvents.length === shownBefore + 1, '进入事件点打开剧情', shownEvents.length - shownBefore);
+assert(shownEvents[shownEvents.length - 1].ctx.eventId === previewId,
+  '进入事件复用受祝福预览锁定的条目', shownEvents[shownEvents.length - 1].ctx.eventId);
+assert(gs.map.outerTiles[6].contentState.eventPreviewId === null,
+  '预览在进入时被消费（清空 eventPreviewId）');
 
 // ════════════════════════════════════════════════════════════
 head('RES-002 奖励点：每日限一次 + 祝福「下次高价值」记账');
@@ -250,6 +273,17 @@ const h5 = huntCreature(gs, 1, 'normal');
 assert(h5.ok === true && h5.success === true && h5.rate === 1, '超出 100% 按 100% 计', h5.rate);
 
 Math.random = origRandom;
+
+// ════════════════════════════════════════════════════════════
+head('RES-001 受祝福预览：跨天失效（受祝福只当日有效）');
+// ════════════════════════════════════════════════════════════
+setTile(7, 'resource_event');
+HookDispatcher.fire('onBlessed', { gs, tileIdx: 7 });
+assert(!!gs.map.outerTiles[7].contentState.eventPreviewId, '受祝福锁定 eventPreviewId');
+startNewDay(gs);
+assert(gs.map.outerTiles[7].contentState.eventPreviewId === null
+  && gs.map.outerTiles[7].contentState.eventPreviewName === null,
+  '跨天后预览失效（受祝福只当日有效）');
 
 // ════════════════════════════════════════════════════════════
 console.log(`\n结果：${pass} 通过，${fail} 失败`);

@@ -2,15 +2,18 @@
 // §16.5 剧情区 + 选项区（剧情与事件共用同一套 UI）
 //
 // 结构（对照 docs/_art-references/事件ui点击前.jpg / 事件ui点击一次.jpg）：
-//   · 剧情区：屏幕下方居中，左侧圆形事件徽记 + 右侧正文（多段、逐段推进）
-//     - 不显示标题行（本轮需求）；脚本里的 title 只用于日志 / aria，不渲染
-//     - 右下「▼ 继续」呼吸指示（有选项时改为「请选择」，且不允许推进）
+//   · 剧情区：屏幕底部通栏（左右各留 2vw），左侧圆形事件徽记 + 右侧正文
+//     - 正文宽度≈屏幕宽度，字号大于旧版；不显示标题行（title 只用于日志 / aria）
+//     - **不显示「继续」「请选择」等提示文本**：叙事段落靠点击 / 空格 / 回车推进
 //     - 右上 ✖ = 跳过入口，点击后走 DialogBox 二次确认（§16.5）
-//   · 选项区：右侧中部竖排选项卡片（键位徽章 + 主标题 + 副标题）
-//     - 鼠标点击 / 数字键 1~4 等价（§16.4 选项模式）
-//     - 首次点击 = 待确认：浅绿底 + 卡内「你确定这么做？」+ 圆形确认钮
-//     - 再次点击（或点圆形确认钮）= 同一 tick 立即生效，随后该卡 1.5 秒淡出
+//   · 选项区：右侧竖排选项卡片（主标题 + 副标题 + 详情，全部常驻显示）
+//     - 与正文同节点出现：描述完立即给选项，不再多一次点击
+//     - 鼠标点击 / 数字键 1~4 等价（§16.4 选项模式）；不渲染数字徽章
+//     - 首次点击 = 待确认：浅绿底 + **只多一行**「你确定这么做？」（+ 绝对定位确认钮，
+//       不改变卡片高度）；详情不会在点击后才出现
+//     - 再次点击（或点确认钮）= 同一 tick 立即生效，随后该卡 1.5 秒淡出
 //     - 禁用态灰化、不可点、不进待确认
+//   · 结果态：节点既无选项、也无 next 时，点击屏幕任意处关闭事件
 //   · 输入封锁：由 InputGate 读取 this.visible → INPUT_BLOCK.STORY
 //
 // 数据驱动（见 src/data/stories.js）：UI 不写死任何文案；
@@ -30,6 +33,13 @@ import { applyEventEffects } from '../systems/EventEffects.js';
 /** 选项上限（本轮需求 1~4 个） */
 export const MAX_OPTIONS = 4;
 
+/** 事件层 z-index：低于面板 6000 / 设置 6200，高于快捷栏与功能区 5600 */
+export const STORY_Z = {
+  MASK: 5700,
+  LAYER: 5750,
+  RESULT_MASK: 8000, // 结果态点任意处关闭（仍低于 DialogBox 9100）
+};
+
 /** 正文规范化：数组 = 多段（段间空一行），字符串保留自身换行 */
 function normalizeText(text) {
   if (Array.isArray(text)) return text.filter((s) => s != null && s !== '').join('\n\n');
@@ -44,12 +54,10 @@ export class StoryUI {
     this.storyPanel = null;    // 剧情区
     this.textEl = null;        // 正文
     this.emblemEl = null;      // 圆形徽记
-    this.promptEl = null;      // 「继续 / 请选择」指示
-    this.promptTextEl = null;
-    this.promptArrowEl = null;
     this.optionAreaEl = null;  // 选项区
 
     this.visible = false;
+    this._resultMode = false;  // 结果文本态：点击屏幕任意处 = 关闭事件
     this.script = null;
     this.nodeKey = null;
     this.ctx = {};
@@ -57,7 +65,6 @@ export class StoryUI {
     this._options = [];
     this.optionBtns = [];
     this._hints = [];
-    this._details = [];
     this._confirmBtns = [];
     this._confirming = false;   // 确认后的淡出期（禁止再次选择）
     this._pending = null;       // 选项结算后的去向 {kind:'node'|'end', key}
@@ -72,22 +79,30 @@ export class StoryUI {
   // ─────────────────────────────────────── 骨架
   mount(parent = qs('body')) {
     // 薄纱：没有事件背景图，用暗色遮罩保证正文可读，并拦截地图 / 快捷栏点击
+    // 层级（§18.2 / §19）：高于地图、快捷栏、功能区（≤5600）与信息区（100），
+    // 但 **低于** 背包 / 角色 / 编队 / 任务等面板（6000）与设置（6200）。
+    // 结果文本态把薄纱临时抬到 8000，用于「点屏幕任意处关闭」（仍低于 DialogBox 9100）。
     this.mask = createEl('div', {
       class: ['story-mask'],
       style: {
         position: 'fixed', inset: '0',
         backgroundColor: 'rgba(14, 20, 24, 0.34)',
-        zIndex: '8950',
+        zIndex: String(STORY_Z.MASK),
         display: 'none',
       },
       parent,
     });
+    this.mask.onclick = () => {
+      if (!this.visible) return;
+      if (this._resultMode) { this._finish('result-dismiss'); return; }
+      this.advance();
+    };
 
     this.layer = createEl('div', {
       class: ['story-layer'],
       style: {
         position: 'fixed', inset: '0',
-        zIndex: '9000',
+        zIndex: String(STORY_Z.LAYER),
         pointerEvents: 'none',
         display: 'none',
       },
@@ -116,17 +131,12 @@ export class StoryUI {
   }
 
   _mountStoryPanel() {
+    // 底部通栏：宽度≈屏幕宽度（左右各留 2vw），位置 / 字号见 story.css
     this.storyPanel = createEl('div', {
       class: ['story-panel'],
       style: {
         position: 'absolute',
-        left: '50%', bottom: '104px',
-        transform: 'translateX(-50%)',
-        width: 'min(880px, 66vw)',
-        minHeight: '132px',
         pointerEvents: 'auto',
-        display: 'flex', alignItems: 'center', gap: '18px',
-        padding: '18px 22px 16px 18px',
         cursor: 'pointer',
       },
       parent: this.layer,
@@ -141,7 +151,6 @@ export class StoryUI {
 
     const body = createEl('div', {
       class: ['story-body'],
-      style: { flex: '1', minWidth: '0', display: 'flex', flexDirection: 'column', gap: '8px' },
       parent: this.storyPanel,
     });
 
@@ -150,22 +159,7 @@ export class StoryUI {
       parent: body,
     });
 
-    const foot = createEl('div', {
-      class: ['story-foot'],
-      parent: body,
-    });
-    this.promptArrowEl = createEl('span', {
-      class: ['story-prompt-arrow'],
-      text: '▼',
-      parent: foot,
-    });
-    this.promptTextEl = createEl('span', {
-      class: ['story-prompt-text'],
-      text: '继续',
-      parent: foot,
-    });
-    this.promptEl = foot;
-
+    // 注意：不创建「继续 / 请选择」提示（参考图没有，且属于无用提示文本）
     // 右上 ✖：与现有面板统一（奶白底 + 深棕描边），点击 = 跳过入口
     const closeBtn = createEl('button', {
       class: ['story-close'],
@@ -206,6 +200,7 @@ export class StoryUI {
     this._confirming = false;
     this._pending = null;
     this._settled = new Set();
+    this._exitResultMode();
     this._clearOptions();
 
     this.script = script;
@@ -288,7 +283,7 @@ export class StoryUI {
     this._clearOptions();
     this._options = this._collectOptions(node);
     this._renderOptions();
-    this._updatePrompt();
+    this._syncResultMode();
     return true;
   }
 
@@ -321,7 +316,7 @@ export class StoryUI {
     this._clearOptions();
     this._options = this._collectOptions(node);
     this._renderOptions();
-    this._updatePrompt();
+    this._syncResultMode();
     if (typeof node.onEnter === 'function') {
       try { node.onEnter(this.ctx); } catch (err) { devLog.error('[StoryUI.onEnter]', err); }
     }
@@ -342,22 +337,39 @@ export class StoryUI {
     this.nodeKey = key;
     this.ctx.nodeKey = key;
     this.textEl.textContent = normalizeText(node.text);
-    this.promptEl.style.display = 'none';
     EventBus.emit(GE.STORY_NODE, { id: this.script?.id, nodeKey: key });
     return true;
   }
 
-  _updatePrompt() {
-    this.promptEl.style.display = 'flex';
-    if (this._options.length > 0) {
-      this.promptEl.classList.add('selecting');
-      this.promptArrowEl.style.display = 'none';
-      this.promptTextEl.textContent = '请选择';
-      return;
+  /**
+   * 结果态判定：节点既没有选项、也没有 next（或标了 end）时，
+   * 点击屏幕任意处关闭事件（参考图结果文本的收尾方式）。
+   * 叙事推进态 / 选项态不接管全屏点击。
+   */
+  _syncResultMode() {
+    const node = this._node();
+    const isResult = !!node
+      && this._options.length === 0
+      && (node.end === true || !node.next);
+    if (isResult && !this._confirming) this._enterResultMode();
+    else this._exitResultMode();
+  }
+
+  _enterResultMode() {
+    if (this._resultMode) return;
+    this._resultMode = true;
+    if (this.mask) {
+      this.mask.style.zIndex = String(STORY_Z.RESULT_MASK); // 盖住面板也盖住快捷栏：点任意处关闭
+      this.mask.style.cursor = 'pointer';
     }
-    this.promptEl.classList.remove('selecting');
-    this.promptArrowEl.style.display = 'inline-block';
-    this.promptTextEl.textContent = '继续';
+  }
+
+  _exitResultMode() {
+    this._resultMode = false;
+    if (this.mask) {
+      this.mask.style.zIndex = String(STORY_Z.MASK);
+      this.mask.style.cursor = '';
+    }
   }
 
   _pulseOptions() {
@@ -373,7 +385,6 @@ export class StoryUI {
     this._options = [];
     this.optionBtns = [];
     this._hints = [];
-    this._details = [];
     this._confirmBtns = [];
     if (this.optionAreaEl) {
       clearChildren(this.optionAreaEl);
@@ -388,7 +399,6 @@ export class StoryUI {
     clearChildren(area);
     this.optionBtns = [];
     this._hints = [];
-    this._details = [];
     this._confirmBtns = [];
     if (!this._options.length) { area.style.display = 'none'; return; }
 
@@ -402,17 +412,11 @@ export class StoryUI {
         parent: area,
       });
 
-      const top = createEl('div', { class: ['story-option-top'], parent: card });
-      createEl('span', {
-        class: ['story-option-key'],
-        text: String(i + 1),
-        attrs: { 'aria-hidden': 'true' },
-        parent: top,
-      });
-      createEl('span', {
+      // 只渲染玩家可见文本：label 为唯一主文本，不渲染数字徽章 / 分支编号
+      createEl('div', {
         class: ['story-option-label'],
         text: String(opt.label || '选项'),
-        parent: top,
+        parent: card,
       });
 
       if (opt.sub) {
@@ -426,19 +430,19 @@ export class StoryUI {
         });
       }
 
-      // 选中后展开的详情（参考图第二张）
+      // 详情常驻显示（不再点击后才展开——点击前后卡片高度只差一行确认文案）
       const detail = createEl('div', {
         class: ['story-option-detail'],
         text: String(opt.detail || ''),
         parent: card,
       });
-      detail.style.display = 'none';
+      if (!opt.detail) detail.style.display = 'none';
 
-      // 圆形确认钮（参考图第二张右侧）
+      // 圆形确认钮：绝对定位，出现时不撑高卡片（参考图第二张右侧）
       const confirmBtn = createEl('button', {
         class: ['story-option-confirm'],
         text: '✓',
-        attrs: { title: '确定这么做？', 'aria-label': '确定这么做？' },
+        attrs: { title: CONFIRM_TEXT, 'aria-label': CONFIRM_TEXT },
         parent: card,
       });
       confirmBtn.style.display = 'none';
@@ -447,7 +451,7 @@ export class StoryUI {
         this._applyOption(i);
       };
 
-      // 待确认文案只在卡片内（§16.4，禁止悬浮到角落）
+      // 待确认文案只在卡片内（§16.4，禁止悬浮到角落）；点击后**只多这一行**
       const hint = createEl('div', {
         class: ['story-option-hint'],
         text: CONFIRM_TEXT,
@@ -464,7 +468,6 @@ export class StoryUI {
 
       this.optionBtns.push(card);
       this._hints.push(hint);
-      this._details.push(detail);
       this._confirmBtns.push(confirmBtn);
     });
   }
@@ -481,11 +484,10 @@ export class StoryUI {
     this._showArmedAffordance(i);
   }
 
+  /** 待确认态：详情保持原样，只显示确认文案（唯一新增行）与绝对定位确认钮 */
   _showArmedAffordance(i) {
-    const detail = this._details[i];
     const confirmBtn = this._confirmBtns[i];
     const hint = this._hints[i];
-    if (detail && detail.style.display === 'none' && detail.textContent) detail.style.display = 'block';
     if (confirmBtn) confirmBtn.style.display = 'inline-flex';
     if (hint) hint.style.display = 'block';
   }
@@ -493,10 +495,8 @@ export class StoryUI {
   _resetArmedCard(btn) {
     const i = this.optionBtns.indexOf(btn);
     if (i < 0) return;
-    const detail = this._details[i];
     const confirmBtn = this._confirmBtns[i];
     const hint = this._hints[i];
-    if (detail) detail.style.display = 'none';
     if (confirmBtn) confirmBtn.style.display = 'none';
     if (hint) hint.style.display = 'none';
   }
@@ -618,6 +618,7 @@ export class StoryUI {
     this.visible = false;
     this._confirming = false;
     this._pending = null;
+    this._exitResultMode();
     if (this.mask) this.mask.style.display = 'none';
     if (this.layer) this.layer.style.display = 'none';
     this._clearOptions();

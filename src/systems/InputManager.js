@@ -66,6 +66,12 @@ const ACTION_TO_PANEL = {
   codex: 'codex',
 };
 
+/**
+ * 事件 / 剧情期间仍可打开的面板（§18.3）：只允许纯查看类。
+ * 设置（存读档）走 FuncBar 图标 / 设置面板自身，不经这里。
+ */
+const STORY_VIEW_PANELS = new Set(['inventory', 'role', 'task', 'codex']);
+
 export class InputManager {
   constructor(director) {
     this.director = director;
@@ -161,8 +167,11 @@ export class InputManager {
     // 仅在它是当前栈顶时生效；若上面还压着别的面板，则照常走"切换/打开"。
     const panelKey = ACTION_TO_PANEL[action];
     if (panelKey) {
-      // 剧情 / 事件期间不响应面板快捷键（保持既有输入封锁）
-      if (isStoryBlocked(this.director)) return;
+      // 通用确认弹窗（DialogBox，含剧情跳过确认）期间面板快捷键一律不响应
+      if (this.director?.dialogBox?.visible) return;
+      // 剧情 / 事件期间只放行纯查看面板（背包 / 角色 / 任务 / 图鉴）；
+      // 编队 / 合成 / 载具等会改动数据，快捷键不响应（§18.3）
+      if (isStoryBlocked(this.director) && !STORY_VIEW_PANELS.has(panelKey)) return;
       if (this._closeIfTopmost(panelKey)) return;
       EventBus.emit(GE.UI_PANEL_OPEN, { panel: panelKey });
       if (action === 'task') EventBus.emit(GE.TASK_OPEN, {});
@@ -188,12 +197,15 @@ export class InputManager {
 
       case 'buildMode':
         if (!gs) return;
+        // §18.3：事件 / 剧情期间禁止进入建造模式（放置 / 拆除都会改动数据）
+        if (isStoryBlocked(this.director)) break;
         if (gs.buildMode) BuildSystem.exitBuildMode(gs);
         else BuildSystem.enterBuildMode(gs);
         break;
 
       case 'settings': {
-        // §16.5：剧情 / 事件期间 ESC 归剧情区（打开跳过确认），不得打开设置
+        // §16.5：剧情 / 事件期间 ESC 归剧情区（打开跳过确认）。
+        // 存读档仍可用：事件期间改由顶部功能区「设置」图标进入（§18.3 例外）。
         if (isStoryBlocked(this.director)) break;
         // §16.9：ESC 走 GameDirector 的层级栈逻辑（弹窗门禁在 _handler 里统一处理）
         this.director?.handleESC?.();

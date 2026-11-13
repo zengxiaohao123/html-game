@@ -949,8 +949,18 @@ export class InfoPanel {
       }
 
       // 🎲 事件点（RES-001）：踏上即触发，此处仅显示今日状态
+      // 【受祝福时】显示今日此事件具体内容（物品库原文口径）——
+      // 该信息只出现在信息区「地块内容」，不再发屏幕中间的冒泡提醒。
       if (contentId === 'resource_event') {
         const done = !!(tile.dailyFlags && tile.dailyFlags['resource_event_onEnter']);
+        const previewName = tile.contentState?.eventPreviewName || null;
+        if (previewName) {
+          createEl('div', {
+            style: { fontSize: '12px', color: '#8a6a3a', marginBottom: '6px', textAlign: 'left' },
+            text: `✨ 受祝福：今日此事件为「${previewName}」`,
+            parent: this.bodyWrap,
+          });
+        }
         createEl('div', {
           style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
           text: done ? '🎲 今日已遇到事件（每日限一次）' : '🎲 踏上此地即遇到随机事件（每日限一次）',
@@ -1765,8 +1775,17 @@ export class InfoPanel {
   // ════════════════════════════════════════════════════════════
   // 事件订阅
   // ════════════════════════════════════════════════════════════
+  /**
+   * §18.3：事件 / 剧情期间禁止调出信息区（会遮挡选项）。
+   * 商店要经信息区进入，因此信息区一禁，商店自然进不去，不需要额外拦截。
+   */
+  _isStoryLocked() {
+    return !!window.__gameDirector?.storyUI?.visible;
+  }
+
   /** 选中指定 idx 的 tile（公开接口） */
   selectTile(tileIdx) {
+    if (this._isStoryLocked()) return;
     this.mode = 'tile';
     this.currentTileIdx = tileIdx;
     this.creatureDetailId = null;
@@ -1775,6 +1794,7 @@ export class InfoPanel {
 
   /** 切到祈福模式（供 SpiritArea 点击 momo 调用） */
   showBlessTab() {
+    if (this._isStoryLocked()) return;
     this.mode = 'bless';
     this.currentTileIdx = null;
     this.creatureDetailId = null;
@@ -1783,6 +1803,7 @@ export class InfoPanel {
 
   _subscribeEvents() {
     EventBus.on(GE.TILE_CLICKED, ({ tileIdx }) => {
+      if (this._isStoryLocked()) return;
       this.mode = 'tile';
       this.currentTileIdx = tileIdx;
       this.currentFenceIdx = null;
@@ -1791,6 +1812,7 @@ export class InfoPanel {
     });
 
     EventBus.on(GE.FENCE_TILE_CLICKED, ({ fenceIdx }) => {
+      if (this._isStoryLocked()) return;
       this.mode = 'fence';
       this.currentFenceIdx = fenceIdx;
       this.currentTileIdx = null;

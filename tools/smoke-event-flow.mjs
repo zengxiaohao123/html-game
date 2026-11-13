@@ -203,17 +203,15 @@ check(EVENT_DEFS.length >= 2, 'A-01 至少 2 个示例事件', EVENT_DEFS.length
 const simpleDef = getEventDef('evt_ph_08');
 const nestedDef = getEventDef('evt_ph_09');
 check(!!simpleDef && !!nestedDef, 'A-02 单层 / 两层示例事件都存在');
-check(Object.keys(simpleDef.nodes).length >= 4, 'A-03 单层事件包含多个节点');
-const simpleChoice = simpleDef.nodes[simpleDef.start]?.next;
+check(Object.keys(simpleDef.nodes).length >= 3, 'A-03 单层事件包含多个节点（描述 + 结果）');
+// 2026-11-13 返工：描述节点直接带选项，不再有「你打算怎么处理？」过渡节点
+const simpleChoice = simpleDef.start;
 check(Array.isArray(simpleDef.nodes[simpleChoice]?.options) && simpleDef.nodes[simpleChoice].options.length === 3,
-  'A-04 单层事件 3 个选项');
-const nestedFirst = nestedDef.nodes[nestedDef.start]?.next;
-let nestedSecondKey = nestedDef.nodes[nestedFirst]?.options?.[0]?.next;
-let nestedSecond = nestedDef.nodes[nestedSecondKey];
-while (nestedSecond && !Array.isArray(nestedSecond.options) && nestedSecond.next) {
-  nestedSecondKey = nestedSecond.next;
-  nestedSecond = nestedDef.nodes[nestedSecondKey];
-}
+  'A-04 单层事件描述节点直接带 3 个选项（无过渡节点）');
+check(!simpleDef.nodes[simpleDef.start]?.next, 'A-04b 首节点不再靠 next 跳到问题节点');
+const nestedFirst = nestedDef.start;
+const nestedSecondKey = nestedDef.nodes[nestedFirst]?.options?.[0]?.next;
+const nestedSecond = nestedDef.nodes[nestedSecondKey];
 check(!!nestedSecond && Array.isArray(nestedSecond.options) && nestedSecond.options.length === 3,
   'A-05 两层事件第一层选项能指向第二个选项节点（3 个二层选项）', nestedSecondKey);
 check(nestedSecond.options[0].effects && nestedSecond.options[1].effects
@@ -230,8 +228,9 @@ head('B. 结算时机：进入 / 推进 / 跳过都不结算');
   check(ui.visible === true, 'B-01 事件打开');
   check(gs.player.gold === gold0 && qty('item_wheat') === wheat0,
     'B-02 进入事件不结算（金币 / 物品不变）');
-  ui.advance();
-  check(ui.nodeKey === simpleChoice && ui.optionBtns.length === 3, 'B-03 推进到选项节点');
+  check(ui.nodeKey === simpleChoice && ui.optionBtns.length === 3,
+    'B-03 打开即到选项节点（描述和选项同一屏，不用多点一次）');
+  check(ui.advance() === false, 'B-03b 有选项时点击正文不越过选择');
   check(gs.player.gold === gold0 && qty('item_wheat') === wheat0,
     'B-04 展示选项仍不结算');
 }
@@ -282,11 +281,10 @@ head('D. 多级分支：第一层 → 第二层 → 不同叶子结果');
   check(ui.nodeKey === nestedFirst && ui.optionBtns.length === 2, 'D-01 第一层 2 个选项');
   choose(ui.optionBtns[0]); // 沿着痕迹走
   await tick(10);
-  check(ui.nodeKey === 'trail_scene', 'D-02 跳到第二层前置节点');
-  check(ui.advance() === true, 'D-03 推进到第二层选项');
-  check(ui.nodeKey === 'trail_choice' && ui.optionBtns.length === 3,
-    'D-04 正确到达第二层 3 个选项', ui.nodeKey);
-  assertNoLeak(nestedDef, 'trail_choice', ['trail', 'rest', 'delve', 'sow', 'A.1', 'A.2', '第一段', '第二段']);
+  // 第二层的描述节点直接带选项：确认第一层后立刻可做第二层选择
+  check(ui.nodeKey === 'trail_scene' && ui.optionBtns.length === 3,
+    'D-02 第一层确认后直接落到第二层选项（无过渡问句）', ui.nodeKey);
+  assertNoLeak(nestedDef, 'trail_scene', ['trail', 'rest', 'delve', 'sow', 'A.1', 'A.2', '第一段', '第二段']);
 }
 
 {
@@ -296,7 +294,6 @@ head('D. 多级分支：第一层 → 第二层 → 不同叶子结果');
   const creatures0 = creatureCount();
   openAtChoice(nestedDef);
   choose(ui.optionBtns[0]); await tick(10);
-  ui.advance();
   choose(ui.optionBtns[0]);
   check(gs.player.hp > hp0, 'D-05 第二层「歇脚」→ 生命回复', gs.player.hp - hp0);
   check(creatureCount() === creatures0, 'D-06 回复分支不生成生物');
@@ -308,7 +305,6 @@ head('D. 多级分支：第一层 → 第二层 → 不同叶子结果');
   const hp0 = gs.player.hp;
   openAtChoice(nestedDef);
   choose(ui.optionBtns[0]); await tick(10);
-  ui.advance();
   choose(ui.optionBtns[1]);
   check(creatureCount() === creatures0 + 1, 'D-07 第二层「继续深入」→ 生成 1 只生物', creatureCount() - creatures0);
   check(gs.player.hp === hp0, 'D-08 生物分支不改变生命');
@@ -322,7 +318,6 @@ head('D. 多级分支：第一层 → 第二层 → 不同叶子结果');
   gs.activeBuffs = gs.activeBuffs.filter((b) => b.id !== 'grumpy');
   openAtChoice(nestedDef);
   choose(ui.optionBtns[0]); await tick(10);
-  ui.advance();
   choose(ui.optionBtns[2]);
   check(tile.terrain === 'terrain_grass' && tile.terrainAmount > 0,
     'D-09 第二层「撒种子」→ 事件地块地形变化', `${tile.terrain}/${tile.terrainAmount}`);
@@ -337,21 +332,35 @@ head('E. 跳过：只停在选项节点，不越过分支拿结果');
 {
   const gold0 = gs.player.gold;
   const wheat0 = qty('item_wheat');
-  ui.show(buildEventStory(simpleDef), { tileIdx: 0, eventId: simpleDef.id });
-  check(ui.skip() === true && ui.nodeKey === simpleChoice, 'E-01 跳过停在第一个选项节点');
+  // 带叙事前情的脚本：跳过只能推进到下一个选项节点
+  const skipStory = {
+    id: 't_skip',
+    start: 'prelude',
+    nodes: {
+      prelude: { text: '前情提要。', next: 'pick' },
+      pick: {
+        text: '描述完直接给选项。',
+        options: [
+          { id: 'x', label: '选项甲', next: 'leaf' },
+          { id: 'y', label: '选项乙', next: 'leaf' },
+        ],
+      },
+      leaf: { text: '结果。', end: true },
+    },
+  };
+  ui.show(skipStory);
+  check(ui.skip() === true && ui.nodeKey === 'pick', 'E-01 跳过停在第一个选项节点');
   check(gs.player.gold === gold0 && qty('item_wheat') === wheat0, 'E-02 跳过不结算');
-  check(ui.skip() === false && ui.nodeKey === simpleChoice, 'E-03 选项节点拒绝跳过');
-  check(ui.optionBtns.length === 3, 'E-04 跳过失败后选项仍完整');
+  check(ui.skip() === false && ui.nodeKey === 'pick', 'E-03 选项节点拒绝跳过');
+  check(ui.optionBtns.length === 2, 'E-04 跳过失败后选项仍完整');
   ui.closeSilently('test-cleanup');
 
+  // 示例事件同样是选项开头：跳过直接被拒绝，不会越过选择拿结果
   openAtChoice(nestedDef);
-  ui.advance(); // 到 fork（已在 fork）
-  choose(ui.optionBtns[0]); await tick(10);
   const before = creatureCount();
-  check(ui.nodeKey === 'trail_scene' && ui.skip() === true, 'E-05 第二层前置节点可跳过');
-  check(ui.nodeKey === 'trail_choice', 'E-06 跳过只到第二层选项，不越过分支');
-  check(ui.skip() === false, 'E-07 到达第二层选项后不能再跳过');
-  check(creatureCount() === before, 'E-08 跳过不会拿到分支结果');
+  check(ui.skip() === false && ui.nodeKey === nestedFirst, 'E-05 选项节点开头时跳过被拒绝');
+  check(ui.optionBtns.length === 2, 'E-06 跳过失败后第一层选项仍完整');
+  check(creatureCount() === before, 'E-07 跳过不会拿到分支结果');
   ui.closeSilently('test-cleanup');
 }
 

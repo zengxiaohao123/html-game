@@ -791,17 +791,25 @@ const FacilityCabbage = {
 //   StoryUI → applyEventEffects 执行，同一选项只执行一次。受祝福预览不结算。
 function resolveEventTile(gs, tileIdx, blessed) {
   // 懒抽取：只在此处（即将进入 / 受祝福显示）才真正抽取
-  const st = (gs.map.outerTiles[tileIdx].contentState ||= {});
+  const tile = gs.map.outerTiles[tileIdx];
+  const st = (tile.contentState ||= {});
   let entry;
-  let summary = '';
   if (blessed) {
-    // 受祝福：仅「显示今日此事件具体内容」——仅当今日已进入过（事件已结算）时复用同一条目，
-    //   不重复结算效果；否则视为预览抽取（不结算）
-    const todayFired = !!gs.map.outerTiles[tileIdx].dailyFlags[flagKey('resource_event', 'onEnter')];
-    entry = (todayFired && EVENT_POOL_PLACEHOLDER.find((e) => e.id === st.eventTodayId)) || drawPlaceholderEvent();
-    summary = '（今日事件预览）';
+    // 受祝福：仅「显示今日此事件具体内容」——
+    //   · 今日已进入过 → 复用当日条目（不重复结算）
+    //   · 尚未进入 → 预览抽取并锁定 eventPreviewId，进入时复用同一条目
+    // 该信息只写入地块内容，由信息区「地块内容」展示，不发屏幕中间的冒泡提醒。
+    const todayFired = !!tile.dailyFlags[flagKey('resource_event', 'onEnter')];
+    entry = (todayFired && EVENT_POOL_PLACEHOLDER.find((e) => e.id === st.eventTodayId))
+      || EVENT_POOL_PLACEHOLDER.find((e) => e.id === st.eventPreviewId)
+      || drawPlaceholderEvent();
+    st.eventPreviewId = entry.id;
+    st.eventPreviewName = entry.name;
   } else {
-    entry = drawPlaceholderEvent();
+    // 进入：优先复用受祝福预览锁定的事件，预览随即消费
+    entry = EVENT_POOL_PLACEHOLDER.find((e) => e.id === st.eventPreviewId) || drawPlaceholderEvent();
+    st.eventPreviewId = null;
+    st.eventPreviewName = null;
     st.eventTodayId = entry.id; // 供受祝福时显示同一事件
     // §16.5 / §18.1：真正进入事件点时打开剧情区 + 选项区（节点表由条目数据生成，UI 不写死文案）
     // 进入即不结算：数值/物品/地形等变化一律由玩家确认的选项 effects 决定。
@@ -811,7 +819,6 @@ function resolveEventTile(gs, tileIdx, blessed) {
     });
   }
   HookDispatcher.fire('onEventResolve', { gs, tileIdx, type: 'event', eventId: entry.id, blessed });
-  EventBus.emit(GE.TOAST_SHOW, { text: `🎲 ${entry.name}${summary ? ' → ' + summary : ''}`, duration: 2200 });
 }
 
 const ResourceEvent = {
