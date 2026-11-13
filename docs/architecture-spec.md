@@ -415,17 +415,20 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 
 - **文件**：`src/ui/StoryUI.js`（`StoryUI` 类）、`src/ui/styles/story.css`、`src/data/stories.js`、
   `src/data/events.js`（事件节点表）、`src/systems/EventEffects.js`（选项结算执行器）。
-- **两个分区**（2026-11-13 再次按参考图对齐，比例取自 `docs/_art-references/事件ui点击前.jpg` / `事件ui一次点击.jpg`）：
+- **两个分区**（2026-11-13 重建，比例逐块量自 `docs/_art-references/事件ui点击前.jpg` / `事件ui一次点击.jpg`，1920×868，两图一致）：
   - 剧情区 `.story-panel`：**屏幕底部通栏、无卡片外框**，底部由透明到近黑的渐变 + 中央暗角；
-    左侧 `.story-emblem` 圆形徽记（约 `11.2vw`，左下，深绿渐变 + 细金环），右侧 `.story-body` **绝对定位**：
-    `left 22.5vw / top 70.6vh / width 52vw`，顶边不随文本行数浮动。
-    `.story-title` 松林青绿 `#b3e0c9` / `3vh`；`.story-text` 暖米白 `#e4dfd5` / `2.45vh` / 行高 `1.38`。
-    右下 `.story-close`（✖，跳过入口）。**没有推进提示**：不显示「继续」「请选择」。
-  - 选项区 `.option-area`：右侧竖排（`right:10.9vw / top:22.5vh`，宽 `23.8vw`）；
-    每个 `.story-option` 是透明容器，**固定占位 `20.62vh`**（条顶间距与参考图 179px/868 对齐，描述多一行也不推移下一条），
-    内含米白纸感 `.story-option-bar`（高 `4.6vh`，纸面渐变 + 茶金内边线 + 柔光投影）+ 条下描述；
-    条内标题 `3vh / #241f16 / 700`，条下描述 `2.35vh / #d9d3c5`，`sub / detail` 全部常驻渲染，不渲染数字徽章。
-    待确认浅绿底色只涂在 `.story-option-bar` 上（`ConfirmAction` 的 arm 目标是选项条，不是整块容器）。
+    左侧 `.story-emblem` 圆形徽记（`min(8.6vw,17.2vh)`，圆心 `(14.7vw,76.3vh)`，深绿渐变 + 细金环 + 反光），
+    右侧 `.story-body`：`left 22.5vw / top 70.4vh / width 37.5vw`，顶边不随文本行数浮动。
+    `.story-title` 松林青绿 `#afe4c9` / `2.65vh`（墨迹 `70.8vh` 起）；`.story-text` 暖米白 `#f4f1e8` / `2.3vh` / 行高 `1.38`
+    （首行墨迹 `74.9vh`、行距 `3.17vh`、末行 `86.3vh`；最大高 `14.2vh`，超出块内滚动）。
+    右下 `.story-skip`（✖，跳过入口）。**没有推进提示**：不显示「继续」「请选择」。
+  - 选项区 `.option-area`：右侧竖排（`left:65.3vw / top:22.2vh`，宽 `24vw`）；
+    每个 `.story-option` 是透明容器，**最小占位 `20.62vh`**（条顶间距与参考图对齐；描述变长时按实际高度增高，绝不与下一条重叠），
+    内含米白纸感 `.story-option-bar`（高 `5vh`，纸面渐变 + 茶金内边线 + 柔光投影）+ 条下描述 + 确认预留行；
+    条内标题 `2.85vh / #2b2114 / 700`，条下描述 `2.3vh / #e9e1cf`，`sub / detail` 全部常驻渲染，不渲染数字徽章。
+    四个选项时整列 `scale(0.84)`（`transform-origin: top left`）并把节距收到 `19.5vh`。
+  - 确认行 `.story-option-confirm-row`：描述下方**始终占位**的 `3.6vh` 行，内含「你确定这么做？」与圆形印章；
+    出现时不压字、不顶开描述、不推移其它选项。
 - **数据驱动**：`STORY_SHOW {script, ctx}` 播放；`script = {id,title,start,nodes,onEnd}`，
   `nodes[key] = {text,options?,next?,end?,onEnter?}`，`Option = {id,label,sub,detail,disabled,disabledReason,effects,next,end,onSelect}`。
   事件点（RES-001）由 `buildEventStory(entry)` 生成脚本：条目带 `nodes` 时直接使用节点表（`src/data/events.js`），
@@ -444,12 +447,15 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
   只读 `visible` 供 InputGate 使用。`refresh()` 不重建待确认 / 淡出中的选项，避免打断玩家手势。
 - **推进**：`advance()` 在选项节点直接返回 `false`（不可越过选择）；节点 `end` 或无 `next` → 结束。
   结束统一走 `_finish(reason)`，先 `_hide()` 再广播 `STORY_END {id,reason}`，最后调 `script.onEnd(ctx)`。
-- **二次确认**：完全复用 `ConfirmAction`（`arm / isArmed / trigger`），不再写第二套状态机；
+- **二次确认**：`StoryUI` 自带 `_armedIndex` 状态机，**不再复用 `ConfirmAction` 的全局 `pointerdown` 拦截**
+  （旧实现按整卡外的描述会先被判定为「点到别处」而解除待确认，导致「点很多次也确认不了」）。
+  **整张选项卡（白条 + 描述 + 确认行）都是点击目标**：第一次点击 → 待确认（`_arm`），第二次点击同一张卡任意位置 → `_applyOption` 同 tick 生效；
+  `document` 的 `click` 守卫只在 `card.contains(target)` 为假时才 `_disarm()`，因此卡内任意按下 / 抬起组合都稳定生效。
   **所有选项（包括「离开」）一律二次确认**，没有单击即生效的例外（`Option.safe` 已移除）。
-  待确认态**只多一行**「你确定这么做？」＋绝对定位圆形确认钮（`position:absolute`，不撑高卡片）；
   `detail` 常驻显示，禁止在点击后才展开（卡片高度不得突变）。
   确认后**业务先于动画**：`effects` 结算 + `onSelect` + 正文切换同一 tick 完成，卡片 1.5 秒淡出，淡出期整块选项区 `pointer-events:none`。
-- **跳过**：`.story-close` / ESC → `DIALOG_SHOW` 二次确认；`skip()` 沿 `next` 前进，
+  键盘：`1~4` 与鼠标同入口（同样需要两次按键），ESC 在待确认时只取消待确认、不开跳过弹窗。
+- **跳过**：`.story-skip` / ESC → `DIALOG_SHOW` 二次确认；`skip()` 沿 `next` 前进，
   遇到 `options` 节点停下（选项节点上跳过被拒绝并 Toast 提示），无后续节点则结束；跳过永不执行 `effects`。
 - **键盘**：空格 / 回车 / 点剧情区或空白薄纱 = 推进；结果态点任意处 = 关闭；`1~4` = 选项（与鼠标同入口）；
   ESC = 跳过入口；`DialogBox.visible` 时让渡键盘（跳过确认期间不拦截）。
@@ -462,6 +468,8 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
   - `InventoryPanel`：事件期间 `_renderActionZone()` 直接返回（不渲染放置 / 使用 / 出货箱等改数据按钮），只保留查看。
   - `InfoPanel`：`_isStoryLocked()` 时拒绝 `selectTile / showBlessTab / TILE_CLICKED / FENCE_TILE_CLICKED`；
     信息区一禁，经信息区进入的商店自然不可达。
+  - `StoryUI.show()`：进入剧情时若 `director.openPanels` 里还有白名单之外的界面（如 `info`），立即发 `UI_PANEL_CLOSE` 收起，
+    只保留 `inventory / role / task / codex / settings`，避免旧面板盖在选项区之上。
 - **层级**：薄纱 `.story-mask` **5700**、剧情区 / 选项区 **5750**（高于地图 / 快捷栏 5600 / 信息区 100，
   低于面板 6000 与设置 6200）；**结果态不改变层级与薄纱浓度**（避免把剧情区一起压暗），
   点击任意处关闭由 `5700` 薄纱 + 剧情区点击共同承接；`DialogBox` **9100** 始终最高。

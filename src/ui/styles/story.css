@@ -1,303 +1,476 @@
 /* src/ui/styles/story.css
  * §18.2 事件 / 剧情 UI（剧情区 + 选项区）
  *
- * 排版：逐块对齐 docs/_art-references/事件ui点击前.jpg / 事件ui一次点击.jpg（1920×868）
- *   选项条 1：x 1254–1710，y 195–234（宽 456 / 高 40）
- *   选项条 2：y 374–414，选项条 3：y 553–592（条顶间距 179 → 20.62vh）
- *   事件标题顶 y 613（70.6vh），左 432（22.5vw）；正文 4 行，行距 29px
- *   徽记圆心约 (336, 692)，直径约 215
- * 美术：版式不动的部分之外，按《转盘农场》的暖色手绘田园风做质感
- *   —— 米白纸感选项条、茶金描边、松林绿点缀、柔和投影与暗角。
+ * 版式：逐块量取自 docs/_art-references/事件ui点击前.jpg / 事件ui一次点击.jpg（1920×868，两图数值一致）
+ *   · 事件文本块：文字左边界 22.5vw、右边界 60.0vw（块宽 37.5vw）
+ *   · 标题墨迹 70.8vh–73.0vh；正文首行墨迹 74.9vh，行距 3.17vh，纸条末行 86.3vh
+ *   · 圆形徽记：直径约 8.6vw / 17.2vh，圆心 (14.7vw, 76.3vh)，与文字列左缘空 3vw
+ *   · 选项白条：x 65.3%–89.3vw，条高 4.72vh，三条条顶 22.5 / 43.1 / 63.7vh，节距 20.62vh
+ *   · 选项标题在条内（左内边距 1.5vw），描述在条下、左缩进 2.7vw 常驻显示
+ *   · 确认提示与确认印章在描述下方的预留行内（始终占位），不压字、不顶开下一条
+ *
+ * 美术：暖米白纸带 + 茶金描边 + 松林绿标题 + 落地厚投影 + 内高光，
+ *       与《转盘农场》手绘田园风一致；不使用纯色块与默认字体。
  */
 
-/* ── 剧情区（屏幕底部通栏，无卡片外框） ── */
-.story-panel {
+.story-layer {
+  font-family: "LXGW WenKai TC", "YouYuan", "Microsoft YaHei", "PingFang SC", sans-serif;
+  color: #ece4d4;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ── 底部渐变布幔：由透明过渡到近黑，左侧再压一层暖暗，保证正文可读 ── */
+.story-wash {
+  position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 38vh;
-  box-sizing: border-box;
-  padding: 0;
+  height: 40vh;
+  pointer-events: none;
   background:
-    radial-gradient(120% 90% at 50% 120%, rgba(0, 0, 0, 0.62) 0%, rgba(0, 0, 0, 0) 62%),
+    radial-gradient(78% 96% at 14% 100%, rgba(4, 9, 7, 0.9) 0%, rgba(4, 9, 7, 0.52) 40%, rgba(4, 9, 7, 0) 74%),
     linear-gradient(to top,
-      rgba(6, 9, 7, 0.96) 0%,
-      rgba(9, 14, 11, 0.86) 30%,
-      rgba(10, 16, 12, 0.55) 62%,
-      rgba(10, 16, 12, 0) 100%);
-  font-family: "LXGW WenKai TC", "Microsoft YaHei", "PingFang SC", sans-serif;
-  color: #e6e1d6;
-  animation: story-rise 0.22s ease-out;
-  user-select: none;
+      rgba(5, 8, 6, 0.94) 0%,
+      rgba(5, 9, 7, 0.8) 16%,
+      rgba(6, 10, 8, 0.46) 44%,
+      rgba(6, 10, 8, 0.16) 66%,
+      rgba(6, 10, 8, 0) 88%);
+  opacity: 0.98;
 }
 
-/* 左侧圆形事件徽记（参考图直径约 11.2vw，圆心 17.5vw / 79.7vh） */
+/* ── 事件文本块（左下；锚点固定，不随行数浮动） ── */
+.story-panel {
+  position: absolute;
+  left: 22.5vw;
+  top: 70.4vh;
+  width: 37.5vw;
+  min-height: 16vh;
+  padding-bottom: 1.2vh;
+  animation: story-rise 0.24s ease-out;
+}
+
+/* 左侧圆形徽记：双层环 + 内辉光 + 高点反光（圆心 76.3%H） */
 .story-emblem {
   position: absolute;
-  left: 11.9vw;
-  bottom: 7.95vh;
-  width: 11.2vw;
-  height: 11.2vw;
+  left: -11.8vw;
+  top: -2.7vh;
+  width: min(8.6vw, 17.2vh);
+  height: min(8.6vw, 17.2vh);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 4.4vw;
-  line-height: 1;
   background:
-    radial-gradient(circle at 36% 28%, rgba(196, 236, 214, 0.55) 0%, rgba(74, 132, 110, 0.45) 34%, rgba(20, 48, 40, 0.92) 72%, rgba(6, 16, 13, 0.98) 100%);
-  border: 1px solid rgba(186, 232, 210, 0.42);
+    radial-gradient(circle at 34% 26%, rgba(196, 240, 214, 0.5) 0%, rgba(74, 138, 112, 0.42) 32%, rgba(18, 46, 38, 0.94) 70%, rgba(5, 14, 11, 0.99) 100%);
+  border: 2px solid rgba(196, 232, 210, 0.5);
   box-shadow:
-    0 0 0 6px rgba(120, 190, 164, 0.08),
-    0 0 3.6vw rgba(88, 190, 160, 0.32),
-    inset 0 0 2.2vw rgba(8, 24, 20, 0.75),
-    inset 0 2px 6px rgba(255, 255, 255, 0.18);
-  text-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+    0 0 0 0.35vw rgba(120, 190, 164, 0.07),
+    0 0 2.6vw rgba(88, 198, 160, 0.3),
+    inset 0 0 1.6vw rgba(6, 22, 18, 0.8),
+    inset 0 2px 6px rgba(255, 255, 255, 0.22),
+    0 8px 20px rgba(0, 0, 0, 0.55);
 }
 
-/* 徽记外圈细金环 */
-.story-emblem::after {
-  content: "";
+.story-emblem-ring {
   position: absolute;
-  inset: -0.55vw;
+  inset: -0.45vw;
   border-radius: 50%;
-  border: 1px solid rgba(214, 188, 128, 0.28);
-  box-shadow: inset 0 0 1.4vw rgba(214, 188, 128, 0.12);
+  border: 1px solid rgba(214, 188, 128, 0.32);
+  box-shadow: inset 0 0 1.2vw rgba(214, 188, 128, 0.14);
   pointer-events: none;
 }
 
-/* 正文容器：位置固定，不随文本行数上下浮动。
-   .story-panel 自身顶边在 62vh（高 38vh），故内部 top = 70.6 - 62 = 8.6vh */
-.story-body {
+.story-emblem-ring::after {
+  content: "";
   position: absolute;
-  left: 22.5vw;
-  top: 8.6vh;
-  width: 52vw;
-  display: flex;
-  flex-direction: column;
+  inset: 0.32vw;
+  border-radius: 50%;
+  border: 1px dashed rgba(214, 228, 206, 0.24);
+  animation: emblem-drift 26s linear infinite;
+}
+
+.story-emblem-glyph {
+  position: relative;
+  z-index: 1;
+  font-size: min(4.1vw, 8.4vh);
+  line-height: 1;
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.6));
+}
+
+.story-emblem-glint {
+  position: absolute;
+  left: 18%;
+  top: 12%;
+  width: 34%;
+  height: 18%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0) 70%);
+  transform: rotate(-28deg);
+  pointer-events: none;
+}
+
+/* 正文列：标题与正文按参考图行距顺序排布（标题墨迹 66.4%H，正文首行 70.2%H） */
+.story-body {
+  position: relative;
   min-width: 0;
 }
 
-/* 事件标题（松林青绿，诗意的小标题） */
+/* 事件标题：松林青绿 + 左侧菱形装饰 + 细金下划线 */
 .story-title {
-  font-size: 3vh;
+  position: relative;
+  font-size: clamp(15px, 2.65vh, 31px);
   font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: 0.09em;
-  color: #b3e0c9;
-  margin-bottom: 0.6vh;
+  line-height: 1.15;
+  letter-spacing: 0.07em;
+  color: #afe4c9;
   text-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.85),
-    0 0 1.6vh rgba(96, 200, 164, 0.28);
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    0 0 1.2vh rgba(86, 206, 162, 0.35);
+  margin-bottom: 0.85vh;
 }
 
-/* 事件正文（暖米白，向内收的柔和暗影保证在场景上也清晰） */
-.story-text {
-  font-size: 2.45vh;
-  line-height: 1.38;
-  letter-spacing: 0.015em;
-  color: #e4dfd5;
-  white-space: pre-wrap;
-  max-height: 22vh;
-  overflow-y: auto;
-  text-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.9),
-    0 0 12px rgba(0, 0, 0, 0.55);
-}
-
-/* 右下 ✖：跳过入口，做成低调的圆形出口钮 */
-.story-close {
+.story-title::before {
+  content: "";
   position: absolute;
-  right: 1.6vw;
-  bottom: 2.4vh;
-  width: 4.2vh;
-  height: 4.2vh;
+  left: -1.35vw;
+  top: 50%;
+  width: min(0.62vw, 1.4vh);
+  height: min(0.62vw, 1.4vh);
+  background: linear-gradient(145deg, #ffe7ae 0%, #d8a94f 100%);
+  border: 1px solid rgba(70, 48, 18, 0.55);
+  transform: translateY(-50%) rotate(45deg);
+  box-shadow: 0 0 1vh rgba(255, 204, 108, 0.5);
+}
+
+.story-title::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0.1vh;
+  width: 8.5vw;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(214, 178, 110, 0.6) 0%, rgba(214, 178, 110, 0) 100%);
+  pointer-events: none;
+}
+
+/* 事件正文：暖米白，双层暗影，行距 1.38（对齐参考图 3.17vh 行距） */
+.story-text {
+  font-size: clamp(13px, 2.3vh, 26px);
+  line-height: 1.38;
+  letter-spacing: 0.025em;
+  color: #f4f1e8;
+  white-space: pre-wrap;
+  max-height: 14.2vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.92),
+    0 0 1.4vh rgba(0, 0, 0, 0.7);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(214, 188, 128, 0.35) transparent;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 1.6vh), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 1.6vh), transparent 100%);
+}
+
+.story-text::-webkit-scrollbar {
+  width: 4px;
+}
+
+.story-text::-webkit-scrollbar-thumb {
+  background: rgba(214, 188, 128, 0.35);
+  border-radius: 2px;
+}
+
+/* ── 右下出口（跳过入口，需二次确认） ── */
+.story-skip {
+  position: absolute;
+  right: 2.4vw;
+  top: 74vh;
+  width: min(4.6vh, 2.4vw);
+  height: min(4.6vh, 2.4vw);
   padding: 0;
-  border: 1px solid rgba(226, 208, 170, 0.34);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(74, 52, 26, 0.85);
   border-radius: 50%;
-  background: rgba(18, 24, 20, 0.55);
-  color: rgba(238, 228, 206, 0.72);
-  font-size: 1.9vh;
-  line-height: 1;
+  background:
+    radial-gradient(circle at 34% 28%, #fffdf3 0%, #f3e6c8 46%, #dcc79c 100%);
+  color: #5c4322;
   cursor: pointer;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  transition: background-color 0.12s ease, color 0.12s ease, transform 0.12s ease;
+  box-shadow:
+    0 4px 0 rgba(58, 40, 20, 0.45),
+    0 8px 16px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  transition: transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease;
+  opacity: 0.9;
 }
 
-.story-close:hover {
-  background: rgba(58, 92, 74, 0.8);
-  color: #fff8e8;
-  transform: scale(1.06);
+.story-skip:hover {
+  transform: scale(1.08);
+  filter: brightness(1.06);
+  box-shadow:
+    0 4px 0 rgba(58, 40, 20, 0.45),
+    0 10px 20px rgba(0, 0, 0, 0.5),
+    0 0 1.8vh rgba(255, 206, 112, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
 }
 
-/* ── 选项区（右侧竖排；条顶 22.5vh，右边缘 89.1vw，宽 23.8vw） ── */
+.story-skip-x {
+  font-size: min(2.1vh, 1.1vw);
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* ── 选项区（右侧竖排；条顶 22.5vh，左 65.3vw，宽 24vw） ── */
 .option-area {
   position: absolute;
-  right: 10.9vw;
-  top: 22.5vh;
-  width: 23.8vw;
-  min-width: 220px;
-  max-width: 460px;
-  max-height: 72vh;
-  overflow-y: auto;
+  left: 65.3vw;
+  top: 22.2vh;
+  width: 24vw;
+  min-width: 240px;
   display: flex;
   flex-direction: column;
   gap: 0;
   pointer-events: auto;
-  scrollbar-width: none;
 }
 
-.option-area::-webkit-scrollbar {
+/* 选项列后方的暖暗底：参考图右侧整块被压暗，保证描述在复杂场景上可读
+ * 独立元素（不随 4 选项时的整体缩放变形），四周完全柔和过渡 */
+.option-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
   display: none;
+  background:
+    radial-gradient(32vw 44vh at 78% 47%,
+      rgba(3, 7, 5, 0.78) 0%,
+      rgba(3, 7, 5, 0.56) 46%,
+      rgba(3, 7, 5, 0.24) 70%,
+      rgba(3, 7, 5, 0) 86%);
 }
 
-/* 有选项时点正文 → 轻轻抖一下（无提示文本，仅动效反馈） */
-.option-area-nudge {
-  animation: option-nudge 0.3s ease;
-}
-
-.option-nudge-target {
-  animation: option-nudge 0.3s ease;
-}
-
-/* 单个选项：固定占位 20.62vh —— 描述多一行也不会推动下一条 */
+/* 单个选项：参考节距 20.62vh；内容（多行描述）更长时按实际高度增高，绝不与下一条重叠 */
 .story-option {
   position: relative;
-  height: 20.62vh;
-  flex: 0 0 20.62vh;
+  flex: 0 0 auto;
+  min-height: var(--opt-pitch, 20.62vh);
+  padding-bottom: 1vh;
   cursor: pointer;
-  animation: story-option-in 0.18s ease-out;
-  transition: transform 0.12s ease;
+  outline: none;
+  animation: story-option-in 0.26s ease-out backwards;
+  transition: transform 0.14s ease;
 }
+
+.story-option:nth-child(1) { animation-delay: 0.02s; }
+.story-option:nth-child(2) { animation-delay: 0.07s; }
+.story-option:nth-child(3) { animation-delay: 0.12s; }
+.story-option:nth-child(4) { animation-delay: 0.17s; }
 
 .story-option:hover {
-  transform: translateX(-6px);
+  transform: translateX(-4px);
 }
 
-/* 米白纸感选项条：暖白渐变 + 茶金细边 + 右上柔光 + 落地投影 */
+.story-option:focus-visible .story-option-bar {
+  box-shadow:
+    0 0 0 2px rgba(255, 219, 138, 0.85),
+    0 6px 0 rgba(52, 34, 18, 0.35),
+    0 10px 20px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+/* 米白纸带：暖白渐变 + 纸纹 + 茶金内线 + 落地厚投影 */
 .story-option-bar {
   position: relative;
+  height: clamp(34px, 5vh, 60px);
   display: flex;
   align-items: center;
-  min-height: 4.6vh;
-  padding: 0 2.1vw;
-  box-sizing: border-box;
-  border-radius: 2px;
+  padding: 0 1.9vw 0 1.5vw;
+  overflow: hidden;
+  border: 2px solid #4b3520;
+  border-radius: 7px;
   background:
-    linear-gradient(100deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0) 38%),
-    repeating-linear-gradient(90deg, rgba(126, 104, 66, 0.035) 0 1px, rgba(0, 0, 0, 0) 1px 6px),
-    linear-gradient(180deg, #fffdf6 0%, #f6f0e1 54%, #e7ddc6 100%);
-  border: 1px solid rgba(255, 255, 255, 0.62);
+    linear-gradient(104deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0) 42%),
+    repeating-linear-gradient(90deg, rgba(146, 112, 62, 0.045) 0 1px, rgba(0, 0, 0, 0) 1px 5px),
+    linear-gradient(180deg, #fffdf4 0%, #f7eed8 52%, #e9dbba 100%);
   box-shadow:
-    0 10px 22px rgba(0, 0, 0, 0.42),
-    0 2px 0 rgba(94, 78, 48, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.95),
-    inset 0 -2px 0 rgba(126, 104, 66, 0.16),
-    inset 2px 0 0 rgba(122, 166, 138, 0.28);
+    0 5px 0 rgba(58, 40, 22, 0.42),
+    0 10px 20px rgba(0, 0, 0, 0.44),
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    inset 0 -3px 0 rgba(150, 114, 64, 0.16),
+    inset 3px 0 0 rgba(122, 170, 132, 0.32);
   transition: box-shadow 0.14s ease, background 0.14s ease;
 }
 
-/* 条右侧的茶金细线收口，增加手绘卡片的精致感 */
+/* 右端茶金细线收口 */
 .story-option-bar::after {
   content: "";
   position: absolute;
-  top: 18%;
-  bottom: 18%;
-  right: 0.5vw;
+  top: 20%;
+  bottom: 20%;
+  right: 0.85vw;
   width: 1px;
-  background: linear-gradient(to bottom, rgba(176, 144, 82, 0), rgba(176, 144, 82, 0.55), rgba(176, 144, 82, 0));
+  background: linear-gradient(to bottom,
+    rgba(176, 144, 82, 0),
+    rgba(176, 144, 82, 0.6),
+    rgba(176, 144, 82, 0));
   pointer-events: none;
 }
 
 .story-option:hover .story-option-bar {
   background:
-    linear-gradient(100deg, rgba(255, 255, 255, 0.96) 0%, rgba(255, 255, 255, 0) 42%),
-    repeating-linear-gradient(90deg, rgba(126, 104, 66, 0.03) 0 1px, rgba(0, 0, 0, 0) 1px 6px),
-    linear-gradient(180deg, #ffffff 0%, #fbf6e9 54%, #efe6d1 100%);
+    linear-gradient(104deg, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0) 46%),
+    repeating-linear-gradient(90deg, rgba(146, 112, 62, 0.04) 0 1px, rgba(0, 0, 0, 0) 1px 5px),
+    linear-gradient(180deg, #ffffff 0%, #fbf4e2 52%, #efe3c6 100%);
   box-shadow:
-    0 12px 26px rgba(0, 0, 0, 0.48),
-    0 2px 0 rgba(94, 78, 48, 0.3),
+    0 5px 0 rgba(58, 40, 22, 0.45),
+    0 12px 24px rgba(0, 0, 0, 0.5),
     inset 0 1px 0 rgba(255, 255, 255, 1),
-    inset 0 -2px 0 rgba(126, 104, 66, 0.14),
-    inset 2px 0 0 rgba(122, 166, 138, 0.42);
+    inset 0 -3px 0 rgba(150, 114, 64, 0.14),
+    inset 3px 0 0 rgba(122, 170, 132, 0.5);
 }
 
-/* 选项标题（墨褐，字重与描边都压在纸面上） */
+/* 选项标题：墨褐粗体，压在纸面上 */
 .story-option-label {
-  font-size: 3vh;
+  flex: 1;
+  min-width: 0;
+  font-size: clamp(16px, 2.85vh, 33px);
   font-weight: 700;
-  line-height: 1.25;
-  letter-spacing: 0.05em;
-  color: #241f16;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.72);
+  line-height: 1.2;
+  letter-spacing: 0.055em;
+  color: #2b2114;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.92),
+    0 -1px 0 rgba(116, 86, 46, 0.2);
 }
 
-/* 选项描述：条下的暖浅灰，常驻显示（sub / detail 同一视觉参数） */
-.story-option-sub,
+/* 条右端的菱形小饰（纯装饰，不上文字） */
+.story-option-mark {
+  flex: 0 0 auto;
+  width: min(0.5vw, 1.1vh);
+  height: min(0.5vw, 1.1vh);
+  margin-left: 0.8vw;
+  background: linear-gradient(145deg, #c9a45f 0%, #8a6a35 100%);
+  border: 1px solid rgba(74, 52, 24, 0.45);
+  transform: rotate(45deg);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.story-option:hover .story-option-mark,
+.story-option.is-armed .story-option-mark {
+  opacity: 1;
+}
+
+/* 描述区：条下、左缩进 2.7vw，常驻显示 */
+.story-option-desc {
+  padding: 3.3vh 0.8vw 0 2.7vw;
+}
+
 .story-option-detail {
-  margin-top: 1.1vh;
-  padding-left: 2.1vw;
-  font-size: 2.35vh;
-  line-height: 1.5;
+  font-size: clamp(12px, 2.3vh, 25px);
+  line-height: 1.42;
   letter-spacing: 0.02em;
-  color: #d9d3c5;
-  text-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.92),
-    0 0 10px rgba(0, 0, 0, 0.5);
+  color: #e9e1cf;
   white-space: pre-wrap;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.95),
+    0 2px 8px rgba(0, 0, 0, 0.75),
+    0 0 1.2vh rgba(0, 0, 0, 0.6);
+}
+
+.story-token-num {
+  color: #ffd987;
+  font-weight: 700;
+}
+
+.story-token-term {
+  color: #a9e8c4;
 }
 
 .story-option-reason {
-  color: #e0a08f;
+  color: #ff9f8b;
 }
 
-/* 待确认文案（点击后唯一新增的一行）：放在本条目的条下空白处，
-   不跨到下一条、不改变条距 */
+/* 确认行：始终占位（隐藏时不改变高度），出现时不会顶开描述或下一条选项 */
+.story-option-confirm-row {
+  position: relative;
+  margin: 0.6vh 0.8vw 0 2.7vw;
+  height: 3.6vh;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1vh;
+  pointer-events: none;
+}
+
 .story-option-hint {
-  position: absolute;
-  left: 2.1vw;
-  bottom: 1.2vh;
-  font-size: 2.35vh;
-  line-height: 1.4;
-  letter-spacing: 0.04em;
-  color: #f0cf8b;
+  font-size: clamp(13px, 2.5vh, 27px);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.09em;
+  color: #ffd98d;
+  white-space: nowrap;
   text-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.9),
-    0 0 12px rgba(240, 196, 110, 0.35);
+    0 1px 3px rgba(0, 0, 0, 0.95),
+    0 0 1.2vh rgba(255, 196, 96, 0.55);
   animation: hint-in 0.16s ease-out;
 }
 
-/* 圆形确认钮（绝对定位，不撑高选项） */
+/* 圆形确认印章 */
 .story-option-confirm {
-  position: absolute;
-  right: 0.8vw;
-  bottom: 1vh;
-  width: 3.4vh;
-  height: 3.4vh;
+  position: relative;
+  width: min(4.4vh, 2.3vw);
+  height: min(4.4vh, 2.3vw);
   align-items: center;
   justify-content: center;
-  padding: 0;
-  border: 1px solid rgba(246, 232, 198, 0.8);
+  border: 2px solid #6b4a22;
   border-radius: 50%;
   background:
-    radial-gradient(circle at 35% 30%, rgba(255, 250, 236, 0.95) 0%, rgba(240, 222, 180, 0.9) 45%, rgba(206, 176, 118, 0.95) 100%);
-  color: #3c4a32;
-  font-size: 1.9vh;
+    radial-gradient(circle at 34% 28%, #fffbee 0%, #f6e2b4 44%, #dcb877 100%);
+  color: #4a3313;
+  font-size: min(2.3vh, 1.2vw);
   font-weight: 700;
+  box-shadow:
+    0 3px 0 rgba(58, 40, 20, 0.4),
+    0 6px 14px rgba(0, 0, 0, 0.5),
+    0 0 1.6vh rgba(255, 202, 104, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  animation: confirm-pop 0.18s ease-out;
+}
+
+.story-option-confirm-check {
   line-height: 1;
-  cursor: pointer;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  transform: translateY(-0.1vh);
 }
 
-.story-option-confirm:hover {
-  transform: scale(1.08);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55), 0 0 14px rgba(240, 200, 120, 0.5);
+/* 待确认：纸带转为暖金，外圈金边微亮 */
+.story-option.is-armed .story-option-bar {
+  background:
+    linear-gradient(104deg, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0) 44%),
+    repeating-linear-gradient(90deg, rgba(146, 112, 62, 0.04) 0 1px, rgba(0, 0, 0, 0) 1px 5px),
+    linear-gradient(180deg, #fffaf0 0%, #fbecc9 52%, #f3dca6 100%);
+  box-shadow:
+    0 0 0 2px rgba(255, 216, 138, 0.9),
+    0 0 2.6vh rgba(255, 198, 92, 0.45),
+    0 5px 0 rgba(70, 48, 22, 0.45),
+    0 10px 22px rgba(0, 0, 0, 0.48),
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    inset 0 -3px 0 rgba(150, 114, 64, 0.16),
+    inset 3px 0 0 rgba(230, 168, 74, 0.7);
 }
 
-/* 禁用态：纸面褪色，文字变灰 */
+.story-option.is-armed .story-option-label {
+  color: #3a2a10;
+}
+
+/* 禁用态：纸面褪色 + 斜纹 + 文字变灰 */
 .story-option.disabled {
-  opacity: 0.5;
   cursor: not-allowed;
 }
 
@@ -306,33 +479,66 @@
 }
 
 .story-option.disabled .story-option-bar {
-  background: linear-gradient(180deg, #b9b5a9 0%, #9c988c 100%);
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  background:
+    repeating-linear-gradient(135deg, rgba(92, 78, 58, 0.1) 0 2px, rgba(0, 0, 0, 0) 2px 7px),
+    linear-gradient(180deg, #d8d2c2 0%, #c2bba9 55%, #ada595 100%);
+  box-shadow:
+    0 4px 0 rgba(52, 44, 32, 0.3),
+    0 8px 14px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 
 .story-option.disabled .story-option-label {
-  color: #4a463d;
+  color: #5a5346;
   text-shadow: none;
 }
 
-/* ── 动画 ── */
+.story-option.disabled .story-option-mark {
+  opacity: 0.25;
+}
+
+.story-option.disabled .story-option-desc {
+  opacity: 0.8;
+}
+
+/* 已确认淡出中 */
+.story-option.is-confirmed {
+  pointer-events: none;
+}
+
+/* ── 动效 ── */
 @keyframes story-rise {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  from { opacity: 0; transform: translateY(1.2vh); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes story-option-in {
-  from { opacity: 0; transform: translateX(18px); }
+  from { opacity: 0; transform: translateX(22px); }
   to   { opacity: 1; transform: translateX(0); }
 }
 
 @keyframes hint-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateX(6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes confirm-pop {
+  0%   { opacity: 0; transform: scale(0.72); }
+  70%  { opacity: 1; transform: scale(1.06); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes emblem-drift {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 
 @keyframes option-nudge {
   0%, 100% { transform: translateX(0); }
   25%      { transform: translateX(-4px); }
   75%      { transform: translateX(4px); }
+}
+
+.option-area-nudge {
+  animation: option-nudge 0.3s ease;
 }

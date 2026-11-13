@@ -53,6 +53,7 @@ class FakeEl {
   contains(other) { let n = other; while (n) { if (n === this) return true; n = n.parentNode; } return false; }
   setAttribute(k, v) { this.attributes[k] = String(v); }
   getAttribute(k) { return k in this.attributes ? this.attributes[k] : null; }
+  removeAttribute(k) { delete this.attributes[k]; }
   addEventListener(t, fn) { (this._listeners[t] ??= []).push(fn); }
   removeEventListener(t, fn) {
     const a = this._listeners[t];
@@ -132,7 +133,6 @@ const { buildEventStory, demoStory } = await import('../src/data/stories.js');
 const { EventBus } = await import('../src/core/EventBus.js');
 const { GE } = await import('../src/core/GameEvents.js');
 const InputGate = await import('../src/systems/InputGate.js');
-const ConfirmAction = await import('../src/ui/ConfirmAction.js');
 
 let pass = 0;
 let fail = 0;
@@ -265,7 +265,7 @@ check(ui.nodeKey === 'pick', 'C-10 推进被拒绝后节点不变');
 
 // 首次点击 = 待确认
 ui.optionBtns[0].click();
-check(ConfirmAction.isArmed(ui.optionBars[0]) === true, 'C-11 首次点击进入待确认态');
+check(ui.isOptionArmed(0) === true, 'C-11 首次点击进入待确认态');
 check(ui.optionBtns[0].textContent.includes('你确定这么做？'), 'C-12 待确认文案出现在卡片内');
 check(ui._hints[0].style.display === 'block', 'C-13 卡片内确认提示可见');
 check(ui._confirmBtns[0].style.display === 'inline-flex', 'C-14 选中后出现圆形确认钮');
@@ -287,13 +287,13 @@ check(ui.advance() === true && ui.visible === false, 'C-19 结果节点推进到
 ui.show(optionStory);
 ui.advance();
 ui.optionBtns[1].click();
-check(ConfirmAction.isArmed(ui.optionBars[1]) === false, 'C-20 禁用选项点击不进待确认');
+check(ui.isOptionArmed(1) === false, 'C-20 禁用选项点击不进待确认');
 key('2');
-check(ConfirmAction.isArmed(ui.optionBars[1]) === false, 'C-21 禁用选项数字键无效');
+check(ui.isOptionArmed(1) === false, 'C-21 禁用选项数字键无效');
 
 // 数字键选择 + 「离开」同样需要二次确认（无 safe 单击例外）
 key('3');
-check(ui.visible === true && ConfirmAction.isArmed(ui.optionBars[2]) === true,
+check(ui.visible === true && ui.isOptionArmed(2) === true,
   'C-22 数字键 3 选中「离开」→ 只进入待确认，不立即生效');
 check(ui.optionBtns[2].textContent.includes('你确定这么做？'), 'C-22b 「离开」也显示确认文案');
 key('3');
@@ -302,6 +302,45 @@ check(ui.visible === false, 'C-22c 再次确认「离开」后才结束');
 check(storyEnds[storyEnds.length - 1].id === 't_opt',
   'C-23 「离开」结束后输入恢复事件已广播');
 check(InputGate.isMovementBlocked(director) === false, 'C-24 选项剧情结束后移动恢复');
+
+// ════════════════════════════════════════════════════════════
+head('H. 二次确认手感：整卡可点，不因点到描述而复位（旧版 bug 回归）');
+// ════════════════════════════════════════════════════════════
+hits = 0;
+ui.show(optionStory);
+ui.advance();
+const card0 = ui.optionBtns[0];
+const desc0 = findAll(card0, 'story-option-detail')[0];
+card0.click();
+check(ui.isOptionArmed(0) === true, 'H-01 第一次点击进入待确认');
+// 真实浏览器里点击描述区时，document 也会收到同一个 click（旧实现就是在这里被复位）
+for (const fn of (docListeners.click || [])) fn({ type: 'click', target: desc0 });
+check(ui.isOptionArmed(0) === true, 'H-02 点描述区不会取消待确认');
+card0.click();
+check(hits === 1, 'H-03 第二次点击立即生效，不需要反复点击');
+await tick(20);
+
+hits = 0;
+ui.show(optionStory);
+ui.advance();
+ui.optionBtns[0].click();
+for (const fn of (docListeners.click || [])) fn({ type: 'click', target: ui.textEl });
+check(ui.isOptionArmed(0) === false, 'H-04 点击选项之外取消待确认');
+ui.optionBtns[0].click();
+check(ui.isOptionArmed(0) === true && hits === 0, 'H-05 取消后单击只重新进入待确认');
+ui.optionBtns[0].click();
+check(hits === 1, 'H-06 取消后仍需两次点击才生效');
+await tick(20);
+
+ui.show(optionStory);
+ui.advance();
+key('3');
+check(ui.isOptionArmed(2) === true, 'H-07 「离开」可用数字键进入待确认');
+const dlgCountH = dialogs.length;
+key('escape');
+check(ui.isOptionArmed(2) === false && dialogs.length === dlgCountH,
+  'H-08 待确认时 ESC 只取消待确认，不弹跳过');
+ui.closeSilently('test');
 
 // ════════════════════════════════════════════════════════════
 head('D. 选项上限 1~4');
