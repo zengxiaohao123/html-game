@@ -642,7 +642,7 @@ const FacilitySlimehouse = {
 };
 
 // ════════════════════════════════════════════════════════════════
-// 11. FacilityCorn  🌽  —— 玉米田地
+// 11. FacilityCorn  🌽  —— 玉米田块
 // §10.11
 // 【生物增加时】获得玉米 ×1
 // 【受祝福时】获得随机 1 个生物（60% 友善 / 40% 危险 / 0% 高危）
@@ -691,7 +691,7 @@ const FacilityCorn = {
 };
 
 // ════════════════════════════════════════════════════════════════
-// 12. FacilityCabbage  🥬  —— 卷心菜田地
+// 12. FacilityCabbage  🥬  —— 卷心菜田块
 // §10.12
 // 【每一日开始时】获得卷心菜 ×2，然后消耗背包里的一个卷心菜投向最近敌人，造成 20 点草元素伤害
 // 【受祝福时】对所有敌人分别投掷一个卷心菜（不消耗背包中的卷心菜）
@@ -1075,13 +1075,13 @@ const FacilityWildSeed = {
   },
 };
 
-// ── FAC-014 蒲公英田地 🌼 ──
+// ── FAC-014 蒲公英田块 🌼 ──
 // 【放置时】【受祝福时】储存蒲公英×1（至多 1）
 // 【移动后】按本次移动的曼哈顿距离提升储存蒲公英价值（初始 1）
 // 可随时采摘：获得等同当前价值的蒲公英 ×1，并失去该地块内容
 const FacilityDandelion = {
   id: 'facility_dandelion',
-  name: '蒲公英田地',
+  name: '蒲公英田块',
   emoji: Assets.facilities.facility_dandelion,
   value: 1,
   description: ITEMS.facility_dandelion.description,
@@ -1128,14 +1128,14 @@ const FacilityDandelion = {
   },
 };
 
-// ── FAC-015 幽怜草田地 🌙 ──
+// ── FAC-015 幽怜草田块 🌙 ──
 // 【放置时】储存幽怜草×1（至多 1，初始价值 12）
 // 【进入时】可以采摘
 // 【受祝福时】储存的幽怜草价值 +12（同一日内第 2 次起每次衰减 2，最低 +0）
 // 【每一日开始时】本日未受到过祝福 → 直接枯萎（地块内容消失，变空地块）
 const FacilityGhostGrass = {
   id: 'facility_ghost_grass',
-  name: '幽怜草田地',
+  name: '幽怜草田块',
   emoji: Assets.facilities.facility_ghost_grass,
   value: 12,
   description: ITEMS.facility_ghost_grass.description,
@@ -1189,13 +1189,13 @@ const FacilityGhostGrass = {
   },
 };
 
-// ── FAC-016 艾草田地 🍃 ──
+// ── FAC-016 艾草田块 🍃 ──
 // 【每一日开始时】获得艾草 ×2
 // 【角色回复生命值时】获得艾草 ×1（任意途径回血都算）
 // 【受祝福时】为角色回复 25% 生命值
 const FacilityMugwort = {
   id: 'facility_mugwort',
-  name: '艾草田地',
+  name: '艾草田块',
   emoji: Assets.facilities.facility_mugwort,
   value: 2,
   description: ITEMS.facility_mugwort.description,
@@ -1207,7 +1207,7 @@ const FacilityMugwort = {
       if (!tiles.length) return;
       const total = tiles.length * 2;
       InventorySystem.addItem(gs, 'item_mugwort', total);
-      EventBus.emit(GE.TOAST_SHOW, { text: `🍃 艾草田地 +${total} 艾草`, duration: 1800 });
+      EventBus.emit(GE.TOAST_SHOW, { text: `🍃 艾草田块 +${total} 艾草`, duration: 1800 });
     }, this);
 
     HookDispatcher.register('onHeal', ({ gs, amount = 0 }) => {

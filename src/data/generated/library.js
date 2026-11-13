@@ -43,7 +43,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "见『产出与掉落』OUT-01 / OUT-02（小麦田地）",
+  "sources": "见『产出与掉落』OUT-01 / OUT-02（小麦田块）",
   "notes": "喂食：鸡/小鸡每日消耗 1 个"
 },
   item_rice_straw: {
@@ -200,7 +200,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "见『产出与掉落』OUT-13（玉米田地；受祝福见 OUT-14）",
+  "sources": "见『产出与掉落』OUT-13（玉米田块；受祝福见 OUT-14）",
   "notes": null
 },
   item_cabbage: {
@@ -226,7 +226,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "见『产出与掉落』OUT-15（卷心菜田地）",
+  "sources": "见『产出与掉落』OUT-15（卷心菜田块）",
   "notes": "每一日开始时自动投掷会消耗背包内 1 个"
 },
   item_mugwort: {
@@ -252,7 +252,7 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 999,
   "stackByValue": false,
-  "sources": "见『产出与掉落』OUT-25 / OUT-26（艾草田地）",
+  "sources": "见『产出与掉落』OUT-25 / OUT-26（艾草田块）",
   "notes": null
 },
   item_dandelion: {
@@ -278,8 +278,8 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 1,
   "stackByValue": true,
-  "sources": "见『产出与掉落』OUT-28（蒲公英田地采摘；价值提升见 OUT-29）",
-  "notes": "蒲公英初始价格为1.价值按照蒲公英田地所写的规则增长；不同价值分堆，不可叠放"
+  "sources": "见『产出与掉落』OUT-28（蒲公英田块采摘；价值提升见 OUT-29）",
+  "notes": "蒲公英初始价格为1.价值按照蒲公英田块所写的规则增长；不同价值分堆，不可叠放"
 },
   item_ghost_grass: {
   "id": "item_ghost_grass",
@@ -304,8 +304,8 @@ export const ITEMS = {
   "stackable": true,
   "stackMax": 1,
   "stackByValue": true,
-  "sources": "见『产出与掉落』OUT-30（幽怜草田地；价值与枯萎见 OUT-31 / OUT-32）",
-  "notes": "幽怜草初始价格为12.价值按照幽怜草田地所写的规则增长；不同价值分堆，不可叠放"
+  "sources": "见『产出与掉落』OUT-30（幽怜草田块；价值与枯萎见 OUT-31 / OUT-32）",
+  "notes": "幽怜草初始价格为12.价值按照幽怜草田块所写的规则增长；不同价值分堆，不可叠放"
 },
   item_egg: {
   "id": "item_egg",
@@ -834,7 +834,7 @@ export const ITEMS = {
   facility_wheat: {
   "id": "facility_wheat",
   "libCode": "FAC-003",
-  "name": "小麦田地",
+  "name": "小麦田块",
   "emoji": "🌾",
   "icon": null,
   "tier1": "地块内容",
@@ -1053,7 +1053,7 @@ export const ITEMS = {
   facility_corn: {
   "id": "facility_corn",
   "libCode": "FAC-011",
-  "name": "玉米田地",
+  "name": "玉米田块",
   "emoji": "🌽",
   "icon": null,
   "tier1": "地块内容",
@@ -1080,7 +1080,7 @@ export const ITEMS = {
   facility_cabbage: {
   "id": "facility_cabbage",
   "libCode": "FAC-012",
-  "name": "卷心菜田地",
+  "name": "卷心菜田块",
   "emoji": "🥬",
   "icon": null,
   "tier1": "地块内容",
@@ -1111,7 +1111,7 @@ export const ITEMS = {
   "emoji": "🌱",
   "icon": null,
   "tier1": "地块内容",
-  "tier2": "设施",
+  "tier2": "田块",
   "tier3": null,
   "hiddenTags": [
     "占位"
@@ -1135,7 +1135,7 @@ export const ITEMS = {
   facility_dandelion: {
   "id": "facility_dandelion",
   "libCode": "FAC-014",
-  "name": "蒲公英田地",
+  "name": "蒲公英田块",
   "emoji": "🌼",
   "icon": null,
   "tier1": "地块内容",
@@ -1163,7 +1163,7 @@ export const ITEMS = {
   facility_ghost_grass: {
   "id": "facility_ghost_grass",
   "libCode": "FAC-015",
-  "name": "幽怜草田地",
+  "name": "幽怜草田块",
   "emoji": "🌙",
   "icon": null,
   "tier1": "地块内容",
@@ -1191,7 +1191,7 @@ export const ITEMS = {
   facility_mugwort: {
   "id": "facility_mugwort",
   "libCode": "FAC-016",
-  "name": "艾草田地",
+  "name": "艾草田块",
   "emoji": "🍃",
   "icon": null,
   "tier1": "地块内容",
@@ -2003,7 +2003,7 @@ export const ITEMS = {
   "stackMax": 999,
   "stackByValue": false,
   "sources": "文档未指定具体途径（9 章、11 章通用说明）",
-  "notes": "可触发设施：小麦田地、水稻田块、土豆田块、郁金香花田、草莓田块、卷心菜田地等等。必须是植物类设施（田块 / 花田等），对鸡舍、史莱姆屋等无效；若该设施不含【每一日开始时】类效果也无效。无效时不返还已消耗的道具"
+  "notes": "可触发设施：小麦田块、水稻田块、土豆田块、郁金香花田、草莓田块、卷心菜田块等等。必须是植物类设施（田块 / 花田等），对鸡舍、史莱姆屋等无效；若该设施不含【每一日开始时】类效果也无效。无效时不返还已消耗的道具"
 },
   item_beer: {
   "id": "item_beer",
@@ -2154,7 +2154,7 @@ export const ITEMS = {
   "traits": [
     "小麦"
   ],
-  "description": "小麦田地获得新特性：【每一日结束时】，获得小麦*1",
+  "description": "小麦田块获得新特性：【每一日结束时】，获得小麦*1",
   "triggers": [
     "获得后自动生效"
   ],
@@ -2832,7 +2832,7 @@ export const POOLS = {
     {
       "libCode": "FAC-003",
       "id": "facility_wheat",
-      "name": "小麦田地",
+      "name": "小麦田块",
       "price": null,
       "weight": null,
       "rarity": 1,
@@ -2912,7 +2912,7 @@ export const POOLS = {
     {
       "libCode": "FAC-011",
       "id": "facility_corn",
-      "name": "玉米田地",
+      "name": "玉米田块",
       "price": null,
       "weight": null,
       "rarity": 2,
@@ -2922,7 +2922,7 @@ export const POOLS = {
     {
       "libCode": "FAC-012",
       "id": "facility_cabbage",
-      "name": "卷心菜田地",
+      "name": "卷心菜田块",
       "price": null,
       "weight": null,
       "rarity": 1,
@@ -2942,7 +2942,7 @@ export const POOLS = {
     {
       "libCode": "FAC-016",
       "id": "facility_mugwort",
-      "name": "艾草田地",
+      "name": "艾草田块",
       "price": null,
       "weight": null,
       "rarity": 2,
@@ -2952,7 +2952,7 @@ export const POOLS = {
     {
       "libCode": "FAC-014",
       "id": "facility_dandelion",
-      "name": "蒲公英田地",
+      "name": "蒲公英田块",
       "price": null,
       "weight": null,
       "rarity": 3,
@@ -2962,7 +2962,7 @@ export const POOLS = {
     {
       "libCode": "FAC-015",
       "id": "facility_ghost_grass",
-      "name": "幽怜草田地",
+      "name": "幽怜草田块",
       "price": null,
       "weight": null,
       "rarity": 4,
@@ -3188,7 +3188,7 @@ export const POOLS = {
     {
       "libCode": "FAC-003",
       "id": "facility_wheat",
-      "name": "小麦田地",
+      "name": "小麦田块",
       "price": 4,
       "weight": null,
       "rarity": 1,
@@ -3268,7 +3268,7 @@ export const POOLS = {
     {
       "libCode": "FAC-011",
       "id": "facility_corn",
-      "name": "玉米田地",
+      "name": "玉米田块",
       "price": 8,
       "weight": null,
       "rarity": 2,
@@ -3278,7 +3278,7 @@ export const POOLS = {
     {
       "libCode": "FAC-012",
       "id": "facility_cabbage",
-      "name": "卷心菜田地",
+      "name": "卷心菜田块",
       "price": 4,
       "weight": null,
       "rarity": 1,
@@ -3298,7 +3298,7 @@ export const POOLS = {
     {
       "libCode": "FAC-014",
       "id": "facility_dandelion",
-      "name": "蒲公英田地",
+      "name": "蒲公英田块",
       "price": 12,
       "weight": null,
       "rarity": 3,
@@ -3308,7 +3308,7 @@ export const POOLS = {
     {
       "libCode": "FAC-015",
       "id": "facility_ghost_grass",
-      "name": "幽怜草田地",
+      "name": "幽怜草田块",
       "price": 16,
       "weight": null,
       "rarity": 4,
@@ -3318,7 +3318,7 @@ export const POOLS = {
     {
       "libCode": "FAC-016",
       "id": "facility_mugwort",
-      "name": "艾草田地",
+      "name": "艾草田块",
       "price": 8,
       "weight": null,
       "rarity": 2,
@@ -4260,7 +4260,7 @@ export const POOLS = {
     {
       "libCode": "FAC-003",
       "id": "facility_wheat",
-      "name": "小麦田地",
+      "name": "小麦田块",
       "price": null,
       "weight": null,
       "rarity": 1,
@@ -4340,7 +4340,7 @@ export const POOLS = {
     {
       "libCode": "FAC-011",
       "id": "facility_corn",
-      "name": "玉米田地",
+      "name": "玉米田块",
       "price": null,
       "weight": null,
       "rarity": 2,
@@ -4350,7 +4350,7 @@ export const POOLS = {
     {
       "libCode": "FAC-012",
       "id": "facility_cabbage",
-      "name": "卷心菜田地",
+      "name": "卷心菜田块",
       "price": null,
       "weight": null,
       "rarity": 1,
@@ -4370,7 +4370,7 @@ export const POOLS = {
     {
       "libCode": "FAC-014",
       "id": "facility_dandelion",
-      "name": "蒲公英田地",
+      "name": "蒲公英田块",
       "price": null,
       "weight": null,
       "rarity": 3,
@@ -4380,7 +4380,7 @@ export const POOLS = {
     {
       "libCode": "FAC-015",
       "id": "facility_ghost_grass",
-      "name": "幽怜草田地",
+      "name": "幽怜草田块",
       "price": null,
       "weight": null,
       "rarity": 4,
@@ -4390,7 +4390,7 @@ export const POOLS = {
     {
       "libCode": "FAC-016",
       "id": "facility_mugwort",
-      "name": "艾草田地",
+      "name": "艾草田块",
       "price": null,
       "weight": null,
       "rarity": 2,
@@ -4646,7 +4646,7 @@ export const OUTPUTS = [
   {
     "code": "OUT-01",
     "fromType": "田块",
-    "source": "小麦田地",
+    "source": "小麦田块",
     "product": "小麦",
     "amount": "×2",
     "trigger": "每一日开始时",
@@ -4656,7 +4656,7 @@ export const OUTPUTS = [
   {
     "code": "OUT-02",
     "fromType": "田块",
-    "source": "小麦田地",
+    "source": "小麦田块",
     "product": "小麦",
     "amount": "×3",
     "trigger": "受祝福时",
@@ -4766,7 +4766,7 @@ export const OUTPUTS = [
   {
     "code": "OUT-13",
     "fromType": "田块",
-    "source": "玉米田地",
+    "source": "玉米田块",
     "product": "玉米",
     "amount": "×1",
     "trigger": "生物增加时",
@@ -4776,7 +4776,7 @@ export const OUTPUTS = [
   {
     "code": "OUT-14",
     "fromType": "田块",
-    "source": "玉米田地",
+    "source": "玉米田块",
     "product": "随机生物",
     "amount": "×1",
     "trigger": "受祝福时",
@@ -4786,7 +4786,7 @@ export const OUTPUTS = [
   {
     "code": "OUT-15",
     "fromType": "田块",
-    "source": "卷心菜田地",
+    "source": "卷心菜田块",
     "product": "卷心菜",
     "amount": "×2",
     "trigger": "每一日开始时",
@@ -4876,7 +4876,7 @@ export const OUTPUTS = [
   {
     "code": "OUT-25",
     "fromType": "田块",
-    "source": "艾草田地",
+    "source": "艾草田块",
     "product": "艾草",
     "amount": "×2",
     "trigger": "每一日开始时",
@@ -4886,7 +4886,7 @@ export const OUTPUTS = [
   {
     "code": "OUT-26",
     "fromType": "田块",
-    "source": "艾草田地",
+    "source": "艾草田块",
     "product": "艾草",
     "amount": "×1",
     "trigger": "角色回复生命值时",
@@ -4896,7 +4896,7 @@ export const OUTPUTS = [
   {
     "code": "OUT-27",
     "fromType": "田块",
-    "source": "艾草田地",
+    "source": "艾草田块",
     "product": "角色生命回复 25%",
     "amount": "×1",
     "trigger": "受祝福时",
@@ -4906,7 +4906,7 @@ export const OUTPUTS = [
   {
     "code": "OUT-28",
     "fromType": "田块",
-    "source": "蒲公英田地",
+    "source": "蒲公英田块",
     "product": "蒲公英",
     "amount": "×1",
     "trigger": "采摘（任意格可用）",
@@ -4916,7 +4916,7 @@ export const OUTPUTS = [
   {
     "code": "OUT-29",
     "fromType": "田块",
-    "source": "蒲公英田地",
+    "source": "蒲公英田块",
     "product": "价值提升",
     "amount": "+1 / 格",
     "trigger": "移动后",
@@ -4926,7 +4926,7 @@ export const OUTPUTS = [
   {
     "code": "OUT-30",
     "fromType": "田块",
-    "source": "幽怜草田地",
+    "source": "幽怜草田块",
     "product": "幽怜草",
     "amount": "×1（储存上限 1）",
     "trigger": "放置时 / 进入时采摘",
@@ -4936,7 +4936,7 @@ export const OUTPUTS = [
   {
     "code": "OUT-31",
     "fromType": "田块",
-    "source": "幽怜草田地",
+    "source": "幽怜草田块",
     "product": "价值提升",
     "amount": "+12（同日多次递减）",
     "trigger": "受祝福时",
@@ -4946,7 +4946,7 @@ export const OUTPUTS = [
   {
     "code": "OUT-32",
     "fromType": "田块",
-    "source": "幽怜草田地",
+    "source": "幽怜草田块",
     "product": "枯萎（地块内容消失）",
     "amount": "—",
     "trigger": "每一日开始时",
@@ -4996,7 +4996,7 @@ export const GLOSSARY = [
   {
     "term": "生物增加时",
     "type": "触发时点",
-    "meaning": "栅栏内新增生物时触发（玉米田地）。",
+    "meaning": "栅栏内新增生物时触发（玉米田块）。",
     "notes": "生物指友善 / 危险 / 高危，不含角色和精灵"
   },
   {
@@ -5165,13 +5165,13 @@ export const GLOSSARY = [
     "term": "放置时",
     "type": "触发时点",
     "meaning": "把地块内容放到地块上的那一刻结算（与「替换时」同时发生的场合，先执行替换、再执行放置）。",
-    "notes": "FAC-013 野生种子、FAC-016 艾草田地、FAC-014 蒲公英田地、FAC-015 幽怜草田地按此触发"
+    "notes": "FAC-013 野生种子、FAC-016 艾草田块、FAC-014 蒲公英田块、FAC-015 幽怜草田块按此触发"
   },
   {
     "term": "角色回复生命值时",
     "type": "触发时点",
     "meaning": "角色通过任意途径回复生命值时结算一次（技能、道具、天赋、收藏品、设施效果均算）。",
-    "notes": "艾草田地依赖此词条，注意把新的回血来源也挂上订阅"
+    "notes": "艾草田块依赖此词条，注意把新的回血来源也挂上订阅"
   },
   {
     "term": "晕眩",

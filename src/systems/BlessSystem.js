@@ -205,7 +205,7 @@ function settleBless(gs, targetIdx, { staminaCost, goldCost, spirit }) {
   if (spirit === 'qingfeng') {
     // 晴风：HP +6（不超 maxHp），攻击力 +8%（每层按叠后算，保留 1 位小数；UI 显示 floor）
     // 文档 §12.2："使本日内角色攻击力 +8%" 严格按叠后算（不是加之前的 atk 算）
-    // 走统一回血入口，保证【角色回复生命值时】被触发（艾草田地依赖）
+    // 走统一回血入口，保证【角色回复生命值时】被触发（艾草田块依赖）
     const actualHpDelta = HealSystem.healPlayer(gs, 6, { source: 'bless_qingfeng' });
     const prevAtk = gs.player.atk;
     // 保留 1 位小数，不立即取整；UI 显示时 floor

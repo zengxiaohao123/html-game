@@ -106,7 +106,7 @@ for (const [group, obj] of [['天赋', TALENTS], ['精灵', SPIRITS]]) {
 // ── 5. 语义分行：多条效果必须含真实换行 ──
 const multiline = [
   ['物品 家', ITEMS.facility_home.description],
-  ['物品 小麦田地', ITEMS.facility_wheat.description],
+  ['物品 小麦田块', ITEMS.facility_wheat.description],
   ['物品 水稻田块', ITEMS.facility_rice.description],
   ['天赋 巧手・等级 1', TALENTS.luyouyouSkilled_lv1.description],
   ['天赋 蹁跹・等级 1', TALENTS.luyouyouDancing_lv1.description],

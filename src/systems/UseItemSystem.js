@@ -26,7 +26,7 @@ import { drawFromPool } from './RandomPool.js';
 import { Random } from '../core/Random.js';
 import { MapExpandSystem, EXPAND_AXIS } from './MapExpandSystem.js';
 
-/** 可作为肥料目标的植物类设施（含 v0.5 新增的三种田地） */
+/** 可作为肥料目标的植物类设施（含 v0.5 新增的三种田块） */
 const PLANT_FACILITIES = new Set([
   'facility_wheat', 'facility_rice', 'facility_potato', 'facility_tulip',
   'facility_strawberry', 'facility_pea', 'facility_corn', 'facility_cabbage',

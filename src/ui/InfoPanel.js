@@ -688,7 +688,7 @@ export class InfoPanel {
         }
 
         case 'facility_dandelion': {
-          // 🌼 蒲公英田地：价值随移动距离增长，随时可采摘（采摘后地块内容消失）
+          // 🌼 蒲公英田块：价值随移动距离增长，随时可采摘（采摘后地块内容消失）
           const v = Math.max(0, tile.contentState?.dandelionValue || 1);
           createEl('div', {
             style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
@@ -717,7 +717,7 @@ export class InfoPanel {
         }
 
         case 'facility_ghost_grass': {
-          // 🌙 幽怜草田地：受祝福加价，本日未受祝福次日枯萎（站该格采摘）
+          // 🌙 幽怜草田块：受祝福加价，本日未受祝福次日枯萎（站该格采摘）
           const v = Math.max(0, tile.contentState?.ghostValue || 12);
           createEl('div', {
             style: { fontSize: '12px', color: '#666', marginBottom: '6px' },

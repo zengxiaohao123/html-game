@@ -34,9 +34,9 @@ export const HOOK_TYPES = [
   'onDodge',           // 闪避时（蹁跹：为主角回 12 血）
   'onCraft',           // 合成或加工时（巧手：25% 返原材料）
   'onUseItem',         // 使用时（草药、初级肥料等消耗道具）
-  'onHeal',            // 角色回复生命值时（艾草田地）
+  'onHeal',            // 角色回复生命值时（艾草田块）
   'onCreatureDefeated',// 生物被击败时
-  'onCreatureAdded',   // 生物增加时（玉米田地）
+  'onCreatureAdded',   // 生物增加时（玉米田块）
   'onEventResolve',    // 事件/选项结算时
 ];
 

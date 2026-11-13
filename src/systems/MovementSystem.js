@@ -18,7 +18,7 @@
 //     （VehicleSystem.tryMove，消耗次数并派生 byVehicle 事件 / 移形等联动）；
 //     装备载具但该载具不允许这 1 格 → 整体拦截本次按键（不移动、不发事件、不改变任何状态）。
 //   - 【移动后】hook：走完整段路径后触发一次，params.distance = 本次走过的格数
-//     （蒲公英田地按这个提升价值，蹁跹天赋按这个回血）。
+//     （蒲公英田块按这个提升价值，蹁跹天赋按这个回血）。
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';

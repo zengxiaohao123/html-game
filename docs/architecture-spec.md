@@ -529,8 +529,10 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 
 > 对应设计文档 §3.5 / §9.5 / §10.1 / §11.1 / §16.1 / §19.8；数据源为《转盘农场_物品库.xlsx》「物品总表」二级分类列。
 
-- **分类口径**：地块内容由「设施 / 资源 / 技能」三类改为**田块 / 设施 / 资源 / 技能**四类。田块＝所有植物类田块（花田同属此类）；设施＝生物类设施（鸡舍、史莱姆屋），家 / 帐篷 / 野生种子等非植物类地块内容也归入设施。
-- **数据生成**：`tools/gen_library.py` 机械搬运表格，不改代码逻辑；`tier2` 值随表格变为 `田块`（FAC-003~008、011、012、014~016 共 11 条）与 `设施`（FAC-001、002、009、010、013 共 5 条）。
+- **分类口径**：地块内容由「设施 / 资源 / 技能」三类改为**田块 / 设施 / 资源 / 技能**四类。田块＝所有植物类田块（花田同属此类）＋野生种子；设施＝生物类设施（鸡舍、史莱姆屋）＋家、帐篷。
+- **数据生成**：`tools/gen_library.py` 机械搬运表格，不改代码逻辑；`tier2` 值随表格变为 `田块`（FAC-003~008、011、012、013~016 共 12 条）与 `设施`（FAC-001、002、009、010 共 4 条）。
+- **用词修正**：全项目地块名称统一使用「田块」表述（物品名、来源说明、备注、随机池、说明页、代码注释与运行时提示），不存在两套叫法。
+- **随机池不变**：POOL-01 等池子按条目编号列举，田块与设施仍按原大类共同参与同一随机池，本次拆分不剔除任一分类。
 - **分类 tab**：`src/ui/CategoryBar.js` 的 `CATEGORY_TABS` 增加 `田块`，顺序为总览 → 田块 → 设施 → 资源 → 技能 → 地形 → 产物 → 道具 → 杂物。背包（9 tab）与商店售卖页共用该常量，自动同步。
 - **合成页**：`ForgePanel.TABS` 增加 `田块`（7 tab），`iconGroupOf` 与 `CodexPanel` / `InventoryPanel` 的图标分组把 `田块` 与 `设施` 一并映射到 `facilities` 资产组（`facility_*` 的图标 / emoji 仍在该组）。
 - **载具落点**：`VehicleSystem.landOk` 的 `landFilter.tier2` 支持数组；VEH-010 拖拉机改为 `['田块','设施']`，保持拆分前「任意设施所在地块」的落点范围不变。
@@ -941,7 +943,7 @@ mines: [],        // 场上实体：{ id, sourceTileIdx, x, y, radius, blastRadi
 minesNextId: 1,   // 地雷 id 自增序号（逻辑值，入日初基线）
 ```
 
-- 田地字段沿用 `tile.contentState`：土豆 `potatoStored`；郁金香 `tulipValue` / `tulipStacks` / `tulipInit`。
+- 田块字段沿用 `tile.contentState`：土豆 `potatoStored`；郁金香 `tulipValue` / `tulipStacks` / `tulipInit`。
 - `DayBaseline.capture` 为整份 `gs` 深拷贝，`mines` / `minesNextId` 自动入档；`migrate.js` 对旧档补 `mines=[]`、`minesNextId=1`、`tulipStacks=0`、`tulipInit=true`（旧价值不追溯补初始值）。
 - 经济上行的 +6 **只作用于「初始价值」基线**（`tulipInitialValue(gs)` 动态计算，追溯所有郁金香田块含旧档），当前 `tulipValue` 不变；叠放增量按当前基线计算。
 
