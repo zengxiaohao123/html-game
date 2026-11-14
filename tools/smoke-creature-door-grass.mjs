@@ -197,7 +197,7 @@ const grassCell = gsSlimeGrass.map.fence[0];
 const amount0 = grassCell.terrainAmount;
 check(consumeGrassOnEnter(gsSlimeGrass, slimeEater, grassCell) === false, '史莱姆经过草地不消耗草');
 check(grassCell.terrainAmount === amount0, `草元素量保持 ${amount0}`);
-check(slimeEater.grazedForFeed !== true, '史莱姆不会被标记为已投喂');
+check(slimeEater.lastFed !== true, '史莱姆不会被标记为已投喂');
 
 // ════════════════════════════════════════════════════════════
 console.log('\n═══ 8. 扩建后归属仍指向同一座设施 ═══');

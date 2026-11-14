@@ -410,13 +410,13 @@ console.log('\n═══ 19. 友善超容量：产蛋丢弃、小麦豁免、草
   g.creatures.push({
     id: 'test_chicken', kind: 'chicken', name: '鸡', category: 'friendly',
     hp: 100, maxHp: 100, sourceTileIdx: henTile.idx, growth: 0, mood: 0,
-    lastFed: false, grazedForFeed: false, activeBuffs: [], row: 0, col: 0,
+    lastFed: false, activeBuffs: [], row: 0, col: 0,
   });
   for (let i = 0; i < 4; i++) {
     g.creatures.push({
       id: `test_chick_${i}`, kind: 'chick', name: '小鸡', category: 'friendly',
       hp: 10, maxHp: 10, sourceTileIdx: null, growth: 0, mood: 0,
-      lastFed: false, grazedForFeed: false, activeBuffs: [], row: 0, col: 0,
+      lastFed: false, activeBuffs: [], row: 0, col: 0,
     });
   }
   CreatureSystem.onDayEnd(g);
