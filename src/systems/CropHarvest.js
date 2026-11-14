@@ -86,7 +86,7 @@ export function harvestCropBeforeRemove(gs, tile) {
       break;
     }
     case HENHOUSE_ID: {
-      // 鸡舍产蛋储存于来源鸡舍格（§13.3 OUT-11）：鸡蛋与优质蛋合计上限 10，收获时分别占格
+      // 鸡舍产蛋储存于来源鸡舍格（§13.4 OUT-11）：鸡蛋与优质蛋合计上限 10，收获时分别占格
       const normal = Math.max(0, Math.floor(Number(cs.eggStored) || 0));
       const golden = Math.max(0, Math.floor(Number(cs.eggStoredGolden) || 0));
       if (normal > 0) {

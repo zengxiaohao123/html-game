@@ -47,6 +47,7 @@ export const GE = {
   // ── 生物 ──
   CREATURE_SPAWNED: 'creature:spawned',
   CREATURE_DEFEATED: 'creature:defeated',
+  CREATURE_STATE_CHANGED: 'creature:stateChanged', // 生物实例运行时状态变化（如吃到草 →【已投喂】，payload: { creatureId }）
   CAPACITY_CHANGE: 'capacity:change',
 
   // ── 战斗 / 技能 ──

@@ -24,7 +24,8 @@ import {
   facilityOwnedCreatures,
   stepCreatures,
   advanceCreatureRendering,
-  dailyTick,
+  onDayEnd,
+  onDayStart,
 } from '../src/systems/CreatureSystem.js';
 import { fenceRect, creatureRadius, snapshotGeometry } from '../src/core/Geometry.js';
 import { EventBus } from '../src/core/EventBus.js';
@@ -65,7 +66,7 @@ const chicken = spawnCreature(gs1, 'chicken', { facilityId: 'facility_henhouse',
 
 check(consumeGrassOnEnter(gs1, chick, cell1) === true, '小鸡首次经过草地 → 消耗 1 元素量');
 check(cell1.terrainAmount === 9, `草地元素量 10 → 9（实际 ${cell1.terrainAmount}）`);
-check(chick.grazedForFeed === true, '小鸡消耗草后达成当日【已投喂】条件');
+check(chick.lastFed === true, '小鸡吃到草后立即变为【已投喂】');
 
 check(consumeGrassOnEnter(gs1, chick, cell1) === false, '小鸡当天第二次经过草地 → 不再消耗');
 check(cell1.terrainAmount === 9, `已达成，元素量保持 9（实际 ${cell1.terrainAmount}）`);
@@ -76,9 +77,13 @@ check(consumeGrassOnEnter(gs1, chicken, cell1) === false, '同一只鸡当天第
 check(cell1.terrainAmount === 8, `保持 8（实际 ${cell1.terrainAmount}）`);
 
 gs1.day += 1;
-check(consumeGrassOnEnter(gs1, chick, cell1) === true, '跨天后额度重置 → 可再消耗 1 元素量');
+onDayStart(gs1); // 【每一日开始时】全部转【饥饿】
+check(chick.lastFed === false && chicken.lastFed === false, '【每一日开始时】需要投喂的生物全部转【饥饿】');
+check(consumeGrassOnEnter(gs1, chick, cell1) === true, '次日的【饥饿】状态可再吃 1 元素量');
 check(cell1.terrainAmount === 7, `元素量 8 → 7（实际 ${cell1.terrainAmount}）`);
-check(chick.grassFedDay === gs1.day, '按日号记账（grassFedDay = 当天）');
+check(consumeGrassOnEnter(gs1, chicken, cell1) === true, '另一只鸡次日也可再吃 1 元素量');
+check(cell1.terrainAmount === 6, `元素量 7 → 6（实际 ${cell1.terrainAmount}）`);
+check(chick.lastFed === true && chicken.lastFed === true, '两只都转为【已投喂】');
 
 console.log('\n═══ 1b. 草耗尽 → 带索引的地形变化事件（UI 实时更新） ═══');
 const gsEvent = mkHenhouseState();
@@ -96,15 +101,16 @@ check(terrainEvents[0]?.fenceIdx === 0 && terrainEvents[0]?.row === 0 && terrain
   `事件携带正确栅栏索引（fenceIdx=${terrainEvents[0]?.fenceIdx}, row=${terrainEvents[0]?.row}, col=${terrainEvents[0]?.col}）`);
 check(fenceUpdatedEvents === 1, `同步发出 FENCE_TILE_UPDATED（实际 ${fenceUpdatedEvents}）`);
 
-console.log('\n═══ 2. 已投喂 / 饥饿 状态结算 ═══');
+console.log('\n═══ 2. 【每一日结束时】喂食与判定 ═══');
 const hungry = spawnCreature(gs1, 'chick', { facilityId: 'facility_henhouse', sourceTileIdx: 0 });
-dailyTick(gs1);
-check(chick.lastFed === true, '前一日啃过草的小鸡 → 今日【已投喂】');
-check(chicken.lastFed === true, '另一只啃过草的鸡 → 今日【已投喂】');
-check(hungry.lastFed === false, '没吃到草且鸡舍无储存的小鸡 → 今日【饥饿】');
+check(hungry.lastFed === false, '新获得的小鸡初始为【饥饿】');
+onDayEnd(gs1);
+check(chick.lastFed === true, '本日吃过草的小鸡 → 【已投喂】');
+check(chicken.lastFed === true, '本日吃过草的鸡 → 【已投喂】');
+check(hungry.lastFed === false, '没吃到草且鸡舍无储存的小鸡 → 保持【饥饿】');
 check(hungry.mood === -1, `饥饿心情 -1（实际 ${hungry.mood}）`);
 const amountBeforeFedCheck = cell1.terrainAmount;
-check(consumeGrassOnEnter(gs1, chick, cell1) === false, '日初已投喂的生物当天不再啃草');
+check(consumeGrassOnEnter(gs1, chick, cell1) === false, '【已投喂】状态下本日内不再吃草');
 check(cell1.terrainAmount === amountBeforeFedCheck, `元素量保持 ${amountBeforeFedCheck}`);
 
 // ════════════════════════════════════════════════════════════
@@ -255,8 +261,8 @@ gsMucus.player.x = 99; // 唯一外圈格成为喷吐候选
 spawnCreature(gsMucus, 'slime_fire');
 const origChance = Random.chance;
 Random.chance = () => true;
-dailyTick(gsMucus);
-dailyTick(gsMucus);
+onDayStart(gsMucus);
+onDayStart(gsMucus);
 Random.chance = origChance;
 check(gsMucus.map.outerTiles[0].states.filter(s => s.type === 'slime').length === 1,
   '重复施加粘液层数仍为 1');

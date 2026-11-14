@@ -3,7 +3,9 @@
 //  stamina 回复逻辑由 SleepSystem 在上层处理（家回满 / 帐篷回满 / 其他回一半）
 //
 // Phase 3 扩展：
-//   - 末尾 CreatureSystem.dailyTick(gs)  生物饥饿/成长/心情/产蛋/容量
+//   - day++ 之前 CreatureSystem.onDayEnd(gs)  【每一日结束时】：鸡舍喂食 + 成长/心情/产蛋判定
+//   - day++ 之后 CreatureSystem.onDayStart(gs) 【每一日开始时】：全部转【饥饿】+ 粘液 + 容量超载
+//   - 两个节点对玩家是同一瞬间，代码内部严格分先后（用户 2026-11-14 裁定）
 //   - 友善超载 → 当天产出归 0（在此统一做，让 wheat/rice/strawberry/pea/henhouse hook 跳过）
 
 import { EventBus } from '../core/EventBus.js';
@@ -28,6 +30,10 @@ import { UseItemSystem } from './UseItemSystem.js';
 export function startNewDay(gs) {
   // 0. 【每一日结束时】结算（上一日收尾：穗粒满给小麦田 +1 等，必须在 day++ 之前）
   HookDispatcher.fire('onDailyEnd', { gs });
+
+  // 0.05 【每一日结束时】生物结算：① 鸡舍喂食（小麦优先、其次稻草，只喂仍【饥饿】的）
+  //      ② 成长值 / 心情值 / 畜产品产出判定。必须在 day++ 之前（判定属于刚结束的这一日）。
+  CreatureSystem.onDayEnd(gs);
 
   // 0.1 行动力溢出清除（拓荒者、帐篷祝福 +3 等允许临时超出上限，次日开始时清零，不保留到第二天）
   //     注意顺序（§5.1）：先在本步把行动力夹到上限，再由睡眠结算基础恢复，最后叠加可超上限的额外行动力。
@@ -79,8 +85,10 @@ export function startNewDay(gs) {
     });
   }
 
-  // 4. Phase 3：生物系统 dailyTick（饥饿/成长/心情/产蛋/容量超载惩罚 —— 先跑，让 capacity 状态就绪）
-  CreatureSystem.dailyTick(gs);
+  // 4. Phase 3：【每一日开始时】生物结算
+  //    ① 需要投喂的生物全部转【饥饿】；② 史莱姆粘液喷吐；③ 容量超载警告与惩罚。
+  //    必须在 onDailyStart（第 6 步）之前跑，让 capacity.friendlyOverloaded 就绪。
+  CreatureSystem.onDayStart(gs);
 
   // 5. 出货箱自动换成金币（InventorySystem.loadFromOutbox 按 items[].value 合计）
   InventorySystem.loadFromOutbox(gs);

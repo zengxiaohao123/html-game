@@ -87,8 +87,8 @@ const termLabel = (name) => (glossaryOf(name) ? `【${name}】` : name);
 
 /**
  * 生物「实例」的运行时状态（数据源：该生物对象自身字段，不是物种通用描述）
- *   · 投喂状态：lastFed —— CreatureSystem.dailyTick 每自然日起始逐只结算
- *       true → 【已投喂】；false → 【饥饿】；undefined（当日尚未结算）→ 暂不展示
+ *   · 投喂状态：lastFed —— 【每一日结束时】判定、【每一日开始时】统一转【饥饿】；日内吃草即时转为【已投喂】
+ *       true → 【已投喂】；false → 【饥饿】；undefined（非投喂型生物）→ 不展示
  *   · buff / debuff：实例 activeBuffs（数据驱动，不做任何白名单过滤；
  *       燃烧 / 粘液 / 蓄力 / 虚弱 / 易伤等全部列出，名称与含义取自 BUFFS + 词条字典）
  *   · 强度 / 剩余回合按实例字段显示（strength、remainingTurns）
@@ -1712,8 +1712,9 @@ export class InfoPanel {
       const rows = [];
       if (typeof c.atk === 'number') rows.push(['⚔️ 攻击力', `${c.atk}`]);
       if (typeof c.hp === 'number') rows.push(['❤️ 生命', `${c.hp} / ${c.maxHp ?? c.hp}`]);
+      // 只有具备成长 / 心情系统的生物才展示对应字段（史莱姆等不展示）
       if (typeof c.growth === 'number' && c.growthMax > 0) rows.push(['🌱 成长值', `${c.growth} / ${c.growthMax}`]);
-      if (typeof c.mood === 'number') rows.push(['😊 心情', `${c.mood}`]);
+      if (def.feedByGrass && typeof c.mood === 'number') rows.push(['😊 心情', `${c.mood}`]);
       rows.push(['📂 种类', `${def.name || c.kind}（${CATEGORY_NAMES[c.category] || c.category || '未知'}）`]);
       for (const [label, value] of rows) {
         const row = createEl('div', { class: ['player-info-row'], parent: this.bodyWrap });
@@ -1722,9 +1723,18 @@ export class InfoPanel {
       }
     } else if (this.creatureSubTab === 'skills') {
       // 技能：名称 + 描述，文案逐字取自物种数据（数据源为物品库「生物（参考）」，不做改写）。
-      // 无技能字段的生物（小鸡 / 鸡）显示空态。
+      // 需投喂类生物（小鸡 / 鸡）没有技能，改为一段面向玩家的养护 / 产出说明。
       const skills = def.skills || [];
-      if (skills.length === 0) {
+      if (def.careDescription) {
+        createEl('div', {
+          style: {
+            padding: '4px 0', fontSize: '13px', color: '#5a4a38', lineHeight: '1.7',
+            whiteSpace: 'pre-line',
+          },
+          text: def.careDescription,
+          parent: this.bodyWrap,
+        });
+      } else if (skills.length === 0) {
         createEl('div', {
           style: { padding: '20px 10px', textAlign: 'center', color: '#b0a090', fontSize: '13px', fontStyle: 'italic' },
           text: '（该生物暂无技能）',
@@ -1871,6 +1881,8 @@ export class InfoPanel {
     EventBus.on(GE.DAY_START, () => { refreshCreatureDetail(); refreshVisibleBody(); });
     EventBus.on(GE.CREATURE_SPAWNED, refreshCreatureDetail);
     EventBus.on(GE.CREATURE_DEFEATED, refreshCreatureDetail);
+    // 日内运行时状态变化（如吃到草 →【已投喂】）→ 徽章实时刷新
+    EventBus.on(GE.CREATURE_STATE_CHANGED, refreshCreatureDetail);
 
     // 单位 tab 展示的生命 / 攻击 / 状态：任一变化立即重绘。
     // buff/debuff 同时作用于玩家与生物实例 → 两条刷新路径都要走（生物详情页由 refreshCreatureDetail 负责）

@@ -230,7 +230,7 @@ head('5. 小鸡长大：半径 1/6 → 0.25 后圆心被夹回合法区');
     growth: 10, growthMax: 10, lastFed: true, mood: 0,
   };
   gs.creatures.push(c);
-  CreatureSystem.dailyTick(gs);
+  CreatureSystem.onDayEnd(gs);
   check(c.kind === 'chicken' && c.radius === 0.25, '成长后 kind=chicken / radius=0.25', { kind: c.kind, r: c.radius });
   check(c.pos.x === 1.25 && c.pos.y === 1.25, '长大越界后圆心被夹回 (1.25,1.25)', c.pos);
   check(c.renderPos.x === 1.25 && c.renderPos.y === 1.25, 'renderPos 同步夹回合法区', c.renderPos);

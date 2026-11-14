@@ -4,7 +4,8 @@
 //   stepCreatures(gs, dtSec) —— 固定 200ms 逻辑步内的连续积分（pos），由 RealtimeClock 驱动
 //   advanceCreatureRendering(gs, dtSec) —— 每帧推进 renderPos（不参与判定，结算期间也不停）
 //   feedCreature(gs, creatureId) —— 投喂逻辑（简化）
-//   dailyTick(gs)         —— DaySystem.startNewDay 末尾调用：饥饿检测、成长、心情、产蛋、容量警告
+//   onDayEnd(gs)          —— 【每一日结束时】（day++ 之前）：鸡舍喂食 → 成长/心情/产蛋判定
+//   onDayStart(gs)        —— 【每一日开始时】（day++ 之后）：需要投喂的生物统一转【饥饿】+ 史莱姆粘液 + 容量警告
 //
 // 运动模型（设计文档 §2.3 / §18.3）：
 //   - pos 连续逻辑坐标（判定权威），renderPos 渲染插值位置；
@@ -60,11 +61,16 @@ export function resetCreatureIdCounter() { _nextCreatureId = 1; }
 export const DOOR_FACILITIES = new Set(['facility_henhouse', 'facility_slimehouse']);
 
 /**
- * 放养进食规则（§13.3）：只有草食生物（数据标记 `feedByGrass`）会吃草；
+ * 放养进食规则（§13.4）：只有草食生物（数据标记 `feedByGrass`）会吃草；
  * 每只每日至多消耗 1 草元素量（1 次 = 地块元素量 -1，不走背包），
- * 达成后当天不再消耗，按实例 `grassFedDay` 记账。
+ * 吃到即进入【已投喂】，本日内不再继续吃草；次日开始时统一转回【饥饿】。
  */
 export const GRASS_ELEMENTS_PER_CREATURE_PER_DAY = 1;
+
+/** 该生物是否需要投喂（数据驱动：`feedByGrass`） */
+function isFeedableCreature(c) {
+  return !!c && !!getCreatureDef(c.kind)?.feedByGrass;
+}
 
 // ── 设施归属：稳定实例 uid 为主键，裸索引仅作旧存档回退 ──
 // 扩建会整体重排外圈 idx；地块对象本身会被搬运，因此「设施实例 uid」不随索引变化。
@@ -274,6 +280,8 @@ export function spawnCreature(gs, kind, opts = {}) {
     growth: 0,
     growthMax: def.growthMax || 0,
     mood: def.mood || 0,
+    // 投喂状态（§13.4）：新获得的需投喂生物统一为【饥饿】；非投喂型生物不写该字段
+    ...(def.feedByGrass ? { lastFed: false } : {}),
     stage: def.stage || 'chick',
     facilityId: opts.facilityId || null,
     sourceTileIdx: opts.sourceTileIdx ?? null,
@@ -295,7 +303,7 @@ export function spawnCreature(gs, kind, opts = {}) {
     }
   }
 
-  // 更新容量计数（超出也允许生成，warn 由 dailyTick 报）
+  // 更新容量计数（超出也允许生成，warn 由 onDayStart 报）
   // A-7：【当生物增加时】词条（玉米田 FAC-011）—— 任何来源的生成都算"生物增加"
   HookDispatcher.fire('onCreatureAdded', { gs, creature });
   EventBus.emit(GE.CREATURE_SPAWNED, { creature });
@@ -919,10 +927,10 @@ function syncPrimaryFenceTile(gs, creature) {
 }
 
 /**
- * 进入草地形时消耗草元素量（§13.3 放牧路径）。
+ * 进入草地形时吃草（§13.4 放养进食）。
  * 仅草食生物（`feedByGrass` 数据标记，如小鸡 / 成鸡）会吃草；
- * 每只草食生物每日至多消耗 GRASS_ELEMENTS_PER_CREATURE_PER_DAY（1 元素量），
- * 达成后当天不再消耗（按实例 `grassFedDay` 记账）。
+ * 吃到草立即消耗 GRASS_ELEMENTS_PER_CREATURE_PER_DAY（1 元素量）并转为【已投喂】，
+ * 【已投喂】状态下本日内不再继续吃草（次日开始时统一转回【饥饿】）。
  * 消耗直接扣地块元素量，不走背包库存。
  * @returns {boolean} 本次是否实际发生了消耗
  */
@@ -932,15 +940,14 @@ export function consumeGrassOnEnter(gs, creature, newTile) {
   // 只有草食生物（数据标记 feedByGrass：小鸡 / 成鸡）才吃草；史莱姆等非草食生物不消耗草元素量
   if (!def?.feedByGrass) return false;
   if (normalizeTerrain(newTile.terrain) !== 'terrain_grass' || (newTile.terrainAmount ?? 0) <= 0) return false;
-  // 当日已经满足进食条件（日初吃过储存饲料 / 当天已啃过一次草）：不再多吃
+  // 【已投喂】本日内不会再继续吃草（含当日已啃过草 / 次日开始时尚未重置的边界态）
   if (creature.lastFed === true) return false;
-  if (creature.grassFedDay === gs.day) return false;
   const amount = Math.max(1, GRASS_ELEMENTS_PER_CREATURE_PER_DAY);
   const eaten = Math.min(amount, newTile.terrainAmount);
   newTile.terrainAmount -= eaten;
-  creature.grassFedDay = gs.day;
-  // 草食生物啃草即达成「已投喂」条件
-  creature.grazedForFeed = true;
+  // 吃到草即达成「已投喂」
+  creature.lastFed = true;
+  EventBus.emit(GE.CREATURE_STATE_CHANGED, { creatureId: creature.id });
   if (newTile.terrainAmount <= 0) {
     newTile.terrain = 'terrain_none';
     // 栅栏内地块地形变化：带索引广播，MapView 只就地重绘这一格的地形背景
@@ -1225,80 +1232,69 @@ export function grantKillDrops(gs, creature) {
 }
 
 /**
- * DaySystem.startNewDay 末尾调用
- * 职责：
- *   1) 检查所有生物饥饿/成长/心情
- *   2) 小鸡→鸡 成长
- *   3) 鸡产蛋
- *   4) 容量超载警告期 & 惩罚（高危 → 拆地块）
- *   5) 史莱姆粘液喷吐 5%（超载 15%）→ 完整实装
- *   6) 完整投喂（§13.3）：按鸡舍实例归属，优先放牧标记，其次消耗该鸡舍内储存的
- *      item_rice_straw/item_wheat（tile.contentState.henhouseFeed），growth +(10+心情) 或饥饿
+ * 【每一日结束时】生物结算（DaySystem.startNewDay 在 day++ 之前调用）
+ * 顺序（§8.4 / §13.4，对玩家是同一瞬间，代码内部严格分先后）：
+ *   1) 鸡舍喂食：按鸡舍实例归属，只喂仍为【饥饿】的鸡 / 小鸡；
+ *      先消耗小麦、再消耗稻草，每只 1 份 → 【已投喂】；已【已投喂】的不消耗存粮；
+ *      存粮不足时剩余个体保持【饥饿】，照常参与后续判定。
+ *   2) 判定：成长值 / 心情值 / 畜产品产出（鸡蛋、优质蛋）。
  */
-export function dailyTick(gs) {
-  devLog.info('[CreatureSystem.dailyTick] day=', gs.day);
+export function onDayEnd(gs) {
+  devLog.info('[CreatureSystem.onDayEnd] day=', gs.day);
 
-  // ── 1) 完整投喂：遍历 henhouse 设施 tile（FAC-009 / §13.3） ──
+  // ── 1) 鸡舍喂食（§13.4） ──
   const outerTiles = gs.map.outerTiles || [];
   const henhouseTiles = outerTiles.filter(t => t.contentId === 'facility_henhouse');
-  const fedCreatures = new Set(); // 本次被投喂过的 creature id
 
   for (const henhouseTile of henhouseTiles) {
-    // 只找「来自这个鸡舍实例」的生物（稳定 uid 归属，扩建后仍指向同一座鸡舍）
+    // 只找「来自这个鸡舍实例」的需投喂生物（稳定 uid 归属，扩建后仍指向同一座鸡舍）
     const henhouseCreatures = gs.creatures.filter(
-      c => c.hp > 0 && creatureOwnedByTile(gs, c, henhouseTile)
+      c => c.hp > 0 && isFeedableCreature(c) && creatureOwnedByTile(gs, c, henhouseTile)
     );
+    if (henhouseCreatures.length === 0) continue;
     henhouseTile.contentState = henhouseTile.contentState || {};
     const store = henhouseTile.contentState.henhouseFeed || (henhouseTile.contentState.henhouseFeed = {});
 
     for (const c of henhouseCreatures) {
-      if (fedCreatures.has(c.id)) continue;
-      fedCreatures.add(c.id);
-
-      // 路径 A（§13.3 优先）：优先消耗「该鸡舍内储存」的稻草或小麦 ×1
-      const hasStraw = (store.item_rice_straw || 0) > 0;
-      const hasWheat = (store.item_wheat || 0) > 0;
-      if (hasStraw || hasWheat) {
-        if (hasStraw) store.item_rice_straw -= 1;
-        else store.item_wheat -= 1;
-        c.grazedForFeed = false; // 储存路径已投喂，放牧标记同步失效（仅限前一天有效）
-        c.growth += 10 + (c.mood || 0);
-        c.lastFed = true;
-      } else if (c.grazedForFeed) {
-        // 路径 B（§13.3）：鸡舍内没有储存饲料，且鸡前一天在栅栏内啃过草 → 无需消耗即【已投喂】
-        c.grazedForFeed = false;
-        c.lastFed = true;
-        c.growth += 10 + (c.mood || 0);
-        devLog.info('[CreatureSystem] grazed → fed without store:', c.id);
-      } else {
-        // 两者都不满足 → 【饥饿】：心情 -1、成长值 +5（§13.3 / 物品库 03 表 A21，2026-11-03 裁决确认）
-        c.grazedForFeed = false;
-        c.growth += 5;
-        c.mood = Math.max(-5, (c.mood || 0) - 1);
-        EventBus.emit(GE.TOAST_SHOW, { text: `🐣 ${c.kind || '小鸡'} 没吃的，心情-1`, duration: 1200 });
-        c.lastFed = false;
-      }
+      if (c.lastFed === true) continue; // 本日已投喂（吃过草）→ 不消耗存粮
+      // 小麦优先，其次稻草，每只饥饿个体消耗 1 份
+      if ((store.item_wheat || 0) > 0) store.item_wheat -= 1;
+      else if ((store.item_rice_straw || 0) > 0) store.item_rice_straw -= 1;
+      else continue; // 存粮不足 → 保持【饥饿】，照常参与后续判定
+      c.lastFed = true;
+      devLog.info('[CreatureSystem] henhouse fed:', c.id);
     }
   }
 
-  // ── 2) 生物日常 ──
+  // ── 2) 判定：成长值 / 心情值 / 畜产品产出 ──
   for (const c of gs.creatures) {
     if (!c || c.hp <= 0) continue;
+    const def = getCreatureDef(c.kind);
 
-    // 心情 +1 的触发时机在鸡舍 onEnter hook（§13.3：玩家每次进入鸡舍心情 +1，每日限 1 次），
+    // 心情 +1 的触发时机在鸡舍 onEnter hook（§13.4：玩家每次进入鸡舍心情 +1，每日限 1 次），
     // 不在此无条件结算；非鸡舍来源生物心情固定 0（BIO-002 L 列）。
 
-    // 成长值（小鸡）
+    if (isFeedableCreature(c)) {
+      if (c.lastFed === true) {
+        // 已投喂：成长值 +（10 + 心情值）
+        if (c.growthMax > 0) c.growth = (c.growth || 0) + 10 + (c.mood || 0);
+      } else {
+        // 饥饿：心情 -1、成长值 +5（物品库 03 表 A21，2026-11-03 裁决确认）
+        if (c.growthMax > 0) c.growth = (c.growth || 0) + 5;
+        c.mood = Math.max(-5, (c.mood || 0) - 1);
+        EventBus.emit(GE.TOAST_SHOW, { text: `🐣 ${def?.name || '小鸡'} 没吃的，心情-1`, duration: 1200 });
+      }
+    }
+
+    // 成长值（小鸡）：本日结算后达到上限即长大
     if (c.stage === 'chick' && c.growthMax > 0) {
       if (c.growth >= c.growthMax) {
         growUpChick(gs, c);
       }
     }
 
-    // 鸡产蛋（§13.3：已投喂才产蛋）
-    // 【已投喂】不是互斥条件：满足任一投喂条件即视为已投喂（2026-11-03 裁决，物品库 05 表 BIO-002）：
-    //   路径 A 放牧啃草 / 路径 B 消耗鸡舍内储存饲料 —— 任一达成 lastFed=true。
-    //   已投喂 → 产 1 蛋（心情×10% 概率优质蛋）；饥饿 → 心情 -1、不产蛋。
+    // 鸡产蛋（§13.4：已投喂才产蛋）
+    // 已投喂 → 产 1 蛋（心情×10% 概率优质蛋）；饥饿 → 心情 -1、不产蛋。
     if (c.kind === 'chicken') {
       // §13.2 友善超载惩罚：友善类收益归 0（除小麦/水稻）——产蛋直接丢弃（2026-11-04 裁决：满额丢弃同口径）
       if (gs.capacity?.friendlyOverloaded) {
@@ -1343,8 +1339,26 @@ export function dailyTick(gs) {
       }
     }
   }
+}
 
-  // ── 3) 史莱姆粘液喷吐（完整实装：5% / 超载 15%） ──
+/**
+ * 【每一日开始时】生物结算（DaySystem.startNewDay 在 day++ 之后调用）
+ * 顺序（§8.4，对玩家是同一瞬间，代码内部严格分先后）：
+ *   1) 所有需要投喂的生物统一转为【饥饿】（上一日判定结束后立即重置）
+ *   2) 史莱姆粘液喷吐 5%（超载 15%）
+ *   3) 容量超载警告期推进 & 惩罚（必须在 onDailyStart 设施产出之前跑，让 friendlyOverloaded 就绪）
+ */
+export function onDayStart(gs) {
+  devLog.info('[CreatureSystem.onDayStart] day=', gs.day);
+
+  // ── 1) 投喂状态重置：需要投喂的生物全部【饥饿】 ──
+  for (const c of gs.creatures) {
+    if (!c || c.hp <= 0) continue;
+    if (isFeedableCreature(c)) c.lastFed = false;
+  }
+
+  // ── 2) 史莱姆粘液喷吐（完整实装：5% / 超载 15%） ──
+  const outerTiles = gs.map.outerTiles || [];
   // B-12：物品库 BIO-003「危险生物超容量时改为 15%」—— 条件是"当前数量超容量"本身，
   //   而不是惩罚激活标志（dangerOverloaded 要等警告期 2 天后才为 true）。
   const fenceTilesForCap = (gs.map.fence && gs.map.fence.length) || 1;
@@ -1368,10 +1382,10 @@ export function dailyTick(gs) {
     }
   }
 
-  // ── 4) 容量超载警告 & 惩罚 ──
+  // ── 3) 容量超载警告 & 惩罚 ──
   updateCapacityAndPunish(gs);
 
-  // ── 5) 广播容量变化事件 ──
+  // ── 4) 广播容量变化事件 ──
   EventBus.emit(GE.CAPACITY_CHANGE, {
     friendly: countByCategory(gs, 'friendly'),
     danger: countByCategory(gs, 'danger'),
@@ -1529,7 +1543,7 @@ function updateCapacityAndPunish(gs) {
 
 /**
  * 把饲料存入鸡舍（背包 → tile.contentState.henhouseFeed）。
- * §13.3 / FAC-009：鸡优先消耗鸡舍内储存的稻草/小麦。
+ * §13.4 / FAC-009：鸡舍日末喂食时优先消耗小麦、其次稻草。
  * 2026-11-04 裁决③：真实 UI 入口已接入 InfoPanel 鸡舍功能选项「投放饲料」，与取回逻辑对称。
  * @returns {{ ok: boolean, reason?: string, deposited?: number }}
  */
@@ -1571,7 +1585,8 @@ export const CreatureSystem = {
   stepCreatures,
   advanceCreatureRendering,
   clampCreatureToFence,
-  dailyTick,
+  onDayEnd,
+  onDayStart,
   feedCreature,
   grantKillDrops,
   depositHenhouseFeed,

@@ -403,7 +403,7 @@ console.log('\n═══ 19. 友善超容量：产蛋丢弃、小麦豁免、草
   g.capacity = g.capacity || {};
   // 真实超载：5 只友善生物 > 容量 4（1 块栅栏），拖欠 1 天 → 本次结算触发惩罚
   g.capacity.friendlyOverdue = 1;
-  g.capacity.friendlyOverloaded = true; // 产蛋（第 3 步）发生在容量重算（第 4 步）之前，需预设
+  g.capacity.friendlyOverloaded = true; // 产蛋（onDayEnd）发生在容量重算（onDayStart）之前，需预设
   const henTile = g.map.outerTiles.find((t) => !t.contentId);
   henTile.contentId = 'facility_henhouse';
   henTile.contentState = { henhouseFeed: { item_wheat: 1 }, eggStored: 0 };
@@ -419,10 +419,11 @@ console.log('\n═══ 19. 友善超容量：产蛋丢弃、小麦豁免、草
       lastFed: false, grazedForFeed: false, activeBuffs: [], row: 0, col: 0,
     });
   }
-  CreatureSystem.dailyTick(g);
-  check(g.capacity.friendlyOverloaded === true, '超载结算成立（拖欠 ≥ 2 天）');
+  CreatureSystem.onDayEnd(g);
   check((henTile.contentState.eggStored || 0) === 0, '超容量 → 产蛋被惩罚丢弃（友善类收益归 0）');
   check(henTile.contentState.henhouseFeed.item_wheat === 0, '投喂流程本身不受惩罚影响（储存照常消耗）');
+  CreatureSystem.onDayStart(g);
+  check(g.capacity.friendlyOverloaded === true, '超载结算成立（拖欠 ≥ 2 天）');
   // 小麦豁免
   const wTile = g.map.outerTiles.find((t) => !t.contentId);
   wTile.contentId = 'facility_wheat';

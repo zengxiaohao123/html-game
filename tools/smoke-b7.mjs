@@ -64,7 +64,7 @@ head('裁决① 鸡蛋储存满 10：产出直接丢弃（不进背包、不进�
   tile1.contentState.eggStoredGolden = 0;
   tile1.contentState.henhouseFeed = { item_wheat: 1 };
   const bagBefore = countItem(gs, 'item_egg');
-  CreatureSystem.dailyTick(gs);
+  CreatureSystem.onDayEnd(gs);
   assert(tile1.contentState.eggStored === 10, '满额：鸡蛋不再入库（仍为 10）', tile1.contentState.eggStored);
   assert(countItem(gs, 'item_egg') === bagBefore, '满额：鸡蛋也不进背包（直接丢弃）', countItem(gs, 'item_egg'));
 }
@@ -80,7 +80,7 @@ head('裁决① 优质蛋与鸡蛋共享同一储存额度（合计 10）');
   tile1.contentState.eggStoredGolden = 0;
   tile1.contentState.henhouseFeed = { item_wheat: 1 };
   chicken.mood = 10;
-  CreatureSystem.dailyTick(gs);
+  CreatureSystem.onDayEnd(gs);
   assert(tile1.contentState.eggStored === 9, '普通蛋入库（8→9）', tile1.contentState.eggStored);
   assert(tile1.contentState.eggStoredGolden === 1, '优质蛋入同一额度（0→1）', tile1.contentState.eggStoredGolden);
   assert((tile1.contentState.eggStored + tile1.contentState.eggStoredGolden) === 10, '合计达到共享上限 10');
@@ -89,7 +89,7 @@ head('裁决① 优质蛋与鸡蛋共享同一储存额度（合计 10）');
   tile1.contentState.henhouseFeed = { item_wheat: 1 };
   const bagEgg = countItem(gs, 'item_egg');
   const bagGold = countItem(gs, 'item_golden_egg');
-  CreatureSystem.dailyTick(gs);
+  CreatureSystem.onDayEnd(gs);
   assert(tile1.contentState.eggStored === 9 && tile1.contentState.eggStoredGolden === 1,
     '满额：鸡蛋与优质蛋都不再入库', { e: tile1.contentState.eggStored, g: tile1.contentState.eggStoredGolden });
   assert(countItem(gs, 'item_egg') === bagEgg && countItem(gs, 'item_golden_egg') === bagGold,
@@ -119,9 +119,9 @@ head('裁决② 超载真伤 = 该类型全部生物 × 100% 当前攻击力（�
   gs.creatures[4].atk = 25;
   gs.player.maxHp = 1000; gs.player.hp = 1000;
   gs.capacity = gs.capacity || {};
-  gs.capacity.dangerOverdue = 2; // 警告期已满 → 本次 dailyTick 触发惩罚
+  gs.capacity.dangerOverdue = 2; // 警告期已满 → 本次【每一日开始时】结算触发惩罚
   Math.random = () => 0.99; // 抑制史莱姆喷吐等随机干扰
-  CreatureSystem.dailyTick(gs);
+  CreatureSystem.onDayStart(gs);
   Math.random = origRandom;
   const baseAtk = getCreatureDef('slime_fire').atk;
   assert(baseAtk === 10, '面板基础攻击力 = 10（creatures.js 定义）', baseAtk);
@@ -134,7 +134,7 @@ head('裁决② 超载真伤 = 该类型全部生物 × 100% 当前攻击力（�
   gs.creatures = [];
   for (let i = 0; i < 3; i++) CreatureSystem.spawnCreature(gs, 'slime_fire', { facilityId: 'resource_hunt', sourceTileIdx: null });
   gs.capacity = gs.capacity || {};
-  gs.capacity.danger = 1; // 容量 1（本用例直接验证结算口径，不经过 dailyTick 的容量重算）
+  gs.capacity.danger = 1; // 容量 1（本用例直接验证结算口径，不经过 onDayStart 的容量重算）
   gs.player.maxHp = 1000; gs.player.hp = 1000;
   const r3 = CreatureSystem.applyOverloadTrueDamage(gs, 'danger', 'danger_overload');
   assert(r3.count === 3 && r3.total === 30, '同类型 3 只、容量 1 → 结算 3 次、合计 30', r3);

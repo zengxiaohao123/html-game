@@ -40,7 +40,7 @@ src/
 │   ├── GameDirector.js       # 主循环导演（回合制 + 连携技实时窗口）
 │   ├── InputManager.js       # 键鼠输入统一监听 + 路由
 │   ├── TurnSystem.js         # 回合推进 + 行动力扣减 + 心力交瘁（onTurnStart 唯一触发点）
-│   ├── DaySystem.js          # 每日开始事件 + 每日限次重置
+│   ├── DaySystem.js          # 换日结算（【每一日结束时】day++ 前 → 【每一日开始时】day++ 后）+ 每日限次重置
 │   ├── FieldEffects.js       # 田块通用工具：数量统计 / 四方向连通块 / 仓廪实视同 / 庆丰收・黄金浪・春光好取数
 │   ├── MovementSystem.js     # 移动（WASD）+ 经过/进入触发
 │   ├── BlessSystem.js        # 祈福（按下即结算：2 行动力 + 1 金币 + 随机祝福；动画仅演出）
@@ -51,7 +51,7 @@ src/
 │   ├── SkillSystem.js        # 技能触发（进入时/经过时/受祝福时）
 │   ├── LinkSkillSystem.js    # 连携技（解锁检测 + 8 秒窗口 + 队列）
 │   ├── RealtimeClock.js      # 统一实时时钟（200ms 逻辑步 + 渲染插值 + 结算快照冻结）
-│   ├── CreatureSystem.js     # 生物连续积分移动（3~6 秒/格）+ 投喂 + 成长 + 心情
+│   ├── CreatureSystem.js     # 生物连续积分移动（3~6 秒/格）+ 日末喂食/成长/心情/产蛋 + 日初转【饥饿】
 │   ├── CapacitySystem.js     # 容量上限即时同步（栅栏面积 → 友善/危险上限 +1/格）
 │   ├── EventEffects.js       # 事件选项结算唯一入口（金币/物品/行动力/治疗/地形/buff/生物）
 │   └── BuildSystem.js        # 建造模式 + 放置/替换地块内容
@@ -185,6 +185,7 @@ export const GE = {
   // —— 生物 ——
   CREATURE_SPAWNED: 'creature:spawned',
   CREATURE_DEFEATED: 'creature:defeated',
+  CREATURE_STATE_CHANGED: 'creature:stateChanged', // 实例运行时状态变化（吃到草→【已投喂】等，payload: {creatureId}）
   CAPACITY_CHANGE: 'capacity:change',
   
   // —— 战斗/技能 ——
@@ -338,13 +339,21 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
   - 只被栅栏边界裁剪（圆心 + 半径不出栅栏），生物之间不碰撞、允许完全重叠。小鸡长大半径 `1/6 → 0.25` 时圆心立即夹回合法区并重置为 `Idle`。
   - **静止不刷 DOM**：刹停后 `renderPos` 已收敛到 `pos` 并不再变化；`CreatureView` 缓存上次 `transform` 字符串，位置未变则不写样式（逐帧插值只在有逻辑位移的步内产生 5 帧小位移，停下后完全不写）。
 
+**换日两节点（2026-11-14，判定节点统一到【每一日结束时】）**：
+
+- `DaySystem.startNewDay` 内部严格分两步，对玩家是同一瞬间，不得插入任何提示文本、冒泡或动画：
+  - **【每一日结束时】**：`day++` 之前调用 `CreatureSystem.onDayEnd(gs)`，只做「① 鸡舍喂食：按鸡舍实例归属，只喂仍【饥饿】的鸡／小鸡，小麦优先、其次稻草，每只 1 份，存粮不足时剩余个体保持【饥饿】→ ② 逐只判定成长值／心情值／鸡蛋产出」。
+  - **【每一日开始时】**：`day++` 之后调用 `CreatureSystem.onDayStart(gs)`，依次「① 所有需投喂生物统一转【饥饿】→ ② 史莱姆粘液喷吐 → ③ 容量超载警告期推进与惩罚」；必须早于 `onDailyStart` hook，保证 `capacity.friendlyOverloaded` 就绪。
+- 睡觉只是结束本日的触发器，投喂／成长判定不得写进 `SleepSystem`，任何结束本日的路径都走同一套 `startNewDay`。
+- `spawnCreature` 对 `feedByGrass` 生物写入 `lastFed: false`（新获得即【饥饿】）；非投喂型生物不写该字段。
+
 **放牧进食与设施开关门（2026-11-07）**：
 
-- **草食限定与每日上限**：`consumeGrassOnEnter(gs, creature, fenceCell)` 先按数据标记 `feedByGrass` 判定物种，**只有小鸡 / 成鸡会吃草，史莱姆等非草食生物直接返回 `false`、不扣任何元素量**。草食生物用实例字段 `grassFedDay` 记录当日已消耗的日号，每只每日至多扣 1 点草元素量（`GRASS_ELEMENTS_PER_CREATURE_PER_DAY`），当日达成（含日初 `lastFed=true`）后跳过，跨日自动重置；扣减直接改 `fence[].terrainAmount`，不走背包。元素量归零时地形写 `terrain_none`，并 emit `TILE_TERRAIN_CHANGED { row, col, fenceIdx }` + `FENCE_TILE_UPDATED`，MapView 只就地重绘该格地形背景，不再依赖无索引 `TILE_UPDATED` 兜底。
+- **草食限定与每日上限**：`consumeGrassOnEnter(gs, creature, fenceCell)` 先按数据标记 `feedByGrass` 判定物种，**只有小鸡 / 成鸡会吃草，史莱姆等非草食生物直接返回 `false`、不扣任何元素量**。吃到草立即写实例字段 `lastFed = true`（【已投喂】）并 emit `GE.CREATURE_STATE_CHANGED { creatureId }`，本日内 `lastFed === true` 时不再继续吃草（每只每日至多扣 1 点 `GRASS_ELEMENTS_PER_CREATURE_PER_DAY`）；扣减直接改 `fence[].terrainAmount`，不走背包。元素量归零时地形写 `terrain_none`，并 emit `TILE_TERRAIN_CHANGED { row, col, fenceIdx }` + `FENCE_TILE_UPDATED`，MapView 只就地重绘该格地形背景，不再依赖无索引 `TILE_UPDATED` 兜底。
 - **归属键（扩建安全）**：主键为设施实例稳定 uid `creature.sourceTileUid`（`ensureTileUid(tile)` 就地分配，地块对象被扩建搬运时 uid 不变）；`creatureOwnedByTile(gs,c,tile)` / `creatureOwnerTile` / `facilityOwnedCreatures` 统一走该判定，裸索引 `sourceTileIdx` 仅作旧存档回退。`spawnCreature` 写入 `sourceTileIdx` + `sourceTileUid`，狩猎等野生来源两者皆空。`CreatureSystem` 在模块加载时订阅 `MAP_EXPANDED`：若事件带 `idxMap` 则直接复用，否则按 `axis` + 扩建后 `rows/cols` 反推旧尺寸与搬运规则（最右列右移 / 最上行上移）生成映射；对生物重映射 `sourceTileIdx` 并给旧生物补 `sourceTileUid`，同时把 `fence[].creatures` 缓存统一修正为 id 数组。连续多次扩建幂等（uid 命中即跳过）。
 - **开关门**：`setFacilityDoorOpen(gs, tileIdx, open)`（仅 `DOOR_FACILITIES`：鸡舍 / 史莱姆屋）。关门对归属生物置 `housed=true`、移出 `fence[].creatures` 缓存、速度与行为状态清零；开门随机放回 `fenceInner(gs, radius)` 合法区并重建主格缓存。`stepCreatures` / `advanceCreatureRendering` / `CreatureView.paint` / `Geometry.isAlive` 全部跳过 `housed`，所以收纳生物不可见、不移动、不参与空间查询与命中；`gs.creatures` 不删，容量统计（`countByCategory`）与归属不变。门状态存于 `tile.contentState.doorOpen`（缺省视为开门）。开关门不消耗行动力、不占回合。
 - **关门期间新生成**：`spawnCreature` 末尾检查来源设施 `doorOpen === false` 时直接 `housed`（如史莱姆屋每日生成），不再落进栅栏可见区。
-- **粘液**：`dailyTick` 喷吐前检查目标格 `states` 是否已有 `type='slime'`，有则跳过（同名不叠加，一格至多 1 层）；玩家进入后由 `MovementSystem` 结算生命 -5 / 行动力 -1 并立即移除。信息区「状态」行按物品库 `GLOSSARY` 词条逐字展示含义，一次性状态不显示「持续」。
+- **粘液**：`onDayStart` 喷吐前检查目标格 `states` 是否已有 `type='slime'`，有则跳过（同名不叠加，一格至多 1 层）；玩家进入后由 `MovementSystem` 结算生命 -5 / 行动力 -1 并立即移除。信息区「状态」行按物品库 `GLOSSARY` 词条逐字展示含义，一次性状态不显示「持续」。
 - **生物类设施拆除 / 替换清理（2026-11-07）**：统一入口 `CreatureSystem.removeCreaturesOwnedByTile(gs, tile, { reason })`，**不写死设施 id**，按 `creatureOwnedByTile`（uid 优先、裸索引回退）筛出该地块实例归属的全部生物（含 `housed` 收纳中的）；先把 `fence[].creatures` 缓存统一收敛为 id 数组并剔除被删 id，再从 `gs.creatures` 删除，实例标记 `hp=0 / dead=true / housed=false`。随后按 `getCreatureDef(kind).category` 聚合发 `GE.CAPACITY_CHANGE { category, newCount, reason }`（容量条 / TopBar 实时重绘），并对每只生物发 `GE.CREATURE_DEFEATED { creature, source, noReward: true }`。**不调用 `PendingDeathQueue`、`grantKillDrops`、`onCreatureDefeated` 钩子**，因此没有金币 / 物品 / 经验，也不走击杀结算。野生生物 `sourceTileUid` 与 `sourceTileIdx` 皆空，判定为无归属，不受影响；非生物设施无归属生物，直接返回 `{ ok:false, removed:[] }`。接入点只有两个：`BuildSystem.placeContent` 的旧内容替换分支（`reason='facilityReplaced'`）与 `BuildSystem.clearContent` 清空 `contentId` 之前（`reason='facilityCleared'`）。UI 的拆除主路径是「替换」（`MapView._handleBuildTileClick` 与拖拽都走 `placeContent`），只经过一个入口，不会二次结算；若某生物已被 `PendingDeathQueue` 排入待死队列，flush 时按 `gs.creatures` 存在性判 `already-removed` 跳过，不重复发事件 / 掉落。幂等：无归属生物返回 `{ ok:false, removed:[] }`，空格拆除返回 `reason:'empty'`；渲染层 `CreatureView.paint` 每帧按 `gs.creatures` 对账，删除后 DOM 自动消失。
 
 ---
@@ -888,7 +897,7 @@ friendly → （无）
 
 | 来源 | 时机 | 数值口径 | 伤害类型 | 现状 |
 |---|---|---|---|---|
-| 危险 / 高危容量超载惩罚 | **每一日开始时**（`CreatureSystem.dailyTick` → `updateCapacityAndPunish`） | 该类型**全部存活生物**逐只结算一次，每只 = **100% 当前攻击力**（实例运行期 `c.atk`，含增益 / 减益后的瞬时值；不是种族面板基础值） | **真实伤害**（`CombatSystem.applyTrueDamageToPlayer`，每只一条独立结算事件） | 已实现。警告期 2 天，第 2 次结算仍超载即进入超载期；超载期间每日对**该类型所有生物**各扣一次 |
+| 危险 / 高危容量超载惩罚 | **每一日开始时**（`CreatureSystem.onDayStart` → `updateCapacityAndPunish`） | 该类型**全部存活生物**逐只结算一次，每只 = **100% 当前攻击力**（实例运行期 `c.atk`，含增益 / 减益后的瞬时值；不是种族面板基础值） | **真实伤害**（`CombatSystem.applyTrueDamageToPlayer`，每只一条独立结算事件） | 已实现。警告期 2 天，第 2 次结算仍超载即进入超载期；超载期间每日对**该类型所有生物**各扣一次 |
 | 史莱姆【粘液喷吐】 | 每一日开始时，5%（危险超容量时 15%） | 对随机 1 格施加【粘液】debuff | 非直接伤害 | 已实现，**只作用于地块**，不造成伤害；也没有目标选择，不经过阵营过滤 |
 | 玩家踩上【粘液】格 | 移动并停留在该格时（`MovementSystem`） | hp **-5**、行动力 -1，随后移除 | **真实伤害**（`applyTrueDamageToPlayer`，reason `slime_hit`） | 已实现。属于**地块 debuff 结算**，不是生物命中判定 |
 | 生物普通攻击 | — | — | — | **不存在**：生物 `atk` 只被上述超载真伤消费 |
