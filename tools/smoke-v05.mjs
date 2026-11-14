@@ -131,7 +131,7 @@ assert(Object.keys(gs.map.outerTiles[3].contentState).length === 0, '旧 content
 head('载具 15 种定义');
 assert(Object.keys(VEHICLES).length === 15, '载具 15 种', Object.keys(VEHICLES).length);
 assert(VEHICLES.vehicle_horse.movePattern === 'range', '马匹 = 距离型');
-assert(JSON.stringify(VEHICLES.vehicle_tractor.landFilter?.tier2) === JSON.stringify(['田块', '设施']), '拖拉机落点必须是田块或设施');
+assert(JSON.stringify(VEHICLES.vehicle_tractor.landFilter?.tier2) === JSON.stringify(['田块']), '拖拉机落点只能是田块');
 assert(VEHICLES.vehicle_chance.persistent === true, '巧遇不因次数耗尽消失');
 
 head('每日重置');
@@ -349,6 +349,152 @@ const overlap = s2.stock.filter((i) => s1Unique.has(i.id));
 assert(overlap.length === 0, '第二家店不会与第一家重复的唯一物品', overlap.map((x) => x.id));
 const held = collectUniqueHeld(gs, 1);
 assert(held.size >= 0, 'collectUniqueHeld 可正常收集', held.size);
+
+// ── 随机池拆分 / 占位规则：逐个池子巡检（用户 2026-11-14 要求） ──
+head('随机池拆分与占位规则（全池巡检）');
+const { POOLS } = await import('../src/data/items.js');
+
+const plotPool = POOLS['POOL-01'];
+const facPool = POOLS['POOL-13'];
+assert(plotPool.name.includes('田块'), 'POOL-01 已改名为田块池', plotPool.name);
+assert(plotPool.entries.filter((e) => !e.placeholder).every((e) => ITEMS[e.id]?.tier2 === '田块'),
+  'POOL-01 只含田块分类');
+assert(facPool.entries.filter((e) => !e.placeholder).every((e) => ITEMS[e.id]?.tier2 === '设施'),
+  'POOL-13 只含设施分类');
+for (const code of ['POOL-01', 'POOL-13']) {
+  const ph = POOLS[code].entries.filter((e) => e.placeholder);
+  assert(ph.length === 1 && ph[0].id === 'facility_wild_seed', `${code} 占位物品统一为野生种子`, ph.map((e) => e.id));
+}
+const plotIds = new Set(plotPool.entries.map((e) => e.id));
+assert(!facPool.entries.some((e) => e.placeholder === false && plotIds.has(e.id)),
+  '田块与设施池条目无交叉');
+
+// 全池通用：占位一定不唯一；候选充足时不启用占位；占位不跨池
+let placeholderViolations = [];
+let overuseViolations = [];
+for (const p of Object.values(POOLS)) {
+  for (const e of p.entries) {
+    if (e.placeholder && isUniqueItem(e.id)) placeholderViolations.push(`${p.code}:${e.id}`);
+  }
+  const realCount = p.entries.filter((e) => !e.placeholder).length;
+  if (realCount === 0) continue;
+  const res = resolveCandidates(p.code, 1);
+  if (res.placeholderUsed || res.candidates.some((e) => e.placeholder)) overuseViolations.push(p.code);
+}
+assert(placeholderViolations.length === 0, '所有池的占位物品都不具【唯一】', placeholderViolations);
+assert(overuseViolations.length === 0, '所有池在候选充足时都不启用占位物品', overuseViolations);
+
+// 唯一物品抽尽 → 本池占位补位（收藏品池 / 魔导书池）
+for (const code of ['POOL-03', 'POOL-07', 'POOL-09']) {
+  const exhausted = new Set(POOLS[code].entries.filter((e) => !e.placeholder).map((e) => e.id));
+  const need = exhausted.size + 1;
+  const res = drawFromPool(code, need, { exclude: exhausted });
+  assert(res.length === need, `${code} 抽尽后仍能填满栏位`, res.length);
+  assert(res.every((h) => h.placeholder), `${code} 抽尽后全部为本池占位物品`, res.map((h) => h.id));
+  assert(res.every((h) => h.id === 'collectible_memoir'), `${code} 占位物品取自本池（回忆录）`);
+}
+
+// 同一批进货内，唯一物品不得重复
+for (let round = 0; round < 30; round++) {
+  const batch = drawFromPool('POOL-07', 6);
+  const uniq = batch.filter((h) => isUniqueItem(h.id)).map((h) => h.id);
+  assert(new Set(uniq).size === uniq.length, '同一批进货内唯一物品不重复', uniq);
+  const shopStock = generateStock('shop', Math.random, {});
+  const uniq2 = shopStock.filter((s) => isUniqueItem(s.id)).map((s) => s.id);
+  assert(new Set(uniq2).size === uniq2.length, '同一家商店库存内唯一物品不重复', uniq2);
+}
+// 玩家已拥有 → 任何池都不再抽到
+gs.inventory.items = [{ itemId: 'collectible_royal_pillow', qty: 1 }];
+for (const code of Object.keys(POOLS)) {
+  const res = resolveCandidates(code, 1, { gs });
+  assert(!res.candidates.some((e) => e.id === 'collectible_royal_pillow'),
+    `${code} 已拥有的唯一物品不进候选`);
+}
+// 某家商店已抽到（未售出）→ 其他商店 / 其他随机池都不得再出现
+gs.inventory.items = [];
+gs.map.outerTiles[1].contentState.shop.stock = [
+  { id: 'collectible_deadwood', sold: false },
+  { id: 'facility_wheat', sold: false },
+];
+const stock2 = generateStock('magic', Math.random, { exclude: collectUniqueHeld(gs, 0) });
+assert(!stock2.some((i) => i.id === 'collectible_deadwood'), '其他商店未售出的唯一物品不进新库存');
+const trapDraw = resolveCandidates('POOL-12', 1, { gs });
+assert(!trapDraw.candidates.some((e) => e.id === 'collectible_deadwood'), '事件/奖励抽取（POOL-12）排除已上架的唯一物品');
+// 没有占位条目的池：候选耗尽时宁可少抽，也不重复
+const drained2 = drawFromPool('POOL-02', 1, { exclude: new Set(POOLS['POOL-02'].entries.map((e) => e.id)) });
+assert(drained2.length === 0, '无占位池耗尽后宁可少抽，不重复抽取');
+
+// ── 唯一性三条硬条件：以「果腹」逐条对照（用户 2026-11-14 验收） ──
+head('唯一性三条硬条件（以果腹为准）');
+const FULLNESS = 'collectible_fullness';
+assert(ITEMS[FULLNESS]?.name === '果腹', '果腹 id 正确', ITEMS[FULLNESS]?.name);
+assert(isUniqueItem(FULLNESS), '果腹带【唯一】');
+
+// ① 同一商店同一次进货：前面栏位抽到后，后面栏位不再出现（直到刷新）
+for (const t of gs.map.outerTiles) { t.contentId = null; t.contentState = {}; }
+gs.inventory.items = [];
+gs.map.outerTiles[0].contentId = 'resource_shop';
+gs.map.outerTiles[1].contentId = 'resource_magic_shop';
+const onlyFullness = new Set(
+  POOLS['POOL-07'].entries.filter((e) => !e.placeholder && e.id !== FULLNESS).map((e) => e.id)
+);
+const slot1 = drawFromPool('POOL-07', 1, { exclude: onlyFullness });
+assert(slot1[0]?.id === FULLNESS, '① 前置：第一个栏位抽到果腹', slot1.map((h) => h.id));
+const slot2 = drawFromPool('POOL-07', 1, { exclude: onlyFullness });
+assert(slot2[0]?.id !== FULLNESS, '① 后续栏位不再出现果腹（同一批进货共用排除集）', slot2.map((h) => h.id));
+let dupStock = [];
+for (let round = 0; round < 300; round++) {
+  const stock = generateStock('shop', Math.random, {});
+  if (stock.filter((s) => s.id === FULLNESS).length > 1) dupStock.push(round);
+}
+assert(dupStock.length === 0, '① 随机生成 300 批商店库存，果腹同批不重复', dupStock);
+
+// ② 背包已拥有 → 任何池 / 任何来源都不再出现
+gs.inventory.items = [{ itemId: FULLNESS, qty: 1 }];
+let leakPools = [];
+for (const code of Object.keys(POOLS)) {
+  if (resolveCandidates(code, 1, { gs }).candidates.some((e) => e.id === FULLNESS)) leakPools.push(code);
+}
+assert(leakPools.length === 0, '② 已拥有果腹 → 所有随机池候选里都不出现', leakPools);
+let leakShops = [];
+for (const kind of ['shop', 'magic']) {
+  for (let round = 0; round < 100; round++) {
+    if (generateStock(kind, Math.random, { gs }).some((s) => s.id === FULLNESS)) leakShops.push(kind);
+  }
+}
+assert(leakShops.length === 0, '② 已拥有果腹 → 商店 / 魔法商店进货都不出现', leakShops);
+let leakReward = 0;
+for (let round = 0; round < 200; round++) {
+  if (drawFromPool('POOL-12', 1, { gs }).some((h) => h.id === FULLNESS)) leakReward += 1;
+}
+assert(leakReward === 0, '② 已拥有果腹 → 事件 / 奖励随机抽取（POOL-12）不出现', leakReward);
+
+// ③ 某店已抽到（未售出）→ 其他商店 / 魔法商店 / 事件奖励都不得再出现
+gs.inventory.items = [];
+gs.map.outerTiles[1].contentState.shop = { kind: 'magic', weekKey: 0, stock: [{ id: FULLNESS, sold: false }] };
+assert(collectUniqueHeld(gs, 0).has(FULLNESS), '③ 前置：未售出的果腹进入全局占用表');
+assert(!resolveCandidates('POOL-07', 1, { exclude: collectUniqueHeld(gs, 0) })
+  .candidates.some((e) => e.id === FULLNESS), '③ 其他商店进货候选排除果腹');
+assert(!resolveCandidates('POOL-12', 1, { gs }).candidates.some((e) => e.id === FULLNESS),
+  '③ 事件 / 奖励抽取（POOL-12）排除果腹');
+let leakOther = [];
+for (let round = 0; round < 100; round++) {
+  if (generateStock('magic', Math.random, { exclude: collectUniqueHeld(gs, 0) }).some((s) => s.id === FULLNESS)) {
+    leakOther.push('magic');
+  }
+}
+assert(leakOther.length === 0, '③ 魔法商店进货不出现果腹', leakOther);
+// 刷新后（旧货消失）→ 果腹重新可抽
+gs.map.outerTiles[1].contentState.shop.stock = [];
+assert(collectUniqueHeld(gs, 0).has(FULLNESS) === false, '③ 刷新后果腹解除占用');
+assert(resolveCandidates('POOL-07', 1, { gs }).candidates.some((e) => e.id === FULLNESS),
+  '③ 刷新后果腹可重新进入抽取范围');
+
+// 事件池 / 奖励池不得绕过唯一性：目前必须不含唯一物品
+const phMod = await import('../src/data/placeholderPools.js');
+const bypass = [...phMod.EVENT_POOL_PLACEHOLDER, ...phMod.REWARD_POOL_PLACEHOLDER]
+  .filter((e) => e.itemId && isUniqueItem(e.itemId));
+assert(bypass.length === 0, '事件池 / 奖励池不含唯一物品（不绕过唯一性判定）', bypass.map((e) => e.id));
 
 console.log(`\n结果：${pass} 通过，${fail} 失败`);
 process.exit(fail ? 1 : 0);

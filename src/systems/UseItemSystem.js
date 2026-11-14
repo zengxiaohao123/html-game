@@ -224,7 +224,7 @@ export function onDailyStart(gs) {
       const isResource = ITEMS[tile.contentId]?.tier2 === '资源';
       const chance = isResource ? (eff.resourceChance ?? 0.3) : (eff.chance ?? 0.1);
       if (Math.random() < chance) {
-        const [hit] = drawFromPool(eff.pool || 'POOL-12', 1);
+        const [hit] = drawFromPool(eff.pool || 'POOL-12', 1, { gs });
         if (hit?.id) {
           InventorySystem.addItem(gs, hit.id, 1);
           EventBus.emit(GE.TOAST_SHOW, { text: `🪤 陷阱触发：获得 ${ITEMS[hit.id]?.name || hit.id}`, duration: 1800 });

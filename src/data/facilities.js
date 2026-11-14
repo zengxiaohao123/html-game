@@ -543,8 +543,8 @@ const FacilityHenhouse = {
         }
       }
 
-      // §13.3 / BIO-002 L 列：来自鸡舍的生物，玩家每次进入鸡舍心情 +1（每日限 1 次）；
-      // 其他方式心情固定 0（不在 dailyTick 无条件结算）
+      // §13.4 / BIO-002 L 列：来自鸡舍的生物，玩家每次进入鸡舍心情 +1（每日限 1 次）；
+      // 其他方式心情固定 0（不在换日结算里无条件结算）
       for (const c of gs.creatures) {
         if (!c || c.hp <= 0 || !CreatureSystem.creatureOwnedByTile(gs, c, tile)) continue;
         if (c.lastHenhouseMoodDay === gs.day) continue;
@@ -675,7 +675,7 @@ const FacilityCorn = {
     //   抽中类型后等概率随机；池内为 小鸡/母鸡/史莱姆，史莱姆再随机元素变体）
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
-      const hits = drawFromPool('POOL-02', 1);
+      const hits = drawFromPool('POOL-02', 1, { gs });
       const picked = hits[0];
       if (!picked || !picked.id) return;
       const kind = picked.id === 'slime' ? Random.pick(SLIME_KINDS) : picked.id;
@@ -1022,7 +1022,7 @@ const ResourceBus = {
     // RES-005 / OUT-18：受祝福 → 获得 1 随机载具（载具池 1 = POOL-04）；载具进载具页手动装备
     HookDispatcher.register('onBlessed', ({ gs, tileIdx }) => {
       if (!isMine(gs, tileIdx, this.id)) return;
-      const [hit] = drawFromPool('POOL-04', 1);
+      const [hit] = drawFromPool('POOL-04', 1, { gs });
       const vehId = hit ? ITEM_TO_VEHICLE[hit.id] : null;
       if (!vehId) {
         devLog.warn('[bus] onBlessed 载具池 1 未抽到可映射载具:', hit?.id);
@@ -1042,7 +1042,7 @@ const ResourceBus = {
 // ════════════════════════════════════════════════════════════════
 
 // ── FAC-013 野生种子 🌱 ──
-// 【放置时】变为随机设施（调用【设施池1】= POOL-01）
+// 【放置时】变为随机田块（调用【田块池1】= POOL-01）
 // 占位物品：平时不进随机池，只有池子候选不足时才补入；允许叠加，无【唯一】
 const FacilityWildSeed = {
   id: 'facility_wild_seed',
@@ -1050,21 +1050,21 @@ const FacilityWildSeed = {
   emoji: Assets.facilities.facility_wild_seed,
   value: 1,
   description: ITEMS.facility_wild_seed.description,
-  internalNote: '占位物品：允许叠加，没有【唯一】；效果需调用设施池1',
+  internalNote: '占位物品：允许叠加，没有【唯一】；效果需调用田块池1',
 
   register() {
     HookDispatcher.register('onPlace', ({ gs, tileIdx }) => {
       const tile = gs.map.outerTiles[tileIdx];
       if (!tile || tile.contentId !== this.id) return;
 
-      // 从设施池1 抽 1 个设施；抽中占位（野生种子）时重抽，避免自己变自己
+      // 从田块池1 抽 1 个田块；抽中占位（野生种子）时重抽，避免自己变自己
       let picked = null;
       for (let i = 0; i < 8; i++) {
-        const [hit] = drawFromPool('POOL-01', 1, { unique: true });
+        const [hit] = drawFromPool('POOL-01', 1, { unique: true, gs });
         if (hit && hit.id && hit.id !== this.id) { picked = hit; break; }
       }
       if (!picked) {
-        devLog.warn('[wildSeed] 设施池1 抽不到非占位设施，保持原样');
+        devLog.warn('[wildSeed] 田块池1 抽不到非占位田块，保持原样');
         return;
       }
       tile.contentId = picked.id;

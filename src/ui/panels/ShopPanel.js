@@ -398,10 +398,14 @@ export class ShopPanel {
       const left = refreshLeft(shop);
       this.refreshBtn.innerHTML = '';
       createEl('span', { text: '🔄', style: { fontSize: '15px' }, parent: this.refreshBtn });
-      createEl('span', {
-        text: cost === null ? '刷新' : `刷新 ${cost}`,
-        parent: this.refreshBtn,
-      });
+      if (cost === null) {
+        createEl('span', { text: '刷新', parent: this.refreshBtn });
+      } else {
+        // 文案固定为「刷新：N🪙」，不再只显示一个孤立的数字
+        createEl('span', { text: '刷新：', parent: this.refreshBtn });
+        createEl('span', { text: String(cost), parent: this.refreshBtn });
+        createEl('span', { text: '🪙', style: { fontSize: '13px' }, parent: this.refreshBtn });
+      }
       this.refreshBtn.disabled = cost === null;
       this.refreshBtn.style.opacity = cost === null ? '0.5' : '1';
       this.refreshBtn.style.cursor = cost === null ? 'default' : 'pointer';
@@ -494,10 +498,11 @@ export class ShopPanel {
   _renderSellGrid() {
     const cat = CATEGORY_TABS[this.sellCat] || CATEGORY_TABS[0];
     const all = (this.gs.inventory.items || []).filter((e) => e.qty > 0);
-    const entries = all.filter((e) => cat.match(e.itemId));
+    // 不可出售的物品直接不显示（不再渲染成灰格 / 灰按钮）
+    const entries = all.filter((e) => cat.match(e.itemId) && isSellable(e.itemId));
     if (entries.length === 0) {
       createEl('div', {
-        text: all.length === 0 ? '背包是空的' : '该分类下没有物品',
+        text: all.length === 0 ? '背包是空的' : '该分类下没有可出售物品',
         style: { gridColumn: '1 / -1', padding: '20px', textAlign: 'center', opacity: '0.6' },
         parent: this.gridEl,
       });
@@ -506,7 +511,7 @@ export class ShopPanel {
     entries.forEach((entry) => {
       const def = ITEMS[entry.itemId] || {};
       const price = entry.value ?? def.value ?? 0;
-      // §16.21：背包格同样只显示图标、名称、回收价；不可售的灰化发生在详情「售卖」按钮
+      // §16.21：可售物品才进售卖网格，格内只显示图标、名称、回收价
       const cell = this._cellBase();
       this._fillCell(cell, {
         id: entry.itemId, name: def.name || entry.itemId, emoji: def.emoji, price,

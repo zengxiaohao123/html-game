@@ -10,19 +10,28 @@
 //   * 离开后本回合内不能再进同一家店
 //
 // 差异：
-//   商店 12 格：载具 1~3、设施/资源 2~3、作物 2~3、收藏品 4~7
+//   商店 12 格：载具 1~3、田块/设施/资源 2~3、作物 2~3、收藏品 4~7
 //   魔法商店 10 格：魔导书 3~4、消耗道具 2~4、技能 2~3、载具 1~3
 //
 // 技能货架：直接售卖技能物品本身，购买后直接入背包。
 //
 // 抽取：先各类抽到下限，剩余格数逐格随机分给"未达上限"的类别（§11.1 算法），
-//       候选不足时由 RandomPool 自动补入占位物品（野生种子 / 回忆录）。
+//       候选不足时由 RandomPool 补入本池的占位物品（野生种子 / 回忆录）。
+//
+// 【唯一】全局占用（§12.2、§16.4）：
+//   * "已拥有"只看背包持有；已抽取未售出的库存也算被占用；
+//   * 同一批进货内不得重复；跨商店 / 事件 / 其他随机池同样不得再抽到。
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { ITEMS } from '../data/items.js';
 import { drawFromPool } from './RandomPool.js';
+import {
+  isUniqueItem,
+  collectOwnedUniqueIds,
+  collectReservedUniqueIds,
+} from './ItemUniqueness.js';
 import * as InventorySystem from './InventorySystem.js';
 import { VehicleSystem } from './VehicleSystem.js';
 import { ITEM_TO_VEHICLE } from '../data/vehicles.js';
@@ -62,7 +71,7 @@ export const SHOP_KINDS = {
     slots: 12,
     groups: [
       { pool: 'POOL-08', min: 1, max: 3, label: '载具' },
-      { pool: 'POOL-05', min: 2, max: 3, label: '设施/资源' },
+      { pool: 'POOL-05', min: 2, max: 3, label: '田块/设施/资源' },
       { pool: 'POOL-06', min: 2, max: 3, label: '作物' },
       { pool: 'POOL-07', min: 4, max: 7, label: '收藏品' },
     ],
@@ -107,35 +116,18 @@ export function isSellable(itemId) {
 }
 
 /**
- * 是否带【唯一】：场上至多 1 个，未售出前不会出现在别的商店或随机池里。
- * 判定依据来自物品库：显性词条含【唯一】，或叠放规则里写明"自带【唯一】"。
+ * 是否带【唯一】—— 判定与全局占用表的唯一入口在 ItemUniqueness（此处再导出，保持旧调用方兼容）。
  */
-export function isUniqueItem(itemId) {
-  const it = ITEMS[itemId];
-  if (!it) return false;
-  if ((it.traits || []).includes('唯一')) return true;
-  const rule = it.stackRule || '';
-  // 注意：占位物品写的是"无【唯一】"，不能误判
-  return /【唯一】/.test(rule) && !/无【唯一】/.test(rule);
-}
+export { isUniqueItem };
 
 /**
  * 收集"已经被占用"的唯一物品：其它商店里未售出的 + 玩家背包里的。
  * 生成新库存时排除，避免同一件唯一物品同时出现在两家店。
+ * @param {number|null} exceptTileIdx 本店自身（刷新时旧库存会消失，不参与排除）
  */
-export function collectUniqueHeld(gs, exceptTileIdx) {
-  const held = new Set();
-  for (const t of gs.map.outerTiles) {
-    if (t.idx === exceptTileIdx) continue;
-    const stock = t.contentState?.shop?.stock;
-    if (!Array.isArray(stock)) continue;
-    for (const item of stock) {
-      if (!item.sold && isUniqueItem(item.id)) held.add(item.id);
-    }
-  }
-  for (const e of gs.inventory?.items || []) {
-    if (e.qty > 0 && isUniqueItem(e.itemId)) held.add(e.itemId);
-  }
+export function collectUniqueHeld(gs, exceptTileIdx = null) {
+  const held = collectOwnedUniqueIds(gs);
+  for (const id of collectReservedUniqueIds(gs, exceptTileIdx)) held.add(id);
   return held;
 }
 
@@ -177,17 +169,21 @@ function drawShopSkills(count, rand = Math.random) {
 
 /** 生成一批商品 */
 export function generateStock(kind, rand = Math.random, opts = {}) {
-  const exclude = opts.exclude || null;
   const cfg = SHOP_KINDS[kind];
   const counts = planCounts(cfg, rand);
   const stock = [];
+  // 排除集合：调用方显式传入优先；否则按 gs 现算（已拥有 + 其他商店未售出）。
+  // 复制成新 Set，抽取向里追加"本批已抽中的唯一物品" → 同一批进货内不重复。
+  const exclude = opts.exclude
+    ? new Set(opts.exclude)
+    : (opts.gs ? collectUniqueHeld(opts.gs, opts.exceptTileIdx ?? null) : new Set());
 
   cfg.groups.forEach((g, i) => {
     const picked = g.pool === 'SHOP_SKILL'
       ? drawShopSkills(counts[i], rand)
       : g.pool === 'SHOP_TERRAIN'
         ? drawShopTerrains(counts[i], rand)
-        : drawFromPool(g.pool, counts[i], { unique: false, exclude });
+        : drawFromPool(g.pool, counts[i], { exclude });
     for (const p of picked) {
       if (!p.id) continue;
       const def = ITEMS[p.id];
@@ -391,20 +387,25 @@ export function sell(gs, itemId, opts = {}) {
 
 /** 每周一：刷新场上所有商店（外部由 DaySystem 调用） */
 export function weeklyRefreshAll(gs) {
-  let n = 0;
   const wk = weekKey(gs);
+  const shops = [];
   for (const tile of gs.map.outerTiles) {
     if (!shopKindOfContent(tile.contentId)) continue;
     const shop = getShop(gs, tile.idx);
-    if (!shop) continue;
-    shop.stock = generateStock(shop.kind, Math.random, { exclude: collectUniqueHeld(gs, tile.idx) });
-    shop.refreshUsed = 0;
-    // C-6：同步 weekKey，避免 getShop 的跨周检查在本周首次打开时再刷新一次（双重刷新）
-    shop.weekKey = wk;
-    n += 1;
+    if (shop) shops.push({ shop, idx: tile.idx });
   }
-  if (n) devLog.info('[Shop] 周一刷新了', n, '家商店');
-  return n;
+  // 两段式：所有店先进货清空，再逐家生成。
+  // 否则先生成的店会看到别家"即将消失"的旧库存，把本该重新可抽的唯一物品误排除。
+  for (const { shop } of shops) {
+    shop.stock = [];
+    shop.refreshUsed = 0;
+    shop.weekKey = wk;
+  }
+  for (const { shop, idx } of shops) {
+    shop.stock = generateStock(shop.kind, Math.random, { exclude: collectUniqueHeld(gs, idx) });
+  }
+  if (shops.length) devLog.info('[Shop] 周一刷新了', shops.length, '家商店');
+  return shops.length;
 }
 
 /** 受祝福：店内受祝福本次进入即生效；店外受祝福下次进入时生效 */

@@ -60,7 +60,8 @@ for (const [code, pool] of Object.entries(POOLS)) {
     // 占位物品会自动补入（RandomPool.resolveCandidates），所以这里只告警不判死
     warn(`${code} 可用候选 ${real} 条 < 抽取下限 ${pool.drawMin} 条 —— 将自动用占位物品补足`);
   } else if (pool.drawMax != null && real < pool.drawMax) {
-    warn(`${code} 可用候选 ${real} 条 < 抽取上限 ${pool.drawMax} 条 —— 抽满时会重复/不足`);
+    // 唯一物品抽掉后候选会进一步减少；有本池占位则由占位补足，否则宁可少抽
+    warn(`${code} 可用候选 ${real} 条 < 抽取上限 ${pool.drawMax} 条 —— ${ph > 0 ? '不足部分由本池占位物品补足' : '无占位条目，耗尽后栏位留空'}`);
   }
   const noWeight = pool.entries.filter((e) => e.weight == null).length;
   if (noWeight === n && n > 0) warn(`${code} 权重全为空，抽取只能按等权实现`);
@@ -101,6 +102,7 @@ async function tryImport(path) {
   try { return await import(path); } catch (e) { bad(`import ${path} 失败：${e.message}`); return null; }
 }
 
+const libPlots = Object.values(ITEMS).filter((i) => i.tier2 === '田块').map((i) => i.id);
 const libFacilities = Object.values(ITEMS).filter((i) => i.tier2 === '设施').map((i) => i.id);
 const libResources = Object.values(ITEMS).filter((i) => i.tier2 === '资源').map((i) => i.id);
 const libSkills = Object.values(ITEMS).filter((i) => i.tier2 === '技能').map((i) => i.id);
@@ -125,7 +127,8 @@ function coverage(label, libIds, codeIds) {
 
 if (facMod?.ALL_FACILITIES) {
   const codeIds = new Set(facMod.ALL_FACILITIES.map((f) => f.id).filter((id) => id.startsWith('facility_')));
-  coverage('设施', libFacilities, codeIds);
+  // 地块内容已按二级分类拆成「田块 / 设施」，代码侧仍统一放在 facilities.js，合并比对
+  coverage('地块内容（田块+设施）', [...libPlots, ...libFacilities], codeIds);
 }
 if (resMod?.ALL_RESOURCE_IDS) coverage('资源', libResources, new Set(resMod.ALL_RESOURCE_IDS));
 if (terMod?.ALL_TERRAIN_IDS) coverage('地形', libTerrains, new Set(terMod.ALL_TERRAIN_IDS));

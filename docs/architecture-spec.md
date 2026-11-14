@@ -541,12 +541,72 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 - **分类口径**：地块内容由「设施 / 资源 / 技能」三类改为**田块 / 设施 / 资源 / 技能**四类。田块＝所有植物类田块（花田同属此类）＋野生种子；设施＝生物类设施（鸡舍、史莱姆屋）＋家、帐篷。
 - **数据生成**：`tools/gen_library.py` 机械搬运表格，不改代码逻辑；`tier2` 值随表格变为 `田块`（FAC-003~008、011、012、013~016 共 12 条）与 `设施`（FAC-001、002、009、010 共 4 条）。
 - **用词修正**：全项目地块名称统一使用「田块」表述（物品名、来源说明、备注、随机池、说明页、代码注释与运行时提示），不存在两套叫法。
-- **随机池不变**：POOL-01 等池子按条目编号列举，田块与设施仍按原大类共同参与同一随机池，本次拆分不剔除任一分类。
+- **随机池同步拆分（2026-11-14）**：POOL-01 改名为**田块池1**（只含田块），新增 **POOL-13 设施池1**（只含设施、家除外），两池占位均为「野生种子」；商店 POOL-05 更名为「商店·田块/设施/资源池」，栏位数量不变。详见 §2.11。
 - **分类 tab**：`src/ui/CategoryBar.js` 的 `CATEGORY_TABS` 增加 `田块`，顺序为总览 → 田块 → 设施 → 资源 → 技能 → 地形 → 产物 → 道具 → 杂物。背包（9 tab）与商店售卖页共用该常量，自动同步。
 - **合成页**：`ForgePanel.TABS` 增加 `田块`（7 tab），`iconGroupOf` 与 `CodexPanel` / `InventoryPanel` 的图标分组把 `田块` 与 `设施` 一并映射到 `facilities` 资产组（`facility_*` 的图标 / emoji 仍在该组）。
-- **载具落点**：`VehicleSystem.landOk` 的 `landFilter.tier2` 支持数组；VEH-010 拖拉机改为 `['田块','设施']`，保持拆分前「任意设施所在地块」的落点范围不变。
-- **不变项**：随机池（POOL-01 等）按条目编号列举，不随 `tier2` 变化；`初级肥料` 的 `PLANT_FACILITIES` 与魔导书田块统计仍按 contentId 判定，行为零改动；玩家可见文本（含拖拉机描述）逐字照物品库，不改写。
-- **验收**：`node tools/smoke-ui.mjs`（背包 9 tab / 售卖页 9 tab / 合成 7 tab 文案与顺序）、`node tools/smoke-v05.mjs`（拖拉机 landFilter 含田块与设施）。
+- **载具落点（2026-11-14 修正）**：`VehicleSystem.landOk` 的 `landFilter.tier2` 支持数组；VEH-010 拖拉机改为 `['田块']`——**只能去往田块**，不能去家、鸡舍、史莱姆屋、帐篷这类设施。
+- **不变项**：`初级肥料` 的 `PLANT_FACILITIES` 与魔导书田块统计仍按 contentId 判定，行为零改动；玩家可见文本（含拖拉机描述）逐字照物品库，不改写。
+- **验收**：`node tools/smoke-ui.mjs`（背包 9 tab / 售卖页 9 tab / 合成 7 tab 文案与顺序）、`node tools/smoke-v05.mjs`（拖拉机 landFilter 仅含田块、随机池拆分与唯一性断言）。
+
+### 2.11 随机池、【唯一】与【占位】（2026-11-14）
+
+> 对应设计文档 §11.1 / §12.2 / §12.5 / §12.6 / §16.4 / §17.6；数据源为《转盘农场_物品库.xlsx》「随机池」工作表。
+
+**模块分层**
+
+- `src/systems/ItemUniqueness.js`：唯一性判定的唯一入口。
+  - `isUniqueItem(itemId)`：显性词条含【唯一】或叠放规则写明「自带【唯一】」；排除「无【唯一】」的占位物品。
+  - `collectOwnedUniqueIds(gs)`：**只看背包持有**（qty > 0）。收藏品 / 魔导书不能放置在地块上，不做地块归属判定。
+  - `collectReservedUniqueIds(gs, exceptTileIdx)`：其他商店库存里 `sold !== true` 的唯一物品。
+  - `unavailableUniqueIds(gs, exceptTileIdx)`：两者并集。
+- `src/systems/RandomPool.js`：所有抽取的唯一出口。
+  - `drawFromPool(code, count, { gs, exclude, unique, exceptTileIdx })`：传 `gs` 自动并入全局占用表；传 `exclude` 时把本批抽中的唯一物品**追加进同一个 Set**，实现「同一批进货后续栏位自动排除」。
+  - `resolveCandidates(code, need, opts)`：只读预览候选（测试与调试用）。
+  - 占位只取**本池** `placeholder === true` 的条目，不再跨池兜底。
+
+**【唯一】三条硬规则（`tools/smoke-v05.mjs` 以「果腹」逐条断言）**
+
+1. 同一家商店的同一次进货内，某栏位抽到后其余栏位不得再出现，直到刷新；
+2. 背包已持有时，任何商店 / 魔法商店 / 事件奖励 / 其他随机池都不得再抽到；
+3. 某家商店已抽到且未售出时，其他渠道同样不得再抽到；被买走或随刷新消失后解除占用。
+
+**占位规则**
+
+- 平时不参与抽取；**启用阈值：本池本次可用候选数（排除唯一占用与已拥有）< 本次还需抽的件数**时，补入本池占位条目。
+- 占位一定不具【唯一】，允许同批重复；某池没有占位条目且候选耗尽时**宁可少抽**（栏位留空）。
+- 每周一刷新两段式：先清空所有商店旧库存，再逐家生成，避免旧货被误判为占用。
+
+**池清单（13 个）**
+
+| 池 | 名称 | 正常 + 占位 | 含唯一 | 占位 |
+| -- | -- | -- | -- | -- |
+| POOL-01 | 田块池1 | 11 + 1 | 0 | 野生种子 |
+| POOL-02 | 生物池 | 3 + 0 | 0 | — |
+| POOL-03 | 藏品池1 | 4 + 1 | 4 | 回忆录 |
+| POOL-04 | 载具池1 | 9 + 0 | 0 | — |
+| POOL-05 | 商店·田块/设施/资源池 | 20 + 1 | 0 | 野生种子 |
+| POOL-06 | 商店·作物池 | 11 + 0 | 0 | — |
+| POOL-07 | 商店·收藏品池 | 6 + 1 | 6 | 回忆录 |
+| POOL-08 | 商店/魔法商店·载具池 | 14 + 0 | 0 | — |
+| POOL-09 | 魔法商店·魔导书池 | 13 + 1 | 13 | 回忆录 |
+| POOL-10 | 魔法商店·消耗道具池 | 6 + 0 | 0 | — |
+| POOL-11 | 魔法商店·技能货架 | 0 + 0 | 0 | —（技能由 `SHOP_SKILLS` 直售） |
+| POOL-12 | 随机物品池1 | 66 + 2 | 8 | 野生种子、回忆录 |
+| POOL-13 | 设施池1 | 3 + 1 | 0 | 野生种子 |
+
+**调用点**
+
+- 商店 / 魔法商店：`getShop`、跨周刷新、手动刷新都传 `exclude: collectUniqueHeld(gs, tileIdx)`。
+- 陷阱等道具每日随机：`UseItemSystem` → `drawFromPool(eff.pool, 1, { gs })`。
+- 祝福奖励：`facilities.js` 玉米（POOL-02）、巴士站（POOL-04）传 `{ gs }`。
+- 野生种子变身：POOL-01（田块池），传 `{ unique: true, gs }`。
+- 《农业指南》：POOL-13（设施池）3 次，传 `{ gs }`。
+- 事件 / 奖励固定池（`placeholderPools.EVENT_POOL_PLACEHOLDER` / `REWARD_POOL_PLACEHOLDER`）当前不含唯一物品；`smoke-v05` 有断言防止未来加入后绕过唯一性。
+
+**商店 UI**
+
+- 售卖页：不可出售物品**直接不显示**（不渲染灰格 / 灰按钮）；分类为空时提示「该分类下没有可出售物品」。
+- 刷新按钮：固定文案「刷新：N🪙」（N = 本次金币），次数用尽显示「刷新」并灰化。
 
 ## 三、全局状态 schema（GS 对象）
 
@@ -579,7 +639,8 @@ export const createInitialState = () => ({
     rows: 3,                   // 行数（= 设计文档“宽度”）；扩建 II 型 +1
     cols: 3,                   // 列数（= 设计文档“长度”）；扩建 I 型 +1
     size: 3,                   // 兼容字段：初始 3，扩建后 = Math.max(rows, cols)
-    outerTiles: [],            // 外圈格数组，长度 2rows+2cols-4；每格 { idx, terrain, terrainAmount, contentId, states: [], dailyFlags: {} }
+    outerTiles: [],            // 外圈格数组，长度 2rows+2cols-4；每格 { idx, terrain, terrainAmount, contentId, contentState, states: [], dailyFlags: {} }
+                               // 商店格 contentState.shop = { kind, weekKey, stock:[{id,name,price,group,placeholder,sold}], refreshUsed, visited, freeRefreshPending }
     fence: [],                 // 栅栏内网格，fenceRows × fenceCols；每格 { row, col, terrain, terrainAmount, creatures: [], items: [] }
     fenceRows: 1,              // = rows - 2（栅栏内行数；原点恒为网格 (1,1)）
     fenceCols: 1,              // = cols - 2（栅栏内列数；线性索引 = row*fenceCols+col）

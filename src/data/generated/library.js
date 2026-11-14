@@ -11,7 +11,7 @@ export const LIB_STAT = {
     "道具": 28,
     "地形": 4
   },
-  "pools": 12,
+  "pools": 13,
   "outputs": 31,
   "glossary": 41,
   "creatures": 3,
@@ -643,14 +643,14 @@ export const ITEMS = {
   "value": 1,
   "valueMode": "固定值",
   "traits": [],
-  "description": "装载后能够移动至同一行（列）内的任意设施所在地块，可使用1次",
+  "description": "装载后能够移动至同一行（列）内的任意田块所在地块，可使用1次",
   "triggers": [],
   "stackRule": "不可叠放",
   "stackable": false,
   "stackMax": 1,
   "stackByValue": false,
   "sources": "文档未指定具体途径（载具通用途径：商店、事件、奖励、任务、巴士站）",
-  "notes": "次数耗尽后消失；走完后按徒步方式模拟「经过」路径.设施指的是该地块需要有地块内容且该地块内容属于设施分类"
+  "notes": "次数耗尽后消失；走完后按徒步方式模拟「经过」路径.田块指的是该地块需要有地块内容且该地块内容属于田块分类"
 },
   item_tour_bus: {
   "id": "item_tour_bus",
@@ -1121,7 +1121,7 @@ export const ITEMS = {
   "value": 1,
   "valueMode": "固定值",
   "traits": [],
-  "description": "【放置时】变为随机设施",
+  "description": "【放置时】变为随机田块",
   "triggers": [
     "放置时"
   ],
@@ -1130,7 +1130,7 @@ export const ITEMS = {
   "stackMax": 999,
   "stackByValue": false,
   "sources": "文档未指定具体途径；地块内容通过开局随机分配、商店、事件、奖励等获得（汇总自 9 章）",
-  "notes": "该设施为特殊的占位物品，允许叠加，没有【唯一】。所谓占位，是指平时里不会出现，只有当某个随机池子可选物品不足时，才会将占位物品加入该随机池.允许在一次随机中出现多个同样的占位物品。该物品的效果需要调用【设施池1】"
+  "notes": "该设施为特殊的占位物品，允许叠加，没有【唯一】。所谓占位，是指平时里不会出现，只有当某个随机池子可选物品不足时，才会将占位物品加入该随机池.允许在一次随机中出现多个同样的占位物品。该物品的效果需要调用【田块池1】"
 },
   facility_dandelion: {
   "id": "facility_dandelion",
@@ -2810,25 +2810,15 @@ export const ITEMS = {
 },
 };
 
-/** 随机池（12 个）—— 表格第 7 张工作表 */
+/** 随机池（13 个）—— 表格第 7 张工作表 */
 export const POOLS = {
   "POOL-01": {
   "code": "POOL-01",
-  "name": "设施池1",
-  "title": "POOL-01　设施池1",
+  "name": "田块池1",
+  "title": "POOL-01　田块池1",
   "drawMin": null,
   "drawMax": null,
   "entries": [
-    {
-      "libCode": "FAC-002",
-      "id": "facility_tent",
-      "name": "帐篷",
-      "price": null,
-      "weight": null,
-      "rarity": 1,
-      "placeholder": false,
-      "notes": null
-    },
     {
       "libCode": "FAC-003",
       "id": "facility_wheat",
@@ -2890,26 +2880,6 @@ export const POOLS = {
       "notes": null
     },
     {
-      "libCode": "FAC-009",
-      "id": "facility_henhouse",
-      "name": "鸡舍",
-      "price": null,
-      "weight": null,
-      "rarity": 1,
-      "placeholder": false,
-      "notes": null
-    },
-    {
-      "libCode": "FAC-010",
-      "id": "facility_slimehouse",
-      "name": "史莱姆屋",
-      "price": null,
-      "weight": null,
-      "rarity": 1,
-      "placeholder": false,
-      "notes": null
-    },
-    {
       "libCode": "FAC-011",
       "id": "facility_corn",
       "name": "玉米田块",
@@ -2937,7 +2907,7 @@ export const POOLS = {
       "weight": null,
       "rarity": 99,
       "placeholder": true,
-      "notes": null
+      "notes": "候选不足时补入"
     },
     {
       "libCode": "FAC-016",
@@ -3170,8 +3140,8 @@ export const POOLS = {
 },
   "POOL-05": {
   "code": "POOL-05",
-  "name": "商店·设施/资源池",
-  "title": "POOL-05　商店·设施/资源池　（2~3件/次）",
+  "name": "商店·田块/设施/资源池",
+  "title": "POOL-05　商店·田块/设施/资源池　（2~3件/次）",
   "drawMin": 2,
   "drawMax": 3,
   "entries": [
@@ -3870,6 +3840,16 @@ export const POOLS = {
       "rarity": 2,
       "placeholder": false,
       "notes": null
+    },
+    {
+      "libCode": "ITM-COL-004",
+      "id": "collectible_memoir",
+      "name": "回忆录",
+      "price": 8,
+      "weight": null,
+      "rarity": 99,
+      "placeholder": true,
+      "notes": "占位收藏品，不属于魔导书但在魔导书数量不足时用于占位"
     }
   ]
 },
@@ -4636,6 +4616,55 @@ export const POOLS = {
       "rarity": 1,
       "placeholder": false,
       "notes": null
+    }
+  ]
+},
+  "POOL-13": {
+  "code": "POOL-13",
+  "name": "设施池1",
+  "title": "POOL-13　设施池1",
+  "drawMin": null,
+  "drawMax": null,
+  "entries": [
+    {
+      "libCode": "FAC-002",
+      "id": "facility_tent",
+      "name": "帐篷",
+      "price": null,
+      "weight": null,
+      "rarity": 1,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "FAC-009",
+      "id": "facility_henhouse",
+      "name": "鸡舍",
+      "price": null,
+      "weight": null,
+      "rarity": 1,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "FAC-010",
+      "id": "facility_slimehouse",
+      "name": "史莱姆屋",
+      "price": null,
+      "weight": null,
+      "rarity": 1,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "FAC-013",
+      "id": "facility_wild_seed",
+      "name": "野生种子",
+      "price": null,
+      "weight": null,
+      "rarity": 99,
+      "placeholder": true,
+      "notes": "候选不足时补入"
     }
   ]
 },

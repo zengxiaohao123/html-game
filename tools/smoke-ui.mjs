@@ -925,7 +925,7 @@ head_('第 8 批：商店/魔法商店逐项 UI（选项齐全/正方格/留白/
   assert(JSON.stringify(tabLabels) === JSON.stringify(['购买', '售卖']),
     '切换按钮恰为 [购买, 售卖]（出售/购买互换位置）', tabLabels);
   const refreshText = shopPanel.refreshBtn.children.map((c) => c._text || '').join('');
-  assert(refreshText.includes('刷新'), '刷新按钮含「刷新」+ 价格文案', refreshText);
+  assert(/刷新：4🪙/.test(refreshText), '刷新按钮文案为「刷新：4🪙」（不是孤立数字）', refreshText);
   assert(shopPanel.leaveBtn && shopPanel.leaveBtn._text === '离开', '右下角「离开」大按钮');
   assert(buttonsWithText(shopPanel.root, '✖').length === 1, '右上角 ✖ 唯一');
   assert(!hasText(shopPanel.root, '剩'), '刷新按钮无多余文字「剩 N 次」（次数改放 title）');
@@ -964,26 +964,20 @@ head_('第 8 批：商店/魔法商店逐项 UI（选项齐全/正方格/留白/
   assert(shopPanel.detailEl === null && shopPanel.visible === true, '弹窗开时 ✖ 只关弹窗回商店');
   gs.player.gold = goldBackup;
 
-  // 5) 售卖 tab：背包格同卡片三要素；不可售物品「售卖」灰化且格上无多余文字
-  // 选一个带展示词条且不可售的物品，同时校验词条徽章
+  // 5) 售卖 tab：不可售物品直接不显示（不再渲染灰格 / 灰按钮）
   const unsellableId = 'grimoire_grain_full';
   assert(!isSellable(unsellableId) && (ITEMS[unsellableId]?.traits || []).length > 0,
     '前置：词条物品存在且不可售', unsellableId);
   gs.inventory.items.push({ itemId: unsellableId, qty: 1 });
   EventBus.emit(GE.INVENTORY_CHANGE, {});
   shopPanel.tabBtns[1].click();   // 售卖
-  assert(!hasText(shopPanel.root, '不可售'), '售卖格不显示「不可售」文字（灰化在详情按钮）');
-  const targetCell = [...shopPanel.gridEl.children].find((c) => {
+  assert(!hasText(shopPanel.root, '不可售'), '售卖页不出现「不可售」文字');
+  const unsellableCell = [...shopPanel.gridEl.children].find((c) => {
     let hit = false;
     for (const n of walk(c)) if (n._text && n._text.includes(ITEMS[unsellableId].name)) hit = true;
     return hit;
   });
-  assert(!!targetCell, '售卖网格含不可售物品格', unsellableId);
-  targetCell.onclick();
-  const sellOk = buttonsWithText(shopPanel.detailEl, '售卖')[0];
-  assert(sellOk && sellOk.disabled === true, '不可售物品 → 详情「售卖」灰化');
-  const traitBadges = findAll(shopPanel.detailEl, (el) => el.classList && el.classList.contains('trait-badge'));
-  assert(traitBadges.length > 0, '详情显示展示词条徽章（trait-badge）', traitBadges.length);
+  assert(!unsellableCell, '不可售物品不出现在售卖网格', unsellableId);
 
   // 5.1) 售卖分类栏：与背包共用 CategoryBar（同分组 / 同顺序 / 同选中态），可筛选（§16.21）
   const unsellableBackup = gs.inventory.items.filter((e) => e.itemId !== unsellableId);
@@ -992,7 +986,6 @@ head_('第 8 批：商店/魔法商店逐项 UI（选项齐全/正方格/留白/
     { itemId: unsellableId, qty: 1 },
   ];
   EventBus.emit(GE.INVENTORY_CHANGE, {});
-  buttonsWithText(shopPanel.root, '✖')[0].click();   // 关详情弹窗
   assert(shopPanel.catBarEl && shopPanel.catBarEl.style.display === 'block', '售卖 tab 显示分类栏');
   assert(shopPanel.catBarEl.children.length === 1
     && shopPanel.catBarEl.children[0].classList.contains('tab-bar'),

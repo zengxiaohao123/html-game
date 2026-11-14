@@ -168,7 +168,7 @@ export const VEHICLES = {
     movePattern: 'line',
     maxRange: null,
     canCrossIllegal: false,
-    landFilter: { tier2: ['田块', '设施'] },
+    landFilter: { tier2: ['田块'] },
     usageCount: 1,
     rarity: 1,
   },
