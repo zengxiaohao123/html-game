@@ -142,11 +142,11 @@ export function onItemGained(gs, itemId) {
         break;
       }
       case 'collectible_farm_guide': {
-        // C-15（ITM-COL-006「获得 3 个随机设施」）：设施池 = POOL-13（田块已拆出到 POOL-01）
+        // ITM-COL-005「获得3个随机田块」：田块池 = POOL-01（设施池已拆为 POOL-13）
         let granted = 0;
         for (let i = 0; i < 3; i++) {
           for (let attempt = 0; attempt < 8; attempt++) {
-            const [hit] = drawFromPool('POOL-13', 1, { gs });
+            const [hit] = drawFromPool('POOL-01', 1, { gs });
             if (hit?.id && !hit.placeholder && hit.id !== 'facility_wild_seed') {
               InventorySystem.addItem(gs, hit.id, 1);
               granted += 1;
@@ -154,7 +154,7 @@ export function onItemGained(gs, itemId) {
             }
           }
         }
-        EventBus.emit(GE.TOAST_SHOW, { text: `📘 《农业指南》：获得 ${granted} 个随机设施`, duration: 2200 });
+        EventBus.emit(GE.TOAST_SHOW, { text: `📘 《农业指南》：获得 ${granted} 个随机田块`, duration: 2200 });
         break;
       }
       case 'collectible_sad_pumpkin': {

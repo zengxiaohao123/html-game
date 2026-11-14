@@ -257,10 +257,19 @@ addItem(gs, 'collectible_membership_card', 1);
 const { effectivePrice } = await import('../src/systems/ShopSystem.js');
 assert(effectivePrice(gs, { id: 'item_wheat', price: 10 }) === 5, '会员卡：商品五折');
 
-const facBefore = gs.inventory.items.reduce((n, e) => n + (e.itemId.startsWith('facility_') ? e.qty : 0), 0);
+const beforeMap = new Map(gs.inventory.items.map((e) => [e.itemId, e.qty]));
 addItem(gs, 'collectible_farm_guide', 1);
-const facAfter = gs.inventory.items.reduce((n, e) => n + (e.itemId.startsWith('facility_') ? e.qty : 0), 0);
-assert(facAfter >= facBefore + 3, '《农业指南》：获得 3 个随机设施', { facBefore, facAfter });
+let newPlotCount = 0;
+const grantedIds = [];
+for (const e of gs.inventory.items) {
+  const d = e.qty - (beforeMap.get(e.itemId) || 0);
+  if (d > 0 && e.itemId.startsWith('facility_')) {
+    newPlotCount += d;
+    grantedIds.push(e.itemId);
+  }
+}
+assert(newPlotCount >= 3, '《农业指南》：获得3个随机田块', { newPlotCount, grantedIds });
+assert(grantedIds.every((id) => ITEMS[id]?.tier2 === '田块'), '《农业指南》只发田块，不发设施', grantedIds);
 
 head('消耗道具使用');
 const { useItem } = await import('../src/systems/UseItemSystem.js');
@@ -420,9 +429,10 @@ const stock2 = generateStock('magic', Math.random, { exclude: collectUniqueHeld(
 assert(!stock2.some((i) => i.id === 'collectible_deadwood'), '其他商店未售出的唯一物品不进新库存');
 const trapDraw = resolveCandidates('POOL-12', 1, { gs });
 assert(!trapDraw.candidates.some((e) => e.id === 'collectible_deadwood'), '事件/奖励抽取（POOL-12）排除已上架的唯一物品');
-// 没有占位条目的池：候选耗尽时宁可少抽，也不重复
-const drained2 = drawFromPool('POOL-02', 1, { exclude: new Set(POOLS['POOL-02'].entries.map((e) => e.id)) });
-assert(drained2.length === 0, '无占位池耗尽后宁可少抽，不重复抽取');
+// 生物池：生物可重复、不唯一，不配占位，也不会抽空
+assert(POOLS['POOL-02'].entries.every((e) => !e.placeholder), '生物池不配占位物品');
+const bioBatch = drawFromPool('POOL-02', 40);
+assert(bioBatch.length === 40 && bioBatch.every((h) => !h.placeholder), '生物池连续抽取只出生物，不出占位', bioBatch.length);
 
 // ── 唯一性三条硬条件：以「果腹」逐条对照（用户 2026-11-14 验收） ──
 head('唯一性三条硬条件（以果腹为准）');

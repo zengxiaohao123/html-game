@@ -2288,7 +2288,7 @@ export const ITEMS = {
   "value": 8,
   "valueMode": "固定值",
   "traits": [],
-  "description": "获得3个随机设施",
+  "description": "获得3个随机田块",
   "triggers": [
     "获得后自动生效"
   ],
@@ -2297,7 +2297,7 @@ export const ITEMS = {
   "stackMax": 1,
   "stackByValue": false,
   "sources": "文档未指定具体途径（9 章、11 章通用说明）",
-  "notes": "自带【唯一】；收藏品不可出售。需要按顺序调用【设施池1】3次，每一次调用完再调用下一次"
+  "notes": "自带【唯一】；收藏品不可出售。需要按顺序调用【田块池1】3次，每一次调用完再调用下一次"
 },
   collectible_deadwood: {
   "id": "collectible_deadwood",
