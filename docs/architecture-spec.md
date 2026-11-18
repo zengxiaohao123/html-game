@@ -472,6 +472,7 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
   `nodes[key] = {text,options?,next?,end?,onEnter?}`，`Option = {id,label,sub,detail,disabled,disabledReason,effects,next,end,onSelect}`。
   事件点（RES-001）由 `buildEventStory(entry)` 生成脚本：节点表来自 `src/data/events/<事件id>.js`；
   条目可带 `prepare(gs, ctx)`，进入时生成本次专用 EventDef（如摊位商品与实付价），不修改共享定义。UI 不写死任何文案。
+  摊位购买每次只抽 1 种物品；数量 = 交集（≥1、原始总价 ≤60、唯一 ≤1、全部 ≤4），载具同样 ≤4；实付价按原始总价 40%~150% 随机。
 - **多级状态机**：`option.next` 可指向任意节点，目标节点可再次带 `options`，深度不限；
   节点 / 选项 id 与层级关系**只存在于数据**，不上屏（选项区只渲染 `label/sub/detail`，数字键 `1~9` 只作隐藏快捷键）。
   没有 `options` 且没有 `next` 的节点是终止节点：正文即为结果文本，进入结果态，点击屏幕任意处关闭事件（`result-dismiss`）。

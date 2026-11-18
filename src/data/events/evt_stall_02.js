@@ -4,9 +4,10 @@
 //
 // 购买项的可变部分（事件库「变量预留」）：
 //   x  = 实际花费金币：按商品原始总价 × 40%~150% 随机，每次进入重新随机
-//   xx = 可购商品与数量：调用普通商店随机池（POOL-05/06/07/08，不含魔法商店），
-//        同一批不重复同种；每种数量 1 ~ floor(60 / 原始单价)，【唯一】物品数量至多 1。
-//        可能抽到载具，获得时进载具页，不进背包。
+//   xx = 本次商品与数量：只抽一种物品（可多件），调用普通商店随机池
+//        （POOL-05/06/07/08，不含魔法商店）。
+//        数量取以下约束的交集：至少 1、总价（原始单价）≤60、【唯一】≤1、任何物品 ≤4。
+//        可能抽到载具，获得时进载具页，不进背包；载具同样受「最多 4」约束。
 
 import { POOLS, ITEMS } from '../items.js';
 import { isUniqueItem, unavailableUniqueIds } from '../../systems/ItemUniqueness.js';
@@ -17,12 +18,11 @@ import { getGold } from '../../systems/GoldSystem.js';
 const SHOP_POOLS = ['POOL-05', 'POOL-06', 'POOL-07', 'POOL-08'];
 /** 单种商品按原始单价计算的总价上限 */
 const ITEM_TOTAL_CAP = 60;
+/** 单次购买任何物品的硬数量上限 */
+const ITEM_QTY_CAP = 4;
 /** 实际花费相对原始总价的波动区间 */
 const COST_RATE_MIN = 0.4;
 const COST_RATE_MAX = 1.5;
-/** 一批商品的种类数范围 */
-const GOODS_MIN = 1;
-const GOODS_MAX = 3;
 
 const NODES = {
   intro: {
@@ -56,46 +56,30 @@ function collectShopCandidates(gs) {
   return out;
 }
 
-/** 洗牌后取前 n 个（同批不重复同种） */
-function sampleDistinct(list, n) {
-  const arr = list.slice();
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr.slice(0, n);
-}
-
-/** 掷出每种商品的数量：唯一物品最多 1；其余 1 ~ floor(60 / 单价) */
+/** 掷出数量：至少 1；唯一物品最多 1；其余不超过 4，且总价不超过 60 */
 function rollQty(item) {
   if (isUniqueItem(item.id)) return 1;
-  const max = Math.max(1, Math.floor(ITEM_TOTAL_CAP / item.price));
+  const byPrice = Math.floor(ITEM_TOTAL_CAP / item.price);
+  const max = Math.max(1, Math.min(ITEM_QTY_CAP, byPrice));
   return 1 + Math.floor(Math.random() * max);
 }
 
-/** 生成一次摊位商品与实付价 */
+/** 生成一次摊位商品与实付价（每次只抽一种物品，可多件） */
 export function buildStallOffer(gs) {
   const candidates = collectShopCandidates(gs);
   if (!candidates.length) return null;
 
-  const count = Math.min(
-    candidates.length,
-    GOODS_MIN + Math.floor(Math.random() * (GOODS_MAX - GOODS_MIN + 1)),
-  );
-  const goods = sampleDistinct(candidates, count).map((item) => ({
-    ...item,
-    qty: rollQty(item),
-  }));
-
-  const baseTotal = goods.reduce((sum, g) => sum + g.price * g.qty, 0);
+  const item = candidates[Math.floor(Math.random() * candidates.length)];
+  const qty = rollQty(item);
+  const baseTotal = item.price * qty;
   const rate = COST_RATE_MIN + Math.random() * (COST_RATE_MAX - COST_RATE_MIN);
   const cost = Math.max(1, Math.round(baseTotal * rate));
 
   return {
-    goods,
+    goods: [{ ...item, qty }],
     baseTotal,
     cost,
-    detail: goods.map((g) => `${ITEMS[g.id]?.name || g.name}×${g.qty}`).join('、'),
+    detail: `${ITEMS[item.id]?.name || item.name}×${qty}`,
   };
 }
 
@@ -118,8 +102,7 @@ function prepare(gs) {
     ? {
       id: 'buy',
       label: '挑一样物件买下',
-      sub: `花费${offer.cost}金币，买下摊上的物件`,
-      detail: offer.detail,
+      sub: `花费${offer.cost}金币，买下${offer.detail}`,
       effects: [{ type: 'gold', amount: -offer.cost }, ...goodsEffects(offer.goods)],
       next: 'buy_end',
       disabled: getGold(gs) < offer.cost,

@@ -611,11 +611,9 @@ head('J. 正式事件：文案、可重复性、摊位变量、载具效果');
     const offer = buildStallOffer(offerGS);
     if (!offer) { offerOk = false; break; }
     sample = offer;
-    const ids = new Set(offer.goods.map((x) => x.id));
-    if (ids.size !== offer.goods.length) offerOk = false;
-    if (offer.goods.length < 1 || offer.goods.length > 3) offerOk = false;
+    if (offer.goods.length !== 1) offerOk = false;
     for (const good of offer.goods) {
-      if (good.qty < 1) offerOk = false;
+      if (good.qty < 1 || good.qty > 4) offerOk = false;
       if (isUniqueItem(good.id) && good.qty !== 1) offerOk = false;
       if (good.qty * good.price > 60) offerOk = false;
     }
@@ -623,7 +621,7 @@ head('J. 正式事件：文案、可重复性、摊位变量、载具效果');
     if (offer.cost < Math.max(1, Math.round(base * 0.4))) offerOk = false;
     if (offer.cost > Math.max(1, Math.round(base * 1.5))) offerOk = false;
   }
-  check(offerOk, 'J-12 摊位商品：不同种、数量/唯一性/60 金币上限、实付价 40%~150%', sample?.detail);
+  check(offerOk, 'J-12 摊位商品：每次一种、数量 1~4 / 唯一性 / 60 金币上限、实付价 40%~150%', sample?.detail);
 
   const lowGold = stall.prepare(createInitialState({ gold: 0 }));
   const highGold = stall.prepare(createInitialState({ gold: 100000 }));
@@ -631,8 +629,8 @@ head('J. 正式事件：文案、可重复性、摊位变量、载具效果');
   const highBuy = highGold.nodes.intro.options[0];
   check(lowBuy.disabled === true && highBuy.disabled === false,
     'J-13 金币不足时购买项灰化，充足时可点', { low: lowBuy.sub, high: highBuy.sub });
-  check(/^花费\d+金币，买下摊上的物件$/.test(highBuy.sub) && !!highBuy.detail,
-    'J-14 x / xx 变量位填入实付金币与商品清单', { sub: highBuy.sub, detail: highBuy.detail });
+  check(/^花费\d+金币，买下.+×\d+$/.test(highBuy.sub) && !highBuy.detail,
+    'J-14 x / xx 变量位填入实付金币、商品与数量', { sub: highBuy.sub });
 
   // 载具效果：进载具页，不进背包
   const vg = createInitialState({ gold: 0 });
