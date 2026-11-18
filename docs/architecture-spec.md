@@ -34,7 +34,10 @@ src/
 │   ├── creatures.js          # 生物定义（小鸡/鸡/史莱姆 7 变体）
 │   ├── items.js              # 产出物品表（小麦/鸡蛋/生肉...）
 │   ├── buffs.js              # 6 种 debuff/buff 定义
-│   ├── events.js             # 事件节点表 EVENT_DEFS（选项驱动 / 多级状态机数据源）
+│   ├── events.js             # 事件定义汇总 EVENT_DEFS（只做 import；一事件一文件）
+│   ├── events/               # 正式事件：<事件id>.js，各自 export 一个 EventDef
+│   ├── eventPool.js          # 事件池加权抽取 + 可重复性占用（daily / once）
+│   ├── rewardPool.js         # 奖励池（正式条目未定稿，当前为空池）
 │   └── terrains.js           # 4 种地形定义
 ├── systems/                  # 游戏逻辑系统（读取/修改 GS，触发 EventBus）
 │   ├── GameDirector.js       # 主循环导演（回合制 + 连携技实时窗口）
@@ -467,16 +470,16 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
   （快捷栏根 `.hotbar` 带 inline `display:flex`，所以隐藏外层 wrapper）。原因：文本块已下移到屏幕底部，快捷栏正压在该区域，且事件期间快捷栏本就被输入封锁。
 - **数据驱动**：`STORY_SHOW {script, ctx}` 播放；`script = {id,title,start,nodes,onEnd}`，
   `nodes[key] = {text,options?,next?,end?,onEnter?}`，`Option = {id,label,sub,detail,disabled,disabledReason,effects,next,end,onSelect}`。
-  事件点（RES-001）由 `buildEventStory(entry)` 生成脚本：条目带 `nodes` 时直接使用节点表（`src/data/events.js`），
-  否则退化为通用三选项结构。UI 不写死任何文案。
+  事件点（RES-001）由 `buildEventStory(entry)` 生成脚本：节点表来自 `src/data/events/<事件id>.js`；
+  条目可带 `prepare(gs, ctx)`，进入时生成本次专用 EventDef（如摊位商品与实付价），不修改共享定义。UI 不写死任何文案。
 - **多级状态机**：`option.next` 可指向任意节点，目标节点可再次带 `options`，深度不限；
-  节点 / 选项 id 与层级关系**只存在于数据**，不上屏（选项区只渲染 `label/sub/detail`，数字键 `1~4` 只作隐藏快捷键）。
+  节点 / 选项 id 与层级关系**只存在于数据**，不上屏（选项区只渲染 `label/sub/detail`，数字键 `1~9` 只作隐藏快捷键）。
   没有 `options` 且没有 `next` 的节点是终止节点：正文即为结果文本，进入结果态，点击屏幕任意处关闭事件（`result-dismiss`）。
 - **描述与选项同屏**：事件首节点直接带 `options`，不得新增「你打算怎么做？」类过渡问句节点；
   选项确认后直接落到下一层描述（同样带 `options`），中间不再插一层需要点击的文本。
 - **选项驱动结算**：事件**进入不结算**；只有选项确认时，`StoryUI._settleOption(opt)` 调
   `applyEventEffects(gs, opt.effects, ctx)`，在确认的同一 tick 执行，同一事件内同一 `option.id` 只执行一次。
-  效果词表：`gold / item / stamina / heal / terrain / buff / creature`；执行器内部复用
+  效果词表：`gold / item / stamina / heal / terrain / buff / creature / vehicle`（载具进载具页，不进背包）；执行器内部复用
   `InventorySystem` / `StaminaSystem` / `HealSystem` / `CreatureSystem` / 地形写入及既有 EventBus 事件，
   不新建平行数值系统。跳过、推进正文、静默关闭均不结算。
 - **公共 API**：`show(script, ctx)` / `advance()` / `skip()` / `requestSkip()` / `refresh()` / `closeSilently(reason)`；
@@ -490,10 +493,10 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
   **所有选项（包括「离开」）一律二次确认**，没有单击即生效的例外（`Option.safe` 已移除）。
   `detail` 常驻显示，禁止在点击后才展开（卡片高度不得突变）。
   确认后**业务先于动画**：`effects` 结算 + `onSelect` + 正文切换同一 tick 完成，卡片 1.5 秒淡出，淡出期整块选项区 `pointer-events:none`。
-  键盘：`1~4` 与鼠标同入口（同样需要两次按键），ESC 在待确认时只取消待确认、不开跳过弹窗。
+  键盘：`1~9` 与鼠标同入口（同样需要两次按键），ESC 在待确认时只取消待确认、不开跳过弹窗。
 - **跳过**：`.story-skip`（文本块右上角 `right:40vw / top:79.2vh` 的胶囊，右缘 `60vw`）/ ESC → `DIALOG_SHOW` 二次确认；`skip()` 沿 `next` 前进，
   遇到 `options` 节点停下（选项节点上跳过被拒绝并 Toast 提示），无后续节点则结束；跳过永不执行 `effects`。
-- **键盘**：空格 / 回车 / 点剧情区或空白薄纱 = 推进；结果态点任意处 = 关闭；`1~4` = 选项（与鼠标同入口）；
+- **键盘**：空格 / 回车 / 点剧情区或空白薄纱 = 推进；结果态点任意处 = 关闭；`1~9` = 选项（与鼠标同入口）；
   ESC = 跳过入口；`DialogBox.visible` 时让渡键盘（跳过确认期间不拦截）。
 - **输入门控（§18.3）**：`InputGate` 读 `director.storyUI?.visible` → `INPUT_BLOCK.STORY`，
   移动 / 祈福 / 睡觉 / 数字键 / 快捷栏停用；`STORY_END` 后自动恢复（门控每次按键实时计算，无缓存）。
@@ -601,7 +604,7 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 - 祝福奖励：`facilities.js` 玉米（POOL-02）、巴士站（POOL-04）传 `{ gs }`。
 - 野生种子变身：POOL-01（田块池），传 `{ unique: true, gs }`。
 - 《农业指南》：「获得3个随机田块」→ POOL-01（田块池）3 次，传 `{ gs }`；设施池 POOL-13 当前无调用方，作为预留池。
-- 事件 / 奖励固定池（`placeholderPools.EVENT_POOL_PLACEHOLDER` / `REWARD_POOL_PLACEHOLDER`）当前不含唯一物品；`smoke-v05` 有断言防止未来加入后绕过唯一性。
+- 事件 / 奖励池（`src/data/events/`、`src/data/rewardPool.js`）当前不含唯一物品；`smoke-v05` 有断言防止未来加入后绕过唯一性。
 
 **商店 UI**
 

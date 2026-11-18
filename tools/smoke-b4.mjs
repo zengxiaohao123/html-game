@@ -126,11 +126,11 @@ HookDispatcher.fire('onBlessed', { gs, tileIdx: 3 });
 assert(gs.map.outerTiles[3].contentState.rewardBlessPending === true, '受祝福 → rewardBlessPending 记账');
 const rwBefore = resolved.length;
 HookDispatcher.fire('onEnter', { gs, tileIdx: 3 });
-assert(resolved.length === rwBefore + 1, '进入触发一次奖励解析');
-assert(resolved[resolved.length - 1].blessed === true, '本次解析携带祝福（高价值概率提升生效位）');
+assert(resolved.length === rwBefore, '奖励池为空：进入不产生解析、不报错');
+assert(gs.map.outerTiles[3].dailyFlags['resource_reward_onEnter'] === true, '每日限次 flag 已记录');
 assert(gs.map.outerTiles[3].contentState.rewardBlessPending === false, '祝福记账已被消耗');
 HookDispatcher.fire('onEnter', { gs, tileIdx: 3 });
-assert(resolved.length === rwBefore + 1, '同日再进入不再触发（每日限一次）');
+assert(resolved.length === rwBefore, '同日再进入不再触发（每日限一次）');
 
 // ════════════════════════════════════════════════════════════
 head('RES-006 魔法商店：放置限制（每日 1 / 场上 2）');

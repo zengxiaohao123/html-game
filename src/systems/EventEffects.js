@@ -19,6 +19,7 @@
 //   { type:'terrain',  terrainId, tileIdx? }   缺省作用在事件所在地块（ctx.tileIdx）
 //   { type:'buff',     buffId, days?, params? }挂到角色身上（remainingDays，每日 -1）
 //   { type:'creature', kind }                  生成 1 只生物（进栅栏，容量规则不变）
+//   { type:'vehicle',  itemId, qty? }          获得载具：按物品 id 映射到载具页的新实例，不进背包
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { EventBus } from '../core/EventBus.js';
@@ -33,6 +34,8 @@ import { TERRAINS, normalizeTerrain } from '../data/terrains.js';
 import { CREATURES } from '../data/creatures.js';
 import { itemName } from '../data/items.js';
 import { addGold, getGold } from './GoldSystem.js';
+import { VehicleSystem } from './VehicleSystem.js';
+import { ITEM_TO_VEHICLE, VEHICLES } from '../data/vehicles.js';
 
 /**
  * 按顺序执行一组事件结算效果。
@@ -67,6 +70,7 @@ function applyOne(gs, eff, ctx) {
     case 'terrain': return applyTerrain(gs, eff, ctx);
     case 'buff': return applyBuff(gs, eff);
     case 'creature': return applyCreature(gs, eff, ctx);
+    case 'vehicle': return applyVehicle(gs, eff);
     default:
       devLog.warn('[EventEffects] 未知效果类型', eff.type);
       return '';
@@ -161,6 +165,17 @@ function applyBuff(gs, eff) {
     params,
   });
   return `✨ ${def.name}`;
+}
+
+function applyVehicle(gs, eff) {
+  const vehicleId = eff.vehicleId || ITEM_TO_VEHICLE[eff.itemId];
+  const qty = Math.max(1, Math.trunc(Number(eff.qty ?? 1)));
+  if (!vehicleId || !VEHICLES[vehicleId]) {
+    devLog.warn('[EventEffects] 未知载具', eff.vehicleId || eff.itemId);
+    return '';
+  }
+  for (let i = 0; i < qty; i++) VehicleSystem.gainVehicle(gs, vehicleId);
+  return `🚗 ${VEHICLES[vehicleId].name}${qty > 1 ? ` ×${qty}` : ''}`;
 }
 
 function applyCreature(gs, eff, ctx) {

@@ -65,6 +65,11 @@ export function createInitialState(opts = {}) {
     // 只记录主种子（日种子 = hash(masterSeed, day)）；日内已抽过的进度不入档
     rng: { masterSeed: Math.floor(Math.random() * 0x7fffffff) },
 
+    // ── 事件池占用（§18.4）──
+    // revealedToday：本日已揭露（受祝福显示 / 进入）的每日限1次与一次性事件
+    // consumedOnce：本存档已进入过的一次性事件
+    eventPool: { day: 1, revealedToday: [], consumedOnce: [] },
+
     // ── 玩家 ──
     player: {
       faction: 'party',     // 我方共用实体（含全部角色属性；见 data/factions.js）

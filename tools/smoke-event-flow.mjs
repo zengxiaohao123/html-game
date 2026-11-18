@@ -123,12 +123,17 @@ const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 // ════════════════════════════════════════════════════════════
 const { StoryUI } = await import('../src/ui/StoryUI.js');
 const { buildEventStory } = await import('../src/data/stories.js');
-const { EVENT_DEFS, getEventDef } = await import('../src/data/events.js');
 const { applyEventEffects } = await import('../src/systems/EventEffects.js');
 const { createInitialState } = await import('../src/state/gameState.js');
 const { EventBus } = await import('../src/core/EventBus.js');
 const { GE } = await import('../src/core/GameEvents.js');
 const InputGate = await import('../src/systems/InputGate.js');
+const { getEventDef } = await import('../src/data/events.js');
+const {
+  isEventBlocked, markEventEntered, markEventRevealed,
+} = await import('../src/data/eventPool.js');
+const { buildStallOffer } = await import('../src/data/events/evt_stall_02.js');
+const { isUniqueItem } = await import('../src/systems/ItemUniqueness.js');
 
 let pass = 0;
 let fail = 0;
@@ -194,12 +199,101 @@ function assertNoLeak(def, nodeKey, tokenSet) {
 }
 
 // ════════════════════════════════════════════════════════════
-head('A. 数据完整性：示例事件结构');
+// 机制夹具：不依赖正式事件内容，只验证节点表 → UI → 结算链路。
 // ════════════════════════════════════════════════════════════
-check(EVENT_DEFS.length >= 2, 'A-01 至少 2 个示例事件', EVENT_DEFS.length);
-const simpleDef = getEventDef('evt_bag_01');
-const nestedDef = getEventDef('evt_crossroad_01');
-check(!!simpleDef && !!nestedDef, 'A-02 单层 / 两层示例事件都存在');
+const simpleDef = {
+  id: 'fixture_simple',
+  name: '单层夹具',
+  icon: '🧪',
+  weight: 1,
+  start: 'intro',
+  nodes: {
+    intro: {
+      text: ['夹具正文第一段。', '夹具正文第二段。'],
+      options: [
+        {
+          id: 'search',
+          label: '取出小麦',
+          sub: '小麦×2',
+          effects: [{ type: 'item', itemId: 'item_wheat', qty: 2 }],
+          next: 'searched',
+        },
+        {
+          id: 'purse',
+          label: '拿走金币',
+          sub: '金币+6',
+          effects: [{ type: 'gold', amount: 6 }],
+          next: 'purse_taken',
+        },
+        { id: 'leave', label: '离开', sub: '无收益', end: true },
+      ],
+    },
+    searched: { text: '夹具结果：小麦已入包。', end: true },
+    purse_taken: { text: '夹具结果：金币已入袋。', end: true },
+  },
+};
+
+const nestedDef = {
+  id: 'fixture_nested',
+  name: '两层夹具',
+  icon: '🧪',
+  weight: 1,
+  start: 'intro',
+  nodes: {
+    intro: {
+      text: ['夹具岔路第一段。', '夹具岔路第二段。'],
+      options: [
+        { id: 'trail', label: '沿着痕迹走', sub: '进入第二层', next: 'trail_scene' },
+        {
+          id: 'water',
+          label: '循着水声走',
+          sub: '行动力+1',
+          effects: [{ type: 'stamina', amount: 1 }],
+          next: 'water_end',
+        },
+      ],
+    },
+    trail_scene: {
+      text: '夹具第二层正文，描述完直接给选项。',
+      options: [
+        {
+          id: 'rest',
+          label: '在空地上歇脚',
+          sub: '恢复10%生命',
+          effects: [{ type: 'heal', percent: 0.1 }],
+          next: 'rest_end',
+        },
+        {
+          id: 'delve',
+          label: '继续深入',
+          sub: '生成1只小鸡',
+          effects: [{ type: 'creature', kind: 'chick' }],
+          next: 'delve_end',
+        },
+        {
+          id: 'sow',
+          label: '把种子撒在空地上',
+          sub: '改变地形并挂1天状态',
+          effects: [
+            { type: 'terrain', terrainId: 'terrain_grass' },
+            { type: 'buff', buffId: 'grumpy', days: 1 },
+          ],
+          next: 'sow_end',
+        },
+      ],
+    },
+    water_end: { text: '夹具结果：水边。', end: true },
+    rest_end: { text: '夹具结果：歇脚。', end: true },
+    delve_end: { text: '夹具结果：深入。', end: true },
+    sow_end: { text: '夹具结果：撒种。', end: true },
+  },
+};
+
+// ════════════════════════════════════════════════════════════
+head('A. 节点表结构：单层 / 两层夹具');
+// ════════════════════════════════════════════════════════════
+check(!!simpleDef && !!nestedDef, 'A-01 单层 / 两层夹具已定义');
+check(simpleDef.start === 'intro' && nestedDef.start === 'intro', 'A-02 起始节点可用');
 check(Object.keys(simpleDef.nodes).length >= 3, 'A-03 单层事件包含多个节点（描述 + 结果）');
 // 2026-11-13 返工：描述节点直接带选项，不再有「你打算怎么处理？」过渡节点
 const simpleChoice = simpleDef.start;
@@ -240,7 +334,7 @@ head('C. 单层事件：不同选项产生不同结果');
   const gold0 = gs.player.gold;
   const wheat0 = qty('item_wheat');
   openAtChoice(simpleDef);
-  assertNoLeak(simpleDef, simpleChoice, ['evt_bag_01', 'search', 'purse', 'leave', 'A.1', '第一段', '第二段', '选项1', '选项2']);
+  assertNoLeak(simpleDef, simpleChoice, ['fixture_simple', 'search', 'purse', 'leave', 'A.1', '第一段', '第二段', '选项1', '选项2']);
   choose(ui.optionBtns[1]);
   check(gs.player.gold === gold0 + 6, 'C-01 选「拿走钱袋」→ 金币 +6', gs.player.gold - gold0);
   check(qty('item_wheat') === wheat0, 'C-02 同一选项不产生其它结果');
@@ -467,6 +561,87 @@ head('I. 中途打断（读档 / 重开）：静默关闭、不追加结算');
   check(gs.player.gold === 6, 'I-05 确认瞬间已结算');
   ui.closeSilently('state-reset');
   check(gs.player.gold === 6, 'I-06 打断不追加 / 不回滚已生效的结算');
+}
+
+// ════════════════════════════════════════════════════════════
+head('J. 正式事件：文案、可重复性、摊位变量、载具效果');
+// ════════════════════════════════════════════════════════════
+{
+  const peddler = getEventDef('evt_peddler_01');
+  const stall = getEventDef('evt_stall_02');
+  check(!!peddler && peddler.repeatability === 'daily', 'J-01 游商事件存在且为每日限1次');
+  check(!!stall && stall.repeatability === 'daily', 'J-02 木箱事件存在且为每日限1次');
+  check(peddler.nodes.intro.text
+    === '林间通向小镇的岔路口停着一辆小木推车。推车上铺着褪色粗麻布，摆着几罐浸了草药的蜜浆。守车的老妇正低头整理捆扎好的干香草，她没有主动招呼，只是任由淡淡的药香在风里散开。',
+    'J-03 游商正文逐字来自事件库');
+  const leave = peddler.nodes.intro.options.find((o) => o.id === 'leave');
+  check(!!leave && peddler.nodes[leave.next]?.text === '你没有上前搭话，继续沿着道路向前行进。',
+    'J-04 离开选项接到结果文本节点');
+  const stallIntro = stall.nodes.intro;
+  check(stallIntro.text
+    === '路边的树荫下摆着一只旧木箱，箱面上码着几样零散物件，用粗绳分门别类捆好。摊主不在跟前，只留下一块写着价钱的木牌，风把牌角吹得轻轻掀起。',
+    'J-05 木箱正文逐字来自事件库');
+
+  // 可重复性状态机
+  const daily = { id: 'fixture_daily', repeatability: 'daily' };
+  const once = { id: 'fixture_once', repeatability: 'once' };
+  const repeatable = { id: 'fixture_repeatable', repeatability: 'repeatable' };
+  const g = createInitialState({ gold: 0 });
+  markEventRevealed(g, daily);
+  check(isEventBlocked(g, daily) === true, 'J-06 每日限1次：本日被揭露后不可再抽');
+  g.day += 1;
+  check(isEventBlocked(g, daily) === false, 'J-07 每日限1次：跨天解禁');
+  markEventRevealed(g, once);
+  check(isEventBlocked(g, once) === true && !g.eventPool.consumedOnce.includes(once.id),
+    'J-08 一次性：仅揭露 → 本日占用但不消耗');
+  g.day += 1;
+  check(isEventBlocked(g, once) === false, 'J-09 一次性：未进入则次日重新可用');
+  markEventEntered(g, once);
+  g.day += 1;
+  check(isEventBlocked(g, once) === true, 'J-10 一次性：进入后永久占用');
+  markEventRevealed(g, repeatable);
+  markEventEntered(g, repeatable);
+  check(isEventBlocked(g, repeatable) === false, 'J-11 可重复：不被记录占用');
+
+  // 摊位变量：范围、唯一性、数量与价格约束
+  const offerGS = createInitialState({ gold: 1000 });
+  let offerOk = true;
+  let sample = null;
+  for (let i = 0; i < 30; i++) {
+    const offer = buildStallOffer(offerGS);
+    if (!offer) { offerOk = false; break; }
+    sample = offer;
+    const ids = new Set(offer.goods.map((x) => x.id));
+    if (ids.size !== offer.goods.length) offerOk = false;
+    if (offer.goods.length < 1 || offer.goods.length > 3) offerOk = false;
+    for (const good of offer.goods) {
+      if (good.qty < 1) offerOk = false;
+      if (isUniqueItem(good.id) && good.qty !== 1) offerOk = false;
+      if (good.qty * good.price > 60) offerOk = false;
+    }
+    const base = offer.goods.reduce((s, x) => s + x.price * x.qty, 0);
+    if (offer.cost < Math.max(1, Math.round(base * 0.4))) offerOk = false;
+    if (offer.cost > Math.max(1, Math.round(base * 1.5))) offerOk = false;
+  }
+  check(offerOk, 'J-12 摊位商品：不同种、数量/唯一性/60 金币上限、实付价 40%~150%', sample?.detail);
+
+  const lowGold = stall.prepare(createInitialState({ gold: 0 }));
+  const highGold = stall.prepare(createInitialState({ gold: 100000 }));
+  const lowBuy = lowGold.nodes.intro.options[0];
+  const highBuy = highGold.nodes.intro.options[0];
+  check(lowBuy.disabled === true && highBuy.disabled === false,
+    'J-13 金币不足时购买项灰化，充足时可点', { low: lowBuy.sub, high: highBuy.sub });
+  check(/^花费\d+金币，买下摊上的物件$/.test(highBuy.sub) && !!highBuy.detail,
+    'J-14 x / xx 变量位填入实付金币与商品清单', { sub: highBuy.sub, detail: highBuy.detail });
+
+  // 载具效果：进载具页，不进背包
+  const vg = createInitialState({ gold: 0 });
+  const vehicles0 = vg.vehicle.available.length;
+  const inv0 = vg.inventory.items.reduce((s, x) => s + (x.qty || 0), 0);
+  applyEventEffects(vg, [{ type: 'vehicle', itemId: 'item_horse' }], { tileIdx: 0 });
+  const inv1 = vg.inventory.items.reduce((s, x) => s + (x.qty || 0), 0);
+  check(vg.vehicle.available.length === vehicles0 + 1 && inv1 === inv0,
+    'J-15 载具效果：载具页 +1，背包不增加', vg.vehicle.available.map((v) => v.id));
 }
 
 // ════════════════════════════════════════════════════════════

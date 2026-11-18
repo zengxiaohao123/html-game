@@ -128,8 +128,8 @@ const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 // ════════════════════════════════════════════════════════════
 // 1. 载入模块
 // ════════════════════════════════════════════════════════════
-const { StoryUI, MAX_OPTIONS } = await import('../src/ui/StoryUI.js');
-const { buildEventStory, demoStory } = await import('../src/data/stories.js');
+const { StoryUI, SCROLL_OPTION_THRESHOLD } = await import('../src/ui/StoryUI.js');
+const { buildEventStory } = await import('../src/data/stories.js');
 const { EventBus } = await import('../src/core/EventBus.js');
 const { GE } = await import('../src/core/GameEvents.js');
 const InputGate = await import('../src/systems/InputGate.js');
@@ -343,7 +343,7 @@ check(ui.isOptionArmed(2) === false && dialogs.length === dlgCountH,
 ui.closeSilently('test');
 
 // ════════════════════════════════════════════════════════════
-head('D. 选项上限 1~4');
+head('D. 多选项：超过 4 个改为滚动');
 // ════════════════════════════════════════════════════════════
 ui.show({
   id: 't_max',
@@ -355,7 +355,10 @@ ui.show({
     },
   },
 });
-check(ui.optionBtns.length === MAX_OPTIONS && MAX_OPTIONS === 4, 'D-01 最多渲染 4 个选项', ui.optionBtns.length);
+check(ui.optionBtns.length === 6 && SCROLL_OPTION_THRESHOLD === 4,
+  'D-01 选项不再截断，6 个全部渲染', ui.optionBtns.length);
+check(ui.optionAreaEl.classList.contains('is-scroll'), 'D-02 超过 4 个启用滚动布局');
+check(!ui.optionAreaEl.classList.contains('is-four'), 'D-03 滚动布局不复用四选项收紧态');
 ui.closeSilently('test');
 
 // ════════════════════════════════════════════════════════════
@@ -398,18 +401,27 @@ check(ui.visible === false, 'E-08 确认跳过后旁白脚本结束');
 // ════════════════════════════════════════════════════════════
 head('F. 数据驱动 + 实时刷新');
 // ════════════════════════════════════════════════════════════
-const entry = { id: 'evt_ph_01', name: '一小堆金币' };
+const entry = {
+  id: 'fixture_evt',
+  name: '夹具事件',
+  icon: '🧪',
+  start: 'intro',
+  nodes: {
+    intro: {
+      text: '夹具正文。',
+      options: [{ label: '甲' }, { label: '乙' }, { label: '丙' }],
+    },
+  },
+};
 const evtScript = buildEventStory(entry);
-check(evtScript.title === entry.name && evtScript.id === 'story_evt_ph_01',
-  'F-01 事件脚本 id / 标题来自事件条目');
-check(JSON.stringify(evtScript.nodes.intro.text).includes(entry.name),
-  'F-02 正文包含条目名（UI 不写死文案）');
+check(evtScript.title === entry.name && evtScript.id === 'story_fixture_evt',
+  'F-01 事件脚本 id / 标题来自事件定义');
+check(evtScript.nodes.intro.text === entry.nodes.intro.text,
+  'F-02 正文原样来自事件定义（UI 不写死文案）');
 check(evtScript.nodes.intro.options.length === 3 && !evtScript.nodes.choice,
-  'F-03 通用事件描述节点直接带 3 个选项（无多余过渡节点）');
-const demo = demoStory();
-check(demo.nodes.b.options.length === 3
-  && demo.nodes.b.options.some((o) => o.disabled === true),
-  'F-04 演示脚本覆盖禁用态');
+  'F-03 描述节点直接带 3 个选项（无多余过渡节点）');
+check(buildEventStory({ id: 'fixture_empty', name: '缺节点表' }) === null,
+  'F-04 缺少节点表的条目不再生成占位脚本');
 
 ui.show(narration);
 const before = ui.textEl.textContent;

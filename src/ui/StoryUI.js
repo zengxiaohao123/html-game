@@ -34,8 +34,8 @@ import { createEl, qs, clearChildren } from './dom.js';
 import { CONFIRM_TEXT, CONFIRM_FADE_MS } from './ConfirmAction.js';
 import { applyEventEffects } from '../systems/EventEffects.js';
 
-/** 选项上限（本轮需求 1~4 个） */
-export const MAX_OPTIONS = 4;
+/** 超过该数量的选项改为上下滚动（4 个及以内仍按参考图整列铺开） */
+export const SCROLL_OPTION_THRESHOLD = 4;
 
 /** §18.3：事件 / 剧情期间允许保留的界面（纯查看 + 存读档设置） */
 const STORY_KEEP_PANELS = new Set(['inventory', 'role', 'task', 'codex', 'settings']);
@@ -369,8 +369,7 @@ export class StoryUI {
   }
 
   _collectOptions(node) {
-    const raw = Array.isArray(node?.options) ? node.options : [];
-    return raw.slice(0, MAX_OPTIONS);
+    return Array.isArray(node?.options) ? node.options : [];
   }
 
   _renderNode() {
@@ -469,9 +468,11 @@ export class StoryUI {
 
     area.style.display = 'flex';
     area.style.pointerEvents = '';
-    // 3 个选项照参考图节距（卡高 17.6 + 间距 3 ≈ 20.6vh）；4 个选项收紧，保证不越出上沿
-    const four = this._options.length >= 4;
-    area.classList.toggle('is-four', four);
+    // 3 个选项照参考图节距（卡高 17.6 + 间距 3 ≈ 20.6vh）；4 个选项收紧；
+    // 超过 4 个改为固定节距 + 选项区内部上下滚动，不再压缩卡片互相叠压。
+    const scroll = this._options.length > SCROLL_OPTION_THRESHOLD;
+    area.classList.toggle('is-scroll', scroll);
+    area.classList.toggle('is-four', !scroll && this._options.length >= 4);
 
     this._options.forEach((opt, i) => {
       const card = createEl('div', {
@@ -559,7 +560,12 @@ export class StoryUI {
     if (!rect || !rect.height) return;
     area.style.bottom = `${Math.max(0, vh - rect.bottom).toFixed(1)}px`;
 
-    // 4) 卡片撑不下时压缩间距（3 → 2.4 → … → 0），避免最后一项越过正文块底边
+    // 4) 4 个及以内：卡片撑不下时压缩间距，避免最后一项越过正文块底边。
+    //    超过 4 个：保持固定节距，交给 .option-area.is-scroll 内部滚动。
+    if (area.classList.contains('is-scroll')) {
+      area.style.gap = '2.2vh';
+      return;
+    }
     const base = area.classList.contains('is-four') ? 2.2 : 3;
     for (const ratio of [1, 0.8, 0.6, 0.4, 0.2, 0]) {
       area.style.gap = `${(base * ratio).toFixed(2)}vh`;

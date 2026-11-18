@@ -24,10 +24,6 @@ const { HookDispatcher } = await import('../src/core/HookDispatcher.js');
 const { addItem, countItem } = await import('../src/systems/InventorySystem.js');
 const CreatureSystem = await import('../src/systems/CreatureSystem.js');
 const { getCreatureDef } = await import('../src/data/creatures.js');
-const {
-  EVENT_POOL_PLACEHOLDER, REWARD_POOL_PLACEHOLDER, REWARD_BLESS_WEIGHT_MULT,
-  drawPlaceholderEvent, drawPlaceholderReward, applyPlaceholderEventEffect,
-} = await import('../src/data/placeholderPools.js');
 const { readFileSync } = await import('node:fs');
 
 let pass = 0, fail = 0;
@@ -219,70 +215,9 @@ head('裁决⑤ 巴士站轮子不限次数（每次进入 +1）');
 }
 
 // ════════════════════════════════════════════════════════════
-head('裁决⑥ 事件池/奖励池：可抽取、可结算、名称均为玩家可见文案');
+// 注：旧「裁决⑥ 事件池/奖励池占位」断言随占位数据一起删除；
+//     正式事件与奖励条目落地后由 smoke-event-flow 覆盖。
 // ════════════════════════════════════════════════════════════
-{
-  assert(EVENT_POOL_PLACEHOLDER.length >= 5, '事件池占位条目 ≥5', EVENT_POOL_PLACEHOLDER.length);
-  assert(REWARD_POOL_PLACEHOLDER.length >= 5, '奖励池占位条目 ≥5', REWARD_POOL_PLACEHOLDER.length);
-  assert([...EVENT_POOL_PLACEHOLDER, ...REWARD_POOL_PLACEHOLDER].every((e) => !e.name.includes('占位')),
-    '所有条目名称均为玩家可见文案（不含「占位」字样）');
-
-  // 抽取稳定性：多次抽取均返回表内条目
-  const evIds = new Set(EVENT_POOL_PLACEHOLDER.map((e) => e.id));
-  let allValid = true;
-  for (let i = 0; i < 30; i++) {
-    const hit = drawPlaceholderEvent();
-    if (!hit || !evIds.has(hit.id)) { allValid = false; break; }
-  }
-  assert(allValid, '事件池 30 次抽取全部命中表内条目');
-
-  // 效果结算：金币 / 物品 / 行动力
-  const byType = {};
-  for (const e of EVENT_POOL_PLACEHOLDER) byType[e.effect.type] ??= e;
-  const g0 = gs.player.gold;
-  applyPlaceholderEventEffect(gs, byType.gold);
-  assert(gs.player.gold !== g0, '事件效果：金币变化已结算', gs.player.gold - g0);
-  const wheat0 = countItem(gs, 'item_wheat');
-  applyPlaceholderEventEffect(gs, { effect: { type: 'item', itemId: 'item_wheat', qty: 2 } });
-  assert(countItem(gs, 'item_wheat') === wheat0 + 2, '事件效果：物品进背包');
-  const st0 = gs.player.stamina;
-  applyPlaceholderEventEffect(gs, byType.stamina);
-  assert(gs.player.stamina >= st0, '事件效果：行动力结算', gs.player.stamina - st0);
-
-  // 事件点全流程：进入 → 抽取 + 结算 + onEventResolve（eventId 非空）
-  const resolved = [];
-  HookDispatcher.register('onEventResolve', (p) => resolved.push(p));
-  setTile(0, 'resource_event');
-  HookDispatcher.fire('onEnter', { gs, tileIdx: 0 });
-  const evLast = resolved[resolved.length - 1];
-  assert(!!evLast && evLast.type === 'event' && typeof evLast.eventId === 'string' && evIds.has(evLast.eventId),
-    '事件点进入：onEventResolve 携带事件池 eventId', evLast?.eventId);
-
-  // 奖励池：受祝福提升高价值权重（同一随机数下抽取结果不同）
-  Math.random = () => 0.8;
-  const rwNormal = drawPlaceholderReward(false);
-  const rwBlessed = drawPlaceholderReward(true);
-  Math.random = origRandom;
-  assert(rwNormal.id === 'rwd_ph_05' && rwBlessed.id === 'rwd_ph_06' && rwBlessed.highValue === true,
-    `同一随机数 0.8：普通抽中「${rwNormal.name}」，祝福抽中高价值「${rwBlessed.name}」（权重 ×${REWARD_BLESS_WEIGHT_MULT}）`);
-
-  // 奖励点全流程：进入 → 发放 + onEventResolve（rewardId 非空）；祝福记账消耗
-  setTile(2, 'resource_reward');
-  HookDispatcher.fire('onBlessed', { gs, tileIdx: 2 });
-  assert(gs.map.outerTiles[2].contentState.rewardBlessPending === true, '奖励点祝福记账');
-  const goldBefore = gs.player.gold;
-  const invBefore = gs.inventory.items.reduce((s, x) => s + (x.qty || 0), 0);
-  HookDispatcher.fire('onEnter', { gs, tileIdx: 2 });
-  const rwLast = resolved[resolved.length - 1];
-  const rwIds = new Set(REWARD_POOL_PLACEHOLDER.map((e) => e.id));
-  assert(!!rwLast && rwLast.type === 'reward' && rwIds.has(rwLast.rewardId) && rwLast.blessed === true,
-    '奖励点进入：携带祝福结算并返回奖励池 rewardId', rwLast?.rewardId);
-  const goldAfter = gs.player.gold;
-  const invAfter = gs.inventory.items.reduce((s, x) => s + (x.qty || 0), 0);
-  assert(goldAfter > goldBefore || invAfter > invBefore,
-    '奖励已实际发放（金币或物品）', { dGold: goldAfter - goldBefore, dInv: invAfter - invBefore });
-  assert(gs.map.outerTiles[2].contentState.rewardBlessPending === false, '祝福记账已消耗');
-}
 
 // ════════════════════════════════════════════════════════════
 console.log(`\n结果：${pass} 通过，${fail} 失败`);

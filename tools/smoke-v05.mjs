@@ -500,11 +500,16 @@ assert(collectUniqueHeld(gs, 0).has(FULLNESS) === false, '③ 刷新后果腹解
 assert(resolveCandidates('POOL-07', 1, { gs }).candidates.some((e) => e.id === FULLNESS),
   '③ 刷新后果腹可重新进入抽取范围');
 
-// 事件池 / 奖励池不得绕过唯一性：目前必须不含唯一物品
-const phMod = await import('../src/data/placeholderPools.js');
-const bypass = [...phMod.EVENT_POOL_PLACEHOLDER, ...phMod.REWARD_POOL_PLACEHOLDER]
-  .filter((e) => e.itemId && isUniqueItem(e.itemId));
-assert(bypass.length === 0, '事件池 / 奖励池不含唯一物品（不绕过唯一性判定）', bypass.map((e) => e.id));
+// 事件池 / 奖励池不得绕过唯一性：正式条目必须不含唯一物品
+const { EVENT_DEFS } = await import('../src/data/events.js');
+const { REWARD_POOL } = await import('../src/data/rewardPool.js');
+const eventItemIds = EVENT_DEFS.flatMap((def) => Object.values(def.nodes || {}).flatMap((node) =>
+  (node.options || []).flatMap((opt) => (opt.effects || [])
+    .filter((eff) => eff.type === 'item')
+    .map((eff) => eff.itemId))));
+const bypass = [...REWARD_POOL.map((e) => e.itemId), ...eventItemIds]
+  .filter((id) => id && isUniqueItem(id));
+assert(bypass.length === 0, '事件池 / 奖励池不含唯一物品（不绕过唯一性判定）', bypass);
 
 console.log(`\n结果：${pass} 通过，${fail} 失败`);
 process.exit(fail ? 1 : 0);

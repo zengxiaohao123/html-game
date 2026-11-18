@@ -342,6 +342,28 @@ body.story-active .hotbar-wrapper {
 .option-area.is-four { gap: 2.2vh; }
 .option-area.is-four .story-option { min-height: 16vh; }
 
+/* 选项超过 4 个：固定节距、选项区内部上下滚动（末条不再强制贴正文块底边） */
+.option-area.is-scroll {
+  justify-content: flex-start;
+  gap: 2.2vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 0.45vw;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 216, 138, 0.55) rgba(14, 20, 18, 0.35);
+  overscroll-behavior: contain;
+}
+.option-area.is-scroll .story-option { flex: 0 0 auto; }
+.option-area.is-scroll::-webkit-scrollbar { width: 6px; }
+.option-area.is-scroll::-webkit-scrollbar-track {
+  background: rgba(14, 20, 18, 0.35);
+  border-radius: 3px;
+}
+.option-area.is-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 216, 138, 0.55);
+  border-radius: 3px;
+}
+
 /* 标题行（卡内第一行） */
 .story-option-bar {
   position: relative;
