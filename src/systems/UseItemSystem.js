@@ -27,11 +27,12 @@ import { Random } from '../core/Random.js';
 import { MapExpandSystem, EXPAND_AXIS } from './MapExpandSystem.js';
 import { getTile, playerRef, contentEntries, refsEqual, fenceIdxOf, isFenceRef } from '../core/TileAccess.js';
 
-/** 可作为肥料目标的植物类设施（含 v0.5 新增的三种田块） */
+/** 可作为肥料目标的植物类设施（v0.6：只补有日初效果的新田块） */
 const PLANT_FACILITIES = new Set([
   'facility_wheat', 'facility_rice', 'facility_potato', 'facility_tulip',
   'facility_strawberry', 'facility_pea', 'facility_corn', 'facility_cabbage',
   'facility_dandelion', 'facility_ghost_grass', 'facility_mugwort',
+  'facility_hops', 'facility_mushroom', 'facility_blackberry', 'facility_blue_star_fruit',
 ]);
 
 /**

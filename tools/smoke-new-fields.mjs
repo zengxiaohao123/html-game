@@ -101,6 +101,7 @@ import {
 } from '../src/systems/BlueBreathSystem.js';
 import { produce } from '../src/systems/ProduceSystem.js';
 import { hasProduceBonus, hasAdjacentWater, grantProduceBonus } from '../src/systems/ProduceSystem.js';
+import { useItem } from '../src/systems/UseItemSystem.js';
 
 let pass = 0, fail = 0;
 function check(cond, msg, extra) {
@@ -393,6 +394,17 @@ head('11. 背包 / 出货箱按展示词条分堆，搬移保留词条');
   check(ok && outEntry && Array.isArray(outEntry.tags), '搬入出货箱保留展示词条', outEntry);
   const leftNormal = gs.inventory.items.find((e) => e.itemId === 'item_lavender' && !e.tags);
   check(leftNormal && leftNormal.qty === 2, '普通堆不受影响', leftNormal);
+}
+
+// ════════════════════════════════════════════════════════════
+head('12. 初级肥料：对有日初效果的新田块结算 2 次');
+{
+  reset();
+  put(ANCHOR, 'facility_hops');
+  InventorySystem.addItem(gs, 'item_fertilizer', 1);
+  const r = useItem(gs, 'item_fertilizer', { tileIdx: ANCHOR });
+  check(r && r.ok !== false, '啤酒花田块可作为肥料目标', r);
+  check(at(ANCHOR).contentState.hopsStored === 2, '施肥结算 2 次 → 储存 2', at(ANCHOR).contentState.hopsStored);
 }
 
 // ════════════════════════════════════════════════════════════
