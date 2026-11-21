@@ -250,6 +250,23 @@ console.log('\n═══ 8. 扩建自动延续 ═══');
   check(JSON.stringify(gs.inventory || {}) === before, '自动延续不消耗玩家物品');
 }
 
+console.log('\n═══ 8b. 扩建自动延续（上侧） ═══');
+{
+  const gs = makeGS();
+  // 纵向连通：外圈上 (1,0) ← fence(0,0) ← fence(1,0) ← fence(2,0) → 外圈下 (1,4)
+  paint(gs, [[0, 0], [1, 0], [2, 0]]);
+  recomputePathEffect(gs);
+  check(gs.map.fence[fIdx(gs, 0, 0)].isPathOuter === true, '扩建前上侧端点生效');
+
+  const out = expandMapInPlace(gs, EXPAND_AXIS.WIDTH);
+  check(!!out.ok, '宽度扩建成功');
+  check(Array.isArray(out.continued) && out.continued.length === 1, `上侧自动补 1 格（实际 ${out.continued?.length}）`);
+  check(refsEqual(out.continued?.[0], fenceRef(0, 0)), '补格位置 = 从上往下第二行、同一列');
+  check(gs.map.fence[fIdx(gs, 0, 0)].terrain === PATH, '上侧补格地形为小径');
+  check(gs.map.fence[fIdx(gs, 0, 0)].isPathOuter === true, '上侧补格已生效');
+  check(gs.map.fence[fIdx(gs, 2, 0)].isPathOuter === true, '原纵向小径仍保持生效');
+}
+
 console.log('\n═══ 9. 存档往返 ═══');
 {
   const gs = makeGS();
