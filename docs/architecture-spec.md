@@ -477,9 +477,10 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 
 - **文件**：`src/ui/StoryUI.js`（`StoryUI` 类）、`src/ui/styles/story.css`、`src/data/stories.js`、
   `src/data/events.js`（事件节点表）、`src/systems/EventEffects.js`（选项结算执行器）。
-- **两个分区**（2026-11-13 第三轮修订，比例逐块量自 `docs/_art-references/事件ui点击前.jpg` / `事件ui一次点击.jpg`，1920×868，两图一致）：
-  - 剧情区 `.story-panel`：**屏幕左下**，文字列 `left 22.5vw / top 79.2vh / width 37.5vw / min-height 14vh`，
-    名义顶边固定（短文本不浮动），超长文本时由 `_layout()` 整块上移。
+- **两个分区**（2026-11-13 第三轮修订，比例逐块量自 `docs/_art-references/事件ui点击前.jpg` / `事件ui一次点击.jpg`，1920×868，两图一致；
+  2026-11-21 修订：正文区固定尺寸 + 自动分页 + 淡出 / 淡入过渡，并利用左侧留白向左扩展）：
+  - 剧情区 `.story-panel`：**屏幕左下并利用左侧留白**，文字列 `left 17vw / top 67vh / width 43vw`（右缘仍为 `60vw`），
+    块顶固定、正文区尺寸恒定 `24vh`；文字少时留白，文字多时自动分页，不再整块上移。
     **深色底板 `.story-scroll`（2026-11-13 第三轮新增）**：文字不再直接压在地图上；该层是**纯装饰**
     （绝对定位、不参与 `_layout()` 的 rect 测量，版式数值一律不变）：
     `left:-6.4vw / right:-2.2vw / top:-3vh / bottom:-2.4vh`，整体 `rotate(-0.35deg)`，左缘吃进圆形徽记右半边。
@@ -490,19 +491,23 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
     `filter: drop-shadow(...)` 挂在 `.story-scroll` 上（不能挂在被 `clip-path` 裁切的同一层），暗影才贴合撕边轮廓。
     配色取信息区（HUD）的茶金 / 暖米 `#FFF8E6` 与选项卡的深松林，三者同族。
     层级：底板 `z-index:0`、徽记与正文列 `2`、跳过按钮 `3`。
-    左侧 `.story-emblem` 圆形徽记（`min(8.6vw,17.2vh)`，圆心约 `(14.7vw,85.1vh)`，深绿渐变 + 细金环 + 反光），
-    右侧 `.story-body`：`.story-title` 松林青绿 `#afe4c9` / `2.65vh`（墨迹约 `79.7vh`）；
+    左侧 `.story-emblem` 圆形徽记（`min(8.6vw,17.2vh)`，圆心约 `(9.5vw,73vh)`，深绿渐变 + 细金环 + 反光），
+    右侧 `.story-body`：`.story-title` 松林青绿 `#afe4c9` / `2.65vh`（墨迹约 `67.5vh`）；
     `.story-text` 暖米白 `#f4f1e8` / `2.3vh` / 行高 `1.38` / 行距约 `3.17vh`，
-    **不设 `max-height`、不设 `overflow`，正文按自然高度完整铺开，绝不裁字**。
-    `_layout()` 的安全线 `STORY_MAX_BOTTOM = 0.955`：正文自然底边超过 `95.5%H` 时，把 `.story-panel` 的 `top`
-    改成 `名义 top - 超出量`（标题 / 徽记 / 跳过 / 底板一起上移），正文一个字都不切，块底仍在安全线内。
+    **高度固定 `24vh`**（`overflow:hidden`）：文字少留白、不缩；文字多不撑高。
+    `_paginate()` 用隐藏的同宽测量层 `.story-text-measure` 取「能完整放下的最大前缀」逐页切分，
+    点击 / 空格 / 回车先翻完当前节点所有页，末页才允许进入下一节点；分页不丢字、不拆 `【词条】` 与数字。
+    正文切换走 `.story-text.is-swapping`：淡出 `120ms` → 换页 / 换分支 → 淡入 `120ms`（`textTransitionMs = 240`，
+    测试可覆写为 `0` 走同步渲染），**不做逐字打字机**。
+    选项只在「本节点带 `options` + 已到末页 + 正文播放完」后出现（`_revealOptions()`），
+    非末页 / 过渡中选项区保持隐藏，避免玩家在正文没看完时提前选择。
     `.story-skip`（`跳过 ✕` 胶囊）挂在 `.story-panel` 内、贴**文本块右上角**（`right:0 / top:0`，即右缘 `60vw`），
-    随整块上移，**不贴屏幕右缘**（右侧整列属于选项）。**没有推进提示**：不显示「继续」「请选择」。
+    **不贴屏幕右缘**（右侧整列属于选项）。**没有推进提示**：不显示「继续」「请选择」。
   - 选项区 `.option-area`：外框 `left:62.5vw / right:5.6vw`，再以 `padding-left:2.8vw` 把卡片内容定位回
     `65.3vw`–`94.4vw`；这 `2.8vw` 是待确认卡 `1.7vw` 左移与金色把手的缓冲带，滚动裁切作用在 padding 外沿，
     左移 / hover 不会被切掉。底部 `padding-bottom:1.2vh` 同理，保护最后一张卡的边框与阴影。
-    **上沿固定 `top:22.5vh`（参考图首条位置）**，`bottom` 由 `_layout()` 按正文 rect 动态写入
-    （`bottom = innerHeight - textEl.bottom`）作为选项区底边界；
+    **上沿固定 `top:22.5vh`（参考图首条位置）**，`bottom` 由 `_layout()` 按正文区 rect 写入
+    （`bottom = innerHeight - textEl.bottom`）作为选项区底边界；正文区尺寸恒定，因此该边界不再随行数变化；
     `display:flex; flex-direction:column; justify-content:flex-start`，首条卡片 `margin-top:auto`、末条卡片 `margin-bottom:auto`，
     上下剩余高度均分，**选项组整体在选项区内垂直居中**：1 个选项落在中部；2 个选项成组靠近中部、两条之间保留 `3vh` 间隔；
     3 个及以上以整组中线对齐选项区中线。不再使用 `space-between` 把选项上下铺开。
@@ -548,7 +553,8 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
   当前 `evt_garden_04` 的 `dig` / `pick` 走此规则。
 - **公共 API**：`show(script, ctx)` / `advance()` / `skip()` / `requestSkip()` / `refresh()` / `closeSilently(reason)`；
   只读 `visible` 供 InputGate 使用。`refresh()` 不重建待确认 / 淡出中的选项，避免打断玩家手势。
-- **推进**：`advance()` 在选项节点直接返回 `false`（不可越过选择）；节点 `end` 或无 `next` → 结束。
+- **推进**：`advance()` 先翻完当前节点的正文页（`_nextPage()`），末页才处理选项 / 进入下一节点；
+  选项节点在末页返回 `false`（不可越过选择）；节点 `end` 或无 `next` → 结束。正文过渡期间 `advance()` 返回 `false`。
   结束统一走 `_finish(reason)`，先 `_hide()` 再广播 `STORY_END {id,reason}`，最后调 `script.onEnd(ctx)`。
 - **二次确认**：`StoryUI` 自带 `_armedIndex` 状态机，**不再复用 `ConfirmAction` 的全局 `pointerdown` 拦截**
   （旧实现按整卡外的描述会先被判定为「点到别处」而解除待确认，导致「点很多次也确认不了」）。
@@ -556,11 +562,12 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
   `document` 的 `click` 守卫只在 `card.contains(target)` 为假时才 `_disarm()`，因此卡内任意按下 / 抬起组合都稳定生效。
   **所有选项（包括「离开」）一律二次确认**，没有单击即生效的例外（`Option.safe` 已移除）。
   `detail` 常驻显示，禁止在点击后才展开（卡片高度不得突变）。
-  确认后**业务先于动画**：`effects` 结算 + `onSelect` + 正文切换同一 tick 完成；随后选项区加 `.is-fading`，
+  确认后**业务先于动画**：`effects` 结算 + `onSelect` 同一 tick 完成，正文随即按 240ms 过渡切到下一节点；
+  随后选项区加 `.is-fading`，
   **本次所有选项一起在 1.5 秒内淡化消失**（时长由 `--option-fade-ms` 注入），其中被选中的卡保留金色边框，
   其余卡不带额外样式；淡出期整块选项区 `pointer-events:none`。
   键盘：`1~9` 与鼠标同入口（同样需要两次按键），ESC 在待确认时只取消待确认、不开跳过弹窗。
-- **跳过**：`.story-skip`（文本块右上角 `right:40vw / top:79.2vh` 的胶囊，右缘 `60vw`）/ ESC → `DIALOG_SHOW` 二次确认；`skip()` 沿 `next` 前进，
+- **跳过**：`.story-skip`（文本块右上角 `right:40vw / top:67vh` 的胶囊，右缘 `60vw`）/ ESC → `DIALOG_SHOW` 二次确认；`skip()` 沿 `next` 前进，
   遇到 `options` 节点停下（选项节点上跳过被拒绝并 Toast 提示），无后续节点则结束；跳过永不执行 `effects`。
 - **键盘**：空格 / 回车 / 点剧情区或空白薄纱 = 推进；结果态点任意处 = 关闭；`1~9` = 选项（与鼠标同入口）；
   ESC = 跳过入口；`DialogBox.visible` 时让渡键盘（跳过确认期间不拦截）。

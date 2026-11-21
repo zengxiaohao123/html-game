@@ -2,12 +2,13 @@
  * §18.2 事件 / 剧情 UI（剧情区 + 选项区）
  *
  * 版式：逐块量取自 docs/_art-references/事件ui点击前.jpg / 事件ui一次点击.jpg（1920×868，两图数值一致）
- *   · 事件文本块：文字左边界 22.5vw、右边界 60.0vw（块宽 37.5vw）
- *   · 标题墨迹 70.8vh–73.0vh；正文首行墨迹 74.9vh，行距 3.17vh，末行 86.3vh（参考图含底部信息栏）
- *   · 本作没有底部信息栏，整块下移约 7vh：标题墨迹约 79.7vh
- *   · 正文不裁切、按自然高度完整铺开；底边越过安全线 95.5%H 时整块（含选项列）一起上移
- *   · 圆形徽记：直径约 8.6vw / 17.2vh，圆心 (14.7vw, 85.1vh)，与文字列左缘空 3vw
- *   · 选项区：65.3vw–94.4vw，自下而上排布，**最后一项底边 === 正文块最底部**（动态对齐）
+ *   · 事件文本块：文字左边界 17.0vw、右边界 60.0vw（块宽 43.0vw，利用左侧留白）
+ *   · 标题墨迹原参考 70.8vh–73.0vh；本作没有底部信息栏，整块固定到 67vh 起
+ *   · 正文区**尺寸恒定 24vh**：少字留白、不缩；多字不撑高，由 StoryUI 自动分页
+ *   · 圆形徽记：直径约 8.6vw / 17.2vh，圆心约 (9.5vw, 73vh)，与文字列左缘空 3vw
+ *   · 正文切换：淡出 → 换页 / 换分支 → 淡入（约 240ms，不做逐字打字机）
+ *   · 选项只在「需要选择的节点 + 末页 + 文本播放完」后出现
+ *   · 选项区：65.3vw–94.4vw，上沿 22.5vh、下沿贴固定正文区底边，选项组在区内垂直居中
  *   · 选项卡为不透明深松林底 + 茶金细边，白字标题 / 浅苔绿描述 / 预留确认行
  *   · 跳过入口在正文块右上角（挂块内，右缘 60vw），不占右侧选项列
  *
@@ -29,13 +30,12 @@ body.story-active .hotbar-wrapper {
   display: none;
 }
 
-/* ── 事件文本块（左下；名义顶边 79.2vh，正文过长时由 JS 整块上移） ── */
+/* ── 事件文本块（左下；块顶固定 67vh，尺寸恒定，不再随行数移动） ── */
 .story-panel {
   position: absolute;
-  left: 22.5vw;
-  top: 79.2vh;
-  width: 37.5vw;
-  min-height: 14vh;
+  left: 17vw;
+  top: 67vh;
+  width: 43vw;
   padding-bottom: 1.2vh;
   animation: story-rise 0.24s ease-out;
 }
@@ -221,9 +221,12 @@ body.story-active .hotbar-wrapper {
 }
 
 /* 事件正文：暖米白，双层暗影，行距 1.38（对齐参考图 3.17vh 行距）
- * **不裁切**：不设 max-height / overflow，正文按自然高度完整铺开；
- * 底边越过安全线 95.5%H 时由 StoryUI._layout() 把整块上移，绝不切字。 */
+ * **尺寸恒定**：高度固定 24vh，文字少时留白、不缩；文字多时由 StoryUI 按实际
+ * 渲染高度自动分页（不撑高、不裁字），玩家点击进入下一页。
+ * 切换动画只做整体淡出 / 淡入（.is-swapping），不做逐字打字机。 */
 .story-text {
+  height: 24vh;
+  overflow: hidden;
   font-size: clamp(13px, 2.3vh, 26px);
   line-height: 1.38;
   letter-spacing: 0.025em;
@@ -232,9 +235,15 @@ body.story-active .hotbar-wrapper {
   text-shadow:
     0 1px 2px rgba(0, 0, 0, 0.92),
     0 0 1.4vh rgba(0, 0, 0, 0.7);
+  transition: opacity 0.12s ease, transform 0.12s ease;
 }
 
-/* ── 跳过入口：正文块右上角（挂在 .story-panel 内，随整块上移；右缘 60vw） ── */
+.story-text.is-swapping {
+  opacity: 0;
+  transform: translateY(0.5vh);
+}
+
+/* ── 跳过入口：正文块右上角（挂在 .story-panel 内；右缘 60vw） ── */
 .story-skip {
   position: absolute;
   z-index: 3;

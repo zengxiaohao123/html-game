@@ -4,15 +4,17 @@
 // 版式逐项量取自 docs/_art-references/事件ui点击前.jpg / 事件ui一次点击.jpg（1920×868）：
 //   · 事件文本块（左下）
 //       - 参考图标题墨迹 70.8%–73.0%H、正文首行 74.9%H、行距 3.17%H、末行 86.3%H
-//       - 参考图底部还有一条本作不需要的信息栏，因此整块下移 7vh：块顶 79.2%H、标题墨迹约 79.7%H
-//       - 文字左边界 22.5%W、右边界 60.0%W；圆形徽记直径约 8.6%W，圆心约 (14.7%W, 85.1%H)
-//       - 正文**不裁切**、按自然高度完整铺开；底部安全线 95.5%H，
-//         超长时整块（文本块 + 选项列）一起上移，绝不把文字切掉
+//       - 本作向左扩展利用左侧留白：文字左边界 17.0%W、右边界 60.0%W（块宽 43.0%W）
+//       - 正文区**尺寸恒定** `24vh`：文字少留白、不缩；文字多不撑高，按实际渲染高度
+//         自动分页，点击推进下一页。块顶固定 67vh、正文底边约 95%H，不再整块上移
+//       - 圆形徽记直径约 8.6%W，圆心约 (9.5%W, 73%H)
 //       - 正文落在一块深色「旧纸卷」底板上（.story-scroll，纯装饰层）：
 //         深松林墨绿渐变 + 墨渍 / 茶金晕染 / 纤维纹 + clip-path 手撕边 + 茶金细内框
+//   · 正文切换：淡出 → 换页 / 换分支 → 淡入（约 240ms，不做逐字打字机）
+//   · 选项只在「本节点需要选择 + 已到末页 + 文本播放完」后出现
 //   · 选项区（右侧整列）
 //       - x 65.3vw–94.4vw；不透明深松林卡片，白字标题 + 浅苔绿描述，不使用透明底或暗斑
-//       - 整列自下而上排布，**最后一项底边与正文末行底边动态对齐**（正文行数变化时重算）
+//       - 整体在选项区内垂直居中（上沿 22.5vh，下沿贴固定的正文区底边）
 //       - 参考节距 20.6vh（卡高 17.6 + 间距 3），四选项时收紧
 //       - 确认提示与确认印章在卡片底部预留行内，不压字、不顶开其它选项
 //   · 跳过入口在正文块右上角（右缘 60vw），右侧整列完全留给选项
@@ -46,8 +48,20 @@ export const STORY_Z = {
   LAYER: 5750,
 };
 
-/** 正文块底部安全线：正文底边最多到这里（占视口高度比例），超出则整块上移 */
-const STORY_MAX_BOTTOM = 0.955;
+/** 正文切换动画时长（毫秒）：淡出一半、换页后再淡入一半；不做逐字打字机 */
+const TEXT_TRANSITION_MS = 240;
+
+/** 正文分页的最小单元：不拆开【词条】与数字，换行 / 空白 / 英文词各算一个单元 */
+const TEXT_TOKEN_RE = /【[^】]*】|\d+(?:\.\d+)?%?|\r?\n|[^\S\n]+|[A-Za-z]+|[\s\S]/g;
+
+function tokenizeText(raw) {
+  const text = String(raw ?? '');
+  const out = [];
+  TEXT_TOKEN_RE.lastIndex = 0;
+  let m;
+  while ((m = TEXT_TOKEN_RE.exec(text)) !== null) out.push(m[0]);
+  return out;
+}
 
 /** 正文规范化：数组 = 多段（段间空一行），字符串保留自身换行 */
 function normalizeText(text) {
@@ -92,6 +106,7 @@ export class StoryUI {
     this.emblemGlyphEl = null;  // 徽记内的图标
     this.titleEl = null;        // 事件标题
     this.textEl = null;         // 正文
+    this.measureEl = null;      // 正文分页测量层（隐藏，不参与可见排版）
     this.optionAreaEl = null;   // 选项区
 
     this.visible = false;
@@ -111,11 +126,23 @@ export class StoryUI {
     this._pending = null;       // 选项结算后的去向 {kind:'node'|'end', key}
     this._settled = new Set();  // 本次事件已结算的选项键（防止同一选项重复结算）
 
+    // 正文分页 / 过渡状态
+    this._rawText = '';         // 当前节点规范化后的全文
+    this._pages = [];           // 按固定文本区高度切出的页
+    this._pageIndex = 0;
+    this._transitioning = false;
+    this._textTimer = null;
+    this._previewKey = null;    // 选项淡出期间已抢先渲染正文的节点
+    this._optionsShown = false; // 当前节点选项是否已经上屏
+
     // 冒烟测试可覆写以加速（文档口径 1.5 秒）
     this.confirmFadeMs = CONFIRM_FADE_MS;
+    // 冒烟测试可覆写为 0：跳过正文淡出 / 淡入，走同步渲染
+    this.textTransitionMs = TEXT_TRANSITION_MS;
 
     this._onDocClick = (e) => this._handleDocumentClick(e);
     this._onKeyDownBound = (e) => this._onKeyDown(e);
+    this._onResizeBound = () => this._onResize();
   }
 
   // ─────────────────────────────────────── 骨架
@@ -157,7 +184,7 @@ export class StoryUI {
 
     document.addEventListener('click', this._onDocClick);
     window.addEventListener('keydown', this._onKeyDownBound);
-    window.addEventListener('resize', () => this._layout());
+    window.addEventListener('resize', this._onResizeBound);
 
     EventBus.on(GE.STORY_SHOW, (p = {}) => this.show(p.script || p, p.ctx || {}));
     // 读档 / 重开：丢弃剧情演出，静默关闭（不触发 onEnd 结算）
@@ -193,6 +220,21 @@ export class StoryUI {
     const body = createEl('div', { class: ['story-body'], parent: this.storyPanel });
     this.titleEl = createEl('div', { class: ['story-title'], parent: body });
     this.textEl = createEl('div', { class: ['story-text'], parent: body });
+    // 分页测量层：同宽度 / 同字号 / 同换行，隐藏但参与布局；分页时不改动玩家可见正文
+    this.measureEl = createEl('div', {
+      class: ['story-text', 'story-text-measure'],
+      style: {
+        position: 'absolute',
+        left: '0',
+        right: '0',
+        top: '0',
+        height: 'auto',
+        overflow: 'visible',
+        visibility: 'hidden',
+        pointerEvents: 'none',
+      },
+      parent: body,
+    });
   }
 
   _mountSkipButton() {
@@ -232,10 +274,18 @@ export class StoryUI {
       return false;
     }
     this._clearFadeTimer();
+    this._clearTextTimer();
     this._confirming = false;
     this._armedIndex = -1;
     this._pending = null;
     this._settled = new Set();
+    this._transitioning = false;
+    this._previewKey = null;
+    this._rawText = '';
+    this._pages = [];
+    this._pageIndex = 0;
+    this._optionsShown = false;
+    this.textEl?.classList?.remove?.('is-swapping');
     this._exitResultMode();
     this._clearOptions();
 
@@ -269,19 +319,20 @@ export class StoryUI {
     if (this.storyPanel) this.storyPanel.setAttribute('aria-label', String(script.title || ''));
 
     this._renderNode();
-    // 字体异步加载完成后行高可能变化，重新对齐一次（浏览器无 document.fonts 时跳过）
+    // 字体异步加载完成后行高可能变化，按固定文本区重新分页一次
     if (document.fonts?.ready?.then) {
-      document.fonts.ready.then(() => { if (this.visible) this._layout(); }).catch(() => {});
+      document.fonts.ready.then(() => { if (this.visible) this._onResize(); }).catch(() => {});
     }
     EventBus.emit(GE.STORY_START, { id: script.id, title: script.title });
     devLog.info('[StoryUI] show', script.id, 'start=', script.start);
     return true;
   }
 
-  /** 推进一段正文；选项阶段不推进（返回 false） */
+  /** 推进：先翻完当前节点的正文页，末页才允许进入下一节点；选项阶段不推进 */
   advance() {
-    if (!this.visible || this._confirming) return false;
+    if (!this.visible || this._confirming || this._transitioning) return false;
     if (this._armedIndex >= 0) { this._disarm(); return false; }
+    if (this._pageIndex < this._pages.length - 1) { this._nextPage(); return true; }
     if (this._options.length > 0) { this._pulseOptions(); return false; }
     const node = this._node();
     if (!node) { this._finish('missing-node'); return false; }
@@ -332,12 +383,18 @@ export class StoryUI {
     if (!this.visible) return false;
     const node = this._node();
     if (!node) return false;
-    this.textEl.textContent = normalizeText(node.text);
     if (this._confirming || this._armedIndex >= 0) return true;
+    this._clearTextTimer();
+    this._transitioning = false;
+    this.textEl?.classList?.remove?.('is-swapping');
     this._clearOptions();
     this._options = this._collectOptions(node);
-    this._renderOptions();
-    this._syncResultMode();
+    this._optionsShown = false;
+    this._rawText = normalizeText(node.text);
+    this._pages = this._paginate(this._rawText);
+    this._pageIndex = 0;
+    this._renderPage(0);
+    this._afterTextShown();
     this._layout();
     return true;
   }
@@ -376,11 +433,19 @@ export class StoryUI {
     const node = this._node();
     if (!node) { this._finish('missing-node'); return; }
     this.ctx.nodeKey = this.nodeKey;
-    this.textEl.textContent = normalizeText(node.text);
+
+    // 选项淡出期间已经抢先演过这个节点的正文：这里只补选项，不重播动画
+    const keepText = this._previewKey === this.nodeKey && this._pages.length > 0;
+    this._previewKey = null;
+
     this._clearOptions();
     this._options = this._collectOptions(node);
-    this._renderOptions();
-    this._syncResultMode();
+    this._optionsShown = false;
+    if (keepText) {
+      if (!this._transitioning) this._afterTextShown();
+    } else {
+      this._startText(node.text);
+    }
     this._layout();
     if (typeof node.onEnter === 'function') {
       try { node.onEnter(this.ctx); } catch (err) { devLog.error('[StoryUI.onEnter]', err); }
@@ -395,13 +460,139 @@ export class StoryUI {
     return true;
   }
 
+  // ─────────────────────────────────────── 正文分页 / 过渡
+  /**
+   * 正文进入固定文本区：先按实际渲染高度分页，再从第一页开始播放。
+   * 文本区尺寸由 CSS 固定（24vh），字号 / 行高不变，分页结果与窗口尺寸相关。
+   */
+  _startText(text) {
+    this._rawText = normalizeText(text);
+    this._pages = this._paginate(this._rawText);
+    this._pageIndex = 0;
+    this._swapText(() => this._renderPage(0));
+  }
+
+  /**
+   * 分页：以固定文本区的实际可用高度为界，逐页取「能完整放下的最大前缀」。
+   * 测量用并排的隐藏测量层（同字号 / 同宽度 / 同行高），不改动玩家正在看的正文；
+   * 无布局环境（测试桩 / 文本为空）时退化为单页，保证不丢字。
+   */
+  _paginate(raw) {
+    const measure = this.measureEl;
+    const height = this.textEl?.clientHeight;
+    if (!measure || !(height > 0) || typeof measure.scrollHeight !== 'number' || !raw) return [raw];
+    const tokens = tokenizeText(raw);
+    if (!tokens.length) return [raw];
+
+    const fits = (s) => {
+      fillRichText(measure, s);
+      return measure.scrollHeight <= height + 1;
+    };
+
+    const pages = [];
+    let start = 0;
+    while (start < tokens.length) {
+      let lo = 1;
+      let hi = tokens.length - start;
+      let best = 1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (fits(tokens.slice(start, start + mid).join(''))) { best = mid; lo = mid + 1; }
+        else hi = mid - 1;
+      }
+      const end = start + best;
+      let page = tokens.slice(start, end).join('');
+      // 段间空行不落在下一页页首（避免翻页后顶出一行空白）
+      if (pages.length) page = page.replace(/^\n+/, '');
+      pages.push(page);
+      start = end;
+    }
+    return pages.length ? pages : [raw];
+  }
+
+  _renderPage(index) {
+    if (!this.textEl) return;
+    fillRichText(this.textEl, this._pages[index] ?? '');
+  }
+
+  /** 淡出 → 换页 → 淡入；textTransitionMs = 0 时同步渲染（测试口径） */
+  _swapText(apply) {
+    const ms = Math.max(0, Number(this.textTransitionMs) || 0);
+    this._clearTextTimer();
+    if (!this.textEl || !ms) {
+      this._transitioning = false;
+      this.textEl?.classList?.remove?.('is-swapping');
+      apply();
+      this._afterTextShown();
+      return;
+    }
+    this._transitioning = true;
+    const half = Math.max(1, Math.round(ms / 2));
+    this.textEl.classList.add('is-swapping');
+    this._textTimer = setTimeout(() => {
+      apply();
+      // 强制回流，让淡入从换页后的这一帧起算
+      void this.textEl.offsetHeight;
+      this.textEl.classList.remove('is-swapping');
+      this._textTimer = setTimeout(() => {
+        this._textTimer = null;
+        this._afterTextShown();
+      }, half);
+    }, half);
+  }
+
+  /** 正文播放完（含淡入）后的统一收尾：末页才放选项，再判定结果态 */
+  _afterTextShown() {
+    this._transitioning = false;
+    if (!this.visible || this._confirming) return;
+    if (this._pageIndex < this._pages.length - 1) { this._syncResultMode(); return; }
+    this._revealOptions();
+    this._syncResultMode();
+    this._layout();
+  }
+
+  /** 本节点有选项且已到末页、正文播放完，才把选项放上屏 */
+  _revealOptions() {
+    if (this._optionsShown) return;
+    this._optionsShown = true;
+    if (this._options.length) this._renderOptions();
+  }
+
+  _nextPage() {
+    this._pageIndex += 1;
+    this._exitResultMode();
+    this._swapText(() => this._renderPage(this._pageIndex));
+  }
+
+  _clearTextTimer() {
+    if (this._textTimer) {
+      clearTimeout(this._textTimer);
+      this._textTimer = null;
+    }
+  }
+
+  /** 窗口尺寸 / 字体就绪：重新分页，尽量停在当前页，文本区尺寸不变 */
+  _onResize() {
+    this._layout();
+    if (!this.visible || this._confirming || this._transitioning || !this._rawText) return;
+    const page = this._pageIndex;
+    this._pages = this._paginate(this._rawText);
+    this._pageIndex = Math.min(page, Math.max(0, this._pages.length - 1));
+    this._renderPage(this._pageIndex);
+    this._syncResultMode();
+    this._layout();
+  }
+
   /** 淡出期间的过渡态：只换正文，选项区保持旧卡（不可点）直到淡出结束 */
   _renderPendingNode(key) {
     const node = this.script?.nodes?.[key];
     if (!node) return false;
     this.nodeKey = key;
     this.ctx.nodeKey = key;
-    this.textEl.textContent = normalizeText(node.text);
+    this._options = this._collectOptions(node);
+    this._optionsShown = false;
+    this._previewKey = key;
+    this._startText(node.text);
     EventBus.emit(GE.STORY_NODE, { id: this.script?.id, nodeKey: key });
     this._layout();
     return true;
@@ -409,11 +600,13 @@ export class StoryUI {
 
   /**
    * 结果态判定：节点既没有选项、也没有 next（或标了 end）时，
-   * 点击屏幕任意处关闭事件（参考图结果文本的收尾方式）。
+   * 且正文已经翻到末页，点击屏幕任意处关闭事件（参考图结果文本的收尾方式）。
    */
   _syncResultMode() {
     const node = this._node();
-    const isResult = !!node
+    const onLastPage = this._pageIndex >= this._pages.length - 1;
+    const isResult = onLastPage
+      && !!node
       && this._options.length === 0
       && (node.end === true || !node.next);
     if (isResult && !this._confirming) this._enterResultMode();
@@ -444,6 +637,7 @@ export class StoryUI {
   _clearOptions() {
     this._disarm();
     this._options = [];
+    this._optionsShown = false;
     this.optionBtns = [];
     this.optionBars = [];
     this._hints = [];
@@ -525,45 +719,26 @@ export class StoryUI {
       this._confirmBtns.push(confirmBtn);
     });
 
-    // 参考图核心关系：最后一项选项的底边与事件文本块的最底部平齐
+    // 选项列下沿贴固定正文区的底边
     this._layout();
   }
 
   /**
-   * 重新排布文本块与选项列（正文渲染后 / 选项重建后 / 窗口尺寸变化时调用）。
+   * 排布选项列（选项重建后 / 窗口尺寸变化时调用）。
    *
-   * 规则：
-   *  1. 正文**永远完整显示**（CSS 不再有 max-height / overflow），先让块停在名义位置 `top:79.2vh` 量出自然底边；
-   *  2. 底边越过安全线 `95.5%H` 时，整块按超出量上移（标题、徽记、跳过一起走），正文一个字都不切；
-   *  3. 选项列上沿固定 `22.5vh`、下沿贴正文块底边，中间用 `space-between` 摊开，所以它向上铺满整列；
-   *  4. 选项自然高度总和超过可用高度时逐级压缩间距，保证最后一项底边不越过正文块底边。
+   * 正文区尺寸恒定（CSS `24vh`），所以：
+   *  1. 选项区下沿直接贴正文区底边，不再随行数变化；
+   *  2. 选项自然高度总和超过可用高度时逐级压缩间距，保证内容不越过底边；
+   *  3. 超过 4 项时保持固定节距，交给 `.option-area.is-scroll` 内部滚动。
    */
   _layout() {
-    const panel = this.storyPanel;
     const area = this.optionAreaEl;
-    if (!panel || !this.textEl) return;
-
-    // 1) 回到名义位置再量（避免上一轮的位移累加）
-    panel.style.top = '';
-    const nominalTop = panel.getBoundingClientRect().top;
-    const naturalBottom = this.textEl.getBoundingClientRect().bottom;
-
-    // 2) 超出安全线则整块上移同样的距离
-    const vh = window.innerHeight || 0;
-    const overflow = naturalBottom - vh * STORY_MAX_BOTTOM;
-    if (overflow > 0.5 && vh > 0) {
-      const top = Math.max(0, nominalTop - overflow);
-      panel.style.top = `${top.toFixed(1)}px`;
-    }
-
-    // 3) 选项列下沿贴正文块底边
     if (!area || area.style.display === 'none') return;
-    const rect = this.textEl.getBoundingClientRect();
-    if (!rect || !rect.height) return;
+    const vh = window.innerHeight || 0;
+    const rect = this.textEl?.getBoundingClientRect?.();
+    if (!rect || !rect.height || !vh) return;
     area.style.bottom = `${Math.max(0, vh - rect.bottom).toFixed(1)}px`;
 
-    // 4) 4 个及以内：卡片撑不下时压缩间距，避免最后一项越过正文块底边。
-    //    超过 4 个：保持固定节距，交给 .option-area.is-scroll 内部滚动。
     if (area.classList.contains('is-scroll')) {
       area.style.gap = '2.2vh';
       return;
@@ -669,7 +844,7 @@ export class StoryUI {
     const branch = this._pickBranch(opt);
     const pending = this._resolveNext(opt, i, branch);
 
-    // 业务先于动画：结算效果 + 回调 + 正文立即切换
+    // 业务先于动画：结算效果 + 回调立即完成，正文按 240ms 过渡切到下一节点
     this._settleOption(opt, branch?.effects);
     try {
       if (typeof opt.onSelect === 'function') opt.onSelect({ ...this.ctx, option: opt });
@@ -794,10 +969,17 @@ export class StoryUI {
 
   _hide() {
     this._clearFadeTimer();
+    this._clearTextTimer();
     this._disarm();
     this.visible = false;
     this._confirming = false;
     this._pending = null;
+    this._transitioning = false;
+    this._previewKey = null;
+    this._rawText = '';
+    this._pages = [];
+    this._pageIndex = 0;
+    this.textEl?.classList?.remove?.('is-swapping');
     this._exitResultMode();
     if (this.mask) this.mask.style.display = 'none';
     if (this.layer) this.layer.style.display = 'none';

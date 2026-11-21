@@ -165,6 +165,7 @@ const ui = new StoryUI(director);
 ui.mount(body);
 director.storyUI = ui;                 // mount 里已自动挂载；此处显式赋值便于阅读
 ui.confirmFadeMs = 0;                  // 加速淡出（文档口径仍为 1.5 秒）
+ui.textTransitionMs = 0;               // 正文同步渲染（文档口径 240ms 淡出 / 淡入）
 
 const storyEnds = [];
 EventBus.on(GE.STORY_END, (p) => storyEnds.push(p));
@@ -471,6 +472,49 @@ ui.mask.click();
 check(ui.visible === false
   && storyEnds[storyEnds.length - 1].reason === 'result-dismiss',
   'G-06 结果文本态点击任意处关闭事件');
+
+// ════════════════════════════════════════════════════════════
+head('I. 固定正文区：自动分页 / 末页才出选项 / 切换过渡');
+// ════════════════════════════════════════════════════════════
+// 假测量：固定正文区高 20，每 10 字占 1 高度单位 → 每页约 200 字
+ui.textEl.clientHeight = 20;
+Object.defineProperty(ui.measureEl, 'scrollHeight', {
+  configurable: true,
+  get() { return Math.ceil(this.textContent.length / 10); },
+});
+const longText = '田'.repeat(310) + '禾'.repeat(310);
+ui.show({
+  id: 't_pages',
+  start: 'p',
+  nodes: {
+    p: { text: longText, options: [{ label: '继续', next: 'q' }] },
+    q: { text: '结束。', end: true },
+  },
+});
+check(ui._pages.length >= 3, 'I-01 超过固定高度的正文自动分页', ui._pages.length);
+check(ui._pages.join('') === longText, 'I-02 分页不丢字（各页拼接等于原文）');
+check(ui._pageIndex === 0 && ui.optionAreaEl.style.display === 'none' && ui.optionBtns.length === 0,
+  'I-03 第一页不显示选项');
+const page1 = ui.textEl.textContent;
+check(ui.advance() === true && ui._pageIndex === 1, 'I-04 点击推进下一页而不是下一节点');
+check(ui.textEl.textContent !== page1 && ui.nodeKey === 'p', 'I-05 仍在当前节点，只换正文页');
+while (ui._pageIndex < ui._pages.length - 1) ui.advance();
+check(ui.optionAreaEl.style.display === 'flex' && ui.optionBtns.length === 1,
+  'I-06 末页正文播放完才显示选项');
+ui.closeSilently('test');
+delete ui.measureEl.scrollHeight;
+delete ui.textEl.clientHeight;
+
+// 过渡动画：正文淡出 / 淡入期间选项不得提前出现
+ui.textTransitionMs = 60;
+ui.show(optionStory);
+await tick(160);
+ui.advance();
+check(ui.optionAreaEl.style.display === 'none', 'I-07 正文过渡中选项不出现');
+await tick(160);
+check(ui.optionAreaEl.style.display === 'flex', 'I-08 正文播完后选项才出现');
+ui.textTransitionMs = 0;
+ui.closeSilently('test');
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);
