@@ -278,9 +278,15 @@ check(hits === 0, 'C-15 待确认阶段尚未执行业务');
 ui.optionBtns[0].click();
 check(hits === 1, 'C-16 再次点击 → 选项回调生效');
 check(ui.textEl.textContent === '你已经做出了选择。', 'C-17 业务先于动画：正文立即切换');
+check(ui.optionAreaEl.classList.contains('is-fading'), 'C-17b 二次确认后整组选项进入淡化');
+check(ui.optionBtns[0].classList.contains('is-confirmed')
+  && !ui.optionBtns[1].classList.contains('is-confirmed')
+  && !ui.optionBtns[2].classList.contains('is-confirmed'),
+  'C-17c 仅选中项带金色边框标记，其余选项无特殊样式');
 await tick(20);
-check(ui.nodeKey === 'done' && ui.optionAreaEl.style.display === 'none',
-  'C-18 淡出结束后落位到结果节点、选项区收起');
+check(ui.nodeKey === 'done' && ui.optionAreaEl.style.display === 'none'
+  && !ui.optionAreaEl.classList.contains('is-fading'),
+  'C-18 淡出结束后落位到结果节点、选项区收起并复位淡出态');
 check(ui.advance() === true && ui.visible === false, 'C-19 结果节点推进到底 → 关闭');
 
 // 禁用选项：点击与数字键都无效

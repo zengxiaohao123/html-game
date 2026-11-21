@@ -289,7 +289,7 @@ getLastExpandRemap()         // 最近一次扩建的旧→新映射（只读查
 - **内容保留与索引重映射**：重建 `map.outerTiles` 时按新的环形顺序排布，地块对象（含 `contentId / contentState / terrain / states / dailyFlags`，即设施、资源、技能卡、地形与商店状态）随「同一块地」搬到新 idx；并产出完整 `remap`（外圈 `outerIdx`、栅栏 `fenceIdx`、栅栏 `fenceRow/fenceCol`，含反向表与新增格列表，见上）。扩建同时重映射扩建自己持有的裸索引引用：`player.x`（角色/载具所在格，跟随不视为移动）、`player.visitedTodayIdx`、`creatures[].pos/renderPos/targetPos/renderFrom` 与主格缓存 `row/col`（II 型世界原点下移 1 行）、`fence[].creatures` 缓存（统一存生物 id）、`linkSkillCounters` / `linkSkillCooldowns` 的 `tileIdx|skillId` 键、连携队列的 `tileIdx`/`key`、`uiState.selectedTileIdx`、生物归属 `creatures[].sourceTileIdx`。
 - **归属稳定化（配合 CreatureSystem）**：重映射 `sourceTileIdx` 时同步补 `sourceTileUid`（= 目标地块 `tile.uid`，缺失则生成 `tile_exp_*`）；消费方优先按 uid 判归属，因此扩建后鸡舍/史莱姆屋的归属生物不会退化成野生，且订阅方不会对同一份映射二次重映射。其它系统按裸索引保存位置的引用（如 UI 面板的 `currentTileIdx/currentFenceIdx`）应订阅 `GE.MAP_EXPANDED` 并使用 `payload.remap` 自行重映射，扩建侧不改其文件。
 - **地形**：新外圈格与新增栅栏格都走 §4 地形权重（45/40/10/5）掷骰并写入 `terrainAmount`；初始 3×3 已有的栅栏格保持 `terrain_none`，不回溯。
-- **小径自动延续（原子）**：扩建前先用 `PathGraph.computePathComponents(gs)` 收集「已生效小径块」中位于**右侧外圈**（`x === oldCols-1`，I 型）或**上侧外圈**（`y === 0`，II 型）的端点；结构重建、玩家/索引重映射完成后，在同一结算内向每个端点对应的新格补 `terrain_path`：I 型补 `(oldCols-1, y)`（从右往左第二列、同一行），II 型补 `(x, 1)`（从上往下第二行、同一列）。补格免费、不扣任何物品；补格完成后才调用一次 `PathSystem.recomputePathEffect({reason:'expand'})`，因此不会因中途短暂切断而误拆地块内容。返回值 `continued` 为补格 ref 列表，`pathResult` 为重算结果。自动延续未覆盖的情况（目标格不可用等）不做确认/提示，直接按普通还原流程拆除。`player.loc` 与 `visitedTodayRefs` 随 remap 同步重映射。
+- **小径自动延续（原子）**：扩建前先用 `PathGraph.computePathComponents(gs)` 收集「已生效小径块」中**原属栅栏内、因连通被视为外圈（临时外圈）**的小径格，且满足 I 型 `x === oldCols-2`（从右往左第二列）、II 型 `y === 1`（从上往下第二行）；原本就是外圈、仅地形改为小径的格子不在 `comp.fenceIdx` 中，天然不触发。结构重建、玩家/索引重映射完成后，在同一结算内向每个对象对应的新格补 `terrain_path`：I 型补 `(oldCols-1, y)`（新图从右往左第二列、同一行），II 型补 `(x, 1)`（新图从上往下第二行、同一列）。补格免费、不扣任何物品；补格完成后才调用一次 `PathSystem.recomputePathEffect({reason:'expand'})`，因此不会因中途短暂切断而误拆地块内容。返回值 `continued` 为补格 ref 列表，`pathResult` 为重算结果。自动延续未覆盖的情况（目标格不可用等）不做确认/提示，直接按普通还原流程拆除。`player.loc` 与 `visitedTodayRefs` 随 remap 同步重映射。
 - **无上限、无消耗**：不设扩建次数硬上限（受地图可容纳格数与性能约束），不消耗行动力/体力、无冷却。物品数量扣减由 `UseItemSystem` 的通用道具扣减逻辑完成。
 - **存档关系**：扩建属于「当天内的世界变化」，`expandMap` **不写日初基线**；只在正常采集点（`SleepSystem.sleep` 末尾 `DayBaseline.capture`）随实时状态入档。跨日后尺寸保留、道具数量按已用数量入档；当天回档（读档回本日开始时）时尺寸与扩建道具一起复原。`map.rows/cols/fenceRows/fenceCols` 随存档序列化，读档后正确恢复。
 - **容量上限即时同步**：`expandMap` 在结构变更后立刻调用 `CapacitySystem.syncCapacityLimits(gs)`（额外值 = max(0, 栅栏格数 − 生效小径格数 − 1)，友善/危险各自计算，高危恒 0），并广播 `GE.CAPACITY_CHANGE` → `TopBar._renderAll` 在同一帧内重绘容量条，不依赖玩家的后续操作。读档侧由 `migrateGS` 在 `DayBaseline.capture` 之前调用 `applyCapacityLimits(gs)`（只写上限不广播），因此读档进入扩建后的存档时容量 UI 首帧即为新值，旧档也能按实际栅栏面积校正。
@@ -340,6 +340,17 @@ canHostEternalContent(gs, ref)             // 【永恒】内容禁止置于临�
 - **容量**：`CapacitySystem.capacityExtra(gs) = max(0, 栅栏格数 − 生效小径格数 − 1)`；容量下降当日立即记警告第 1 天，惩罚只在每日开始时结算。
 - **移动**：WASD 落点可为生效小径格；冰面滑行只在外圈结算；载具模拟路径把生效小径格纳入合法图并取最短路线。
 - **验收**：`node tools/smoke-path.mjs`。
+
+### 2.4.4 地形图标与信息区口径（2026-11-21）
+
+- **地形图标链路**：`Assets.terrains` 必须登记全部地形 id（含 `terrain_path` 与旧别名 `path` → `🛤️`），保证 `Assets.getEmoji/getIcon` 不返回 `❓`；`HotBar._createItemIcon` 的资产组判定需依次尝试 `facilities → resources → items → terrains`，并以物品库 emoji 兜底，保证小径在背包 / 快捷栏 / 地块三态都有可见图标。
+- **地图地形层**：`MapView._terrainLayer` 在无 PNG 贴图时追加居中 emoji（`data-terrain-emoji`），`_terrainColor('terrain_path')` 给 `#d9c7a0`；外圈与栅栏格共用同一层实现。
+- **信息区 tab 口径**：地形信息**只在「状态」tab** 展示，地块内容 tab 不再承载地形。
+  - 有地块内容（外圈或生效小径格）：内容 tab 按统一 `_renderContentHead(contentId)` 渲染图标 + 名称 + 词条徽章 + 描述；外圈与栅栏格同口径。
+  - 无地块内容：外圈内容 tab 只保留基本功能选项（「前往」/「无法抵达」）；栅栏格**不生成**「地块内容」tab。
+- **单位排版**：角色卡与生物卡同规格、同网格容器（`_renderCreatureCards({playerFirst})`），角色优先占据第一格，不单独占一行。
+- **前往 / 无法抵达（统一功能选项）**：地形内容 tab 底部同一位置二选一渲染——可抵达时为 `前往（消耗行动力x）`（x 取真实消耗：`nextMoveNoStamina` 或载具 `freeStamina` → 0，否则 1；不再拼接载具名称）；不可抵达时为 `disabled` 的红色按钮 `无法抵达`。可达性判定完全沿用原逻辑（无载具相邻格 / 载具 `VehicleSystem.canVehicleReach`），外圈与生效小径格共用同一形态。
+- **验收**：`tools/smoke-ui.mjs`「小径修复：栅栏内容 tab / 地形只在状态 tab / 单位同格排版」。
 
 ### 2.5 RealtimeClock（统一实时时钟 / 渲染插值）
 
@@ -485,7 +496,9 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
     改成 `名义 top - 超出量`（标题 / 徽记 / 跳过 / 底板一起上移），正文一个字都不切，块底仍在安全线内。
     `.story-skip`（`跳过 ✕` 胶囊）挂在 `.story-panel` 内、贴**文本块右上角**（`right:0 / top:0`，即右缘 `60vw`），
     随整块上移，**不贴屏幕右缘**（右侧整列属于选项）。**没有推进提示**：不显示「继续」「请选择」。
-  - 选项区 `.option-area`：右侧竖排（`left:65.3vw / right:5.6vw`，不再为跳过预留右侧空间），
+  - 选项区 `.option-area`：外框 `left:62.5vw / right:5.6vw`，再以 `padding-left:2.8vw` 把卡片内容定位回
+    `65.3vw`–`94.4vw`；这 `2.8vw` 是待确认卡 `1.7vw` 左移与金色把手的缓冲带，滚动裁切作用在 padding 外沿，
+    左移 / hover 不会被切掉。底部 `padding-bottom:1.2vh` 同理，保护最后一张卡的边框与阴影。
     **上沿固定 `top:22.5vh`（参考图首条位置）**，`bottom` 由 `_layout()` 按正文 rect 动态写入
     （`bottom = innerHeight - textEl.bottom`）作为选项区底边界；
     `display:flex; flex-direction:column; justify-content:flex-start`，首条卡片 `margin-top:auto`、末条卡片 `margin-bottom:auto`，
@@ -496,7 +509,8 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
     四项时 `.option-area.is-four` 收到 `16vh` / `2.2vh`。
     自然高度总和仍超出可用高度时，`_layout()` 依次尝试 `3 / 2.4 / 1.8 / 1.2 / 0.6 / 0vh` 间距直到 `scrollHeight <= clientHeight`。
     超过 4 项时 `.option-area.is-scroll` 固定 `2.2vh` 间距并 `overflow-y:auto` 内部滚动；
-    内容溢出时 `auto` 边距归零、从顶部开始滚动，内容不足一屏时仍按居中规则处理。
+    内容溢出时 `auto` 边距归零、从顶部开始滚动；底部 `1.2vh` padding 保证最后一张卡可完整滚进可视区，
+    边框与阴影不被滚动容器下沿裁切；内容不足一屏时仍按居中规则处理。
     卡内：`.story-option-bar` 标题行（`2.8vh / 700 / #f8f3e3` 暖白 + 茶金细分隔线）+ `.story-option-desc` 描述（`2.2vh / #d7e2d3`，`sub / detail` 全部常驻，不渲染数字徽章）。
     **待确认态（一次点击）**：`.story-option.is-armed` 用 `transform: translateX(-1.7vw)` 向左"被拉出"一段
     （实测卡左缘 `65.7%W → 64.0%W`），左缘 `::before` 同时长出一枚金色把手（`grip-in 0.16s`），阴影加重向右投射；
@@ -540,7 +554,9 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
   `document` 的 `click` 守卫只在 `card.contains(target)` 为假时才 `_disarm()`，因此卡内任意按下 / 抬起组合都稳定生效。
   **所有选项（包括「离开」）一律二次确认**，没有单击即生效的例外（`Option.safe` 已移除）。
   `detail` 常驻显示，禁止在点击后才展开（卡片高度不得突变）。
-  确认后**业务先于动画**：`effects` 结算 + `onSelect` + 正文切换同一 tick 完成，卡片 1.5 秒淡出，淡出期整块选项区 `pointer-events:none`。
+  确认后**业务先于动画**：`effects` 结算 + `onSelect` + 正文切换同一 tick 完成；随后选项区加 `.is-fading`，
+  **本次所有选项一起在 1.5 秒内淡化消失**（时长由 `--option-fade-ms` 注入），其中被选中的卡保留金色边框，
+  其余卡不带额外样式；淡出期整块选项区 `pointer-events:none`。
   键盘：`1~9` 与鼠标同入口（同样需要两次按键），ESC 在待确认时只取消待确认、不开跳过弹窗。
 - **跳过**：`.story-skip`（文本块右上角 `right:40vw / top:79.2vh` 的胶囊，右缘 `60vw`）/ ESC → `DIALOG_SHOW` 二次确认；`skip()` 沿 `next` 前进，
   遇到 `options` 节点停下（选项节点上跳过被拒绝并 Toast 提示），无后续节点则结束；跳过永不执行 `effects`。

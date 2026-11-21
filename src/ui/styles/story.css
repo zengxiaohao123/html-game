@@ -284,10 +284,14 @@ body.story-active .hotbar-wrapper {
  * 内容超出时 auto 边距自动归零，从顶部开始滚动，保证每一条都能滚到。 */
 .option-area {
   position: absolute;
-  left: 65.3vw;
+  /* 内容仍从 65.3vw 起；向左多留 2.8vw 给待确认卡的 1.7vw 位移与金色把手，
+   * 滚动裁切作用在 padding 外沿，卡片左移/悬停时不会再被切掉。 */
+  left: 62.5vw;
   right: 5.6vw;
   top: 22.5vh;
   bottom: 4vh;
+  padding-left: 2.8vw;
+  padding-bottom: 1.2vh;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
@@ -587,9 +591,26 @@ body.story-active .hotbar-wrapper {
   opacity: 0.75;
 }
 
-/* 已确认淡出中 */
+/* 已确认：整组选项一起淡化；仅被选中的卡保留金色边框做区分，
+ * 其余卡不加任何额外样式，只随整组淡出。 */
 .story-option.is-confirmed {
   pointer-events: none;
+}
+
+.option-area.is-fading .story-option {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--option-fade-ms, 1500ms) ease, transform 0.14s ease;
+}
+
+.option-area.is-fading .story-option.is-confirmed {
+  border-color: #ffd98d;
+  box-shadow:
+    0 0 0 2px rgba(255, 216, 138, 0.75),
+    0 0 3vh rgba(255, 196, 96, 0.3),
+    0 2px 0 rgba(9, 16, 12, 0.45),
+    0 1.2vh 2.2vh rgba(0, 0, 0, 0.42),
+    inset 0.28vw 0 0 rgba(255, 209, 128, 0.85);
 }
 
 /* ── 动效 ── */

@@ -450,6 +450,8 @@ export class StoryUI {
     this._confirmBtns = [];
     if (this.optionAreaEl) {
       clearChildren(this.optionAreaEl);
+      this.optionAreaEl.classList.remove('is-fading');
+      this.optionAreaEl.style.removeProperty?.('--option-fade-ms');
       this.optionAreaEl.style.display = 'none';
       this.optionAreaEl.style.pointerEvents = '';
     }
@@ -678,10 +680,10 @@ export class StoryUI {
     this._pending = pending;
     if (pending.kind === 'node') this._renderPendingNode(pending.key);
 
+    // 整组选项一起淡化；仅被选中的卡保留金色边框（见 story.css .is-confirmed）
     const fadeMs = Math.max(0, Number(this.confirmFadeMs) || 0);
-    card.style.transition = `opacity ${fadeMs}ms ease, transform ${fadeMs}ms ease`;
-    card.style.opacity = '0';
-    card.style.transform = 'translateX(16px)';
+    this.optionAreaEl.classList.add('is-fading');
+    this.optionAreaEl.style.setProperty('--option-fade-ms', `${fadeMs}ms`);
     this._clearFadeTimer();
     this._fadeTimer = setTimeout(() => {
       this._fadeTimer = null;
