@@ -132,6 +132,18 @@ function getCreatureStates(c) {
       remainingDays: b.remainingDays ?? null,
     });
   }
+  // 结界【蓝息】施加在生物身上的 buff（运行期光环，不落盘）
+  if (c._blueAura?.active) {
+    out.push({
+      name: '蓝息',
+      emoji: '💙',
+      tone: 'good',
+      meaning: stateMeaning('蓝息', ''),
+      strength: null,
+      remainingTurns: null,
+      remainingDays: null,
+    });
+  }
   return out;
 }
 
@@ -312,7 +324,7 @@ export class InfoPanel {
       const tile = gs?.map?.outerTiles?.[this.currentTileIdx];
       if (tile) {
         tabs.push({ label: '地块内容', render: 'content' });
-        if (this._tileHasState(tile)) tabs.push({ label: '状态', render: 'state' });
+        if (this._tileHasState(tile, gs, this.currentTileIdx)) tabs.push({ label: '状态', render: 'state' });
         // 外圈有单位：玩家在此格；或此格门禁设施归属的生物（含已收纳，仍需可查看）
         const ownedHere = DOOR_FACILITIES.has(tile.contentId)
           ? facilityOwnedCreatures(gs, tile.idx).length
@@ -355,12 +367,14 @@ export class InfoPanel {
     this._currentTabs = tabs;
   }
 
-  /** 外圈地块是否有「状态」：地形（无地形不算）+ 地块 buff/debuff + 已放置的放置型道具 */
-  _tileHasState(tile) {
+  /** 外圈地块是否有「状态」：地形（无地形不算）+ 地块 buff/debuff + 放置型道具 + 蓝息/压制 */
+  _tileHasState(tile, gs, ref) {
     if (!tile) return false;
     if (tile.terrain && normTerrain(tile.terrain) !== 'terrain_none') return true;
     if ((tile.states || []).length > 0) return true;
     if ((tile.contentState?.placedItems || []).length > 0) return true;
+    if (ref !== undefined && ref !== null && isInBlueBreath(gs, ref)) return true;
+    if (ref !== undefined && ref !== null && isSuppressed(gs, ref)) return true;
     return false;
   }
 
@@ -494,7 +508,8 @@ export class InfoPanel {
   }
 
   /**
-   * 新田块运行状态（只读）：成长值 / 水面失效 / 压制 / 蓝息 / 【产出时】。
+   * 新田块运行信息（只读）：成长值 / 储存 / 水面特性 / 【产出时】临时特性。
+   * 归类口径：特性相关写这里（地块内容）；【压制】debuff 与结界 buff 写状态页。
    * 储存数量在「身处该格」时由下方操作区显示，离开该格时在此补一行。
    */
   _renderFieldStatus(tile, contentId, gs, ref) {
@@ -515,7 +530,10 @@ export class InfoPanel {
     } else if (contentId === 'facility_blue_star_fruit') {
       const n = Math.max(0, Math.min(7, Number(cs.blueStored) || 0));
       if (!onTile) rows.push(`💙 已储存 ${n} / 7`);
-      rows.push(n > 0 ? `💙 蓝息半径 ${blueRadiusFor(n).toFixed(1)} 米` : '💙 尚未储存蓝星果，暂无蓝息');
+      // 特性（地块内容）：蓝星果田块给予【蓝息】；影响本身作为 buff 显示在「状态」页
+      rows.push(n > 0
+        ? `💙 特性：储存蓝星果后散发【蓝息】（半径 ${blueRadiusFor(n).toFixed(1)} 米）`
+        : '💙 特性：尚未储存蓝星果，暂不散发【蓝息】');
     } else if (contentId === 'facility_pumpkin') {
       const growth = Math.max(0, Number(cs.pumpkinGrowth) || 0);
       const stored = Math.max(0, Math.min(1, Number(cs.pumpkinStored) || 0));
@@ -525,21 +543,18 @@ export class InfoPanel {
       rows.push(`⭐ 成长值 ${growth} / ${STARFRUIT_THRESHOLD}（开始 / 结束 / 进入时 +${STARFRUIT_GAIN}）`);
     }
 
-    if (contentId !== 'facility_blue_star_fruit' && isInBlueBreath(gs, ref)) {
-      rows.push('💙 处于蓝息范围内：产出作物 10% 变异为【湛蓝】【违禁品】');
-    }
-    if (hasProduceBonus(gs, ref)) rows.push('✨ 【产出时】加成生效中（本次产量 +1）');
-    if (isSuppressed(gs, ref)) {
-      const until = Number(cs.suppressUntilDay);
-      rows.push(`⛔ 压制中：特性失效${Number.isFinite(until) ? `至第 ${until} 日` : ''}`);
+    // 特性归属：向日葵授予邻格的临时特性属于「特性」，写在地块内容并注明来源
+    if (hasProduceBonus(gs, ref)) {
+      rows.push('✨ 向日葵给予的【产出时】临时特性：本次产量 +1');
     }
 
     for (const text of rows) {
-      createEl('div', {
+      const row = createEl('div', {
         style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
-        text,
         parent: this.bodyWrap,
       });
+      // 行内的【蓝息】【产出时】等术语走 TermText：内联【】并可点击查看释义
+      renderTermText(row, text);
     }
   }
 
@@ -560,7 +575,7 @@ export class InfoPanel {
     // 无地块内容：不渲染地形（地形只在「状态」tab），只保留下方「前往 / 无法抵达」基本功能选项。
     if (contentId) this._renderContentHead(contentId);
     if (opts.afterHead) opts.afterHead();
-    // 新田块运行状态（成长值 / 水面失效 / 压制 / 蓝息 / 产出时）：只读展示
+    // 新田块运行信息（成长值 / 水面特性 / 储存 / 产出时）：只读展示；buff/debuff 归状态页
     if (contentId) this._renderFieldStatus(tile, contentId, gs, ref);
 
     // 设施类地块 —— 功能选项区（§16.4：区分"身处该格"vs"随时可点"）
@@ -1462,13 +1477,43 @@ export class InfoPanel {
       renderTermText(row, `${def?.name || p.itemId}：${def?.description || '（无描述）'}`, { class: 'state-name' });
     }
 
-    if (states.length === 0 && placed.length === 0) {
+    // 4) 派生状态：来自结界 / 外部来源施加在地块上的 buff 与 debuff
+    //    【蓝息】= 结界施加的 buff（含蓝星果田块自身）；【压制】= 黑莓/酢浆草施加的 debuff
+    const derived = this._renderDerivedStateRows(gs, this._contentRef, tile);
+
+    if (states.length === 0 && placed.length === 0 && derived === 0) {
       createEl('div', {
         style: { padding: '8px 4px', color: '#b0a090', fontSize: '12px', fontStyle: 'italic' },
         text: '（本地块当前没有其他状态）',
         parent: this.bodyWrap,
       });
     }
+  }
+
+  /**
+   * 状态页派生行：地块被外部施加的 buff/debuff
+   *   特性相关（田块自己给予别人的能力）写在地块内容；这里只放「该地块正在承受」的状态。
+   * @returns {number} 渲染的行数
+   */
+  _renderDerivedStateRows(gs, ref, tile) {
+    let count = 0;
+    if (ref !== undefined && ref !== null && isInBlueBreath(gs, ref)) {
+      const row = createEl('div', { class: ['state-row'], parent: this.bodyWrap });
+      createEl('span', { class: ['state-emoji'], text: '💙', parent: row });
+      renderTermText(row, `${termLabel('蓝息')}：${stateMeaning('蓝息', '')}`, { class: 'state-name' });
+      count += 1;
+    }
+    if (ref !== undefined && ref !== null && isSuppressed(gs, ref)) {
+      const until = Number(tile?.contentState?.suppressUntilDay);
+      const row = createEl('div', { class: ['state-row'], parent: this.bodyWrap });
+      createEl('span', { class: ['state-emoji'], text: '⛔', parent: row });
+      renderTermText(row, `${termLabel('压制')}：${stateMeaning('压制', '')}`, { class: 'state-name' });
+      if (Number.isFinite(until)) {
+        createEl('span', { class: ['state-remain'], text: `至第 ${until} 日`, parent: row });
+      }
+      count += 1;
+    }
+    return count;
   }
 
   // ════════════════════════════════════════════════════════════
@@ -1612,6 +1657,16 @@ export class InfoPanel {
       });
       createEl('span', { text: `${def?.emoji || '❓'} `, parent: row });
       renderTermText(row, `${termLabel(name)}${meta ? ` ${meta}` : ''}：${stateMeaning(name, def?.description)}`);
+    }
+
+    // 结界【蓝息】施加在角色身上的 buff（按所在格中心点判定）
+    if (gs._blueAura?.active) {
+      const row = createEl('div', {
+        style: { fontSize: '13px', color: '#3a2e20', padding: '4px 0', borderTop: '1px dashed #d4c4a4' },
+        parent: this.bodyWrap,
+      });
+      createEl('span', { text: '💙 ', parent: row });
+      renderTermText(row, `${termLabel('蓝息')}：${stateMeaning('蓝息', '')}`);
     }
   }
 
@@ -1839,11 +1894,16 @@ export class InfoPanel {
     }));
     renderTermText(row, `${termLabel(tDef.name)}：${tDef.description}`, { class: 'state-name' });
 
-    createEl('div', {
-      style: { padding: '8px 4px', color: '#b0a090', fontSize: '12px', fontStyle: 'italic' },
-      text: '（本地块当前没有其他状态）',
-      parent: this.bodyWrap,
-    });
+    // 派生状态：蓝息等外部施加在地块上的 buff / debuff（栅栏格与外圈同一口径）
+    const derived = this._renderDerivedStateRows(gs, this._contentRef, cell);
+
+    if (derived === 0) {
+      createEl('div', {
+        style: { padding: '8px 4px', color: '#b0a090', fontSize: '12px', fontStyle: 'italic' },
+        text: '（本地块当前没有其他状态）',
+        parent: this.bodyWrap,
+      });
+    }
   }
 
   // ════════════════════════════════════════════════════════════

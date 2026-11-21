@@ -2,15 +2,19 @@
 // 【蓝息】：蓝星果田块储存蓝星果后散发的圆形光环（物品库 FAC-025）
 //
 // 规则口径（用户 2026-11-21 确认）：
-//   · 半径 = 0.6 + 0.2 × (储存数 - 1) 米；1 格 = 1 米，按地块中心点距离判定，含边界
+//   · 半径 = 0.6 + 0.2 × (储存数 - 1) 米；1 格 = 1 米
+//   · 范围判定分三类：地块按四周边缘接触、角色/NPC 按所在地块中心点、
+//     栅栏内生物按自身碰撞框接触（源心到生物中心 ≤ 蓝息半径 + 生物半径）
 //   · 蓝星果田块自身一定在范围内，但不参与变异（它产出的蓝星果恒为【湛蓝】）
 //   · 范围重叠取最高、不叠加、不重复判定（变异只掷一次）
 //   · 角色 / 生物 +25% 最大生命与攻击为动态光环；生物移速 +50%（speedPerTile ÷ 1.5）
+//   · 生命上限变化时当前生命按原百分比同步（HealSystem.applyMaxHp，不低于 1）
 //   · NPC 例行搜查系统尚未开发，本模块不实现
 //
 // 存档：光环本身不落盘，只由「地块储存数 + 玩家/生物当前位置」实时推导；
 //       _blueAura 只是运行期增量记录，不进日初基线。
 
+import { applyMaxHp } from './HealSystem.js';
 import {
   contentEntries,
   getTile,
@@ -57,23 +61,38 @@ export function blueBreathSources(gs) {
   return out;
 }
 
-/** 该地块中心到最近蓝息源的距离是否 ≤ 半径；返回覆盖它的最大半径（0 表示不在范围内） */
+/** 该地块中心到最近蓝息源的距离是否 ≤ 半径；返回覆盖它的最大半径（0 表示不在范围内）
+ *  地块按四周边缘判定：只要蓝息与地块矩形有任何接触（含边界）就算在范围内。
+ */
 export function blueBreathMaxRadiusAt(gs, ref) {
   const p = refXY(gs, ref);
   if (!p) return 0;
-  const cx = p.x + 0.5;
-  const cy = p.y + 0.5;
   let best = 0;
   for (const src of blueBreathSources(gs)) {
-    const d = Math.hypot(cx - src.x, cy - src.y);
+    // 源中心到地块矩形 [x, x+1] × [y, y+1] 的最近距离
+    const dx = Math.max(p.x - src.x, src.x - (p.x + 1), 0);
+    const dy = Math.max(p.y - src.y, src.y - (p.y + 1), 0);
+    const d = Math.hypot(dx, dy);
     if (d <= src.radius + 1e-9 && src.radius > best) best = src.radius;
   }
   return best;
 }
 
-/** 地块是否处于蓝息范围内 */
+/** 地块是否处于蓝息范围内（地块按四周边缘接触判定） */
 export function isInBlueBreath(gs, ref) {
   return blueBreathMaxRadiusAt(gs, ref) > 0;
+}
+
+/** 地块中心点是否被蓝息覆盖：角色 / NPC 的判定口径（范围需覆盖该格中心点） */
+export function isTileCenterInBlueBreath(gs, ref) {
+  const p = refXY(gs, ref);
+  if (!p) return false;
+  const cx = p.x + 0.5;
+  const cy = p.y + 0.5;
+  for (const src of blueBreathSources(gs)) {
+    if (Math.hypot(cx - src.x, cy - src.y) <= src.radius + 1e-9) return true;
+  }
+  return false;
 }
 
 /** 该格是否可作为变异来源的目标（其他田块、非蓝星果田块） */
@@ -120,7 +139,8 @@ function auraDelta(base, mult) {
 export function syncPlayerBlueAura(gs) {
   if (!gs?.player) return false;
   const ref = playerRef(gs);
-  const covered = ref !== null && isInBlueBreath(gs, ref);
+  // 角色按所在地块中心点判定：蓝息必须覆盖该格中心点
+  const covered = ref !== null && isTileCenterInBlueBreath(gs, ref);
   const rec = gs._blueAura || (gs._blueAura = { hpApplied: 0, atkApplied: 0, active: false });
 
   if (covered) {
@@ -130,17 +150,15 @@ export function syncPlayerBlueAura(gs) {
     const targetAtk = Math.round(baseAtk * BLUE_STAT_MULT * 10) / 10;
     rec.hpApplied = targetHp - baseHp;
     rec.atkApplied = Math.round((targetAtk - baseAtk) * 10) / 10;
-    gs.player.maxHp = targetHp;
+    applyMaxHp(gs.player, targetHp); // 上限变化 → 当前生命按原百分比同步
     gs.player.atk = targetAtk;
-    if (gs.player.hp > gs.player.maxHp) gs.player.hp = gs.player.maxHp;
     if (!rec.active) {
       rec.active = true;
       EventBus.emit(GE.TOAST_SHOW, { text: '💙 进入蓝息范围：最大生命 / 攻击 +25%', duration: 1800 });
     }
   } else if (rec.active || rec.hpApplied || rec.atkApplied) {
-    gs.player.maxHp = Math.round((gs.player.maxHp - rec.hpApplied) * 10) / 10;
+    applyMaxHp(gs.player, Math.round((gs.player.maxHp - rec.hpApplied) * 10) / 10);
     gs.player.atk = Math.round((gs.player.atk - rec.atkApplied) * 10) / 10;
-    if (gs.player.hp > gs.player.maxHp) gs.player.hp = gs.player.maxHp;
     rec.hpApplied = 0;
     rec.atkApplied = 0;
     if (rec.active) {
@@ -160,19 +178,21 @@ export function syncCreatureBlueAura(gs) {
     const cx = Number.isFinite(c.pos?.x) ? c.pos.x : c.x;
     const cy = Number.isFinite(c.pos?.y) ? c.pos.y : c.y;
     if (sources.length > 0 && Number.isFinite(cx) && Number.isFinite(cy)) {
+      const cRadius = Number.isFinite(c.radius) && c.radius > 0 ? c.radius : 0.15;
       for (const src of sources) {
-        if (Math.hypot(cx - src.x, cy - src.y) <= src.radius + 1e-9) { covered = true; break; }
+        // 生物按自身碰撞框判定：源到生物中心的距离 ≤ 蓝息半径 + 生物半径 即有接触
+        if (Math.hypot(cx - src.x, cy - src.y) <= src.radius + cRadius + 1e-9) { covered = true; break; }
       }
     }
-    const rec = c._blueAura || (c._blueAura = { hpApplied: 0, atkApplied: 0, speedApplied: false });
+    const rec = c._blueAura || (c._blueAura = { hpApplied: 0, atkApplied: 0, speedApplied: false, active: false });
     if (covered) {
       const baseHp = (c.maxHp || 0) - rec.hpApplied;
       const baseAtk = (c.atk || 0) - rec.atkApplied;
       if (baseHp > 0) {
-        const targetHp = Math.round(baseHp * BLUE_STAT_MULT);
+        // 1 位小数：保留上限提升后的百分比精度（当前生命由 applyMaxHp 同步）
+        const targetHp = Math.round(baseHp * BLUE_STAT_MULT * 10) / 10;
         rec.hpApplied = targetHp - baseHp;
-        c.maxHp = targetHp;
-        if (c.hp > c.maxHp) c.hp = c.maxHp;
+        applyMaxHp(c, targetHp);
       }
       if (baseAtk > 0) {
         const targetAtk = Math.round(baseAtk * BLUE_STAT_MULT);
@@ -183,16 +203,17 @@ export function syncCreatureBlueAura(gs) {
         c.speedPerTile = Math.round((c.speedPerTile / BLUE_SPEED_MULT) * 1000) / 1000;
         rec.speedApplied = true;
       }
-    } else if (rec.hpApplied || rec.atkApplied || rec.speedApplied) {
-      c.maxHp = Math.round(((c.maxHp || 0) - rec.hpApplied) * 10) / 10;
+      rec.active = true;
+    } else if (rec.hpApplied || rec.atkApplied || rec.speedApplied || rec.active) {
+      applyMaxHp(c, Math.round(((c.maxHp || 0) - rec.hpApplied) * 10) / 10);
       c.atk = Math.round(((c.atk || 0) - rec.atkApplied) * 10) / 10;
-      if (c.hp > c.maxHp) c.hp = c.maxHp;
       if (rec.speedApplied) {
         c.speedPerTile = Math.round(c.speedPerTile * BLUE_SPEED_MULT * 1000) / 1000;
         rec.speedApplied = false;
       }
       rec.hpApplied = 0;
       rec.atkApplied = 0;
+      rec.active = false;
     }
   }
 }
@@ -215,6 +236,7 @@ export const BlueBreathSystem = {
   blueBreathSources,
   blueBreathMaxRadiusAt,
   isInBlueBreath,
+  isTileCenterInBlueBreath,
   isCropItem,
   rollBlueMutation,
   rollBlueMutationPerUnit,

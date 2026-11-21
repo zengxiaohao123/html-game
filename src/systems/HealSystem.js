@@ -39,4 +39,27 @@ export function healPlayerByPercent(gs, pct, opts = {}) {
   return healPlayer(gs, Math.max(1, Math.floor(gs.player.maxHp * pct)), opts);
 }
 
-export const HealSystem = { healPlayer, healPlayerByPercent };
+/**
+ * 生命值上限变化（角色与生物统一口径）：
+ *   上限提高 / 下降时，当前生命值按原「当前/上限」百分比同步换算；
+ *   上限下降后当前生命值不低于 1，且不超过新上限。
+ * @param {object} unit 含 hp / maxHp 的单位（角色或生物）
+ * @param {number} newMax 新的上限
+ * @returns {number} 当前生命值的变化量
+ */
+export function applyMaxHp(unit, newMax) {
+  if (!unit) return 0;
+  const oldMax = Number(unit.maxHp) || 0;
+  const oldHp = Number.isFinite(unit.hp) ? unit.hp : oldMax;
+  const ratio = oldMax > 0 ? oldHp / oldMax : 1;
+  const max = Math.max(1, Math.round(newMax * 10) / 10);
+  // 新上限是整数（角色）时当前生命取整；带小数的上限（生物）保留 1 位，且不超过新上限
+  const precision = Number.isInteger(max) ? 1 : 10;
+  const raw = Math.max(1, Math.min(max, max * ratio));
+  const scaled = Math.min(max, Math.round(raw * precision) / precision);
+  unit.maxHp = max;
+  unit.hp = scaled;
+  return scaled - oldHp;
+}
+
+export const HealSystem = { healPlayer, healPlayerByPercent, applyMaxHp };

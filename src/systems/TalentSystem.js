@@ -14,7 +14,7 @@
 
 import { TALENTS, getTalentsByRole } from '../data/talents.js';
 import { EventBus } from '../core/EventBus.js';
-import { HealSystem } from './HealSystem.js';
+import { HealSystem, applyMaxHp } from './HealSystem.js';
 import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { Random } from '../core/Random.js';
@@ -77,8 +77,7 @@ export function firePassive(gs) {
       case 'max_hp_food_bonus': {
         const bonus = t.effectParams?.maxHpBonus ?? 20;
         if (!applied.maxHpApplied) {
-          gs.player.maxHp += bonus;
-          gs.player.hp = Math.min(gs.player.maxHp, gs.player.hp + bonus);
+          applyMaxHp(gs.player, gs.player.maxHp + bonus); // 上限提高 → 当前生命按百分比同步
           applied.maxHpApplied = true;
           EventBus.emit(GE.HP_CHANGE, { newValue: gs.player.hp, reason: 'talent_cooking' });
           devLog.info('[TalentSystem.passive] 烹饪(' + roleId + ') maxHp +', bonus, '→', gs.player.maxHp);

@@ -17,7 +17,7 @@ import { COLLECTIBLES } from '../data/collectibles.js';
 import { ITEMS } from '../data/items.js';
 import { drawFromPool } from './RandomPool.js';
 import * as InventorySystem from './InventorySystem.js';
-import { HealSystem } from './HealSystem.js';
+import { HealSystem, applyMaxHp } from './HealSystem.js';
 import { FieldEffects } from './FieldEffects.js';
 import { contentEntries } from '../core/TileAccess.js';
 import { produce } from './ProduceSystem.js';
@@ -138,9 +138,8 @@ export function onItemGained(gs, itemId) {
       case 'collectible_memoir': {
         const base = gs.player.maxHp;
         const add = Math.max(1, Math.floor(base * 0.02));
-        gs.player.maxHp += add;
-        gs.player.hp += add;
-        EventBus.emit(GE.HP_CHANGE, { newValue: gs.player.hp, delta: add, reason: 'collectible_memoir' });
+        const delta = applyMaxHp(gs.player, base + add); // 上限 +2% → 当前生命按百分比同步
+        EventBus.emit(GE.HP_CHANGE, { newValue: gs.player.hp, delta, reason: 'collectible_memoir' });
         break;
       }
       case 'collectible_membership_card': {
@@ -250,8 +249,7 @@ export function syncPumpkin(gs) {
   const hpAdd = Math.floor(baseHp * 0.02 * delta);
   const atkAdd = Math.floor(baseAtk * 0.02 * delta);
 
-  gs.player.maxHp += hpAdd;
-  gs.player.hp += hpAdd;
+  applyMaxHp(gs.player, gs.player.maxHp + hpAdd); // 上限变化 → 当前生命按百分比同步
   gs.player.atk += atkAdd;
   gs._pumpkin.stored = stored;
   gs._pumpkin.hpApplied += hpAdd;

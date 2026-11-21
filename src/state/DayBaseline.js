@@ -10,6 +10,7 @@
 // 不入档：任何墙钟（*Ms / *At）、连携队列与计数、演出/界面态、建造态、睡眠结算中间量。
 
 import { devLog } from '../core/Logger.js';
+import { applyMaxHp } from '../systems/HealSystem.js';
 
 /** 存档格式版本号（迁移识别用） */
 export const SAVE_SCHEMA_VERSION = 2;
@@ -101,9 +102,8 @@ export function capture(gs) {
   if (base.player) {
     const aura = base._blueAura;
     if (aura) {
-      base.player.maxHp = Math.max(1, (base.player.maxHp || 0) - (aura.hpApplied || 0));
+      applyMaxHp(base.player, Math.max(1, (base.player.maxHp || 0) - (aura.hpApplied || 0)));
       base.player.atk = Math.max(0, (base.player.atk || 0) - (aura.atkApplied || 0));
-      if (Number.isFinite(base.player.hp)) base.player.hp = Math.min(base.player.hp, base.player.maxHp);
     }
     delete base._blueAura;
   }
@@ -111,9 +111,8 @@ export function capture(gs) {
     if (!isPlainObject(c)) continue;
     const aura = c._blueAura;
     if (aura) {
-      c.maxHp = Math.round(((c.maxHp || 0) - (aura.hpApplied || 0)) * 10) / 10;
+      applyMaxHp(c, Math.round(((c.maxHp || 0) - (aura.hpApplied || 0)) * 10) / 10);
       c.atk = Math.round(((c.atk || 0) - (aura.atkApplied || 0)) * 10) / 10;
-      if (Number.isFinite(c.hp)) c.hp = Math.min(c.hp, c.maxHp);
       if (aura.speedApplied) c.speedPerTile = Math.round(c.speedPerTile * 1.5 * 1000) / 1000;
       delete c._blueAura;
     }

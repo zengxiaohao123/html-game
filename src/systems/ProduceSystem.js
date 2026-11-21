@@ -9,6 +9,7 @@
 //
 // 结算顺序（一次产出事件）：
 //   1. 基础产出落地：背包 / 储存（容量截断）/ 价值（不参与）
+//   1b. 啤酒花田块：相邻有水面时本次基础产量 +2（常规 1 + 额外 2 = 3，答案不叠加覆盖）
 //   2. 若该地块本日带【产出时】临时特性（向日葵授予）且未被【压制】：
 //      本次产量 +1（该次事件只 +1，不按件数放大）
 //   3. 若 +1 真的落地，再以 10% 概率获得向日葵 ×1（入背包），
@@ -51,14 +52,13 @@ export function grantProduceBonus(tile, day) {
   return true;
 }
 
-/** 该地块本日是否带【产出时】特性（且未被压制、啤酒花水面条件满足） */
+/** 该地块本日是否带【产出时】临时特性（向日葵授予，且未被压制） */
 export function hasProduceBonus(gs, ref) {
   const tile = getTile(gs, ref);
   if (!tile) return false;
   const day = tile.contentState?.produceBonusDay;
   if (day !== gs.day) return false;
   if (isSuppressed(gs, ref)) return false;
-  if (tile.contentId === HOPS_FIELD_ID && !hasAdjacentWater(gs, ref)) return false;
   return true;
 }
 
@@ -127,6 +127,16 @@ export function produce(gs, opts) {
   }
   if (applied <= 0) return 0; // 储存已满 → 没有实际产出，不算
   HookDispatcher.fire('onProduce', { gs, ref, itemId, qty: applied, channel });
+
+  // 啤酒花田块水面特性：相邻有水面时基础产量 +2（常规 1 + 额外 2 = 3）
+  // 只作用于啤酒花本体产出；向日葵递归等其它产物的 ref 同样是该田块，不能连带 +2
+  if (itemId === 'item_hops' && ref !== undefined && ref !== null
+      && getTile(gs, ref)?.contentId === HOPS_FIELD_ID && hasAdjacentWater(gs, ref)) {
+    const waterExtra = channel === CHANNEL.STORE
+      ? (typeof apply === 'function' ? Math.max(0, apply(2)) : 0)
+      : (mutate ? addToBagWithMutation(gs, ref, itemId, 2) : addItem(gs, itemId, 2));
+    applied += waterExtra;
+  }
 
   const traitOn = bonus && ref !== undefined && ref !== null && hasProduceBonus(gs, ref);
   if (traitOn) {

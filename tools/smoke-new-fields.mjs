@@ -91,17 +91,21 @@ import { GameDirector } from '../src/systems/GameDirector.js';
 import { getRealtimeClock } from '../src/systems/RealtimeClock.js';
 import { HookDispatcher } from '../src/core/HookDispatcher.js';
 import { Random } from '../src/core/Random.js';
-import { getTile, neighborRefs8, neighborRefs } from '../src/core/TileAccess.js';
+import { getTile, neighborRefs8, neighborRefs, refXY } from '../src/core/TileAccess.js';
 import * as InventorySystem from '../src/systems/InventorySystem.js';
 import { initPassiveItems } from '../src/systems/PassiveItemSystem.js';
 import { FieldAuraSystem } from '../src/systems/FieldAuraSystem.js';
 import { isSuppressed, releaseBlackberry } from '../src/systems/SuppressSystem.js';
 import {
-  blueRadiusFor, isInBlueBreath, syncBlueBreath,
+  blueRadiusFor, isInBlueBreath, isTileCenterInBlueBreath, syncBlueBreath, syncCreatureBlueAura,
 } from '../src/systems/BlueBreathSystem.js';
 import { produce } from '../src/systems/ProduceSystem.js';
 import { hasProduceBonus, hasAdjacentWater, grantProduceBonus } from '../src/systems/ProduceSystem.js';
 import { useItem, hasDailyStartTrait } from '../src/systems/UseItemSystem.js';
+import { addHopsStored } from '../src/data/fields/hops.js';
+import { applyMaxHp } from '../src/systems/HealSystem.js';
+import { Assets } from '../src/core/Assets.js';
+import { ITEMS, GLOSSARY } from '../src/data/items.js';
 
 let pass = 0, fail = 0;
 function check(cond, msg, extra) {
@@ -258,7 +262,7 @@ head('5. 酢浆草：经过自压制 → 当日日末 0');
 }
 
 // ════════════════════════════════════════════════════════════
-head('6. 啤酒花：日初/日末储存；相邻水面激活【产出时】+2；经过取走');
+head('6. 啤酒花：邻水常规 1 + 额外 2 = 3；【产出时】独立于水面');
 {
   reset();
   put(ANCHOR, 'facility_hops');
@@ -266,17 +270,43 @@ head('6. 啤酒花：日初/日末储存；相邻水面激活【产出时】+2�
   at(waterRef).terrain = 'terrain_water';
   at(waterRef).contentId = null;
   dayStart();
+  check(at(ANCHOR).contentState.hopsStored === 3, '邻水日初一次产出 = 常规 1 + 额外 2 = 3', at(ANCHOR).contentState.hopsStored);
   dayEnd();
-  check(at(ANCHOR).contentState.hopsStored === 2, '日初 +1、日末 +1 = 2', at(ANCHOR).contentState.hopsStored);
+  check(at(ANCHOR).contentState.hopsStored === 6, '日末再产出 3 = 6', at(ANCHOR).contentState.hopsStored);
   check(hasAdjacentWater(gs, ANCHOR), '相邻水面：浇水门槛满足');
+  // 直接用产出漏斗验证结算顺序：基础 1 + 水面 2 + 向日葵【产出时】1 = 4
   grantProduceBonus(at(ANCHOR), gs.day); // 模拟向日葵授予的【产出时】
-  check(hasProduceBonus(gs, ANCHOR), '浇水 + 【产出时】同时满足');
-  blessTile(ANCHOR);
-  check(at(ANCHOR).contentState.hopsStored === 4, '受祝福 1 + 【产出时】+1 = 储存 +2', at(ANCHOR).contentState.hopsStored);
+  check(hasProduceBonus(gs, ANCHOR), '邻水 + 【产出时】同时生效');
+  const before = at(ANCHOR).contentState.hopsStored;
+  Random.chance = () => false;
+  const n1 = produce(gs, {
+    ref: ANCHOR, itemId: 'item_hops', qty: 1, channel: 'store',
+    apply: (k) => addHopsStored(at(ANCHOR), k),
+  });
+  check(n1 === 4 && at(ANCHOR).contentState.hopsStored === before + 4, '1 基础 + 2 水面 + 1 产出时 = 4', n1);
+  // 水面 +2 只作用于啤酒花本体：向日葵递归产出不能继承这 +2
+  const sunBefore = count('item_sunflower');
+  let chanceCalls = 0;
+  Random.chance = () => { chanceCalls += 1; return chanceCalls === 1; }; // 只让第一次 10% 命中
+  produce(gs, {
+    ref: ANCHOR, itemId: 'item_hops', qty: 1, channel: 'store',
+    apply: (k) => addHopsStored(at(ANCHOR), k),
+  });
+  check(count('item_sunflower') === sunBefore + 2,
+    '向日葵递归不继承水面 +2（基础 1 + 产出时 1 = 2，而非 ×3）', count('item_sunflower') - sunBefore);
+  Random.chance = () => false;
+  // 移除水面：水面额外量消失，但向日葵特性仍独立生效（不再被水面门控）
   at(waterRef).terrain = 'terrain_grass';
-  check(!hasProduceBonus(gs, ANCHOR), '移除水面后【产出时】失效');
+  check(hasProduceBonus(gs, ANCHOR), '移除水面后向日葵【产出时】仍生效（不再被水面门控）');
+  const n2 = produce(gs, {
+    ref: ANCHOR, itemId: 'item_hops', qty: 1, channel: 'store',
+    apply: (k) => addHopsStored(at(ANCHOR), k),
+  });
+  check(n2 === 2, '无水面：常规 1 + 产出时 1 = 2', n2);
+  const beforePass = at(ANCHOR).contentState.hopsStored;
   passTile(ANCHOR);
-  check(count('item_hops') === 4 && at(ANCHOR).contentState.hopsStored === 0, '经过自动取走 4 个', count('item_hops'));
+  check(at(ANCHOR).contentState.hopsStored === 0 && count('item_hops') === beforePass,
+    '经过自动取走全部储存', { stored: at(ANCHOR).contentState.hopsStored, bag: count('item_hops') });
 }
 
 // ════════════════════════════════════════════════════════════
@@ -308,7 +338,14 @@ head('8. 蓝星果：储存 / 半径 / 变异只掷一次 / 角色光环');
   dayStart();
   check(at(ANCHOR).contentState.blueStored === 1, '日初储存 1', at(ANCHOR).contentState.blueStored);
   check(blueRadiusFor(1) === 0.6 && Math.abs(blueRadiusFor(7) - 1.8) < 1e-9, '半径公式 0.6 + 0.2×(n-1)');
-  check(!isInBlueBreath(gs, nb), '半径 0.6 米覆盖不到相邻格（中心距 1 米）');
+  // 地块按四周边缘判定：半径 0.6 米已与相邻格边缘接触（源心到矩形最近距离 0.5）
+  check(isInBlueBreath(gs, nb), '地块按边缘判定：半径 0.6 米即覆盖相邻格');
+  const diag = neighborRefs8(gs, ANCHOR).find((r) => !neighborRefs(gs, ANCHOR).includes(r));
+  if (diag !== undefined) {
+    check(!isInBlueBreath(gs, diag), '对角格边缘最近距离 0.707 米 > 0.6：不在范围内');
+  }
+  // 角色 / NPC 按所在地块中心点判定：相邻格中心距 1 米 > 0.6
+  check(!isTileCenterInBlueBreath(gs, nb), '角色口径：半径 0.6 米覆盖不到相邻格中心点');
   at(ANCHOR).contentState.blueStored = 7;
   check(isInBlueBreath(gs, nb), '储存 7（半径 1.8 米）覆盖相邻格');
   at(ANCHOR).contentState.suppressUntilDay = gs.day;
@@ -343,6 +380,102 @@ head('8. 蓝星果：储存 / 半径 / 变异只掷一次 / 角色光环');
   gs.player.loc = null;
   syncBlueBreath(gs);
   check(gs.player.maxHp === hp0, '离开范围后动态移除', gs.player.maxHp);
+}
+
+// ════════════════════════════════════════════════════════════
+head('8b. 蓝息三类判定：栅栏内生物按自身碰撞框');
+{
+  reset();
+  const savedCreatures = gs.creatures;
+  put(ANCHOR, 'facility_blue_star_fruit');
+  at(ANCHOR).contentState.blueStored = 1;
+  const p = refXY(gs, ANCHOR);
+  const sx = p.x + 0.5;
+  const sy = p.y + 0.5;
+  gs.creatures = [
+    // 距源心 0.7 米；蓝息 0.6 + 碰撞半径 0.15 = 0.75 → 接触
+    { id: 'smoke_c1', kind: 'chick', hp: 25, maxHp: 50, atk: 10, pos: { x: sx + 0.7, y: sy }, radius: 0.15, speedPerTile: 1 },
+    // 距源心 1.0 米 → 不接触
+    { id: 'smoke_c2', kind: 'chick', hp: 25, maxHp: 50, atk: 10, pos: { x: sx + 1.0, y: sy }, radius: 0.15, speedPerTile: 1 },
+  ];
+  syncCreatureBlueAura(gs);
+  const c1 = gs.creatures[0];
+  const c2 = gs.creatures[1];
+  check(c1._blueAura?.active === true, '碰撞框与蓝息接触 → 生物获得 buff');
+  check(Math.abs(c1.maxHp - 62.5) < 1e-9 && Math.abs(c1.hp - 31.3) < 1e-9,
+    '生物上限 +25%，当前生命按原 50% 同步', { maxHp: c1.maxHp, hp: c1.hp });
+  check(!c2._blueAura?.active, '碰撞框未接触 → 不获得 buff');
+  c1.pos.x = sx + 0.8; // 0.8 > 0.75
+  syncCreatureBlueAura(gs);
+  check(c1._blueAura.active === false && c1.maxHp === 50, '移出碰撞范围 → 光环移除', { maxHp: c1.maxHp });
+  gs.creatures = savedCreatures;
+}
+
+// ════════════════════════════════════════════════════════════
+head('8c. 生命上限变化：当前生命按百分比同步（角色与生物一致）');
+{
+  const up = { hp: 50, maxHp: 100 };
+  applyMaxHp(up, 120);
+  check(up.hp === 60 && up.maxHp === 120, '上限提高：50/100 → 60/120', up);
+  const down = { hp: 30, maxHp: 100 };
+  applyMaxHp(down, 50);
+  check(down.hp === 15 && down.maxHp === 50, '上限下降：30/100 → 15/50', down);
+  const floor = { hp: 1, maxHp: 100 };
+  applyMaxHp(floor, 10);
+  check(floor.hp === 1, '上限下降后当前生命不低于 1', floor);
+  const full = { hp: 50, maxHp: 50 };
+  applyMaxHp(full, 62.5);
+  check(full.hp === 62.5, '满血单位上限提高后保持满血（生物小数上限）', full);
+  const creatureDown = { hp: 25, maxHp: 50 };
+  applyMaxHp(creatureDown, 37.5);
+  check(Math.abs(creatureDown.hp - 18.8) < 1e-9, '生物：25/50 → 18.8/37.5', creatureDown);
+}
+
+// ════════════════════════════════════════════════════════════
+head('8d. 图标兜底 / 蓝息术语 / 违禁品词条');
+{
+  check(Assets.getEmoji('items', 'item_hops') === '🍺', '新物品 emoji 兜底：item_hops → 🍺');
+  check(Assets.getEmoji('facilities', 'facility_blue_star_fruit') === '💙', '新田块 emoji 兜底：蓝星果田块 → 💙');
+  check(Assets.getEmoji('items', 'no_such_item') === '❓', '未知 id 仍回退 ❓（不误伤）');
+  const blue = GLOSSARY.find((g) => g.term === '蓝息');
+  check(!!blue && !blue.meaning.includes('重叠取最高'), '蓝息术语释义不含内部实现备注');
+  check(!!blue && blue.notes.includes('重叠取最高'), '内部备注移入 notes（弹窗不展示）');
+  check((ITEMS.facility_blue_star_fruit.traits || []).includes('违禁品'), '蓝星果田块展示词条含【违禁品】');
+}
+
+// ════════════════════════════════════════════════════════════
+head('8e. 展示归类：【压制】/【蓝息】只出现在状态页，不在区块内容');
+{
+  const { InfoPanel } = await import('../src/ui/InfoPanel.js');
+  const panel = new InfoPanel();
+  panel.mount();
+  panel.currentGs = gs;
+  put(ANCHOR, 'facility_wheat');
+  at(ANCHOR).contentState.suppressUntilDay = gs.day;
+  at(ANCHOR).terrain = 'terrain_grass';
+  panel.selectTile(ANCHOR);
+  const contentText = panel.root.textContent;
+  check(!contentText.includes('【压制】'), '地块内容不显示【压制】debuff');
+  check(!contentText.includes('⛔'), '地块内容不显示压制行');
+  const stateIdx = panel._currentTabs.findIndex((t) => t.render === 'state');
+  check(stateIdx >= 0, '被压制地块有状态 tab');
+  panel.activeTabIdx = stateIdx;
+  panel._renderBody();
+  const stateText = panel.root.textContent;
+  check(stateText.includes('【压制】'), '状态页显示【压制】debuff');
+  check(stateText.includes(GLOSSARY.find((g) => g.term === '压制').meaning), '压制行释义取自词条字典');
+  // 蓝息：范围内地块在状态页显示，地块内容只保留「特性」说明
+  reset();
+  put(ANCHOR, 'facility_blue_star_fruit');
+  at(ANCHOR).contentState.blueStored = 7;
+  panel.activeTabIdx = 0; // 回到「地块内容」
+  panel.selectTile(ANCHOR);
+  const blueContent = panel.root.textContent;
+  check(blueContent.includes('特性：') && blueContent.includes('【蓝息】'), '蓝星果地块内容写「特性：…【蓝息】」');
+  const blueStateIdx = panel._currentTabs.findIndex((t) => t.render === 'state');
+  panel.activeTabIdx = blueStateIdx;
+  panel._renderBody();
+  check(panel.root.textContent.includes('【蓝息】'), '受影响地块（含蓝星果自身）状态页显示蓝息 buff');
 }
 
 // ════════════════════════════════════════════════════════════

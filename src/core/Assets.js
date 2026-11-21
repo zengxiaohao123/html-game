@@ -8,6 +8,8 @@
 //     未来 UI 层切换：凡是现在渲染 emoji 的地方，先查 getIcon，有 PNG 就用 <img src>，
 //     没有再回退 emoji——数据层改动就到此为止。
 
+import { ITEMS } from '../data/items.js';
+
 export const Assets = {
   // ── 设施（16 种，对齐物品库 FAC-001 ~ FAC-016）──
   facilities: {
@@ -141,8 +143,10 @@ export const Assets = {
    */
   getEmoji(group, id) {
     const g = Assets[group];
-    if (!g) return '❓';
-    return g[id] ?? '❓';
+    const hit = g ? g[id] : null;
+    if (hit) return hit;
+    // 物品库自带 emoji 兜底：新增田块 / 物品无需同步维护本表（地图、背包、快捷栏共用）
+    return ITEMS[id]?.emoji || '❓';
   },
 
   /**

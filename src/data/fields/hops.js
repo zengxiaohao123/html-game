@@ -5,7 +5,7 @@
 // 啤酒花需要浇水，当相邻格的地形有水面时，激活特性：【产出时】产量+2
 //
 // 说明：不新增"浇水"操作，相邻（4 方向）存在水面地形即视为已浇水；
-//       【产出时】+2 的水面门槛由 ProduceSystem.hasProduceBonus 统一把关。
+//       【产出时】+2 由 ProduceSystem 产出漏斗在该田块的基础产出之后叠加。
 
 import { HookDispatcher } from '../../core/HookDispatcher.js';
 import { produce, takeStoredToBag, CHANNEL } from '../../systems/ProduceSystem.js';
