@@ -19,6 +19,7 @@ import { drawFromPool } from './RandomPool.js';
 import * as InventorySystem from './InventorySystem.js';
 import { HealSystem } from './HealSystem.js';
 import { FieldEffects } from './FieldEffects.js';
+import { contentEntries } from '../core/TileAccess.js';
 
 let wiredEpoch = -1;
 let hpListenerAttached = false;
@@ -63,12 +64,13 @@ function wireHooks() {
   });
 
   // 经过时：黄金浪 → 处于「≥3 小麦田块相连」簇内的田块，经过时获得小麦 ×1
-  HookDispatcher.register('onPass', ({ gs, tileIdx }) => {
+  HookDispatcher.register('onPass', ({ gs, tileIdx, tileRef }) => {
     if (InventorySystem.countItem(gs, 'grimoire_golden_wave') < 1) return;
-    if (!FieldEffects.hasGoldenWaveTrait(gs, tileIdx)) return;
+    const ref = tileRef ?? tileIdx;
+    if (!FieldEffects.hasGoldenWaveTrait(gs, ref)) return;
     InventorySystem.addItem(gs, 'item_wheat', 1);
     EventBus.emit(GE.TOAST_SHOW, { text: '🌾 黄金浪：经过麦浪 → 小麦 +1', duration: 1200 });
-    devLog.info('[Passive] 黄金浪 经过田块', tileIdx, '→ 小麦 +1');
+    devLog.info('[Passive] 黄金浪 经过田块', typeof ref === 'number' ? ref : `f:${ref.row},${ref.col}`, '→ 小麦 +1');
   });
 }
 
@@ -225,7 +227,8 @@ export function syncPumpkin(gs) {
   if (InventorySystem.countItem(gs, 'collectible_sad_pumpkin') < 1) return;
   // 场上储存的作物总数：土豆/草莓/豌豆按个数；蒲公英/幽怜草各为独立"储存 1 个作物"
   let stored = 0;
-  for (const t of gs.map.outerTiles) {
+  // 外圈 + 生效小径格（栅栏格上的储存同样计入南瓜加成）
+  for (const { tile: t } of contentEntries(gs)) {
     const st = t.contentState || {};
     stored += (st.potatoStored || 0) + (st.strawberryStored || 0);
     stored += (st.peaStored || 0) + (st.dandelionStored ? 1 : 0) + (st.ghostStored ? 1 : 0);

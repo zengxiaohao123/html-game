@@ -39,6 +39,7 @@ import {
   snapshotGeometry,
 } from '../core/Geometry.js';
 import { outerIdxToXY, mapDimsOf, fenceDimsOf } from '../core/Distance.js';
+import { playerCenter, refXY } from '../core/TileAccess.js';
 import { EffectBatch } from './EffectBatch.js';
 import { PendingDeathQueue } from './PendingDeathQueue.js';
 import { devLog } from '../core/Logger.js';
@@ -317,7 +318,7 @@ export function skillTileAnchor(gs, tileIdx) {
 
 /** 玩家参照点：玩家所在地块中心 */
 export function playerAnchor(gs) {
-  return tileCenter(gs, gs?.player?.x);
+  return playerCenter(gs);
 }
 
 /** 连携技参照点：连携技实例所在地块中心 */
@@ -385,9 +386,11 @@ export function circleTileRefs(gs, anchor, radius) {
  * 行 + 列覆盖的栅栏格（合纵连横）：外圈格 (x,y) → 栅栏 (row=y-1, col=x-1)；
  * 越界轴（贴外圈）只保留另一轴。
  */
-export function rowColumnTileRefs(gs, tileIdx) {
+export function rowColumnTileRefs(gs, tileRef) {
   const dims = fenceDims(gs);
-  const { x, y } = outerIdxToXY(mapDimsOf(gs), tileIdx);
+  if (tileRef === null || tileRef === undefined) return [];
+  const { x, y } = refXY(gs, tileRef) || {};
+  if (x === undefined) return [];
   const fenceRow = y - FENCE_ORIGIN_Y;
   const fenceCol = x - FENCE_ORIGIN_X;
   const out = [];
@@ -402,9 +405,11 @@ export function rowColumnTileRefs(gs, tileIdx) {
 }
 
 /** 单行 / 单列（预留形状，目前无技能使用） */
-export function rowOrColumnTileRefs(gs, tileIdx, axis) {
+export function rowOrColumnTileRefs(gs, tileRef, axis) {
   const dims = fenceDims(gs);
-  const { x, y } = outerIdxToXY(mapDimsOf(gs), tileIdx);
+  if (tileRef === null || tileRef === undefined) return [];
+  const { x, y } = refXY(gs, tileRef) || {};
+  if (x === undefined) return [];
   const fenceRow = y - FENCE_ORIGIN_Y;
   const fenceCol = x - FENCE_ORIGIN_X;
   const out = [];

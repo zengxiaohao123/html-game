@@ -22,6 +22,8 @@ src/
 │   ├── Random.js             # 随机数工具（含 seed 可选）
 │   ├── Distance.js           # 距离/邻居/路径计算
 │   ├── Geometry.js           # 空间几何层（1 格 = 1 单位；地块/生物圆/碰撞查询/几何快照）
+│   ├── TileAccess.js         # 统一地块视图（外圈 idx / 栅栏 {kind:'fence',row,col} 同一套读写与邻接）
+│   ├── PathGraph.js          # 小径连通图（4 邻接 BFS；返回连通块、外圈端点、生效栅栏格集合）
 │   └── Assets.js             # 资源路径表 + emoji 占位表
 ├── state/                    # 全局状态（单一真相源）
 │   ├── gameState.js          # GS 对象定义 + createInitialState()
@@ -38,7 +40,7 @@ src/
 │   ├── events/               # 正式事件：<事件id>.js，各自 export 一个 EventDef
 │   ├── eventPool.js          # 事件池加权抽取 + 可重复性占用（daily / once）
 │   ├── rewardPool.js         # 奖励池（正式条目未定稿，当前为空池）
-│   └── terrains.js           # 4 种地形定义
+│   └── terrains.js           # 5 种地形定义（无/草/水/冰/小径）
 ├── systems/                  # 游戏逻辑系统（读取/修改 GS，触发 EventBus）
 │   ├── GameDirector.js       # 主循环导演（回合制 + 连携技实时窗口）
 │   ├── InputManager.js       # 键鼠输入统一监听 + 路由
@@ -55,7 +57,8 @@ src/
 │   ├── LinkSkillSystem.js    # 连携技（解锁检测 + 8 秒窗口 + 队列）
 │   ├── RealtimeClock.js      # 统一实时时钟（200ms 逻辑步 + 渲染插值 + 结算快照冻结）
 │   ├── CreatureSystem.js     # 生物连续积分移动（3~6 秒/格）+ 日末喂食/成长/心情/产蛋 + 日初转【饥饿】
-│   ├── CapacitySystem.js     # 容量上限即时同步（栅栏面积 → 友善/危险上限 +1/格）
+│   ├── CapacitySystem.js     # 容量上限即时同步（max(0, 栅栏格数 − 生效小径格数 − 1)）
+│   ├── PathSystem.js         # 小径生效重算 / 失效还原（拆内容、角色传送、容量与事件同步）
 │   ├── EventEffects.js       # 事件选项结算唯一入口（金币/物品/行动力/治疗/地形/buff/生物）
 │   └── BuildSystem.js        # 建造模式 + 放置/替换地块内容
 ├── ui/                       # UI 渲染层（订阅 EventBus，更新 DOM）
@@ -175,6 +178,7 @@ export const GE = {
   // —— 地图 ——
   TILE_UPDATED: 'tile:updated',         // 地块内容/地形/状态变化
   FENCE_TILE_UPDATED: 'fence:tile_updated', // 栅栏内地块状态变化（地形放置等）
+  PATH_EFFECT_CHANGED: 'path:effect_changed', // 小径生效集合变化（payload: {gs, reason, effectiveCount, activated, reverted}）
   TILE_CLICKED: 'tile:clicked',
   TERRAIN_DEPLETED: 'terrain:depleted',
   MAP_EXPANDED: 'map:expanded',         // 农场扩建完成（payload: {gs, axis, rows, cols, idxMap, remap}），UI 需全量重排
@@ -261,7 +265,7 @@ snapshotGeometry(gs)                    // 冻结逻辑圆位置/半径的快照
 ```js
 // src/systems/MapExpandSystem.js
 EXPAND_AXIS = { LENGTH: 'length', WIDTH: 'width' }   // 长度=列数+1，宽度=行数+1
-expandMapInPlace(gs, axis)   // 原地扩建，返回 { ok, axis, before, after, playerFollowed, idxMap, remap }
+expandMapInPlace(gs, axis)   // 原地扩建，返回 { ok, axis, before, after, playerFollowed, idxMap, remap, continued, pathResult }
 expandMap(gs, axis)          // 同步容量上限并广播 GE.MAP_EXPANDED（不写日初基线）
 getLastExpandRemap()         // 最近一次扩建的旧→新映射（只读查询，不入存档）
 
@@ -284,10 +288,11 @@ getLastExpandRemap()         // 最近一次扩建的旧→新映射（只读查
 - **跟随规则**：角色恰好站在被移动地块上时随之平移（`player.x/y` 同步重算），该位移**不视为移动**，不触发任何技能/地块效果。
 - **内容保留与索引重映射**：重建 `map.outerTiles` 时按新的环形顺序排布，地块对象（含 `contentId / contentState / terrain / states / dailyFlags`，即设施、资源、技能卡、地形与商店状态）随「同一块地」搬到新 idx；并产出完整 `remap`（外圈 `outerIdx`、栅栏 `fenceIdx`、栅栏 `fenceRow/fenceCol`，含反向表与新增格列表，见上）。扩建同时重映射扩建自己持有的裸索引引用：`player.x`（角色/载具所在格，跟随不视为移动）、`player.visitedTodayIdx`、`creatures[].pos/renderPos/targetPos/renderFrom` 与主格缓存 `row/col`（II 型世界原点下移 1 行）、`fence[].creatures` 缓存（统一存生物 id）、`linkSkillCounters` / `linkSkillCooldowns` 的 `tileIdx|skillId` 键、连携队列的 `tileIdx`/`key`、`uiState.selectedTileIdx`、生物归属 `creatures[].sourceTileIdx`。
 - **归属稳定化（配合 CreatureSystem）**：重映射 `sourceTileIdx` 时同步补 `sourceTileUid`（= 目标地块 `tile.uid`，缺失则生成 `tile_exp_*`）；消费方优先按 uid 判归属，因此扩建后鸡舍/史莱姆屋的归属生物不会退化成野生，且订阅方不会对同一份映射二次重映射。其它系统按裸索引保存位置的引用（如 UI 面板的 `currentTileIdx/currentFenceIdx`）应订阅 `GE.MAP_EXPANDED` 并使用 `payload.remap` 自行重映射，扩建侧不改其文件。
-- **地形**：新外圈格与新增栅栏格都走 §4 地形权重（50/40/10）掷骰并写入 `terrainAmount`；初始 3×3 已有的栅栏格保持 `terrain_none`，不回溯。
+- **地形**：新外圈格与新增栅栏格都走 §4 地形权重（45/40/10/5）掷骰并写入 `terrainAmount`；初始 3×3 已有的栅栏格保持 `terrain_none`，不回溯。
+- **小径自动延续（原子）**：扩建前先用 `PathGraph.computePathComponents(gs)` 收集「已生效小径块」中位于**右侧外圈**（`x === oldCols-1`，I 型）或**上侧外圈**（`y === 0`，II 型）的端点；结构重建、玩家/索引重映射完成后，在同一结算内向每个端点对应的新格补 `terrain_path`：I 型补 `(oldCols-1, y)`（从右往左第二列、同一行），II 型补 `(x, 1)`（从上往下第二行、同一列）。补格免费、不扣任何物品；补格完成后才调用一次 `PathSystem.recomputePathEffect({reason:'expand'})`，因此不会因中途短暂切断而误拆地块内容。返回值 `continued` 为补格 ref 列表，`pathResult` 为重算结果。自动延续未覆盖的情况（目标格不可用等）不做确认/提示，直接按普通还原流程拆除。`player.loc` 与 `visitedTodayRefs` 随 remap 同步重映射。
 - **无上限、无消耗**：不设扩建次数硬上限（受地图可容纳格数与性能约束），不消耗行动力/体力、无冷却。物品数量扣减由 `UseItemSystem` 的通用道具扣减逻辑完成。
 - **存档关系**：扩建属于「当天内的世界变化」，`expandMap` **不写日初基线**；只在正常采集点（`SleepSystem.sleep` 末尾 `DayBaseline.capture`）随实时状态入档。跨日后尺寸保留、道具数量按已用数量入档；当天回档（读档回本日开始时）时尺寸与扩建道具一起复原。`map.rows/cols/fenceRows/fenceCols` 随存档序列化，读档后正确恢复。
-- **容量上限即时同步**：`expandMap` 在结构变更后立刻调用 `CapacitySystem.syncCapacityLimits(gs)`（上限 = 4 + 栅栏格数 - 1，友善/危险各自计算，高危恒 0），并广播 `GE.CAPACITY_CHANGE` → `TopBar._renderAll` 在同一帧内重绘容量条，不依赖玩家的后续操作。读档侧由 `migrateGS` 在 `DayBaseline.capture` 之前调用 `applyCapacityLimits(gs)`（只写上限不广播），因此读档进入扩建后的存档时容量 UI 首帧即为新值，旧档也能按实际栅栏面积校正。
+- **容量上限即时同步**：`expandMap` 在结构变更后立刻调用 `CapacitySystem.syncCapacityLimits(gs)`（额外值 = max(0, 栅栏格数 − 生效小径格数 − 1)，友善/危险各自计算，高危恒 0），并广播 `GE.CAPACITY_CHANGE` → `TopBar._renderAll` 在同一帧内重绘容量条，不依赖玩家的后续操作。读档侧由 `migrateGS` 在 `DayBaseline.capture` 之前调用 `applyCapacityLimits(gs)`（只写上限不广播），因此读档进入扩建后的存档时容量 UI 首帧即为新值，旧档也能按实际栅栏面积校正。
 - **容量与惩罚解耦**：`syncCapacityLimits` 只改上限与计数，不推进超载警告期；超载计时/惩罚仍只在日结算的 `updateCapacityAndPunish` 中处理。`CreatureSystem` 与 `CapacitySystem` 的上限公式必须保持一致（栅栏每多 1 格：友善 +1、危险 +1）。
 - **UI 重排**：`MapView` 订阅 `GE.MAP_EXPANDED`，重新按新 `rows/cols` 计算 tile 像素、重画所有地块/栅栏/角色/生物层，不产生幽灵格或错位。
 
@@ -299,10 +304,42 @@ placeFenceTerrain(gs, row, col, terrainId) // 栅栏内行/列号（0 起）→ 
 ```
 
 - **地形允许进栅栏**：栅栏格与外围格一样有 `terrain / terrainAmount`；`placeFenceTerrain` 校验栅栏行列范围、库存后写入地形并扣 1 个道具，广播 `GE.FENCE_TILE_UPDATED`。重复施加同种地形 = 回满元素量（与 `placeTerrain` 同口径）。
-- **田块/设施/资源/技能仍限外圈**：`placeContent` 只接受外圈 `tileIdx`；`placeFenceTerrain` 只接受 `terrains.js` 里登记的地形 id，传入 `facility_*` / `skill_*` 一律按 `unknownTerrain` 拒绝。
-- **拖拽入口**：`MapView` 的 drop 只认外圈坐标，栅栏内拖拽由独立模块 `src/ui/FenceTerrainDrop.js` 在容器捕获阶段接管（只处理 `terrain_` 前缀并 `stopPropagation`，避免误弹"只能放在外圈"）；放置成功后调用 `mapView.renderFence(gs)` 局部重绘栅栏背景层。田块/设施/技能等其它内容仍走 `MapView` 原逻辑被拒绝。
+- **田块/设施/资源/技能：外圈 + 生效小径格**：`placeContent` 接受外圈 `tileIdx` 或栅栏 ref；栅栏 ref 仅当该格 `isPathOuter === true`（生效小径格）时可放，否则拒绝并提示「只能放在外圈地块或生效小径上」。`placeFenceTerrain` 只接受 `terrains.js` 里登记的地形 id，传入 `facility_*` / `skill_*` 一律按 `unknownTerrain` 拒绝。
+- **拖拽入口**：`MapView` 的 drop 用 `refOfXY` 统一解析目标（外圈优先，落到栅栏时得到 `{kind:'fence',row,col}`），再用 `isLegalStandRef` 判断是否可放；栅栏内地形拖拽由独立模块 `src/ui/FenceTerrainDrop.js` 在容器捕获阶段接管（只处理 `terrain_` 前缀并 `stopPropagation`），放置成功后调用 `mapView.renderFence(gs)` 局部重绘栅栏背景层。
 - **信息区**：`InfoPanel` 订阅 `GE.FENCE_TILE_UPDATED`，正在查看该栅栏格时重渲染「地块内容 / 状态」tab。
 - **验收**：`node tools/smoke-expand.mjs` 的 X2/X5（新栅栏格随机地形、初始格不回溯）与 X10（地形可放置、扣减、回满、越界拒绝、设施/技能不可）。
+
+### 2.4.3 统一地块视图与小径系统（2026-11-21）
+
+```js
+// src/core/TileAccess.js —— 外圈与栅栏格共用一套读写口径
+isFenceRef(ref) / tileRefKey(ref)          // 'o:3' / 'f:1,2'
+normalizeRef(gs, ref) / refsEqual(a,b)     // 兼容旧数字 idx 与 {kind:'fence',row,col}
+getTile(gs, ref) / refXY(gs, ref)          // 统一取地块对象 / 世界网格坐标
+neighborRef(gs, ref, dir) / neighborRefs(gs, ref) / areAdjacent(gs,a,b)
+isLegalStandRef(gs, ref)                   // 外圈地块 or 生效小径格
+effectivePathRefs(gs) / contentEntries(gs) // 生效小径 ref 集合 / 全部有内容的地块
+playerRef(gs) / setPlayerRef(gs, ref)      // 权威位置读取（先数字 player.x，再 player.loc）
+
+// src/core/PathGraph.js
+computePathComponents(gs)
+// → { effectiveFence:Set<fenceIdx>, effectiveCount, components:[{fenceIdx, outerTerminals, effective}] }
+// 节点 = 全部外圈格 + 地形为 terrain_path 的栅栏格；4 邻接 BFS；块邻接 ≥2 个不同外圈格 → 生效
+
+// src/systems/PathSystem.js
+recomputePathEffect(gs, {reason})          // 差集重算：新失效格 → stripFenceContent → 传送 → 广播 → 容量
+stripFenceContent(gs, fenceIdx)            // 静默自动采摘/生物移除/技能回背包/onReplace
+teleportPlayerToNearestLegal(gs)           // 曼哈顿最近合法格（同距优先外圈、再按 idx 升序）
+initPathOnLoad(gs)                         // 开局/读档后初始化生效标记
+canHostEternalContent(gs, ref)             // 【永恒】内容禁止置于临时外圈
+```
+
+- **player.loc**：`player.loc = {kind:'outer',idx} | {kind:'fence',row,col}` 为权威位置；`player.x` 仅作外圈兼容镜像（站在栅栏格时为 `null`）。读取一律用 `playerRef(gs)`。
+- **栅栏格字段**：`contentId / contentState / states / dailyFlags / isPathOuter`；`isPathOuter === true` 表示该小径格当前生效（临时外圈）。
+- **事件**：新增 `GE.PATH_EFFECT_CHANGED`（payload 含 `effectiveCount` 与差集 refs）；`TILE_UPDATED` / `TILE_CONTENT_CHANGED` / `MOVE` 等对栅栏格统一追加 `tileRef`、`fenceIdx`（外圈仍保留 `tileIdx`）。
+- **容量**：`CapacitySystem.capacityExtra(gs) = max(0, 栅栏格数 − 生效小径格数 − 1)`；容量下降当日立即记警告第 1 天，惩罚只在每日开始时结算。
+- **移动**：WASD 落点可为生效小径格；冰面滑行只在外圈结算；载具模拟路径把生效小径格纳入合法图并取最短路线。
+- **验收**：`node tools/smoke-path.mjs`。
 
 ### 2.5 RealtimeClock（统一实时时钟 / 渲染插值）
 
@@ -639,7 +676,8 @@ export const createInitialState = () => ({
     maxStamina: 8,
     minStamina: -3,
     gold: 0,
-    position: 'outer',         // 'outer'（外圈）或 'fence'（栅栏内，本游戏永远 'outer'）
+    position: 'outer',         // 'outer'（外圈）或 'fence'（生效小径格）
+    loc: { kind: 'outer', idx: 0 }, // 权威位置：{kind:'outer',idx} | {kind:'fence',row,col}（读档迁移补齐）
   },
   
   // === 地图 ===
@@ -651,7 +689,7 @@ export const createInitialState = () => ({
     size: 3,                   // 兼容字段：初始 3，扩建后 = Math.max(rows, cols)
     outerTiles: [],            // 外圈格数组，长度 2rows+2cols-4；每格 { idx, terrain, terrainAmount, contentId, contentState, states: [], dailyFlags: {} }
                                // 商店格 contentState.shop = { kind, weekKey, stock:[{id,name,price,group,placeholder,sold}], refreshUsed, visited, freeRefreshPending }
-    fence: [],                 // 栅栏内网格，fenceRows × fenceCols；每格 { row, col, terrain, terrainAmount, creatures: [], items: [] }
+    fence: [],                 // 栅栏内网格，fenceRows × fenceCols；每格 { row, col, terrain, terrainAmount, contentId, contentState, states: [], dailyFlags: {}, isPathOuter, creatures: [], items: [] }
     fenceRows: 1,              // = rows - 2（栅栏内行数；原点恒为网格 (1,1)）
     fenceCols: 1,              // = cols - 2（栅栏内列数；线性索引 = row*fenceCols+col）
     fenceRowCols: 1,           // 兼容字段：初始 = size - 2；扩建后 = fenceRows

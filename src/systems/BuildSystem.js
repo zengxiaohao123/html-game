@@ -27,6 +27,15 @@ import { TulipSystem, stackTulip } from './TulipSystem.js';
 import { harvestCropBeforeRemove } from './CropHarvest.js';
 import { fenceDimsOf } from '../core/Distance.js';
 import { devLog } from '../core/Logger.js';
+import {
+  normalizeRef,
+  getTile,
+  isLegalStandRef,
+  contentEntries,
+  refsEqual,
+  fenceIdxOf,
+} from '../core/TileAccess.js';
+import { recomputePathEffect } from './PathSystem.js';
 
 /** 家（facility_home）拥有【永恒】词条，不可替换 */
 const UNREPLACEABLE = new Set(['facility_home']);
@@ -93,21 +102,46 @@ export function forceModeByStory(gs, mode) {
   return applyMode(gs, mode, 'story');
 }
 
-/** 统计场上某种内容的数量 */
+/** 统计场上某种内容的数量（外圈 + 生效小径格） */
 function countOnField(gs, contentId) {
-  return gs.map.outerTiles.filter((t) => t.contentId === contentId).length;
+  return contentEntries(gs).filter((e) => e.tile?.contentId === contentId).length;
+}
+
+/**
+ * 解析放置目标：外圈格一律允许；栅栏格仅允许「生效小径格」（临时外圈地块）。
+ * @returns {{ref:(number|object), tile:object, isFence:boolean}|null}
+ */
+function resolvePlacement(gs, refOrIdx) {
+  const ref = normalizeRef(gs, refOrIdx);
+  if (ref === null) return null;
+  const isFence = typeof ref !== 'number';
+  if (isFence && !isLegalStandRef(gs, ref)) return null;
+  const tile = getTile(gs, ref);
+  if (!tile) return null;
+  return { ref, tile, isFence };
+}
+
+/** 事件 payload 便于 UI 同时兼容旧 tileIdx 与新 tileRef */
+function tilePayload(gs, ref) {
+  const isFence = typeof ref !== 'number';
+  return {
+    tileIdx: isFence ? null : ref,
+    tileRef: ref,
+    fenceIdx: isFence ? fenceIdxOf(gs, ref) : undefined,
+  };
 }
 
 /**
  * 放置地形（v0.5 §4：地形在背包里是物品，放置后变成该地块的状态）
  * @returns {{ ok: boolean, reason?: string }}
  */
-export function placeTerrain(gs, tileIdx, terrainId) {
+export function placeTerrain(gs, refOrIdx, terrainId) {
   const terrain = TERRAINS[terrainId];
   if (!terrain) return { ok: false, reason: 'unknownTerrain' };
 
-  const tile = gs.map.outerTiles[tileIdx];
-  if (!tile) return { ok: false, reason: 'invalidTileIdx' };
+  const target = resolvePlacement(gs, refOrIdx);
+  if (!target) return { ok: false, reason: 'invalidTileIdx' };
+  const { ref, tile, isFence } = target;
 
   if (InventorySystem.countItem(gs, terrainId) < 1) {
     EventBus.emit(GE.TOAST_SHOW, { text: `🛠️ 背包里没有 ${terrain.name}`, duration: 1600 });
@@ -119,9 +153,11 @@ export function placeTerrain(gs, tileIdx, terrainId) {
   tile.terrainAmount = terrain.elementAmount;
   InventorySystem.removeItem(gs, terrainId, 1);
 
-  EventBus.emit(GE.TILE_TERRAIN_CHANGED, { tileIdx });
+  EventBus.emit(GE.TILE_TERRAIN_CHANGED, { ...tilePayload(gs, ref) });
   EventBus.emit(GE.TOAST_SHOW, { text: `🧱 地形变为 ${terrain.name}（元素量 ${terrain.elementAmount}）`, duration: 1600 });
-  devLog.info('[Build] placeTerrain tile', tileIdx, '→', terrainId);
+  // 地形变化可能让某条小径连通 / 断开（用户裁定 23：小径本身无元素量，不会自行耗尽）
+  recomputePathEffect(gs, { reason: 'terrain' });
+  devLog.info('[Build] placeTerrain tile', ref, '→', terrainId, isFence ? '(fence)' : '');
   return { ok: true };
 }
 
@@ -159,6 +195,7 @@ export function placeFenceTerrain(gs, row, col, terrainId) {
   EventBus.emit(GE.TILE_TERRAIN_CHANGED, { row, col, fenceIdx });
   EventBus.emit(GE.FENCE_TILE_UPDATED, { row, col, fenceIdx });
   EventBus.emit(GE.TOAST_SHOW, { text: `🧱 地形变为 ${terrain.name}（元素量 ${terrain.elementAmount}）`, duration: 1600 });
+  recomputePathEffect(gs, { reason: 'terrain' });
   devLog.info('[Build] placeFenceTerrain fence', row, col, '→', terrainId);
   return { ok: true, fenceIdx };
 }
@@ -167,17 +204,18 @@ export function placeFenceTerrain(gs, row, col, terrainId) {
  * 放置地块内容（设施 / 资源 / 技能）
  * @returns {{ ok: boolean, reason?: string }}
  */
-export function placeContent(gs, tileIdx, contentId) {
-  if (!Number.isInteger(tileIdx) || tileIdx < 0 || tileIdx >= gs.map.outerTiles.length) {
-    devLog.warn('[Build] invalid tileIdx:', tileIdx);
+export function placeContent(gs, refOrIdx, contentId) {
+  const target = resolvePlacement(gs, refOrIdx);
+  if (!target) {
+    devLog.warn('[Build] invalid tileRef:', refOrIdx);
     return { ok: false, reason: 'invalidTileIdx' };
   }
   if (!contentId) return { ok: false, reason: 'noContent' };
 
   // 地形走单独通道（不占「内容」槽位）
-  if (contentId.startsWith('terrain_')) return placeTerrain(gs, tileIdx, contentId);
+  if (contentId.startsWith('terrain_')) return placeTerrain(gs, target.ref, contentId);
 
-  const tile = gs.map.outerTiles[tileIdx];
+  const { ref, tile, isFence } = target;
   const oldContentId = tile.contentId;
 
   // 天赋不可放置（天赋前缀 talent_）
@@ -192,6 +230,12 @@ export function placeContent(gs, tileIdx, contentId) {
     EventBus.emit(GE.TOAST_SHOW, { text: `🛠️ 未知内容类型：${contentId}`, duration: 1500 });
     devLog.warn('[Build] unknown contentId prefix:', contentId);
     return { ok: false, reason: 'unknownType' };
+  }
+
+  // 【永恒】内容禁止放到临时外圈（生效小径格）上（用户裁定 24）
+  if (isFence && UNREPLACEABLE.has(contentId)) {
+    EventBus.emit(GE.TOAST_SHOW, { text: '🏠 【永恒】内容不能放在临时外圈地块上', duration: 2000 });
+    return { ok: false, reason: 'eternalOnPath' };
   }
 
   // 编队校验（§12.1 L253）：只有编队内角色的技能可放置
@@ -224,13 +268,13 @@ export function placeContent(gs, tileIdx, contentId) {
     }
     const { stacks } = stackTulip(gs, tile);
     const shown = TulipSystem.tulipDisplayValue(gs, tile);
-    EventBus.emit(GE.TILE_UPDATED, { tileIdx });
-    EventBus.emit(GE.INVENTORY_CHANGE, { type: 'stack', tileIdx, contentId });
+    EventBus.emit(GE.TILE_UPDATED, { ...tilePayload(gs, ref) });
+    EventBus.emit(GE.INVENTORY_CHANGE, { type: 'stack', ...tilePayload(gs, ref), contentId });
     EventBus.emit(GE.TOAST_SHOW, {
       text: `🌷 叠放郁金香：当前价值 ${shown}（叠放 ${stacks} 层，波动 ×${stacks + 1}）`,
       duration: 2200,
     });
-    devLog.info('[Build] tulip stacked at tile', tileIdx, '→ value', shown, 'stacks', stacks);
+    devLog.info('[Build] tulip stacked at tile', ref, '→ value', shown, 'stacks', stacks);
     return { ok: true, stacked: true };
   }
 
@@ -250,8 +294,8 @@ export function placeContent(gs, tileIdx, contentId) {
       return { ok: false, reason: 'dailyLimit' };
     }
     // C-9：替换同类内容时，被替换的目标格本身不应计入（净数量不变，不应误拒）
-    const onFieldExceptTarget = gs.map.outerTiles.filter(
-      (t, i) => t.contentId === contentId && i !== tileIdx).length;
+    const onFieldExceptTarget = contentEntries(gs)
+      .filter((e) => e.tile?.contentId === contentId && !refsEqual(e.ref, ref)).length;
     if (onFieldExceptTarget >= limit.onField) {
       EventBus.emit(GE.TOAST_SHOW, { text: `🏪 场上最多 ${limit.onField} 个 ${ITEMS[contentId]?.name || contentId}`, duration: 2000 });
       return { ok: false, reason: 'fieldLimit' };
@@ -261,17 +305,19 @@ export function placeContent(gs, tileIdx, contentId) {
   // ── 旧内容处理（v0.5：只有技能回背包，其余一律消失）──
   if (oldContentId) {
     // 通用规则：储存类 / 采摘类田块在拆除前先自动采摘一次（替换 = 先拆后放，同样适用）
-    harvestCropBeforeRemove(gs, tile);
+    harvestCropBeforeRemove(gs, tile, ref);
     // 生物类内容被替换：归属生物全部死亡并移除（无任何掉落 / 金币 / 经验），容量计数随之下降
     removeCreaturesOwnedByTile(gs, tile, { reason: 'facilityReplaced' });
     if (oldContentId.startsWith('skill_')) {
-      LinkSkillSystem.onSkillCardRemoved(gs, tileIdx, oldContentId);
+      LinkSkillSystem.onSkillCardRemoved(gs, ref, oldContentId);
       InventorySystem.addItem(gs, oldContentId, 1);
       devLog.info('[Build] skill card returned to inventory:', oldContentId);
     } else {
       devLog.info('[Build] old content', oldContentId, 'discarded');
     }
-    HookDispatcher.fire('onReplace', { gs, tileIdx, oldContentId, newContentId: contentId });
+    HookDispatcher.fire('onReplace', {
+      gs, tileIdx: isFence ? null : ref, tileRef: ref, oldContentId, newContentId: contentId,
+    });
   }
   // 旧的内容状态（郁金香价值 / 蒲公英储存 / 幽怜草价值…）必须清空
   tile.contentState = {};
@@ -295,48 +341,54 @@ export function placeContent(gs, tileIdx, contentId) {
 
   // 连携技实例生命周期：放置即从 0 起算计数 / 清冷却 / 作废该实例旧窗口
   if (contentId.startsWith('skill_')) {
-    LinkSkillSystem.onSkillCardPlaced(gs, tileIdx, contentId);
+    LinkSkillSystem.onSkillCardPlaced(gs, ref, contentId);
   }
 
   // 【放置时】词条（野生种子变身、蒲公英/幽怜草初始化）——必须先跑，UI 才能拿到最终内容
-  HookDispatcher.fire('onPlace', { gs, tileIdx, contentId });
+  HookDispatcher.fire('onPlace', { gs, tileIdx: isFence ? null : ref, tileRef: ref, contentId });
 
-  EventBus.emit(GE.TILE_CONTENT_CHANGED, { tileIdx, newContentId: contentId, oldContentId });
-  EventBus.emit(GE.INVENTORY_CHANGE, { type: 'place', tileIdx, contentId, oldContentId });
+  EventBus.emit(GE.TILE_CONTENT_CHANGED, {
+    ...tilePayload(gs, ref), newContentId: contentId, oldContentId,
+  });
+  EventBus.emit(GE.INVENTORY_CHANGE, {
+    type: 'place', ...tilePayload(gs, ref), contentId, oldContentId,
+  });
   EventBus.emit(GE.TOAST_SHOW, { text: `🛠️ 放置 ${ITEMS[contentId]?.name || contentId}`, duration: 1500 });
 
-  devLog.info('[Build] placeContent tile', tileIdx, ':', oldContentId, '→', contentId, '(inventory -1)');
+  devLog.info('[Build] placeContent tile', ref, ':', oldContentId, '→', contentId, '(inventory -1)');
   return { ok: true };
 }
 
 /**
  * 拆除（清空 contentId）。skill_* 被拆除后回背包。
  */
-export function clearContent(gs, tileIdx) {
+export function clearContent(gs, refOrIdx) {
   if (!gs.buildMode) return { ok: false, reason: 'notInBuildMode' };
-  const tile = gs.map.outerTiles[tileIdx];
-  if (!tile || tile.contentId === null) return { ok: false, reason: 'empty' };
+  const target = resolvePlacement(gs, refOrIdx);
+  if (!target || target.tile.contentId === null) return { ok: false, reason: 'empty' };
+  const { ref, tile, isFence } = target;
   if (UNREPLACEABLE.has(tile.contentId)) {
     EventBus.emit(GE.TOAST_SHOW, { text: '🏠 【永恒】不可拆除', duration: 2000 });
     return { ok: false, reason: 'unreplaceable' };
   }
   const removedId = tile.contentId;
   // 通用规则：储存类 / 采摘类田块在拆除前先自动采摘一次
-  harvestCropBeforeRemove(gs, tile);
+  harvestCropBeforeRemove(gs, tile, ref);
   // 生物类内容被拆除：归属生物全部死亡并移除（含 housed；无掉落），容量实时下降
   removeCreaturesOwnedByTile(gs, tile, { reason: 'facilityCleared' });
   tile.contentId = null;
   tile.contentState = {};
 
   if (removedId.startsWith('skill_')) {
-    LinkSkillSystem.onSkillCardRemoved(gs, tileIdx, removedId);
+    LinkSkillSystem.onSkillCardRemoved(gs, ref, removedId);
     InventorySystem.addItem(gs, removedId, 1);
     EventBus.emit(GE.TOAST_SHOW, { text: `🛠️ 拆除技能卡 ${ITEMS[removedId]?.name || removedId} → 回背包`, duration: 1500 });
     devLog.info('[Build] skill card returned to inventory on clear:', removedId);
   }
 
-  EventBus.emit(GE.TILE_CONTENT_CHANGED, { tileIdx });
-  EventBus.emit(GE.INVENTORY_CHANGE, { type: 'clear', tileIdx, contentId: removedId });
+  EventBus.emit(GE.TILE_CONTENT_CHANGED, { ...tilePayload(gs, ref) });
+  EventBus.emit(GE.INVENTORY_CHANGE, { type: 'clear', ...tilePayload(gs, ref), contentId: removedId });
+  devLog.info('[Build] clearContent', ref, 'removed', removedId, isFence ? '(fence)' : '');
   return { ok: true };
 }
 
@@ -346,24 +398,23 @@ export function clearContent(gs, tileIdx) {
  * @returns {number} 自动拆除的技能卡数量
  */
 export function autoRemoveSkillsOutsideTeam(gs) {
-  const tiles = gs?.map?.outerTiles;
-  if (!Array.isArray(tiles)) return 0;
   const roles = getActiveGroupRoles(gs);
   let removed = 0;
-  tiles.forEach((tile, tileIdx) => {
+  for (const entry of contentEntries(gs)) {
+    const { ref, tile, isFence } = entry;
     const contentId = tile.contentId;
-    if (!contentId || !contentId.startsWith('skill_')) return;
+    if (!contentId || !contentId.startsWith('skill_')) continue;
     const def = SKILLS[contentId];
-    if (!def?.roleId || roles.includes(def.roleId)) return;
+    if (!def?.roleId || roles.includes(def.roleId)) continue;
     tile.contentId = null;
     tile.contentState = {};
-    LinkSkillSystem.onSkillCardRemoved(gs, tileIdx, contentId);
+    LinkSkillSystem.onSkillCardRemoved(gs, ref, contentId);
     InventorySystem.addItem(gs, contentId, 1);
     removed++;
-    EventBus.emit(GE.TILE_CONTENT_CHANGED, { tileIdx });
-    EventBus.emit(GE.INVENTORY_CHANGE, { type: 'clear', tileIdx, contentId });
-    devLog.info('[Build] 角色离队 → 自动拆除技能卡', contentId, 'tile', tileIdx);
-  });
+    EventBus.emit(GE.TILE_CONTENT_CHANGED, { ...tilePayload(gs, ref) });
+    EventBus.emit(GE.INVENTORY_CHANGE, { type: 'clear', ...tilePayload(gs, ref), contentId });
+    devLog.info('[Build] 角色离队 → 自动拆除技能卡', contentId, 'tile', ref, isFence ? '(fence)' : '');
+  }
   if (removed > 0) {
     EventBus.emit(GE.TOAST_SHOW, { text: `🛠️ 角色离队：${removed} 张技能卡已自动拆除 → 回背包`, duration: 1600 });
   }

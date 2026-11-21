@@ -41,7 +41,9 @@ import { ITEMS } from '../data/items.js';
 import { normalizeTerrain } from '../data/terrains.js';
 import { InventorySystem } from './InventorySystem.js';
 import { CombatSystem } from './CombatSystem.js';
+import { capacityExtra } from './CapacitySystem.js';
 import { fenceDimsOf, outerIdxToXY } from '../core/Distance.js';
+import { getTile, isFenceRef, contentEntries } from '../core/TileAccess.js';
 import {
   DEFAULT_CREATURE_RADIUS,
   FENCE_ORIGIN_X,
@@ -83,7 +85,14 @@ export function ensureTileUid(tile) {
   return tile.uid;
 }
 
-/** 解析某生物当前归属的设施地块（优先 uid，其次裸索引回退） */
+/** 地块对象 → 栅栏 fence ref（外圈格返回 null） */
+function fenceRefOfTile(tile) {
+  if (!tile || Number.isInteger(tile.idx)) return null;
+  if (!Number.isInteger(tile.row) || !Number.isInteger(tile.col)) return null;
+  return { kind: 'fence', row: tile.row, col: tile.col };
+}
+
+/** 解析某生物当前归属的设施地块（优先 uid，其次 fence ref，最后裸索引回退） */
 export function creatureOwnerTile(gs, c) {
   if (!c) return null;
   const outer = gs?.map?.outerTiles || [];
@@ -91,6 +100,7 @@ export function creatureOwnerTile(gs, c) {
     const byUid = outer.find(t => t && t.uid === c.sourceTileUid);
     if (byUid) return byUid;
   }
+  if (c.sourceTileRef && isFenceRef(c.sourceTileRef)) return getTile(gs, c.sourceTileRef);
   if (Number.isInteger(c.sourceTileIdx)) return outer[c.sourceTileIdx] || null;
   return null;
 }
@@ -98,18 +108,30 @@ export function creatureOwnerTile(gs, c) {
 /** 生物是否归属指定设施/地块实例（与物种无关；野生生物两边都为空 → false） */
 export function creatureOwnedByTile(gs, c, tile) {
   if (!c || !tile) return false;
+  // 直接传 ref 的调用口径
+  if (typeof tile === 'number') return Number.isInteger(c.sourceTileIdx) && c.sourceTileIdx === tile;
+  if (isFenceRef(tile)) {
+    const r = c.sourceTileRef;
+    return !!r && r.kind === 'fence' && r.row === tile.row && r.col === tile.col;
+  }
   if (c.sourceTileUid && tile.uid) return c.sourceTileUid === tile.uid;
+  if (c.sourceTileRef) {
+    const f = fenceRefOfTile(tile);
+    if (f && c.sourceTileRef.kind === 'fence'
+      && c.sourceTileRef.row === f.row && c.sourceTileRef.col === f.col) return true;
+  }
   return Number.isInteger(c.sourceTileIdx) && c.sourceTileIdx === tile.idx;
 }
 
 /**
  * 某设施实例归属的生物（优先稳定 uid，扩建后仍指向同一座设施）。
  * 野生生物（狩猎等来源）无归属，永远不在此列表内。
+ * @param {number|object} refOrIdx 外圈 idx 或 fence ref
  * @returns {object[]}
  */
-export function facilityOwnedCreatures(gs, tileIdx, { aliveOnly = true } = {}) {
-  if (!Array.isArray(gs?.creatures) || tileIdx === null || tileIdx === undefined) return [];
-  const tile = gs?.map?.outerTiles?.[tileIdx];
+export function facilityOwnedCreatures(gs, refOrIdx, { aliveOnly = true } = {}) {
+  if (!Array.isArray(gs?.creatures) || refOrIdx === null || refOrIdx === undefined) return [];
+  const tile = getTile(gs, refOrIdx);
   if (!tile) return [];
   return gs.creatures.filter(c => {
     if (!c) return false;
@@ -211,6 +233,7 @@ export const MAX_SECONDS_PER_TILE = 6;
  * @param {object} [opts]
  * @param {string} [opts.facilityId] 来源设施（facility_henhouse / facility_slimehouse），用于每日心情 +1
  * @param {number} [opts.sourceTileIdx] 来源设施所在外圈格 idx（同时写入稳定 uid，扩建后归属不丢）
+ * @param {number|object} [opts.sourceTileRef] 来源设施地块 ref（外圈 idx / fence ref）；优先于 sourceTileIdx
  * @returns {object|null} 新生物对象；栅栏不存在或 kind 未知 → null
  */
 export function spawnCreature(gs, kind, opts = {}) {
@@ -233,8 +256,11 @@ export function spawnCreature(gs, kind, opts = {}) {
   const pos = randomPointInRect(rect, radius);
   const dir = randomDirection();
 
-  // 归属设施实例：稳定 uid（扩建时地块对象被整体搬运，uid 不随外圈 idx 变化）
-  const sourceTile = opts.sourceTileIdx != null ? gs.map?.outerTiles?.[opts.sourceTileIdx] : null;
+  // 归属设施实例：优先 ref 口径；外圈格仍写稳定 uid + sourceTileIdx（旧存档字段兼容），
+  // 生效小径栅栏格写 sourceTileRef（无 uid / idx）
+  const sourceRef = opts.sourceTileRef ?? opts.sourceTileIdx ?? null;
+  const isFenceSource = isFenceRef(sourceRef);
+  const sourceTile = sourceRef != null && !isFenceSource ? gs.map?.outerTiles?.[sourceRef] : null;
   const sourceTileUid = sourceTile ? ensureTileUid(sourceTile) : null;
 
   // 构造实例
@@ -284,7 +310,8 @@ export function spawnCreature(gs, kind, opts = {}) {
     ...(def.feedByGrass ? { lastFed: false } : {}),
     stage: def.stage || 'chick',
     facilityId: opts.facilityId || null,
-    sourceTileIdx: opts.sourceTileIdx ?? null,
+    sourceTileIdx: isFenceSource || sourceRef == null ? null : sourceRef,
+    sourceTileRef: isFenceSource ? sourceRef : null,
     sourceTileUid,
     lastMoveTs: Date.now(),
     activeBuffs: [],
@@ -296,7 +323,7 @@ export function spawnCreature(gs, kind, opts = {}) {
   tile.creatures.push(creature.id);
 
   // 设施门关闭时新生成的归属生物直接收纳（不可见、不移动，但仍计入容量）
-  if (creature.sourceTileUid || creature.sourceTileIdx !== null) {
+  if (creature.sourceTileUid || creature.sourceTileIdx !== null || creature.sourceTileRef) {
     const src = creatureOwnerTile(gs, creature);
     if (src && DOOR_FACILITIES.has(src.contentId) && (src.contentState || {}).doorOpen === false) {
       putCreatureIntoHouse(gs, creature);
@@ -1243,8 +1270,10 @@ export function onDayEnd(gs) {
   devLog.info('[CreatureSystem.onDayEnd] day=', gs.day);
 
   // ── 1) 鸡舍喂食（§13.4） ──
-  const outerTiles = gs.map.outerTiles || [];
-  const henhouseTiles = outerTiles.filter(t => t.contentId === 'facility_henhouse');
+  // 生效小径栅栏格视同临时外圈地块，同样参与日末喂食
+  const henhouseTiles = contentEntries(gs)
+    .filter(e => e.tile.contentId === 'facility_henhouse')
+    .map(e => e.tile);
 
   for (const henhouseTile of henhouseTiles) {
     // 只找「来自这个鸡舍实例」的需投喂生物（稳定 uid 归属，扩建后仍指向同一座鸡舍）
@@ -1361,8 +1390,7 @@ export function onDayStart(gs) {
   const outerTiles = gs.map.outerTiles || [];
   // B-12：物品库 BIO-003「危险生物超容量时改为 15%」—— 条件是"当前数量超容量"本身，
   //   而不是惩罚激活标志（dangerOverloaded 要等警告期 2 天后才为 true）。
-  const fenceTilesForCap = (gs.map.fence && gs.map.fence.length) || 1;
-  const dangerCapNow = 4 + Math.max(0, fenceTilesForCap - 1);
+  const dangerCapNow = 4 + capacityExtra(gs);
   const dangerOverCapacity = countByCategory(gs, 'danger') > dangerCapNow;
   const slimeCount = gs.creatures.filter(c => c.category === 'danger' && c.hp > 0).length;
   for (let i = 0; i < slimeCount; i++) {
@@ -1462,9 +1490,8 @@ export function applyOverloadTrueDamage(gs, category, reason) {
 function updateCapacityAndPunish(gs) {
   const cap = gs.capacity || (gs.capacity = {});
   // P1-2 容量扩格加成（§13.1 / 物品库 05 表头）：栅栏每多 1 格空间 → 友善 +1、危险 +1。
-  //   初始栅栏 1 格（§2「初始 3×3：中心 1 格栅栏」），基础容量 友善 4 / 危险 4 / 高危 0。
-  const fenceTiles = (gs.map.fence && gs.map.fence.length) || 1;
-  const extra = Math.max(0, fenceTiles - 1);
+  //   v0.6：生效小径格被视为外圈地块，不再提供栅栏内空间（统一由 capacityExtra 计算）。
+  const extra = capacityExtra(gs);
   cap.friendly = 4 + extra;
   cap.danger = 4 + extra;
   cap.extreme = 0;

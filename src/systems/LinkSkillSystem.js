@@ -22,6 +22,13 @@ import { devLog } from '../core/Logger.js';
 import { getSkill, SKILLS, resolveSkillOwnerId } from '../data/characters.js';
 import { FACTION, factionOf, isHostileTo } from '../data/factions.js';
 import {
+  contentEntries,
+  getTile,
+  tileRefKey,
+  parseTileRefKey,
+} from '../core/TileAccess.js';
+import { tileCenter } from '../core/Geometry.js';
+import {
   createSettlement,
   commitSettlement,
   judgeModeOf,
@@ -43,18 +50,24 @@ export const WINDOW_MS = 8000; // 8 秒实时窗口
 
 // ── 实例标识 ──────────────────────────────────────────────
 
-/** 放置实例键：地块下标 + 技能 id（同名多份 → 不同 tileIdx → 不同实例） */
-export function makeInstanceKey(tileIdx, skillId) {
-  return `${tileIdx}|${skillId}`;
+/** 放置实例键：地块 ref 键 + 技能 id（同名多份 → 不同地块 → 不同实例） */
+export function makeInstanceKey(tileRef, skillId) {
+  // 外圈沿用旧键 `idx|skillId`（兼容旧档 / 现有 UI / 冷却记录）；
+  // 生效小径格使用 `f:row,col|skillId`
+  const head = typeof tileRef === 'number' ? String(tileRef) : tileRefKey(tileRef);
+  return `${head}|${skillId}`;
 }
 
 function parseInstanceKey(key) {
   if (typeof key !== 'string') return null;
   const i = key.indexOf('|');
   if (i <= 0) return null;
-  const tileIdx = Number(key.slice(0, i));
-  if (!Number.isInteger(tileIdx) || tileIdx < 0) return null;
-  return { tileIdx, skillId: key.slice(i + 1) };
+  const head = key.slice(0, i);
+  // 新键 'o:3' / 'f:1,2'；旧键为裸外圈下标 '3'
+  let ref = parseTileRefKey(head);
+  if (ref === null && /^\d+$/.test(head)) ref = Number(head);
+  if (ref === null) return null;
+  return { ref, skillId: key.slice(i + 1) };
 }
 
 /** 当前编队（activeGroup）内的角色 id 列表 */
@@ -70,20 +83,20 @@ export function getActiveGroupRoles(gs) {
  * @param {string|null} skillId 只取某个技能
  */
 export function getPlacedInstances(gs, skillId = null) {
-  const tiles = gs?.map?.outerTiles;
-  if (!Array.isArray(tiles)) return [];
   const roles = getActiveGroupRoles(gs);
   const out = [];
-  for (let tileIdx = 0; tileIdx < tiles.length; tileIdx++) {
-    const cid = tiles[tileIdx]?.contentId;
+  for (const { ref, tile } of contentEntries(gs)) {
+    const cid = tile?.contentId;
     if (!cid || !cid.startsWith('skill_')) continue;
     if (skillId && cid !== skillId) continue;
     const def = SKILLS[cid];
     if (!def || !def.isLinkSkill) continue;
     if (def.roleId && !roles.includes(def.roleId)) continue;
     out.push({
-      key: makeInstanceKey(tileIdx, cid),
-      tileIdx,
+      key: makeInstanceKey(ref, cid),
+      ref,
+      tileRef: ref,
+      tileIdx: typeof ref === 'number' ? ref : null,
       skillId: cid,
       roleId: def.roleId || null,
     });
@@ -91,18 +104,20 @@ export function getPlacedInstances(gs, skillId = null) {
   return out;
 }
 
-/** 该实例是否仍真实放置在某外圈格上 */
+/** 该实例是否仍真实放置在某地块上（外圈 / 生效小径格） */
 export function findInstance(gs, key) {
   const parsed = parseInstanceKey(key);
   if (!parsed) return null;
-  const tile = gs?.map?.outerTiles?.[parsed.tileIdx];
+  const tile = getTile(gs, parsed.ref);
   if (!tile || tile.contentId !== parsed.skillId) return null;
   const def = SKILLS[parsed.skillId];
   if (!def || !def.isLinkSkill) return null;
   if (def.roleId && !getActiveGroupRoles(gs).includes(def.roleId)) return null;
   return {
     key,
-    tileIdx: parsed.tileIdx,
+    ref: parsed.ref,
+    tileRef: parsed.ref,
+    tileIdx: typeof parsed.ref === 'number' ? parsed.ref : null,
     skillId: parsed.skillId,
     roleId: def.roleId || null,
   };
@@ -124,10 +139,10 @@ function getCounter(gs, key) {
 /**
  * 放置钩子（BuildSystem.placeContent 成功后调用）：实例计数/冷却从 0 起算
  */
-export function onSkillCardPlaced(gs, tileIdx, skillId) {
+export function onSkillCardPlaced(gs, tileRef, skillId) {
   const def = SKILLS[skillId];
   if (!def?.isLinkSkill) return;
-  const key = makeInstanceKey(tileIdx, skillId);
+  const key = makeInstanceKey(tileRef, skillId);
   ensureCounters(gs)[key] = { count: 0, elements: [] };
   if (gs.linkSkillCooldowns) delete gs.linkSkillCooldowns[key];
   if (Array.isArray(gs.linkSkillQueue)) {
@@ -139,10 +154,10 @@ export function onSkillCardPlaced(gs, tileIdx, skillId) {
 /**
  * 拆除/替换钩子：清该实例的计数、冷却、队列条目（窗口立即作废）
  */
-export function onSkillCardRemoved(gs, tileIdx, skillId) {
+export function onSkillCardRemoved(gs, tileRef, skillId) {
   const def = SKILLS[skillId];
   if (!def?.isLinkSkill) return;
-  const key = makeInstanceKey(tileIdx, skillId);
+  const key = makeInstanceKey(tileRef, skillId);
   if (gs.linkSkillCounters) delete gs.linkSkillCounters[key];
   if (gs.linkSkillCooldowns) delete gs.linkSkillCooldowns[key];
   if (Array.isArray(gs.linkSkillQueue)) {
@@ -214,6 +229,8 @@ function tryEnqueue(gs, instance, opts = {}) {
   const entry = {
     key: instance.key,
     skillId: instance.skillId,
+    ref: instance.ref,
+    tileRef: instance.ref,
     tileIdx: instance.tileIdx,
     roleId: instance.roleId,
     // M-09（§12.5）：排队不计时，成为队首时才开始 8 秒窗口
@@ -302,6 +319,7 @@ function recordStormEyeElement(gs, element) {
 
 /** 连携技参照点（§12.3）：实例所在地块中心；未带 tileIdx 时退回玩家格中心 */
 function linkAnchorOf(gs, ctx) {
+  if (ctx?.tileRef !== undefined && ctx?.tileRef !== null) return tileCenter(gs, ctx.tileRef);
   if (typeof ctx?.tileIdx === 'number') return instanceAnchor(gs, ctx.tileIdx);
   return playerAnchor(gs);
 }
@@ -599,6 +617,9 @@ export function enqueueLinkSkill(gs, opts = {}) {
 
 function resolveInstanceFromOpts(gs, opts) {
   if (opts.key) return findInstance(gs, opts.key);
+  if (opts.tileRef !== undefined && opts.tileRef !== null && opts.skillId) {
+    return findInstance(gs, makeInstanceKey(opts.tileRef, opts.skillId));
+  }
   if (Number.isInteger(opts.tileIdx) && opts.skillId) {
     return findInstance(gs, makeInstanceKey(opts.tileIdx, opts.skillId));
   }

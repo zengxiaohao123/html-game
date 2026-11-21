@@ -31,7 +31,16 @@ import { HealSystem } from './HealSystem.js';
 import { GE } from '../core/GameEvents.js';
 import { HookDispatcher } from '../core/HookDispatcher.js';
 import { Random } from '../core/Random.js';
-import { Distance } from '../core/Distance.js';
+import {
+  contentEntries,
+  getTile,
+  refXY,
+  playerRef,
+  refsEqual,
+  tileRefKey,
+  fenceIdxOf,
+  isFenceRef,
+} from '../core/TileAccess.js';
 import { triggerSkillByHook } from './SkillSystem.js';
 import { devLog } from '../core/Logger.js';
 import { MIN_STAMINA } from '../utils/constants.js';
@@ -87,8 +96,8 @@ export function blessStart(gs) {
     return { ok: false, targetIdx: null, candidates: [], reason: 'gold' };
   }
 
-  // 候选格：外圈全部 8 格（不再过滤玩家格 / 空格 / 家 / contentId）
-  const candidates = gs.map.outerTiles.slice();
+  // 候选格：外圈全部格 + 生效小径格（用户裁定 18：已视为外圈地块，纳入随机池）
+  const candidates = contentEntries(gs);
   if (candidates.length === 0) {
     EventBus.emit(GE.TOAST_SHOW, { text: '🧘 地图上没有可祝福的地块', duration: 2000 });
     return { ok: false, targetIdx: null, candidates: [], reason: 'noTiles' };
@@ -103,33 +112,39 @@ export function blessStart(gs) {
   gs.uiState.blessing = true;
 
   // 选目标
-  const targetTile = Random.pick(candidates);
-  const targetIdx = targetTile.idx;
+  const targetEntry = Random.pick(candidates);
+  const targetRef = targetEntry.ref;
+  const targetTile = targetEntry.tile;
+  const targetIdx = typeof targetRef === 'number' ? targetRef : null;
 
-  // 打包候选格（按 idx 升序，保证 BlessAnimation 顺时针轮播顺序一致）
+  // 打包候选格（按网格坐标排序，保证 BlessAnimation 轮播顺序稳定）
   const packedCandidates = candidates
     .slice()
-    .sort((a, b) => a.idx - b.idx)
-    .map(t => {
-      const { x, y } = Distance.outerIdxToXY(gs.map, t.idx);
+    .map((e) => {
+      const { x, y } = refXY(gs, e.ref);
       return {
-        idx: t.idx,
-        // 逻辑坐标（格中心）；像素换算由 UI 层按当前每格像素完成（外圈可扩展）
+        key: tileRefKey(e.ref),
+        ref: e.ref,
+        idx: typeof e.ref === 'number' ? e.ref : null,
+        // 逻辑坐标（格中心）；像素换算由 UI 层按当前每格像素完成
         x: x + 0.5,
         y: y + 0.5,
-        contentId: t.contentId,
+        contentId: e.tile.contentId,
       };
-    });
+    })
+    .sort((a, b) => (a.y - b.y) || (a.x - b.x) || String(a.key).localeCompare(String(b.key)));
 
-  devLog.info('[Bless] start — targetIdx=', targetIdx, 'content:', targetTile.contentId,
-    '(玩家格=', targetIdx === gs.player.x, ', 空格=', targetTile.contentId === null, ')');
+  devLog.info('[Bless] start — target=', tileRefKey(targetRef), 'content:', targetTile.contentId,
+    '(玩家格=', refsEqual(playerRef(gs), targetRef), ', 空格=', targetTile.contentId === null, ')');
 
   // 按下即结算：抽取结果 / 收益代价 / 行动力扣减 / 回合推进全部在此完成
-  settleBless(gs, targetIdx, { staminaCost, goldCost, spirit });
+  settleBless(gs, targetRef, { staminaCost, goldCost, spirit });
 
   // 动画只是演出：BLESS_START 仅携带表现所需数据，动画期间不再改变任何游戏状态
   EventBus.emit(GE.BLESS_START, {
     targetIdx,
+    targetRef,
+    targetKey: tileRefKey(targetRef),
     targetContentId: targetTile.contentId,
     candidates: packedCandidates,
     staminaCost,
@@ -137,22 +152,25 @@ export function blessStart(gs) {
     spirit,
   });
 
-  return { ok: true, targetIdx, candidates: packedCandidates, staminaCost, goldCost };
+  return { ok: true, targetIdx, targetRef, candidates: packedCandidates, staminaCost, goldCost };
 }
 
 /**
  * 祈福结算（内部）：在按下瞬间执行，动画不再调用
  * @param {object} gs
- * @param {number} targetIdx
+ * @param {(number|object)} targetRef
  * @param {{staminaCost:number, goldCost:number, spirit:string|null}} ctx
  */
-function settleBless(gs, targetIdx, { staminaCost, goldCost, spirit }) {
-  const tile = gs.map.outerTiles[targetIdx];
+function settleBless(gs, targetRef, { staminaCost, goldCost, spirit }) {
+  const tile = getTile(gs, targetRef);
   if (!tile) {
-    devLog.warn('[Bless] settle — invalid targetIdx', targetIdx);
+    devLog.warn('[Bless] settle — invalid targetRef', targetRef);
     if (gs.uiState) gs.uiState.blessing = false;
     return;
   }
+  const payload = isFenceRef(targetRef)
+    ? { tileIdx: null, tileRef: targetRef, fenceIdx: fenceIdxOf(gs, targetRef) }
+    : { tileIdx: targetRef, tileRef: targetRef };
 
   // ── 1. push / 更新 blessed state（不叠加，取 max remainingDays） ──
   if (!tile.states) tile.states = [];
@@ -171,11 +189,10 @@ function settleBless(gs, targetIdx, { staminaCost, goldCost, spirit }) {
   }
 
   // ── 2. fire onBlessed hook（各设施处理自己的立即型 / 持续型效果） ──
-  HookDispatcher.fire('onBlessed', { gs, tileIdx: targetIdx });
+  HookDispatcher.fire('onBlessed', { gs, ...payload });
 
   // ── 2b. 技能地块的【受祝福时】：与 onEnter/onPass 共用 SkillSystem 的同一结算流水线
-  //     （同一份 snapshot / 判定 / 批次 / 死亡延迟；技能卡本身不是设施，不会再被 fire 触发一次）
-  triggerSkillByHook('onBlessed', { gs, tileIdx: targetIdx });
+  triggerSkillByHook('onBlessed', { gs, ...payload });
 
   // ── 3. hook 扫完后，用持续型 state 的 remainingDays 对齐 blessed.remainingDays ──
   //    比如 rice 会 push rice_bless(remainingDays:5)，border 金色特效也要持续 5 天
@@ -228,8 +245,9 @@ function settleBless(gs, targetIdx, { staminaCost, goldCost, spirit }) {
 
   // 广播结算事件（此时游戏状态已完全落定；动画期间只会读取表现数据）
   const contentId = tile.contentId;
+  const targetLabel = typeof targetRef === 'number' ? `地块 ${targetRef}` : '小径';
   EventBus.emit(GE.BLESS_DONE, {
-    tileIdx: targetIdx,
+    ...payload,
     contentId,
     staminaCost: BLESS_STAMINA_COST,
     goldCost: BLESS_GOLD_COST,
@@ -238,16 +256,16 @@ function settleBless(gs, targetIdx, { staminaCost, goldCost, spirit }) {
 
   // 对空格也显示 Toast（说明"空地被祝福"，虽然没有实际效果）
   if (!contentId) {
-    EventBus.emit(GE.TOAST_SHOW, { text: `✨ 空地 ${targetIdx} 被祝福（无实际效果）`, duration: 2200 });
-  } else if (targetIdx === gs.player.x) {
+    EventBus.emit(GE.TOAST_SHOW, { text: `✨ 空地 ${targetLabel} 被祝福（无实际效果）`, duration: 2200 });
+  } else if (refsEqual(playerRef(gs), targetRef)) {
     EventBus.emit(GE.TOAST_SHOW, { text: `✨ 你脚下的 ${contentId} 被祝福`, duration: 2200 });
   } else {
     EventBus.emit(GE.TOAST_SHOW, { text: `✨ 祝福降临 ${contentId}`, duration: 2200 });
   }
 
-  EventBus.emit(GE.TILE_UPDATED, { tileIdx: targetIdx });
+  EventBus.emit(GE.TILE_UPDATED, payload);
 
-  devLog.info('[Bless] settle — done, targetIdx=', targetIdx, 'blessed.remainingDays=', curBlessed?.remainingDays);
+  devLog.info('[Bless] settle — done, target=', tileRefKey(targetRef), 'blessed.remainingDays=', curBlessed?.remainingDays);
 
   // §5.2：推进回合的行为只有三种——移动 / 祈福 / 睡觉。祈福结算完成后推进 1 回合。
   // 若行动力过低（<= MIN_STAMINA）触发强制睡觉（§5.3），强制睡觉本身也是一次睡觉，同样推进回合。

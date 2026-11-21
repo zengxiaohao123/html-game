@@ -10,6 +10,7 @@ import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { HookDispatcher } from '../core/HookDispatcher.js';
 import { createInitialState } from '../state/gameState.js';
+import { initPathOnLoad } from './PathSystem.js';
 import { migrateGS } from '../state/migrate.js';
 import { DayBaseline } from '../state/DayBaseline.js';
 import { devLog } from '../core/Logger.js';
@@ -254,6 +255,9 @@ export class GameDirector {
     }
     devLog.info(`[GameDirector] 新开局注入 ${INITIAL_SLIME_COUNT} 只史莱姆 ✓`);
 
+    // 6.8 v0.6：初始化小径连通状态（新开局通常无小径，这里保持幂等）
+    initPathOnLoad(this.gs);
+
     // 6. 广播 BOOT 事件（UI 模块会收到）
     EventBus.emit(GE.BOOT, { gs: this.gs });
     // 7. 同步 STATE_RESET（让缓存了 this.gs 的 UI 模块（TopBar 等）也能更新到新 GS 引用）
@@ -298,6 +302,9 @@ export class GameDirector {
 
     // 读档后重新 fire passive（确保烹饪/蹁跹 maxHp/dodgeRate 正确）
     TalentSystem.firePassive(this.gs);
+
+    // v0.6：读档后重算小径连通，并静默校正玩家位置（栅栏格可能已失效）
+    initPathOnLoad(this.gs);
 
     EventBus.emit(GE.STATE_RESET, { gs: this.gs });
     EventBus.emit(GE.TILE_UPDATED);

@@ -37,6 +37,18 @@ import { VehicleSystem } from './VehicleSystem.js';
 import { ITEM_TO_VEHICLE } from '../data/vehicles.js';
 import { weekKey } from './CalendarSystem.js';
 import { addGold, getGold } from './GoldSystem.js';
+import {
+  getTile,
+  contentEntries,
+  tileRefKey,
+  playerRef,
+  refsEqual,
+} from '../core/TileAccess.js';
+
+/** 日志用 ref 标签：外圈沿用旧数字，栅栏格用 'f:r,c' */
+function logRef(ref) {
+  return typeof ref === 'number' ? ref : tileRefKey(ref);
+}
 
 /** 魔法商店直接售卖的技能货架（沿用旧版售价；id 取自物品库现有技能条目） */
 export const SHOP_SKILLS = [
@@ -123,11 +135,11 @@ export { isUniqueItem };
 /**
  * 收集"已经被占用"的唯一物品：其它商店里未售出的 + 玩家背包里的。
  * 生成新库存时排除，避免同一件唯一物品同时出现在两家店。
- * @param {number|null} exceptTileIdx 本店自身（刷新时旧库存会消失，不参与排除）
+ * @param {number|object|null} exceptRef 本店自身（刷新时旧库存会消失，不参与排除）
  */
-export function collectUniqueHeld(gs, exceptTileIdx = null) {
+export function collectUniqueHeld(gs, exceptRef = null) {
   const held = collectOwnedUniqueIds(gs);
-  for (const id of collectReservedUniqueIds(gs, exceptTileIdx)) held.add(id);
+  for (const id of collectReservedUniqueIds(gs, exceptRef)) held.add(id);
   return held;
 }
 
@@ -218,9 +230,9 @@ function applyBlessDiscount(stock) {
   return stock;
 }
 
-/** 取（必要时创建 / 换周刷新）某个商店地块的状态 */
-export function getShop(gs, tileIdx) {
-  const tile = gs.map.outerTiles[tileIdx];
+/** 取（必要时创建 / 换周刷新）某个商店地块的状态；ref 可为外圈 idx 或 fence ref */
+export function getShop(gs, ref) {
+  const tile = getTile(gs, ref);
   if (!tile) return null;
   const kind = shopKindOfContent(tile.contentId);
   if (!kind) return null;
@@ -232,20 +244,20 @@ export function getShop(gs, tileIdx) {
     st.shop = {
       kind,
       weekKey: wk,
-      stock: generateStock(kind, Math.random, { exclude: collectUniqueHeld(gs, tileIdx) }),
+      stock: generateStock(kind, Math.random, { exclude: collectUniqueHeld(gs, ref) }),
       refreshUsed: 0,
       visited: false,
       freeRefreshPending: 0,
       leftAtTurn: -1,
     };
-    devLog.info('[Shop] 初次生成', kind, 'tile', tileIdx, '共', st.shop.stock.length, '件');
+    devLog.info('[Shop] 初次生成', kind, 'tile', logRef(ref), '共', st.shop.stock.length, '件');
   } else if (st.shop.weekKey !== wk) {
     // 跨周：自动刷新（免费，不占手动次数）
-    st.shop.stock = generateStock(kind, Math.random, { exclude: collectUniqueHeld(gs, tileIdx) });
+    st.shop.stock = generateStock(kind, Math.random, { exclude: collectUniqueHeld(gs, ref) });
     st.shop.weekKey = wk;
     st.shop.refreshUsed = 0;
     EventBus.emit(GE.TOAST_SHOW, { text: `🏪 ${SHOP_KINDS[kind].label} 已按周刷新`, duration: 1600 });
-    devLog.info('[Shop] 每周自动刷新', kind, 'tile', tileIdx);
+    devLog.info('[Shop] 每周自动刷新', kind, 'tile', logRef(ref));
   }
   return st.shop;
 }
@@ -263,11 +275,11 @@ export function manualRefreshCost(shop) {
  * 刷新商店
  * @returns {{ok:boolean, reason?:string, cost?:number}}
  */
-export function refreshShop(gs, tileIdx, opts = {}) {
-  const shop = getShop(gs, tileIdx);
+export function refreshShop(gs, ref, opts = {}) {
+  const shop = getShop(gs, ref);
   if (!shop) return { ok: false, reason: 'notShop' };
   if (opts.free) {                    // 每周自动刷新（外部调用）
-    shop.stock = generateStock(shop.kind, Math.random, { exclude: collectUniqueHeld(gs, tileIdx) });
+    shop.stock = generateStock(shop.kind, Math.random, { exclude: collectUniqueHeld(gs, ref) });
     return { ok: true, cost: 0 };
   }
 
@@ -285,7 +297,7 @@ export function refreshShop(gs, tileIdx, opts = {}) {
   // C-12：RES-006 备注——免费指 0 金币，但正常消耗刷新次数
   if (cost === 0 && (shop.freeRefreshReady || 0) > 0) shop.freeRefreshReady -= 1;
   shop.refreshUsed += 1;
-  shop.stock = generateStock(shop.kind, Math.random, { exclude: collectUniqueHeld(gs, tileIdx) });
+  shop.stock = generateStock(shop.kind, Math.random, { exclude: collectUniqueHeld(gs, ref) });
 
   EventBus.emit(GE.TOAST_SHOW, { text: `🏪 已刷新（-${cost} 金币）`, duration: 1400 });
   devLog.info('[Shop] 手动刷新', shop.kind, 'cost=', cost, 'used=', shop.refreshUsed);
@@ -293,8 +305,8 @@ export function refreshShop(gs, tileIdx, opts = {}) {
 }
 
 /** 进入商店（记录已访问 + 回合禁入判定） */
-export function enterShop(gs, tileIdx) {
-  const shop = getShop(gs, tileIdx);
+export function enterShop(gs, ref) {
+  const shop = getShop(gs, ref);
   if (!shop) return { ok: false, reason: 'notShop' };
 
   if (shop.leftAtTurn >= 0 && shop.leftAtTurn === gs.turn) {
@@ -319,8 +331,8 @@ export function enterShop(gs, tileIdx) {
 }
 
 /** 离开商店 */
-export function leaveShop(gs, tileIdx) {
-  const shop = getShop(gs, tileIdx);
+export function leaveShop(gs, ref) {
+  const shop = getShop(gs, ref);
   if (!shop) return { ok: false, reason: 'notShop' };
   shop.leftAtTurn = gs.turn;
   // C-12：免费刷新机会随本次进入结束而作废（未用掉不延续到下次进入）
@@ -331,8 +343,8 @@ export function leaveShop(gs, tileIdx) {
 /**
  * 购买某格商品（每格只卖 1 件）
  */
-export function buy(gs, tileIdx, slotIdx) {
-  const shop = getShop(gs, tileIdx);
+export function buy(gs, ref, slotIdx) {
+  const shop = getShop(gs, ref);
   if (!shop) return { ok: false, reason: 'notShop' };
   const item = shop.stock[slotIdx];
   if (!item || item.sold) return { ok: false, reason: 'soldOut' };
@@ -385,14 +397,14 @@ export function sell(gs, itemId, opts = {}) {
   return { ok: true, value, qty, total };
 }
 
-/** 每周一：刷新场上所有商店（外部由 DaySystem 调用） */
+/** 每周一：刷新场上所有商店（外部由 DaySystem 调用；外圈 + 生效小径格） */
 export function weeklyRefreshAll(gs) {
   const wk = weekKey(gs);
   const shops = [];
-  for (const tile of gs.map.outerTiles) {
+  for (const { ref, tile } of contentEntries(gs)) {
     if (!shopKindOfContent(tile.contentId)) continue;
-    const shop = getShop(gs, tile.idx);
-    if (shop) shops.push({ shop, idx: tile.idx });
+    const shop = getShop(gs, ref);
+    if (shop) shops.push({ shop, ref });
   }
   // 两段式：所有店先进货清空，再逐家生成。
   // 否则先生成的店会看到别家"即将消失"的旧库存，把本该重新可抽的唯一物品误排除。
@@ -401,18 +413,18 @@ export function weeklyRefreshAll(gs) {
     shop.refreshUsed = 0;
     shop.weekKey = wk;
   }
-  for (const { shop, idx } of shops) {
-    shop.stock = generateStock(shop.kind, Math.random, { exclude: collectUniqueHeld(gs, idx) });
+  for (const { shop, ref } of shops) {
+    shop.stock = generateStock(shop.kind, Math.random, { exclude: collectUniqueHeld(gs, ref) });
   }
   if (shops.length) devLog.info('[Shop] 周一刷新了', shops.length, '家商店');
   return shops.length;
 }
 
 /** 受祝福：店内受祝福本次进入即生效；店外受祝福下次进入时生效 */
-export function grantFreeRefresh(gs, tileIdx) {
-  const shop = getShop(gs, tileIdx);
+export function grantFreeRefresh(gs, ref) {
+  const shop = getShop(gs, ref);
   if (!shop) return { ok: false };
-  if (gs.player?.x === tileIdx) {
+  if (refsEqual(playerRef(gs), ref)) {
     shop.freeRefreshReady = (shop.freeRefreshReady || 0) + 1;
   } else {
     shop.freeRefreshPending = (shop.freeRefreshPending || 0) + 1;

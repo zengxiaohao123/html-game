@@ -203,6 +203,27 @@ export function migrateGS(loadedGs) {
 
   // ── 语义迁移（字段含义变化，不能只靠补默认值） ──
 
+  // ── v0.6 小径：玩家位置新口径 loc（外圈 idx / 栅栏 fence ref）──
+  if (isPlainObject(loadedGs.player)) {
+    const p = loadedGs.player;
+    if (!isPlainObject(p.loc) || !p.loc.kind) {
+      p.loc = Number.isInteger(p.x)
+        ? { kind: 'outer', idx: p.x }
+        : { kind: 'outer', idx: 0 };
+      devLog.info('[migrateGS] 补全 player.loc →', p.loc);
+    }
+    if (!Array.isArray(p.visitedTodayRefs)) p.visitedTodayRefs = [];
+  }
+  // 栅栏格新字段（旧档可能没有；数组元素补全已覆盖，这里兜底内容状态）
+  for (const cell of loadedGs.map?.fence || []) {
+    if (!isPlainObject(cell)) continue;
+    if (!('contentId' in cell)) cell.contentId = null;
+    if (!isPlainObject(cell.contentState)) cell.contentState = {};
+    if (!Array.isArray(cell.states)) cell.states = [];
+    if (!isPlainObject(cell.dailyFlags)) cell.dailyFlags = {};
+    if (typeof cell.isPathOuter !== 'boolean') cell.isPathOuter = false;
+  }
+
   // 技能石概念已删除：旧档里的技能石条目换算为对应技能物品（背包 / 出货箱 / 快捷栏 / 商店库存）
   const stoneConverted = migrateLegacySkillStones(loadedGs);
   if (stoneConverted > 0) {

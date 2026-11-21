@@ -21,6 +21,7 @@ import { GE } from '../core/GameEvents.js';
 import { InventorySystem } from './InventorySystem.js';
 import { hasGrimoire, syncPumpkin } from './PassiveItemSystem.js';
 import { addGold } from './GoldSystem.js';
+import { isFenceRef, fenceIdxOf } from '../core/TileAccess.js';
 
 export const TULIP_ID = 'facility_tulip';
 export const TULIP_BASE_INITIAL = 3;
@@ -33,6 +34,14 @@ export const GRIMOIRE_TULIP_SIMPLE = 'grimoire_tulip_simple';
 export const GRIMOIRE_ECONOMY_UP = 'grimoire_economy_up';
 
 const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
+
+/** 地块事件载荷：外圈沿用旧字段；栅栏格追加 tileRef / fenceIdx */
+function tulipPayload(gs, tile, ref) {
+  if (ref != null && isFenceRef(ref)) {
+    return { tileIdx: null, tileRef: ref, fenceIdx: fenceIdxOf(gs, ref) };
+  }
+  return { tileIdx: tile.idx };
+}
 
 export function hasTulipSimple(gs) {
   return hasGrimoire(gs, GRIMOIRE_TULIP_SIMPLE);
@@ -97,9 +106,10 @@ function fluctuationBase(gs, mode) {
 /**
  * 应用一次波动（bless 模式一次调用=2 次效果）。
  * mode: 'daily' | 'turn' | 'bless'
+ * @param {number|object} [ref] 地块 ref（外圈 idx / fence ref），仅用于事件载荷
  * @returns {number} 波动后的价值
  */
-export function applyTulipFluctuation(gs, tile, mode = 'daily') {
+export function applyTulipFluctuation(gs, tile, mode = 'daily', ref = null) {
   if (!tile) return 0;
   if (mode === 'daily' && hasTulipSimple(gs)) return tulipValue(tile); // 日波动被回合波动替换
   if (mode === 'turn' && !hasTulipSimple(gs)) return tulipValue(tile); // 未拥有简单！不触发回合波动
@@ -112,8 +122,8 @@ export function applyTulipFluctuation(gs, tile, mode = 'daily') {
     v += Math.round(fluctuationBase(gs, mode) * mult);
   }
   cs.tulipValue = v;
-  EventBus.emit(GE.TILE_UPDATED, { tileIdx: tile.idx });
-  maybeForceRemoveTulip(gs, tile);
+  EventBus.emit(GE.TILE_UPDATED, tulipPayload(gs, tile, ref));
+  maybeForceRemoveTulip(gs, tile, ref);
   return v;
 }
 
@@ -122,15 +132,16 @@ export function applyTulipFluctuation(gs, tile, mode = 'daily') {
  * 判定读【显示值】：没有《泡沫》时显示值恒为 max(0, 内部值) ≥ 0，永远不会触发；
  * 有《泡沫》时显示值即真实值，内部值 < -100 时正常触发。
  */
-export function maybeForceRemoveTulip(gs, tile) {
+export function maybeForceRemoveTulip(gs, tile, ref = null) {
   if (!tile || tile.contentId !== TULIP_ID) return false;
   if (tulipDisplayValue(gs, tile) >= TULIP_FORCE_REMOVE_THRESHOLD) return false;
 
   tile.contentId = null;
   tile.contentState = {};
   syncPumpkin(gs);
-  EventBus.emit(GE.TILE_CONTENT_CHANGED, { tileIdx: tile.idx });
-  EventBus.emit(GE.TILE_UPDATED, { tileIdx: tile.idx });
+  const payload = tulipPayload(gs, tile, ref);
+  EventBus.emit(GE.TILE_CONTENT_CHANGED, payload);
+  EventBus.emit(GE.TILE_UPDATED, payload);
   EventBus.emit(GE.TOAST_SHOW, {
     text: `🌷 郁金香价值过低（< ${-TULIP_FORCE_REMOVE_THRESHOLD}），已被强制拆除`,
     duration: 2400,

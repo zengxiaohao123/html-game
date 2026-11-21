@@ -19,6 +19,7 @@ import { SKILLS } from '../data/characters.js';
 import { CreatureView } from './CreatureView.js';
 import { MineView } from './MineView.js';
 import * as Geometry from '../core/Geometry.js';
+import { playerRef, refsEqual, refOfXY, isLegalStandRef, tileRefKey, fenceRefOfIdx } from '../core/TileAccess.js';
 import { createEl, qs, iconEl } from './dom.js';
 
 // 地图区留白（像素）：外圈边长可扩展时，由可用区域反算每格像素，避免扩图后错位/挤压。
@@ -237,8 +238,8 @@ export class MapView {
     // 层级 3/5：内容图标 + 放置型道具标志（内容相关子节点，可单独局部刷新）
     this._renderCellContent(tileEl, tile, box, ratio);
 
-    // 玩家当前位置特殊标记
-    if (gs.player.x === tile.idx) {
+    // 玩家当前位置特殊标记（v0.6：玩家也可能站在生效小径格上）
+    if (refsEqual(playerRef(gs), tile.idx)) {
       tileEl.classList.add('player-tile');
     }
 
@@ -261,7 +262,7 @@ export class MapView {
         return;
       }
       if (this.buildMode) {
-        this._handleBuildTileClick(tile.idx);
+        this._handleBuildPlaceAt(tile.idx);
         return;
       }
       EventBus.emit(GE.TILE_CLICKED, { tileIdx: tile.idx });
@@ -275,7 +276,7 @@ export class MapView {
     tileEl.classList.remove('placeable', 'unplaceable');
     if (!this.buildMode) return;
 
-    if (gs.player.x === tile.idx) {
+    if (refsEqual(playerRef(gs), tile.idx)) {
       // 玩家所在格：不允许放置
       tileEl.classList.add('unplaceable', 'player-tile');
       return;
@@ -289,8 +290,24 @@ export class MapView {
     }
   }
 
-  /** 建造模式下点击 tile → 调用 BuildSystem.placeContent */
-  _handleBuildTileClick(tileIdx) {
+  /** 栅栏格版放置视觉：仅生效小径格（临时外圈）参与放置 */
+  _updateBuildModeFenceClass(tileEl, ref, cell, gs) {
+    tileEl.classList.remove('placeable', 'unplaceable');
+    if (!this.buildMode) return;
+    if (!isLegalStandRef(gs, ref)) return;
+    if (refsEqual(playerRef(gs), ref)) {
+      tileEl.classList.add('unplaceable', 'player-tile');
+      return;
+    }
+    if (cell?.contentId === 'facility_home') {
+      tileEl.classList.add('unplaceable');
+    } else {
+      tileEl.classList.add('placeable');
+    }
+  }
+
+  /** 建造模式下点击地块 → 调用 BuildSystem.placeContent；ref 支持外圈 idx / 栅栏 ref */
+  _handleBuildPlaceAt(ref) {
     const gs = this.gs;
     if (!gs) return;
 
@@ -312,11 +329,11 @@ export class MapView {
     // 放置型道具（陷阱 / 艾草熏香…）从 HotBar 选中：与背包指向模式共用同一套合法性判定与结算
     // （首次选中已由 ItemTargeting.start 建立高亮；这里兜住连续放置 / 未成功建立指向的情况）
     if (ItemTargeting.needsTarget(contentId)) {
-      const res = ItemTargeting.useAtTile(gs, contentId, tileIdx);
+      const res = ItemTargeting.useAtTile(gs, contentId, ref);
       if (res?.ok) ItemTargeting.cancel('buildPlaceDone');
       return;
     }
-    BuildSystem.placeContent(gs, tileIdx, contentId);
+    BuildSystem.placeContent(gs, ref, contentId);
   }
 
   /** 拖拽放置（探索/建造模式都有效） */
@@ -343,14 +360,16 @@ export class MapView {
       const x = Math.floor((e.clientX - rect.left) / tilePx);
       const y = Math.floor((e.clientY - rect.top) / tilePx);
       const tileIdx = Distance.outerXYToIdx(gs.map, x, y);
-      if (tileIdx === null || tileIdx === undefined) {
-        EventBus.emit(GE.TOAST_SHOW, { text: '🛠️ 只能放在外圈地块上', duration: 2000 });
+      // v0.6：外圈以外，生效小径格也是合法放置目标
+      const dropRef = tileIdx === null || tileIdx === undefined ? refOfXY(gs, x, y) : tileIdx;
+      if (dropRef === null || dropRef === undefined || !isLegalStandRef(gs, dropRef)) {
+        EventBus.emit(GE.TOAST_SHOW, { text: '🛠️ 只能放在外圈地块或生效小径上', duration: 2000 });
         return;
       }
       // 放置型消耗道具（陷阱 / 艾草熏香等）：拖拽与「背包点选 → 点地块」共用
       // ItemTargeting 的合法性判定、失败提示与结算，规则完全一致；拖拽不消耗道具。
       if (ItemTargeting.needsTarget(contentId)) {
-        const res = ItemTargeting.useAtTile(gs, contentId, tileIdx);
+        const res = ItemTargeting.useAtTile(gs, contentId, dropRef);
         if (res?.ok) ItemTargeting.cancel('dropDone');
         return;
       }
@@ -362,7 +381,7 @@ export class MapView {
         });
         return;
       }
-      BuildSystem.placeContent(gs, tileIdx, contentId);
+      BuildSystem.placeContent(gs, dropRef, contentId);
     });
   }
 
@@ -680,24 +699,50 @@ export class MapView {
         // 内容相关子节点（栅栏格与地块同一口径；当前无栅栏内容数据时不显示）
         this._renderCellContent(tileEl, cell, { width: cellRect.width }, ratio);
 
+        // v0.6：生效小径格是「临时外圈」，玩家可以站上去 / 放置内容 / 祈福
+        const fenceRef = { kind: 'fence', row: r, col: c };
+        if (refsEqual(playerRef(gs), fenceRef)) tileEl.classList.add('player-tile');
+        this._updateBuildModeFenceClass(tileEl, fenceRef, cell, gs);
+
         // 生物不再按 fence[].creatures 主格缓存画在格子里：
         // 统一由 creatureLayer 按 renderPos 逐帧绘制（见 _paintCreatures）。
 
-        // 点击 → emit FENCE_TILE_CLICKED → InfoPanel 显示
+        // 点击 → 建造模式放置 / 指向模式 / 普通查看（emit FENCE_TILE_CLICKED → InfoPanel 显示）
         tileEl.addEventListener('click', (e) => {
           e.stopPropagation();
+          if (ItemTargeting.isActive()) {
+            ItemTargeting.handleTileClick(this.gs, fenceRef);
+            return;
+          }
+          if (this.buildMode) {
+            this._handleBuildPlaceAt(fenceRef);
+            return;
+          }
           EventBus.emit(GE.FENCE_TILE_CLICKED, { row: r, col: c, fenceIdx });
         });
       }
     }
   }
 
+  /** 同步「玩家站在生效小径格上」的栅栏格样式（MOVE 后不重建栅栏 DOM） */
+  _syncFencePlayerClass() {
+    const gs = this.gs;
+    if (!gs) return;
+    const cur = playerRef(gs);
+    const dims = Distance.fenceDimsOf(gs);
+    this.fenceTileEls.forEach((el, fenceIdx) => {
+      const ref = { kind: 'fence', row: Math.floor(fenceIdx / dims.cols), col: fenceIdx % dims.cols };
+      el.classList.toggle('player-tile', refsEqual(cur, ref));
+    });
+  }
+
   renderPlayer(gs) {
     if (!this.root) return;
     if (this.playerEl) this.playerEl.remove();
 
-    // 玩家格中心同样由几何层给出，UI 只乘每格像素
-    const center = Geometry.tileCenter(gs, Geometry.outerTileRef(gs.player.x));
+    // 玩家格中心同样由几何层给出，UI 只乘每格像素（v0.6：玩家也可能站在生效小径格上）
+    const ref = playerRef(gs);
+    const center = (ref === null ? null : Geometry.tileCenter(gs, ref)) || { x: 0, y: 0 };
     const centerX = center.x * this.tileSize;
     const centerY = center.y * this.tileSize;
     const ratio = this._tileRatio;
@@ -866,16 +911,26 @@ export class MapView {
 
     // 道具指向模式：高亮合法地块、其余变暗
     EventBus.on(GE.TARGETING_START, ({ valid }) => {
-      const ok = new Set(valid || []);
+      const ok = new Set((valid || []).map((v) => tileRefKey(v)));
       this.tileEls.forEach((el, idx) => {
-        el.classList.toggle('tile-aim-ok', ok.has(idx));
-        el.classList.toggle('tile-aim-dim', !ok.has(idx));
+        el.classList.toggle('tile-aim-ok', ok.has(`o:${idx}`));
+        el.classList.toggle('tile-aim-dim', !ok.has(`o:${idx}`));
       });
+      if (this.gs) {
+        this.fenceTileEls.forEach((el, fenceIdx) => {
+          const key = tileRefKey(fenceRefOfIdx(this.gs, fenceIdx));
+          el.classList.toggle('tile-aim-ok', ok.has(key));
+          el.classList.toggle('tile-aim-dim', !ok.has(key));
+        });
+      }
       this._showAimHint(true);
       this._bindAimEsc();
     });
     EventBus.on(GE.TARGETING_END, () => {
       this.tileEls.forEach((el) => {
+        el.classList.remove('tile-aim-ok', 'tile-aim-dim');
+      });
+      this.fenceTileEls.forEach((el) => {
         el.classList.remove('tile-aim-ok', 'tile-aim-dim');
       });
       this._showAimHint(false);
@@ -887,6 +942,7 @@ export class MapView {
       if (!this.gs) return;
       this.renderPlayer(this.gs);
       this.renderAllTiles(this.gs);
+      this._syncFencePlayerClass();
     });
 
     // 地形变化：同一同步调用栈内只就地刷新受影响那一格的地形背景层
@@ -946,6 +1002,21 @@ export class MapView {
         const tile = this.gs?.map?.outerTiles?.[idx];
         if (tile) this._updateBuildModeTileClass(tileEl, tile, this.gs);
       });
+      // 栅栏格：仅生效小径格（临时外圈）参与放置
+      const gs = this.gs;
+      if (gs) {
+        const fDims = Distance.fenceDimsOf(gs);
+        this.fenceTileEls.forEach((tileEl, fenceIdx) => {
+          const r = Math.floor(fenceIdx / fDims.cols);
+          const c = fenceIdx % fDims.cols;
+          this._updateBuildModeFenceClass(
+            tileEl,
+            { kind: 'fence', row: r, col: c },
+            gs.map?.fence?.[fenceIdx],
+            gs,
+          );
+        });
+      }
     });
   }
 }

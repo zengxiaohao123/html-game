@@ -34,13 +34,13 @@ export class BlessAnimation {
   }
 
   mount() {
-    EventBus.on(GE.BLESS_START, ({ targetIdx, candidates }) => {
-      this._play(targetIdx, candidates);
+    EventBus.on(GE.BLESS_START, ({ targetIdx, targetKey, candidates }) => {
+      this._play(targetIdx, targetKey, candidates);
     });
   }
 
   /** 主入口 —— 顺时针依次旋转版 */
-  _play(targetIdx, candidates) {
+  _play(targetIdx, targetKey, candidates) {
     if (!candidates || candidates.length === 0) return;
 
     const gs = this._getGS();
@@ -69,7 +69,9 @@ export class BlessAnimation {
     }));
 
     const TOTAL_STEPS = absPositions.length * 2 + 1; // 两圈 + 最后停 target
-    const targetPosInArray = absPositions.findIndex(p => p.idx === targetIdx);
+    const targetPosInArray = Math.max(0, targetKey
+      ? absPositions.findIndex(p => p.key === targetKey)
+      : absPositions.findIndex(p => p.idx === targetIdx));
     const start = Math.floor(Math.random() * absPositions.length); // 每次起点随机一点
 
     // 1. 生成顺时针位置序列（最后一步强制命中 target）

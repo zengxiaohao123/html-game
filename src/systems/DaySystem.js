@@ -22,6 +22,7 @@ import { VehicleSystem } from './VehicleSystem.js';
 import { CalendarSystem } from './CalendarSystem.js';
 import { ShopSystem } from './ShopSystem.js';
 import { UseItemSystem } from './UseItemSystem.js';
+import { contentEntries } from '../core/TileAccess.js';
 
 /**
  * 开始新的一天
@@ -55,6 +56,7 @@ export function startNewDay(gs) {
   gs.buildDailyPlaced = {};
   // momo 图腾"优先本日未进入过的地块"
   gs.player.visitedTodayIdx = [];
+  gs.player.visitedTodayRefs = [];
 
   // 2. 清除所有每日限次标记（每格的 dailyFlags）
   for (const tile of gs.map.outerTiles) {
@@ -69,15 +71,21 @@ export function startNewDay(gs) {
   }
   for (const fenceTile of gs.map.fence) {
     if (fenceTile.dailyFlags) fenceTile.dailyFlags = {};
+    const st = fenceTile.contentState;
+    if (st) {
+      st.eventPreviewId = null;
+      st.eventPreviewName = null;
+      st.eventTodayId = null;
+    }
   }
 
-  // 3. blessed 状态 -1 天，0 天移除
-  for (const tile of gs.map.outerTiles) {
+  // 3. blessed 状态 -1 天，0 天移除（外圈 + 生效小径格：临时外圈同样计时）
+  for (const tile of contentEntries(gs).map((e) => e.tile)) {
     tile.states = (tile.states || []).filter(s => {
       if (s.type === 'blessed') {
         s.remainingDays -= 1;
         if (s.remainingDays <= 0) {
-          devLog.info('[DaySystem] blessed state expired on tile', tile.idx);
+          devLog.info('[DaySystem] blessed state expired on tile', tile.idx ?? `${tile.row},${tile.col}`);
           return false;
         }
       }

@@ -11,6 +11,7 @@ import { HookDispatcher } from '../core/HookDispatcher.js';
 import { devLog } from '../core/Logger.js';
 import * as Geometry from '../core/Geometry.js';
 import { hasGrimoire } from './PassiveItemSystem.js';
+import { getTile, contentEntries } from '../core/TileAccess.js';
 import { getRealtimeClock } from './RealtimeClock.js';
 import {
   GRIMOIRE_POTATO_MINE,
@@ -56,17 +57,18 @@ function wireHooks() {
   HookDispatcher.register('onTurnStart', ({ gs }) => {
     tickMines(gs);
     if (TulipSystem.hasTulipSimple(gs)) {
-      for (const tile of gs.map.outerTiles) {
+      for (const { ref, tile } of contentEntries(gs)) {
         if (tile?.contentId !== TulipSystem.TULIP_ID) continue;
-        applyTulipFluctuation(gs, tile, 'turn');
+        applyTulipFluctuation(gs, tile, 'turn', ref);
       }
     }
   });
 
   // 【放置时】郁金香写入初始价值（经济上行 +6 已包含在 tulipInitialValue 中）
-  HookDispatcher.register('onPlace', ({ gs, tileIdx, contentId }) => {
+  HookDispatcher.register('onPlace', ({ gs, tileIdx, tileRef, contentId }) => {
     if (contentId !== TulipSystem.TULIP_ID) return;
-    initTulipTile(gs, gs.map.outerTiles[tileIdx]);
+    const ref = tileRef ?? tileIdx;
+    initTulipTile(gs, getTile(gs, ref));
   });
 
   devLog.info('[CropGrimoireHooks] hooks wired');

@@ -4,6 +4,7 @@
   "TRN-001": ["terrain_grass", "🟩", ""],
   "TRN-002": ["terrain_water", "🌊", ""],
   "TRN-003": ["terrain_ice", "🧊", ""],
+  "TRN-004": ["terrain_path", "🛤️", ""],
 
   "PRD-CROP-001": ["item_wheat", "🌾", ""],
   "PRD-CROP-002": ["item_rice_straw", "🌾", ""],

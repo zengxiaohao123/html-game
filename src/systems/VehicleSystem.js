@@ -24,11 +24,25 @@ import { addGold } from './GoldSystem.js';
 import { Random } from '../core/Random.js';
 import { VEHICLES } from '../data/vehicles.js';
 import { ITEMS } from '../data/items.js';
-import { Distance, outerXYToIdx } from '../core/Distance.js';
 import { Direction } from '../utils/Direction.js';
 import { firePassHookAt, fireEnterHooks } from './MoveHooks.js';
 import { StaminaSystem } from './StaminaSystem.js';
 import { canMoveNow, markMoved } from './MoveCooldown.js';
+import {
+  playerRef,
+  setPlayerRef,
+  getTile,
+  refXY,
+  refOfXY,
+  neighborRef,
+  isLegalStandRef,
+  refsEqual,
+  gridManhattan,
+  legalStandRefs,
+  tileRefKey,
+  fenceIdxOf,
+  isFenceRef,
+} from '../core/TileAccess.js';
 
 function ensureVehicleState(gs) {
   if (!gs.vehicle) {
@@ -56,57 +70,49 @@ function ensureVehicleState(gs) {
 }
 
 /**
- * B-21（物品库行 356：载具最短实际路径为「经过」）：
- * 外圈环顺序（顺时针：顶行 → 右列 → 底行 → 左列），用于 'any' 模式算最短环路径
- */
-function buildRingOrder(gs) {
-  const dims = Distance.mapDimsOf(gs);
-  const { rows, cols } = dims;
-  const seq = [];
-  for (let x = 0; x < cols; x++) seq.push(outerXYToIdx(dims, x, 0));               // 顶行 左→右
-  for (let y = 1; y < rows; y++) seq.push(outerXYToIdx(dims, cols - 1, y));        // 右列 上→下
-  for (let x = cols - 2; x >= 0; x--) seq.push(outerXYToIdx(dims, x, rows - 1));   // 底行 右→左
-  for (let y = rows - 2; y >= 1; y--) seq.push(outerXYToIdx(dims, 0, y));          // 左列 下→上
-  return seq.filter(i => i !== null && i !== undefined);
-}
-
-/**
- * 载具移动完成后，按徒步跋涉方式模拟「起点 → 终点」的默认最短路径。
- * 外圈是一个环，两弧取短的一条（等长时取顺时针），不含起点、含终点。
+ * 载具移动完成后，按徒步跋涉方式模拟「起点 → 终点」的最短路径。
+ * v0.6：合法路线 = 外圈格 + 生效小径格（用户裁定 16/17）。
+ * 用 BFS 在网格上取最短路线（同一距离按 上→右→下→左 的稳定顺序），
+ * 因此「沿外圈绕行」和「穿过小径」都会参与比较，取更短的一条。
  * 该路径只用于【经过时】判定与路径长度，不触发冰面滑行等地形位移效果。
  */
-function simulateWalkPath(gs, fromIdx, toIdx) {
-  const ring = buildRingOrder(gs);
-  const a = ring.indexOf(fromIdx);
-  const b = ring.indexOf(toIdx);
-  if (a < 0 || b < 0 || ring.length < 2) return [toIdx];
-  const n = ring.length;
-  const fwd = [];
-  for (let i = (a + 1) % n; ; i = (i + 1) % n) {
-    fwd.push(ring[i]);
-    if (i === b) break;
-  }
-  const bwd = [];
-  for (let i = (a - 1 + n) % n; ; i = (i - 1 + n) % n) {
-    bwd.push(ring[i]);
-    if (i === b) break;
-  }
-  return fwd.length <= bwd.length ? fwd : bwd;
-}
+function simulateWalkPath(gs, fromRef, toRef) {
+  const startKey = tileRefKey(fromRef);
+  const goalKey = tileRefKey(toRef);
+  if (startKey === null || goalKey === null) return [toRef];
+  if (startKey === goalKey) return [toRef];
 
-/** 两格外圈格的曼哈顿距离（可穿越栅栏/虚空，只看坐标差） */
-function manhattan(gs, a, b) {
-  const pa = Distance.outerIdxToXY(gs.map, a);
-  const pb = Distance.outerIdxToXY(gs.map, b);
-  if (!pa || !pb) return Infinity;
-  return Math.abs(pa.x - pb.x) + Math.abs(pa.y - pb.y);
+  const prev = new Map([[startKey, null]]);
+  const queue = [fromRef];
+  let found = false;
+  while (queue.length > 0 && !found) {
+    const cur = queue.shift();
+    for (let d = 0; d < 4; d++) {
+      const nxt = neighborRef(gs, cur, d);
+      if (nxt === null || !isLegalStandRef(gs, nxt)) continue;
+      const k = tileRefKey(nxt);
+      if (k === null || prev.has(k)) continue;
+      prev.set(k, cur);
+      if (k === goalKey) { found = true; break; }
+      queue.push(nxt);
+    }
+  }
+  if (!found) return [toRef];
+
+  const path = [];
+  let curRef = toRef;
+  while (curRef !== null && tileRefKey(curRef) !== startKey) {
+    path.unshift(curRef);
+    curRef = prev.get(tileRefKey(curRef));
+  }
+  return path;
 }
 
 /** 落点是否满足该载具的 landFilter（田块 / 设施 / 资源 / 技能 / 指定 contentId） */
-export function landOk(gs, idx, def) {
+export function landOk(gs, ref, def) {
   const filter = def?.landFilter;
   if (!filter) return true;
-  const tile = gs.map.outerTiles[idx];
+  const tile = getTile(gs, ref);
   if (!tile || !tile.contentId) return false;
   if (filter.contentIds) return filter.contentIds.includes(tile.contentId);
   if (filter.tier2) {
@@ -116,16 +122,16 @@ export function landOk(gs, idx, def) {
   return true;
 }
 
-/** 当前载具所有合法落点（供 UI 高亮 / 随机传送用） */
+/** 当前载具所有合法落点（供 UI 高亮 / 随机传送用）；返回 ref 列表 */
 export function listLandingTiles(gs) {
   ensureVehicleState(gs);
   const cur = gs.vehicle.current;
   if (!cur) return [];
-  const fromIdx = gs.player.x;
+  const fromRef = playerRef(gs);
   const out = [];
-  for (const t of gs.map.outerTiles) {
-    if (t.idx === fromIdx) continue;
-    if (canVehicleReach(gs, t.idx).ok) out.push(t.idx);
+  for (const ref of legalStandRefs(gs)) {
+    if (refsEqual(ref, fromRef)) continue;
+    if (canVehicleReach(gs, ref).ok) out.push(ref);
   }
   return out;
 }
@@ -289,18 +295,19 @@ function consumeUsage(gs) {
   return true;
 }
 
-/** 合法外圈格索引（0 ~ 4*(size-1)-1）：越界/负数索引一律不能当地块用 */
-function isOuterTileIdx(gs, idx) {
-  return Number.isInteger(idx) && idx >= 0 && idx < gs.map.outerTiles.length;
+/** 判断两格是否同行或同列（网格坐标；小径格也参与） */
+function sameRowOrCol(gs, aRef, bRef) {
+  const a = refXY(gs, aRef);
+  const b = refXY(gs, bRef);
+  if (!a || !b) return false;
+  return a.x === b.x || a.y === b.y;
 }
 
-/**
- * 判断两格是否同行或同列（外圈环形地图用 Distance.outerIdxToXY）
- */
-function sameRowOrCol(gs, aIdx, bIdx) {
-  const a = Distance.outerIdxToXY(gs.map, aIdx);
-  const b = Distance.outerIdxToXY(gs.map, bIdx);
-  return a.x === b.x || a.y === b.y;
+/** 把 UI/旧调用传入的 targetIdx / targetRef 统一成 ref（非法返回 null） */
+function normalizeTarget(gs, opts) {
+  if (opts?.targetRef !== undefined && opts?.targetRef !== null) return opts.targetRef;
+  if (opts?.targetIdx !== undefined && opts?.targetIdx !== null) return opts.targetIdx;
+  return null;
 }
 
 /**
@@ -309,8 +316,8 @@ function sameRowOrCol(gs, aIdx, bIdx) {
  * @param {object} opts
  * @param {string} opts.type 'direction' | 'target' —— 方向式（轮子）或目标式（扫帚/巧遇）
  * @param {string} [opts.direction] 'up'|'right'|'down'|'left' —— 轮子用
- * @param {number} [opts.targetIdx] —— 扫帚/巧遇用
- * @returns {{ ok: boolean, path: number[] | null, finalIdx: number | null, reason?: string }}
+ * @param {(number|object)} [opts.targetRef] —— 目标格 ref（外圈 idx / fence ref）
+ * @returns {{ ok: boolean, path: any[] | null, finalIdx: number|null, finalRef: any, reason?: string }}
  */
 export function tryMove(gs, opts = {}) {
   // §5.2：与 WASD /「前往」共用同一套 0.5 秒移动冷却（冷却期间直接忽略）
@@ -332,114 +339,101 @@ export function tryMove(gs, opts = {}) {
     return { ok: false, reason: 'perDayLimit' };
   }
 
-  const fromIdx = gs.player.x;
-  // 目标索引必须在合法外圈范围内，避免越界/负索引被 outerIdxToXY 包裹成别的格子
-  if (opts.targetIdx != null && !isOuterTileIdx(gs, opts.targetIdx)) {
+  const fromRef = playerRef(gs);
+  if (fromRef === null) return { ok: false, reason: 'badTarget' };
+  const wantedRef = normalizeTarget(gs, opts);
+  // 目标必须是合法落点（外圈格 / 生效小径格）
+  if (wantedRef !== null && !isLegalStandRef(gs, wantedRef)) {
     return { ok: false, reason: 'badTarget' };
   }
-  let targetIdx = null;
+  let targetRef = null;
 
   if (opts.wasdStep) {
-    // WASD 走 1 格：落点就是调用方给定的相邻格（是否允许已由 canUseVehicleForStep 预判），
-    // 不按 movePattern 自动延伸射程（WASD 只走这一格）。
-    // 随机型载具（momo 图腾）的落点由系统自选，不接受 WASD 指定。
-    if (opts.targetIdx == null) return { ok: false, reason: 'needTarget' };
-    if (opts.targetIdx === fromIdx) return { ok: false, reason: 'sameTile' };
+    // WASD 走 1 格：落点就是调用方给定的相邻格（是否允许已由 canUseVehicleForStep 预判）
+    if (wantedRef === null) return { ok: false, reason: 'needTarget' };
+    if (refsEqual(wantedRef, fromRef)) return { ok: false, reason: 'sameTile' };
     if (def.movePattern === 'random') return { ok: false, reason: 'randomNoWASD' };
-    targetIdx = opts.targetIdx;
+    targetRef = wantedRef;
   } else if (def.movePattern === 'directional') {
-    // 轮子：指定方向最多 maxRange 格。
-    // 穿越栅栏/虚空合法，只要求最终落点是外圈格。
+    // 轮子：指定方向最多 maxRange 格。穿越栅栏/虚空合法，只要求最终落点是合法地块。
     const dirIdx = Direction.dirToIndex(opts.direction);
     if (dirIdx === -1) return { ok: false, reason: 'badDirection' };
 
-    const { x: fx, y: fy } = Distance.outerIdxToXY(gs.map, fromIdx);
-    let cx = fx, cy = fy;
-
-    // 方向向量：0=up, 1=right, 2=down, 3=left
+    const p = refXY(gs, fromRef);
+    let cx = p.x;
+    let cy = p.y;
     const [dx, dy] = [[0, -1], [1, 0], [0, 1], [-1, 0]][dirIdx];
     const maxRange = def.maxRange || 2;
 
-    // 沿方向扫最远的合法外圈格（中间 null/栅栏都穿越）
-    let finalIdx = null;
+    // 沿方向扫最远的合法落点（中间栅栏/虚空都穿越）
+    let finalRef = null;
     for (let step = 1; step <= maxRange; step++) {
-      cx += dx; cy += dy;
-      const idx = outerXYToIdx(gs.map, cx, cy);
-      if (idx !== null) finalIdx = idx;
+      cx += dx;
+      cy += dy;
+      const candidate = refOfXY(gs, cx, cy);
+      if (candidate !== null && isLegalStandRef(gs, candidate)) finalRef = candidate;
     }
 
-    if (finalIdx === null) {
-      // 方向上根本没有合法外圈格可以落脚
-      return { ok: false, reason: 'noValidLanding' };
-    }
-    targetIdx = finalIdx;
+    if (finalRef === null) return { ok: false, reason: 'noValidLanding' };
+    targetRef = finalRef;
   } else if (def.movePattern === 'line') {
     // 扫帚：同行或同列任意格
-    if (opts.targetIdx == null) return { ok: false, reason: 'needTarget' };
-    if (opts.targetIdx === fromIdx) return { ok: false, reason: 'sameTile' };
-    if (!sameRowOrCol(gs, fromIdx, opts.targetIdx)) {
-      return { ok: false, reason: 'notSameRowCol' };
-    }
-    targetIdx = opts.targetIdx;
+    if (wantedRef === null) return { ok: false, reason: 'needTarget' };
+    if (refsEqual(wantedRef, fromRef)) return { ok: false, reason: 'sameTile' };
+    if (!sameRowOrCol(gs, fromRef, wantedRef)) return { ok: false, reason: 'notSameRowCol' };
+    targetRef = wantedRef;
   } else if (def.movePattern === 'any') {
-    // 任意格（巧遇 / 图腾 / 号角 / 飞毯 / 购物车 / 大巴 / 飞剑 —— 落点再由 landFilter 约束）
-    if (opts.targetIdx == null) return { ok: false, reason: 'needTarget' };
-    if (opts.targetIdx === fromIdx) return { ok: false, reason: 'sameTile' };
-    targetIdx = opts.targetIdx;
+    if (wantedRef === null) return { ok: false, reason: 'needTarget' };
+    if (refsEqual(wantedRef, fromRef)) return { ok: false, reason: 'sameTile' };
+    targetRef = wantedRef;
   } else if (def.movePattern === 'range') {
-    // 曼哈顿距离 ≤ maxRange 的任意格（马匹 / 重弹簧 / 拓荒者）
-    // 曼哈顿距离只用于「可达性判定」；【经过时】与路径长度另按模拟徒步路径计算
-    if (opts.targetIdx == null) return { ok: false, reason: 'needTarget' };
-    if (opts.targetIdx === fromIdx) return { ok: false, reason: 'sameTile' };
-    if (manhattan(gs, fromIdx, opts.targetIdx) > (def.maxRange || 2)) {
+    if (wantedRef === null) return { ok: false, reason: 'needTarget' };
+    if (refsEqual(wantedRef, fromRef)) return { ok: false, reason: 'sameTile' };
+    if (gridManhattan(gs, fromRef, wantedRef) > (def.maxRange || 2)) {
       return { ok: false, reason: 'outOfRange' };
     }
-    targetIdx = opts.targetIdx;
+    targetRef = wantedRef;
   } else if (def.movePattern === 'random') {
     // 随机一格（momo 图腾）：优先本日未进入过的地块
     const cands = listLandingTiles(gs);
     if (cands.length === 0) return { ok: false, reason: 'noLanding' };
-    const visited = Array.isArray(gs.player?.visitedTodayIdx) ? gs.player.visitedTodayIdx : null;
+    const visited = Array.isArray(gs.player?.visitedTodayRefs)
+      ? new Set(gs.player.visitedTodayRefs)
+      : null;
     const prefer = def.preferUnvisitedToday && visited
-      ? cands.filter((i) => !visited.includes(i))
+      ? cands.filter((r) => !visited.has(tileRefKey(r)))
       : [];
     const pool = prefer.length ? prefer : cands;
-    targetIdx = pool[Math.floor(Math.random() * pool.length)];
+    targetRef = pool[Math.floor(Math.random() * pool.length)];
   } else {
     return { ok: false, reason: 'badPattern' };
   }
 
-  // 无论哪种载具：位置先落到终点，再按徒步模拟「起点 → 终点」的最短路径，
-  // 用这条路径结算【经过时】与路径长度（曼哈顿距离不参与此计算）
-  const path = simulateWalkPath(gs, fromIdx, targetIdx);
+  const targetIdx = typeof targetRef === 'number' ? targetRef : null;
+  // 无论哪种载具：位置先落到终点，再按徒步模拟「起点 → 终点」的最短路径
+  const path = simulateWalkPath(gs, fromRef, targetRef);
 
   // 落点限制（设施 / 资源 / 技能 / 指定地块）
-  if (!landOk(gs, targetIdx, def)) return { ok: false, reason: 'landFilter' };
+  if (!landOk(gs, targetRef, def)) return { ok: false, reason: 'landFilter' };
 
   // 消耗载具使用次数
   consumeUsage(gs);
 
-  // 扣 stamina（载具也是移动，消耗 1 stamina，除非有果腹收藏品 —— 简化不考虑）
-  // 芋圆 nextMoveNoStamina 也适用载具移动
-  const isFree = !!gs.player.nextMoveNoStamina || !!def.freeStamina;
+  // 扣 stamina（芋圆 nextMoveNoStamina 也适用载具移动）
   if (gs.player.nextMoveNoStamina) {
     gs.player.nextMoveNoStamina = false;
   } else if (!def.freeStamina) {
-    // 载具移动同样是玩家主动操作：允许透支为负，但不低于下限
     StaminaSystem.spendStaminaActive(gs, 1, { reason: 'vehicle_move' });
   }
 
-  // 效果层只在终点生效：模拟路径的中间格只参与判定/长度，不触发地块或状态效果
-  // （终点确实被抵达，照常触发【经过时】，随后再触发【进入时】）
-  firePassHookAt(gs, targetIdx);
+  // 效果层只在终点生效
+  firePassHookAt(gs, targetRef);
 
   // 更新位置
-  gs.player.x = targetIdx;
+  setPlayerRef(gs, targetRef);
 
   // 到达后额外效果（拓荒者 +5 行动力；购物车 +4 金币）
-  // 拓荒者 +5 允许超出上限（物品库 VEH-015 备注 / 03 表 A34 行动力溢出），统一走 StaminaSystem 结算
   if (def.staminaGain) {
-    // 「移动后行动力 +5」属数值直接增加：允许超出上限（次日开始时清除）
     StaminaSystem.gainStaminaFlat(gs, def.staminaGain, { reason: def.id });
     EventBus.emit(GE.TOAST_SHOW, { text: `${def.emoji} ${def.name} 行动力 +${def.staminaGain}`, duration: 1500 });
   }
@@ -447,20 +441,33 @@ export function tryMove(gs, opts = {}) {
     addGold(gs, def.goldOnArrive, 'vehicle:arrive');
   }
 
-  // 结算【进入时】：仅最终停留格
-  fireEnterHooks(gs, targetIdx);
+  fireEnterHooks(gs, targetRef);
 
-  // B-2：载具移动的路径长度 = 模拟徒步路径的格数（含终点），不是曼哈顿距离；
-  //      随 MOVE 事件广播，供 GameDirector 推进回合 / 【移动后】hook / 移形累计使用
   const distance = Math.max(1, (path || []).length);
-  EventBus.emit(GE.MOVE, { fromIdx, toIdx: targetIdx, byVehicle: true, distance, path });
-  EventBus.emit(GE.TILE_UPDATED, { tileIdx: fromIdx });
-  EventBus.emit(GE.TILE_UPDATED, { tileIdx: targetIdx });
+  EventBus.emit(GE.MOVE, {
+    fromIdx: typeof fromRef === 'number' ? fromRef : null,
+    toIdx: targetIdx,
+    fromRef,
+    toRef: targetRef,
+    byVehicle: true,
+    distance,
+    path,
+  });
+  EventBus.emit(GE.TILE_UPDATED, {
+    tileIdx: typeof fromRef === 'number' ? fromRef : null,
+    tileRef: fromRef,
+    fenceIdx: isFenceRef(fromRef) ? fenceIdxOf(gs, fromRef) : undefined,
+  });
+  EventBus.emit(GE.TILE_UPDATED, {
+    tileIdx: targetIdx,
+    tileRef: targetRef,
+    fenceIdx: isFenceRef(targetRef) ? fenceIdxOf(gs, targetRef) : undefined,
+  });
 
-  devLog.info('[VehicleSystem.tryMove]', def.name, fromIdx, '→', targetIdx, 'path=', path);
+  devLog.info('[VehicleSystem.tryMove]', def.name, tileRefKey(fromRef), '→', tileRefKey(targetRef), 'path=', path.map(tileRefKey));
   markMoved(gs);
 
-  return { ok: true, path, finalIdx: targetIdx };
+  return { ok: true, path, finalIdx: targetIdx, finalRef: targetRef };
 }
 
 /**
@@ -485,10 +492,9 @@ export const VEHICLE_STEP_STATUS = {
 /**
  * 判定「WASD 走 1 格」的载具语义。
  * @param {object} gs
- * @param {number} targetIdx 相邻目标格
- * @returns {{ status: 'noVehicle'|'allowed'|'blocked', reason?: string, def?: object }}
+ * @param {(number|object|null)} targetRef 相邻目标格（非法时为 null）
  */
-export function canUseVehicleForStep(gs, targetIdx) {
+export function canUseVehicleForStep(gs, targetRef) {
   ensureVehicleState(gs);
   const cur = gs.vehicle.current;
   if (!cur) return { status: VEHICLE_STEP_STATUS.NO_VEHICLE, reason: 'noVehicle' };
@@ -499,17 +505,20 @@ export function canUseVehicleForStep(gs, targetIdx) {
   if (def.movePattern === 'random') {
     return { status: VEHICLE_STEP_STATUS.BLOCKED, reason: 'randomNoWASD', def };
   }
+  if (targetRef === null || targetRef === undefined) {
+    return { status: VEHICLE_STEP_STATUS.BLOCKED, reason: 'badTarget', def };
+  }
 
-  const reach = canVehicleReach(gs, targetIdx);
+  const reach = canVehicleReach(gs, targetRef);
   if (reach.ok) return { status: VEHICLE_STEP_STATUS.ALLOWED, def };
   return { status: VEHICLE_STEP_STATUS.BLOCKED, reason: reach.reason, def };
 }
 
 /**
- * 判断当前装备的载具能否到达目标格
+ * 判断当前装备的载具能否到达目标格（ref：外圈 idx / 生效小径格）
  * @returns {{ ok: boolean, reason?: string, def?: object }}
  */
-export function canVehicleReach(gs, targetIdx) {
+export function canVehicleReach(gs, targetRef) {
   ensureVehicleState(gs);
   const cur = gs.vehicle.current;
   if (!cur) return { ok: false, reason: 'noVehicle' };
@@ -520,48 +529,41 @@ export function canVehicleReach(gs, targetIdx) {
   if (def.talentExclusive && !talentOwnerInTeam(gs, def)) return { ok: false, reason: 'talentUnavailable' };
   if (def.perDayLimit && gs.vehicle.chanceUsedToday) return { ok: false, reason: 'perDayLimit' };
 
-  const fromIdx = gs.player.x;
-  if (!isOuterTileIdx(gs, targetIdx)) return { ok: false, reason: 'badTarget' };
-  if (targetIdx === fromIdx) return { ok: false, reason: 'sameTile' };
+  const fromRef = playerRef(gs);
+  if (fromRef === null) return { ok: false, reason: 'badTarget' };
+  if (!isLegalStandRef(gs, targetRef)) return { ok: false, reason: 'badTarget' };
+  if (refsEqual(targetRef, fromRef)) return { ok: false, reason: 'sameTile' };
 
   if (def.movePattern === 'directional') {
-    // 轮子：同方向最多 maxRange 格。穿越栅栏/虚空合法，只要落点是外圈格。
-    const { x: fx, y: fy } = Distance.outerIdxToXY(gs.map, fromIdx);
-    const { x: tx, y: ty } = Distance.outerIdxToXY(gs.map, targetIdx);
-    const dx = tx - fx;
-    const dy = ty - fy;
-    // 必须严格只沿一个方向（dx===0 或 dy===0）
+    // 轮子：同方向最多 maxRange 格。穿越栅栏/虚空合法，只要落点是合法地块。
+    const p = refXY(gs, fromRef);
+    const q = refXY(gs, targetRef);
+    if (!p || !q) return { ok: false, reason: 'badTarget' };
+    const dx = q.x - p.x;
+    const dy = q.y - p.y;
     if (dx !== 0 && dy !== 0) return { ok: false, reason: 'notAligned' };
     const dist = Math.max(Math.abs(dx), Math.abs(dy));
     if (dist === 0 || dist > (def.maxRange || 2)) return { ok: false, reason: 'outOfRange' };
-
-    // 只验证落点是合法外圈格 —— 中途穿越栅栏/虚空/null 都是合法的
-    const finalIdx = outerXYToIdx(gs.map, tx, ty);
-    if (finalIdx === null) return { ok: false, reason: 'badTarget' };
-    if (!landOk(gs, targetIdx, def)) return { ok: false, reason: 'landFilter' };
+    if (!landOk(gs, targetRef, def)) return { ok: false, reason: 'landFilter' };
     return { ok: true, def };
   }
 
   if (def.movePattern === 'line') {
-    // 扫帚：同行或同列任意格
-    if (!sameRowOrCol(gs, fromIdx, targetIdx)) {
-      return { ok: false, reason: 'notSameRowCol' };
-    }
-    if (!landOk(gs, targetIdx, def)) return { ok: false, reason: 'landFilter' };
+    if (!sameRowOrCol(gs, fromRef, targetRef)) return { ok: false, reason: 'notSameRowCol' };
+    if (!landOk(gs, targetRef, def)) return { ok: false, reason: 'landFilter' };
     return { ok: true, def };
   }
 
   if (def.movePattern === 'range') {
-    // 曼哈顿距离内任意格（可穿越栅栏/虚空，只看坐标差）
-    if (manhattan(gs, fromIdx, targetIdx) > (def.maxRange || 2)) {
+    if (gridManhattan(gs, fromRef, targetRef) > (def.maxRange || 2)) {
       return { ok: false, reason: 'outOfRange' };
     }
-    if (!landOk(gs, targetIdx, def)) return { ok: false, reason: 'landFilter' };
+    if (!landOk(gs, targetRef, def)) return { ok: false, reason: 'landFilter' };
     return { ok: true, def };
   }
 
   if (def.movePattern === 'any' || def.movePattern === 'random') {
-    if (!landOk(gs, targetIdx, def)) return { ok: false, reason: 'landFilter' };
+    if (!landOk(gs, targetRef, def)) return { ok: false, reason: 'landFilter' };
     return { ok: true, def };
   }
 

@@ -3,13 +3,13 @@
 // 手工维护的部分只有 tools/lib_meta.json（编号 → id / emoji）。
 
 export const LIB_STAT = {
-  "total": 104,
+  "total": 105,
   "byTier1": {
     "产物": 15,
     "载具": 15,
     "地块内容": 42,
     "道具": 28,
-    "地形": 4
+    "地形": 5
   },
   "pools": 13,
   "outputs": 31,
@@ -18,7 +18,7 @@ export const LIB_STAT = {
   "todo": 30
 };
 
-/** 物品总表（104 条）—— 表格第 2 张工作表 */
+/** 物品总表（105 条）—— 表格第 2 张工作表 */
 export const ITEMS = {
   item_wheat: {
   "id": "item_wheat",
@@ -2807,6 +2807,30 @@ export const ITEMS = {
   "stackByValue": false,
   "sources": "文档未指定具体途径（9 章、11 章通用说明）",
   "notes": "自带【唯一】；【郁金香】 为展示标签；魔导书不可出售。系列：郁金香"
+},
+  terrain_path: {
+  "id": "terrain_path",
+  "libCode": "TRN-004",
+  "name": "小径",
+  "emoji": "🛤️",
+  "icon": null,
+  "tier1": "地形",
+  "tier2": null,
+  "tier3": null,
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 1,
+  "value": 1,
+  "valueMode": "固定值",
+  "traits": [],
+  "description": "初始无效果。当连接出一条起点和终点均为外圈地块的小径时，这些小径的效果生效：所在地块被视为外圈地块",
+  "triggers": [],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径（9 章、11 章通用说明）",
+  "notes": "内部规则：连通块两端各邻接一个外圈地块时生效；生效期间视为外圈地块；不放入物品随机池，会进入地形随机池。"
 },
 };
 

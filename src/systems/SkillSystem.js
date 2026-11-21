@@ -24,6 +24,7 @@ import { CombatSystem } from './CombatSystem.js';
 import { TalentSystem } from './TalentSystem.js';
 import { LinkSkillSystem } from './LinkSkillSystem.js';
 import { HealSystem } from './HealSystem.js';
+import { getTile, tileRefKey, isFenceRef, fenceIdxOf } from '../core/TileAccess.js';
 import {
   createSettlement,
   commitSettlement,
@@ -51,15 +52,16 @@ import {
  * @param {{gs: object, tileIdx: number}} params
  */
 export function triggerSkillByHook(hookType, params) {
-  const { gs, tileIdx } = params || {};
+  const { gs, tileIdx, tileRef } = params || {};
   if (!gs) return;
-  // §12：只触发「事件发生格」上的技能；没有 tileIdx 不触发（此前遍历全部 outerTiles，
-  // 踩任意一格会把所有地块上匹配 hook 的技能全部触发）
-  if (typeof tileIdx !== 'number') return;
+  // §12：只触发「事件发生格」上的技能；没有地块引用不触发
+  // v0.6：生效小径格同样可以放置技能卡，因此接受 tileRef（外圈 idx / fence ref）
+  const ref = tileRef !== undefined && tileRef !== null ? tileRef : tileIdx;
+  if (ref === undefined || ref === null) return;
 
   gs.skillCooldowns = gs.skillCooldowns || {};
 
-  const tile = gs.map.outerTiles[tileIdx];
+  const tile = getTile(gs, ref);
   if (!tile?.contentId || !tile.contentId.startsWith('skill_')) return;
 
   const skillDef = SKILLS[tile.contentId];
@@ -90,13 +92,13 @@ export function triggerSkillByHook(hookType, params) {
   const ownerRoleId = resolveSkillOwnerId(gs, skillDef);
   const settlement = createSettlement(gs, {
     skillId: skillDef.id,
-    instanceKey: `tile:${tileIdx}`,
+    instanceKey: `tile:${tileRefKey(ref)}`,
     phase: hookType,
     roleId: ownerRoleId,
     attackerRoleId: ownerRoleId,
   });
   const judgeMode = judgeModeOf(skillDef);
-  const anchor = skillTileAnchor(gs, tileIdx);
+  const anchor = skillTileAnchor(gs, ref);
 
   // 主目标（也是 tile 型的锚点来源）：默认最近存活敌人（阵营过滤在 enemyPool 内完成）
   const targetSide = targetSideOf(skillDef);
@@ -110,7 +112,7 @@ export function triggerSkillByHook(hookType, params) {
   if (targetSide === 'enemy' && primary.length === 0) return;
 
   // 触发！
-  fireOneSkill(gs, skillDef, primary, cdKey, hookType, tileIdx, settlement, judgeMode, anchor);
+  fireOneSkill(gs, skillDef, primary, cdKey, hookType, ref, settlement, judgeMode, anchor);
   HookDispatcher.fire('onUseSkill', { gs });
 }
 
@@ -140,7 +142,7 @@ function tileAnchorParams(gs, skill, anchor, primaryEntry) {
   return { anchorPoint: anchor, targetPoint };
 }
 
-function fireOneSkill(gs, skill, primaryEntries, cdKey, hookName = 'onEnter', tileIdx = null, settlement, judgeMode, anchor) {
+function fireOneSkill(gs, skill, primaryEntries, cdKey, hookName = 'onEnter', tileRef = null, settlement, judgeMode, anchor) {
   const primaryEntry = primaryEntries[0] || null;
   const primaryLive = primaryEntry ? liveById(gs, primaryEntry.id) : null;
   const displayTarget = primaryLive || primaryEntry;
@@ -149,8 +151,14 @@ function fireOneSkill(gs, skill, primaryEntries, cdKey, hookName = 'onEnter', ti
   const ownerRoleId = resolveSkillOwnerId(gs, skill);
   EventBus.emit(GE.SKILL_TRIGGERED, { skillId: skill.id, roleId: ownerRoleId, targetKind: displayTarget?.kind ?? null });
   // §16.3：主动技能在其所在地块结算 → UI 层据此做地块红色瞬时高亮（纯视觉，不参与结算）
-  if (typeof tileIdx === 'number') {
-    EventBus.emit(GE.SKILL_USED_ON_TILE, { tileIdx, skillId: skill.id, roleId: ownerRoleId });
+  if (tileRef !== null && tileRef !== undefined) {
+    EventBus.emit(GE.SKILL_USED_ON_TILE, {
+      tileIdx: typeof tileRef === 'number' ? tileRef : null,
+      tileRef,
+      fenceIdx: isFenceRef(tileRef) ? fenceIdxOf(gs, tileRef) : undefined,
+      skillId: skill.id,
+      roleId: ownerRoleId,
+    });
   }
 
   const eff = skill.extraEffect;
@@ -183,7 +191,7 @@ function fireOneSkill(gs, skill, primaryEntries, cdKey, hookName = 'onEnter', ti
       entries = circleTargetsOf(settlement, skill, anchorParams.anchorPoint);
       rangeDesc = `半径 ${skill.areaRadius} 圆`;
     } else {
-      const tiles = tileRefsForSkill(gs, skill, { skillTileIdx: tileIdx, ...anchorParams });
+      const tiles = tileRefsForSkill(gs, skill, { skillTileIdx: tileRef, ...anchorParams });
       entries = tileTargetsOf(settlement, skill, tiles);
       rangeDesc = `${tiles.length} 格`;
     }

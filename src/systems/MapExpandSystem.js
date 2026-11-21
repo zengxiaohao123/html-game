@@ -40,7 +40,17 @@ import { devLog } from '../core/Logger.js';
 import { FENCE_ORIGIN_X, FENCE_ORIGIN_Y } from '../core/Geometry.js';
 import { rollSpawnTerrain, getTerrain } from '../data/terrains.js';
 import { outerIdxToXY, mapDimsOf } from '../core/Distance.js';
-import { syncCapacityLimits } from './CapacitySystem.js';
+import { computePathComponents } from '../core/PathGraph.js';
+import { recomputePathEffect } from './PathSystem.js';
+import {
+  refOfXY,
+  getTile,
+  playerRef,
+  setPlayerRef,
+  tileRefKey,
+  parseTileRefKey,
+  isFenceRef,
+} from '../core/TileAccess.js';
 
 export const EXPAND_AXIS = {
   LENGTH: 'length',   // I 型：列数 +1
@@ -85,6 +95,11 @@ function createFenceTile(row, col) {
     terrainAmount: getTerrain(terrainId).elementAmount,
     creatures: [],
     items: [],
+    contentId: null,
+    contentState: {},
+    states: [],
+    dailyFlags: {},
+    isPathOuter: false,
   };
 }
 
@@ -141,6 +156,18 @@ export function expandMapInPlace(gs, axis) {
   const newDims = { rows: newRows, cols: newCols };
   const oldFDims = { rows: oldRows - 2, cols: oldCols - 2 };
   const newFDims = { rows: newRows - 2, cols: newCols - 2 };
+
+  // ── 0. 扩建前记录「已连通小径」位于受扩建影响边缘的端点 ──
+  //    列扩建（长度 +1）会切断贴着右边缘的端点；行扩建（宽度 +1）会切断贴着上边缘的端点。
+  //    扩建完成后在同一结算内自动补一格小径，保证玩家看不到中间的断开态。
+  const { components } = computePathComponents(gs);
+  const affectedTerminals = [];
+  for (const comp of components) {
+    if (!comp.effective) continue;
+    for (const t of comp.outerTerminals) {
+      if (isLength ? t.x === oldCols - 1 : t.y === 0) affectedTerminals.push({ x: t.x, y: t.y });
+    }
+  }
 
   // ── 1. 旧外圈按网格坐标建索引 ──
   const oldByXY = new Map();
@@ -238,19 +265,39 @@ export function expandMapInPlace(gs, axis) {
   // ── 5. 玩家位置重映射（角色跟随被移动的地块，不视为一次真正移动）──
   let playerFollowed = false;
   const player = gs.player;
-  if (player && Number.isInteger(player.x)) {
-    const oldIdx = player.x;
-    if (idxMap.has(oldIdx)) {
-      const nextIdx = idxMap.get(oldIdx);
-      playerFollowed = nextIdx !== oldIdx;
-      player.x = nextIdx;
+  if (player) {
+    const fromRef = playerRef(gs);
+    if (isFenceRef(fromRef)) {
+      // 栅栏格：列扩建列不变；行扩建世界原点下移 1 行 → fence row +1
+      const nextRow = isLength ? fromRef.row : fromRef.row + 1;
+      if (nextRow >= 0 && nextRow < newFDims.rows && fromRef.col < newFDims.cols) {
+        setPlayerRef(gs, { kind: 'fence', row: nextRow, col: fromRef.col });
+      }
+      playerFollowed = !isLength;
+    } else if (Number.isInteger(fromRef)) {
+      const nextIdx = idxMap.has(fromRef) ? idxMap.get(fromRef) : fromRef;
+      playerFollowed = nextIdx !== fromRef;
+      setPlayerRef(gs, nextIdx);
     }
   }
-  // 今日已访问格（载具「优先未访问」等按裸索引存）
+  // 今日已访问格（载具「优先未访问」等按 ref 键存；兼容旧的裸外圈索引）
   if (player && Array.isArray(player.visitedTodayIdx)) {
     player.visitedTodayIdx = player.visitedTodayIdx
       .map((i) => (Number.isInteger(i) && idxMap.has(i) ? idxMap.get(i) : null))
       .filter((i) => i !== null);
+  }
+  if (player && Array.isArray(player.visitedTodayRefs)) {
+    player.visitedTodayRefs = player.visitedTodayRefs
+      .map((k) => {
+        const ref = parseTileRefKey(k);
+        if (ref === null) return null;
+        if (isFenceRef(ref)) {
+          const row = isLength ? ref.row : ref.row + 1;
+          return tileRefKey({ kind: 'fence', row, col: ref.col });
+        }
+        return idxMap.has(ref) ? tileRefKey(idxMap.get(ref)) : null;
+      })
+      .filter((k) => k !== null);
   }
 
   // ── 6. 栅栏内生物：行扩建时世界原点随顶行上移，pos 整体 +1 行；重建主格缓存 ──
@@ -312,6 +359,31 @@ export function expandMapInPlace(gs, axis) {
     }
   }
 
+  // ── 8. 小径自动延续（原子结算）──
+  //    对每个受影响的连通小径端点，在「扩建后紧贴端点内侧」补一格小径地形：
+  //      列扩建（右侧）：补在从右往左第二列（同一行）
+  //      行扩建（上侧）：补在从上往下第二行（同一列）
+  //    补格免费、不消耗物品；补格与连通重算在同一次结算中完成，
+  //    因此不会出现「短暂切断 → 拆除地块内容」的中间态。
+  //    若无法补格（不在图内 / 目标格已有内容），则不做特殊处理，
+  //    由随后的 recomputePathEffect 按普通还原流程直接结算（用户裁定：不弹确认）。
+  const continued = [];
+  for (const t of affectedTerminals) {
+    const tx = isLength ? oldCols - 1 : t.x;
+    const ty = isLength ? t.y : 1;
+    const ref = refOfXY(gs, tx, ty);
+    if (ref === null) continue;
+    const cell = getTile(gs, ref);
+    if (!cell) continue;
+    if (cell.contentId) continue; // 目标格已被占用：跳过，走普通还原
+    cell.terrain = 'terrain_path';
+    cell.terrainAmount = 0;
+    if (cell.states) cell.states = [];
+    continued.push(ref);
+  }
+  // 同一原子结算内重新判定连通（此时才允许触发还原 / 容量变化）
+  const pathResult = recomputePathEffect(gs, { reason: 'expand' });
+
   return {
     ok: true,
     axis,
@@ -320,6 +392,8 @@ export function expandMapInPlace(gs, axis) {
     playerFollowed,
     idxMap,
     remap,
+    continued,
+    pathResult,
   };
 }
 
@@ -334,9 +408,8 @@ export function expandMap(gs, axis) {
   const result = expandMapInPlace(gs, axis);
   if (!result.ok) return result;
 
-  // 栅栏面积变化 → 容量上限立即同步，并广播 CAPACITY_CHANGE（TopBar 同帧重绘）
-  syncCapacityLimits(gs);
-
+  // 栅栏面积变化 / 小径自动延续后，容量上限已在同一次结算内同步；
+  // 这里只广播扩建事件（TopBar 由 CAPACITY_CHANGE 监听重绘）。
   EventBus.emit(GE.MAP_EXPANDED, {
     gs, axis, rows: result.after.rows, cols: result.after.cols,
     before: result.before, after: result.after,

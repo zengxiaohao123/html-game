@@ -17,6 +17,7 @@ import { StaminaSystem } from './StaminaSystem.js';
 import { DayBaseline } from '../state/DayBaseline.js';
 import { Storage } from '../state/storage.js';
 import { addGold, getGold } from './GoldSystem.js';
+import { getTile, playerRef } from '../core/TileAccess.js';
 
 /** 金币惩罚上下限 */
 const GOLD_PENALTY_MIN = 0;
@@ -69,7 +70,7 @@ export function sleep(gs, isAuto = false) {
   //    ③ 结算允许超出上限的额外增加（帐篷受祝福 +3，onSleep hook 已累加到
   //       gs.pendingSleepStaminaBonus）——必须在「回满」之后结算且可超上限。
   //    验算：cap=8、当前 10、额外 +3 → 10-2（清超额） + 0（已满，基础恢复无空间） + 3 = 11。
-  const currentTile = gs.map.outerTiles[gs.player.x];
+  const currentTile = getTile(gs, playerRef(gs));
   const atHome = currentTile && (currentTile.contentId === 'facility_home' || currentTile.contentId === 'facility_tent');
 
   // ② 基础恢复（规则 1）：

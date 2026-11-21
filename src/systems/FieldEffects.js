@@ -13,20 +13,20 @@
 //   hasFieldAlias(gs)                  是否持有仓廪实（稻草↔小麦 双向视同）
 //   tileFieldKinds(gs, tile)           该格"视同"的田块类型数组
 //   isFieldTile(gs, tile, kind)        该格是否视同某类田块
-//   countFieldTiles(gs, kind)          视同某类田块的地块数
-//   fieldClusterSizeMap(gs, kind)      连通块大小 { Map<idx, size> }（四方向相邻）
-//   fieldTilesInCluster(gs, kind, n)   处于"≥n 相连"簇内的地块 idx 集合
-//   isFieldInCluster(gs, tileIdx, kind, n)
-//   harvestMultiplier(gs, tileIdx)     「庆丰收」该格产出倍率（2 或 1）
-//   hasGoldenWaveTrait(gs, tileIdx)    「黄金浪」该格是否具备【经过时】获得小麦 ×1
+//   countFieldTiles(gs, kind)          视同某类田块的地块数（外圈 + 生效小径格）
+//   fieldClusterSizeMap(gs, kind)      连通块大小 { Map<idx|refKey, size> }（四方向相邻）
+//   fieldTilesInCluster(gs, kind, n)   处于"≥n 相连"簇内的地块键集合
+//   isFieldInCluster(gs, tileRef, kind, n)   tileRef 可为外圈 idx 或 fence ref
+//   harvestMultiplier(gs, tileRef)     「庆丰收」该格产出倍率（2 或 1）
+//   hasGoldenWaveTrait(gs, tileRef)    「黄金浪」该格是否具备【经过时】获得小麦 ×1
 //   grassElementMultiplier(gs)         「春光好」草元素伤害倍率（1 + 2% × 水稻田块数）
 //
 // 口径说明（与设计文档同步）：
-//   - 田块"数量"按外圈地块个数计，栅栏内不算（与既有实现一致）。
+//   - 田块"数量"按可放置地块个数计（外圈 + 生效小径格）；物理栅栏内未连通格不算。
 //   - 「相连」= 四方向相邻（上下左右），不含斜角；拐角处只要相邻即算。
 //   - 仓廪实只影响"魔导书效果"的田块类型视同，不改任何设施的基础产出。
 
-import { Distance } from '../core/Distance.js';
+import { contentEntries, neighborRefs, tileRefKey } from '../core/TileAccess.js';
 import { countItem } from './InventorySystem.js';
 
 /** 田块类型常量 */
@@ -80,7 +80,21 @@ export function isFieldTile(gs, tile, kind) {
   return tileFieldKinds(gs, tile).includes(kind);
 }
 
-/** 视同某类田块的全部地块 idx（顺序 = outerTiles 顺序，稳定） */
+/** 地块 ref 的稳定键：外圈直接用数字 idx（保持旧 API 语义），栅栏用 'f:r,c' */
+function refKeyOf(ref) {
+  return typeof ref === 'number' ? ref : tileRefKey(ref);
+}
+
+/** 视同某类田块的全部地块 ref（外圈 idx + 生效小径 fence ref） */
+export function fieldTileRefs(gs, kind) {
+  const out = [];
+  for (const { ref, tile } of contentEntries(gs)) {
+    if (isFieldTile(gs, tile, kind)) out.push(ref);
+  }
+  return out;
+}
+
+/** 视同某类田块的全部外圈地块 idx（旧 API；顺序 = outerTiles 顺序，稳定） */
 export function fieldTileIndices(gs, kind) {
   const out = [];
   const tiles = gs?.map?.outerTiles || [];
@@ -90,56 +104,60 @@ export function fieldTileIndices(gs, kind) {
   return out;
 }
 
-/** 视同某类田块的地块数量 */
+/** 视同某类田块的地块数量（外圈 + 生效小径格） */
 export function countFieldTiles(gs, kind) {
-  return fieldTileIndices(gs, kind).length;
+  return fieldTileRefs(gs, kind).length;
 }
 
 /**
- * 以四方向相邻求连通块，返回每个地块 idx 所属连通块的大小。
- * @returns {Map<number, number>}
+ * 以四方向相邻求连通块，返回每个地块键所属连通块的大小。
+ * 外圈键为数字 idx，生效小径格键为 'f:r,c'。
+ * @returns {Map<number|string, number>}
  */
 export function fieldClusterSizeMap(gs, kind) {
-  const members = new Set(fieldTileIndices(gs, kind));
+  const refs = fieldTileRefs(gs, kind);
+  const members = new Map();
+  for (const ref of refs) members.set(refKeyOf(ref), ref);
   const sizes = new Map();
   const seen = new Set();
 
-  for (const start of members) {
-    if (seen.has(start)) continue;
-    const stack = [start];
+  for (const [startKey, startRef] of members) {
+    if (seen.has(startKey)) continue;
+    const stack = [startRef];
     const component = [];
-    seen.add(start);
+    seen.add(startKey);
     while (stack.length) {
       const cur = stack.pop();
-      component.push(cur);
-      for (const nb of Distance.outerNeighbors(gs.map, cur)) {
-        if (nb == null || !members.has(nb) || seen.has(nb)) continue;
-        seen.add(nb);
+      component.push(refKeyOf(cur));
+      for (const nb of neighborRefs(gs, cur)) {
+        const nbKey = refKeyOf(nb);
+        if (!members.has(nbKey) || seen.has(nbKey)) continue;
+        seen.add(nbKey);
         stack.push(nb);
       }
     }
-    for (const idx of component) sizes.set(idx, component.length);
+    for (const key of component) sizes.set(key, component.length);
   }
   return sizes;
 }
 
 /**
- * 处于"≥n 个相连"簇内的田块 idx 集合
- * @returns {Set<number>}
+ * 处于"≥n 个相连"簇内的田块键集合（外圈数字 idx / 栅栏 'f:r,c'）
+ * @returns {Set<number|string>}
  */
 export function fieldTilesInCluster(gs, kind, n) {
   const sizes = fieldClusterSizeMap(gs, kind);
   const out = new Set();
-  for (const [idx, size] of sizes) {
-    if (size >= n) out.add(idx);
+  for (const [key, size] of sizes) {
+    if (size >= n) out.add(key);
   }
   return out;
 }
 
-/** 某格是否属于"≥n 个相连"的田块簇 */
-export function isFieldInCluster(gs, tileIdx, kind, n) {
-  if (tileIdx == null) return false;
-  const size = fieldClusterSizeMap(gs, kind).get(tileIdx) || 0;
+/** 某格是否属于"≥n 个相连"的田块簇（ref 可为外圈 idx 或 fence ref） */
+export function isFieldInCluster(gs, ref, kind, n) {
+  if (ref == null) return false;
+  const size = fieldClusterSizeMap(gs, kind).get(refKeyOf(ref)) || 0;
   return size >= n;
 }
 
@@ -155,18 +173,18 @@ export function hasFieldCluster(gs, kind, n) {
  * 该格视同水稻田块，且处在"≥3 个水稻田块相连"的簇内 → 2，否则 1。
  * 仓廪实生效时，小麦田块同样视同水稻田块，享受本效果。
  */
-export function harvestMultiplier(gs, tileIdx) {
+export function harvestMultiplier(gs, ref) {
   if (!owns(gs, GRIMOIRE_HARVEST_CEREAL)) return 1;
-  return isFieldInCluster(gs, tileIdx, FIELD_TYPES.RICE, 3) ? 2 : 1;
+  return isFieldInCluster(gs, ref, FIELD_TYPES.RICE, 3) ? 2 : 1;
 }
 
 /**
  * 「黄金浪」：该格是否具备新特性【经过时】获得小麦 ×1。
  * 该格视同小麦田块，且处在"≥3 个小麦田块相连"的簇内 → true。
  */
-export function hasGoldenWaveTrait(gs, tileIdx) {
+export function hasGoldenWaveTrait(gs, ref) {
   if (!owns(gs, GRIMOIRE_GOLDEN_WAVE)) return false;
-  return isFieldInCluster(gs, tileIdx, FIELD_TYPES.WHEAT, 3);
+  return isFieldInCluster(gs, ref, FIELD_TYPES.WHEAT, 3);
 }
 
 /**
@@ -183,6 +201,7 @@ export const FieldEffects = {
   hasFieldAlias,
   tileFieldKinds,
   isFieldTile,
+  fieldTileRefs,
   fieldTileIndices,
   countFieldTiles,
   fieldClusterSizeMap,

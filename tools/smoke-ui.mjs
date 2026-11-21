@@ -2698,7 +2698,7 @@ head_('§16.23 放置型道具（陷阱 / 艾草熏香）拖拽放置：与地�
     EventBus.off(GE.TOAST_SHOW, onToast);
     assert(InventorySystem.countItem(gs, 'item_trap') === before,
       '非法落点：栅栏内被拒绝且不消耗道具');
-    assert(toasts.some((t) => t.includes('只能放在外圈地块上')),
+    assert(toasts.some((t) => t.includes('只能放在外圈地块或生效小径上')),
       '非法落点：栅栏内失败提示与地块内容拖拽一致');
   }
 
@@ -2761,6 +2761,9 @@ head_('§17 UI 通用实时契约：直改数据 → 零额外操作 → 界面�
     const unitBtn = buttonsWithText(infoPanel.tabsWrap, '单位')[0];
     assert(!!unitBtn, '前置：单位 tab 存在（玩家所在格）');
     if (unitBtn) unitBtn.click();
+    const unitPlayerCard = findAll(infoPanel.bodyWrap,
+      (el) => el._classes && el._classes.has('player-card'))[0];
+    if (unitPlayerCard) unitPlayerCard.click();
     const statRow = (label) => findAll(infoPanel.bodyWrap,
       (el) => el._classes && el._classes.has('player-info-row'))
       .find((r) => hasText(r, label));
@@ -3344,6 +3347,11 @@ head_('§21 术语行内组件（唯一实现）+ 展示词条徽章分离 + 状
   infoPanel.selectTile(2);
   const unitTab = buttonsWithText(infoPanel.root, '单位')[0];
   if (unitTab) unitTab.click();
+  // v0.6：单位页先列全部单位，点角色卡片进入详情
+  const playerCard = findAll(infoPanel.root, (el) => el._classes && el._classes.has('player-card'))[0];
+  assert(!!playerCard, '单位页先列出角色卡片');
+  if (playerCard) playerCard.click();
+  assert(infoPanel.root.textContent.includes('余默'), '点击角色卡片进入角色详情');
   const playerText = infoPanel.root.textContent;
   assert(playerText.includes('【虚弱】 25% · 1 回合'), '角色信息区列出【虚弱】+强度+剩余回合');
   assert(playerText.includes(weakG.meaning), '状态含义逐字取词条字典');

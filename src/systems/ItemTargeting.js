@@ -15,6 +15,7 @@ import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { POTIONS } from '../data/potions.js';
 import { isPlantTarget, useItem } from './UseItemSystem.js';
+import { getTile, effectivePathRefs, isFenceRef } from '../core/TileAccess.js';
 
 let state = { active: false, itemId: null, gs: null };
 
@@ -27,25 +28,30 @@ export function needsTarget(itemId) {
     || eff.type === 'placed_sleep_heal';
 }
 
-/** 判断某格是否是合法目标 */
-export function isValidTarget(gs, itemId, tileIdx) {
+/** 判断某格是否是合法目标（ref：外圈 idx / 栅栏格 ref） */
+export function isValidTarget(gs, itemId, target) {
   const eff = POTIONS[itemId]?.useEffect;
   if (!eff) return false;
-  const tile = gs.map.outerTiles[tileIdx];
+  const tile = getTile(gs, target);
   if (!tile) return false;
+  // 栅栏格仅「生效小径格」（临时外圈）可被指定
+  if (isFenceRef(target) && tile.isPathOuter !== true) return false;
 
-  if (eff.type === 'facility_trigger_twice') return isPlantTarget(gs, tileIdx);
+  if (eff.type === 'facility_trigger_twice') return isPlantTarget(gs, target);
 
   // 放置型：任意外圈地块，但同一地块不能重复放同名道具
   const placed = tile.contentState?.placedItems || [];
   return !placed.some((p) => p.itemId === itemId);
 }
 
-/** 所有合法目标格 */
+/** 所有合法目标格（外圈 idx + 生效小径格 ref） */
 export function validTiles(gs, itemId) {
   const out = [];
   for (const t of gs.map.outerTiles) {
     if (isValidTarget(gs, itemId, t.idx)) out.push(t.idx);
+  }
+  for (const ref of effectivePathRefs(gs)) {
+    if (isValidTarget(gs, itemId, ref)) out.push(ref);
   }
   return out;
 }
@@ -93,12 +99,12 @@ export function currentItem() {
  * 合法性判定与失败提示只此一份，拖拽只是多一条输入路径，不改任何规则。
  * @returns {{ok:boolean, reason?:string}}
  */
-export function useAtTile(gs, itemId, tileIdx) {
-  if (!isValidTarget(gs, itemId, tileIdx)) {
+export function useAtTile(gs, itemId, target) {
+  if (!isValidTarget(gs, itemId, target)) {
     EventBus.emit(GE.TOAST_SHOW, { text: '🚫 这里不能使用该道具', duration: 1500 });
     return { ok: false, reason: 'invalidTarget' };
   }
-  return useItem(gs, itemId, { tileIdx });
+  return useItem(gs, itemId, isFenceRef(target) ? { tileRef: target } : { tileIdx: target });
 }
 
 /**

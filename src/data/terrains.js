@@ -48,15 +48,26 @@ export const TERRAINS = {
     slippery: true,        // 徒步进入时被迫向前滑行（见 MovementSystem）
     description: ITEMS.terrain_ice.description,
   },
+  // v0.6 §9.6「小径」：初始无效果；连通后所在地块被视为外圈地块。
+  // 无元素量，不会因元素量耗尽改变地形（用户裁定 23）。
+  terrain_path: {
+    id: 'terrain_path',
+    key: 'path',
+    name: '小径',
+    elementAmount: 0,
+    blocksMove: false,
+    description: ITEMS.terrain_path.description,
+  },
 };
 
 export const ALL_TERRAIN_IDS = Object.keys(TERRAINS);
 
-/** 地图生成时的初始地形权重（v0.5 §4：50% 无地形 / 40% 草地 / 10% 水面） */
+/** 地图生成时的初始地形权重（v0.5 §4：50% / 40% / 10%；v0.6 起小径进入地形随机池，权重 5） */
 export const TERRAIN_SPAWN_WEIGHTS = [
-  { id: 'terrain_none', weight: 50 },
+  { id: 'terrain_none', weight: 45 },
   { id: 'terrain_grass', weight: 40 },
   { id: 'terrain_water', weight: 10 },
+  { id: 'terrain_path', weight: 5 },
 ];
 
 /** 旧值 → 新 id 的别名（'mud' 是历史遗留，v0.5 无此地形，归一无地形） */
@@ -66,6 +77,7 @@ const LEGACY_ALIAS = {
   water: 'terrain_water',
   mud: 'terrain_none',
   ice: 'terrain_ice',
+  path: 'terrain_path',
 };
 
 /** 把任意历史写法归一化为地形 id；未知值按无地形处理 */

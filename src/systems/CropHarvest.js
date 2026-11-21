@@ -17,6 +17,7 @@ import { GE } from '../core/GameEvents.js';
 import { ITEMS } from '../data/items.js';
 import { InventorySystem } from './InventorySystem.js';
 import { syncPumpkin } from './PassiveItemSystem.js';
+import { isFenceRef, fenceIdxOf } from '../core/TileAccess.js';
 import { POTATO_ID, potatoStoredOf } from './PotatoSystem.js';
 import { TULIP_ID, pickTulip } from './TulipSystem.js';
 
@@ -41,9 +42,10 @@ const harvestEntry = (itemId, qty, value) => ({ itemId, qty, value });
 
 /**
  * 拆除 / 替换前自动采摘当前田块的全部存量。
+ * @param {number|object} [ref] 地块 ref（外圈 idx / fence ref），仅用于事件载荷
  * @returns {{ harvested: Array<{itemId:string, qty:number, value?:number}>, goldDelta: number }}
  */
-export function harvestCropBeforeRemove(gs, tile) {
+export function harvestCropBeforeRemove(gs, tile, ref = null) {
   const result = { harvested: [], goldDelta: 0 };
   if (!tile || !tile.contentId || !AUTO_HARVEST_ON_REMOVE.has(tile.contentId)) return result;
   const cs = tile.contentState || (tile.contentState = {});
@@ -116,7 +118,9 @@ export function harvestCropBeforeRemove(gs, tile) {
 
   syncPumpkin(gs);
   EventBus.emit(GE.INVENTORY_CHANGE);
-  EventBus.emit(GE.TILE_UPDATED, { tileIdx: tile.idx });
+  EventBus.emit(GE.TILE_UPDATED, ref != null && isFenceRef(ref)
+    ? { tileIdx: null, tileRef: ref, fenceIdx: fenceIdxOf(gs, ref) }
+    : { tileIdx: tile.idx });
   const parts = result.harvested.map((h) => (h.value !== undefined
     ? `${ITEMS[h.itemId]?.name || h.itemId}×${h.qty}（价值 ${h.value}）`
     : `${ITEMS[h.itemId]?.name || h.itemId}×${h.qty}`));

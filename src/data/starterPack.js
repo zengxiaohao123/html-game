@@ -12,6 +12,8 @@ export const STARTER_ITEMS = [
   ['terrain_water', 5],
   ['terrain_ice', 5],
   ['terrain_none', 5],
+  // v0.6 §9.6：小径便于测试连通/还原
+  ['terrain_path', 12],
 
   // ── 设施（16 种全给一份，便于逐一验证词条）──
   ['facility_tent', 1],

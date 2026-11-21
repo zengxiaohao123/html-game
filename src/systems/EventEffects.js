@@ -28,6 +28,7 @@ import { devLog } from '../core/Logger.js';
 import { InventorySystem } from './InventorySystem.js';
 import { StaminaSystem } from './StaminaSystem.js';
 import { HealSystem } from './HealSystem.js';
+import { getTile, isFenceRef, fenceIdxOf } from '../core/TileAccess.js';
 import { CreatureSystem } from './CreatureSystem.js';
 import { BUFFS } from '../data/buffs.js';
 import { TERRAINS, normalizeTerrain } from '../data/terrains.js';
@@ -127,13 +128,16 @@ function applyHeal(gs, eff) {
 function applyTerrain(gs, eff, ctx) {
   const terrainId = normalizeTerrain(eff.terrainId);
   const terrain = TERRAINS[terrainId];
-  const tileIdx = eff.tileIdx ?? ctx.tileIdx;
-  if (!terrain || tileIdx === undefined || tileIdx === null) return '';
-  const tile = gs.map?.outerTiles?.[tileIdx];
+  // 事件可能发生在生效小径栅栏格：ctx 里同时带 tileRef（外圈格二者一致）
+  const ref = eff.tileRef ?? ctx.tileRef ?? eff.tileIdx ?? ctx.tileIdx;
+  if (!terrain || ref === undefined || ref === null) return '';
+  const tile = getTile(gs, ref);
   if (!tile) return '';
   tile.terrain = terrainId;
   tile.terrainAmount = terrain.elementAmount || 0;
-  EventBus.emit(GE.TILE_TERRAIN_CHANGED, { tileIdx });
+  EventBus.emit(GE.TILE_TERRAIN_CHANGED, isFenceRef(ref)
+    ? { tileIdx: null, tileRef: ref, fenceIdx: fenceIdxOf(gs, ref) }
+    : { tileIdx: ref });
   return `🗺️ ${terrain.name}`;
 }
 

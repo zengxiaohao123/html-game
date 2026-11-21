@@ -48,6 +48,7 @@ import { POTIONS } from '../data/potions.js';
 import { getBuff } from '../data/buffs.js';
 import { ITEMS, GLOSSARY } from '../data/items.js';
 import { getTerrain, normalizeTerrain } from '../data/terrains.js';
+import { playerRef, refsEqual, refXY } from '../core/TileAccess.js';
 import { createEl, qs, iconEl } from './dom.js';
 import { renderTraitBadges, renderStateBadges } from './TraitBadges.js';
 import { renderTermText } from './TermText.js';
@@ -150,6 +151,7 @@ export class InfoPanel {
     this.activeTabIdx = 0;
     this._currentTabs = [];
     this.creatureDetailId = null;   // 生物详情页（null = 头像列表视图）
+    this.playerDetailOpen = false;  // 单位列表 → 角色详情（v0.6 统一单位入口）
     this.creatureSubTab = 'stats';  // 详情页子 tab：'stats' | 'skills' | 'states'
     this._panelOpen = false;        // 已 emit UI_PANEL_OPEN('info') 标记（防重复 emit）
     this._slideTimeout = null;
@@ -287,7 +289,11 @@ export class InfoPanel {
       if (cell) {
         tabs.push({ label: '地块内容', render: 'fenceContent' });
         if (this._fenceHasState(cell)) tabs.push({ label: '状态', render: 'fenceState' });
-        if ((cell.creatures || []).length > 0) tabs.push({ label: '单位', render: 'fenceUnits' });
+        // v0.6：生效小径格是临时外圈，玩家可站上去；生物按既有栅栏格归属
+        const dims = Distance.fenceDimsOf(gs);
+        const fenceRef = { kind: 'fence', row: Math.floor(this.currentFenceIdx / dims.cols), col: this.currentFenceIdx % dims.cols };
+        const playerHere = refsEqual(playerRef(gs), fenceRef);
+        if (playerHere || (cell.creatures || []).length > 0) tabs.push({ label: '单位', render: 'fenceUnits' });
       }
     } else {
       const tile = gs?.map?.outerTiles?.[this.currentTileIdx];
@@ -298,7 +304,7 @@ export class InfoPanel {
         const ownedHere = DOOR_FACILITIES.has(tile.contentId)
           ? facilityOwnedCreatures(gs, tile.idx).length
           : 0;
-        if (gs?.player?.x === tile.idx || ownedHere > 0) {
+        if (refsEqual(playerRef(gs), tile.idx) || ownedHere > 0) {
           tabs.push({ label: '单位', render: 'unit' });
         }
       }
@@ -498,7 +504,7 @@ export class InfoPanel {
     ]);
     if (contentId && FACILITIES_WITH_OPTIONS.has(contentId)) {
       const tileIdx = this.currentTileIdx;
-      const onTile = gs.player.x === tile.idx; // 玩家是否身处该格
+      const onTile = refsEqual(playerRef(gs), tile.idx); // 玩家是否身处该格
       // L-04：功能选项区仅在「身处该格」或「该设施存在随时可用的选项」时渲染。
       //   郁金香/蒲公英/幽怜草（随时采摘）、鸡舍/史莱姆屋（随时开关门）属于后者；
       //   土豆/草莓/豌豆只有身处该格才有可操作选项 → 不在该格时整块不显示。
@@ -901,7 +907,7 @@ export class InfoPanel {
         parent: this.bodyWrap,
       });
 
-      const onTile = gs.player.x === tile.idx;
+      const onTile = refsEqual(playerRef(gs), tile.idx);
 
       // 🏹 狩猎点（RES-003）：选择狩猎普通 / 危险生物，每日限一次，需身处该格
       if (contentId === 'resource_hunt') {
@@ -1025,7 +1031,7 @@ export class InfoPanel {
 
       if (contentId === 'resource_shop') {
         // L-04 / §11.1：入口仅限踩在【商店】地块上，其他位置不可进入
-        if (gs.player.x === tile.idx) {
+        if (refsEqual(playerRef(gs), tile.idx)) {
           createEl('button', {
             class: 'action-btn',
             style: { width: '100%', fontSize: '14px' },
@@ -1042,7 +1048,7 @@ export class InfoPanel {
         }
       } else if (contentId === 'resource_magic_shop') {
         // §11.2：魔法商店同样仅能踩格进入
-        if (gs.player.x === tile.idx) {
+        if (refsEqual(playerRef(gs), tile.idx)) {
           createEl('button', {
             class: 'action-btn',
             style: { width: '100%', fontSize: '14px' },
@@ -1066,7 +1072,7 @@ export class InfoPanel {
     }
 
     // ── "前往"按钮（根据载具状态决定可达范围和调用方式） ──
-    if (gs && tile.idx !== gs.player.x) {
+    if (gs && !refsEqual(playerRef(gs), tile.idx)) {
       const hasVehicle = !!(gs.vehicle?.current);
       let canGo = false;
       let goLabel = '🚪 前往（一步抵达）';
@@ -1075,8 +1081,10 @@ export class InfoPanel {
       let reachInfo = null;  // { pattern, maxRange, ... }
 
       if (!hasVehicle) {
-        // 无载具：只允许相邻格
-        const isAdj = Distance.isOuterAdjacent(gs.map, gs.player.x, tile.idx);
+        // 无载具：只允许相邻格（玩家可能在生效小径格上，统一按网格坐标判定）
+        const me = refXY(gs, playerRef(gs));
+        const tg = refXY(gs, tile.idx);
+        const isAdj = !!me && !!tg && Math.abs(tg.x - me.x) + Math.abs(tg.y - me.y) === 1;
         if (isAdj) {
           canGo = true;
         } else {
@@ -1124,8 +1132,8 @@ export class InfoPanel {
             if (!director) return;
             if (!hasVehicle) {
               // 无载具：普通 1 步相邻移动（保持原逻辑）
-              const { x: px, y: py } = Distance.outerIdxToXY(gs.map, gs.player.x);
-              const { x: tx, y: ty } = Distance.outerIdxToXY(gs.map, tile.idx);
+              const { x: px, y: py } = refXY(gs, playerRef(gs));
+              const { x: tx, y: ty } = refXY(gs, tile.idx);
               let dir = null;
               if (tx > px) dir = 'right';
               else if (tx < px) dir = 'left';
@@ -1138,8 +1146,8 @@ export class InfoPanel {
               let result;
               if (pattern === 'directional') {
                 // 轮子：算出方向，走 tryMove({ type:'direction', direction })
-                const { x: px, y: py } = Distance.outerIdxToXY(gs.map, gs.player.x);
-                const { x: tx, y: ty } = Distance.outerIdxToXY(gs.map, tile.idx);
+                const { x: px, y: py } = refXY(gs, playerRef(gs));
+                const { x: tx, y: ty } = refXY(gs, tile.idx);
                 let dir = null;
                 if (tx > px) dir = 'right';
                 else if (tx < px) dir = 'left';
@@ -1273,8 +1281,9 @@ export class InfoPanel {
       ? facilityOwnedCreatures(gs, tile.idx)
       : [];
     const ownedIds = owned.map(c => c.id);
+    const isPlayerHere = refsEqual(playerRef(gs), tile.idx);
 
-    // 生物详情页：从所属生物列表进入；关门收纳后仍可查看
+    // 详情页：生物优先（从列表进入）；角色详情为本面板内视图切换
     if (this.creatureDetailId) {
       const c = owned.find(x => x.id === this.creatureDetailId);
       if (c) {
@@ -1283,69 +1292,119 @@ export class InfoPanel {
       }
       this.creatureDetailId = null;
     }
-
-    const isPlayerHere = gs.player?.x === tile.idx;
-
-    if (isPlayerHere) {
-      const header = createEl('div', {
-        style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px', fontWeight: '700', color: '#3a2e20', marginBottom: '10px' },
-        parent: this.bodyWrap,
-      });
-      header.appendChild(iconEl('ui', 'player', {
-        def: CHARACTERS?.yumo, fallback: CHARACTERS?.yumo?.emoji || '🧑‍🎤', size: '24px',
-      }));
-      createEl('span', { text: '余默', parent: header });
-
-      const p = gs.player;
-      const stats = [
-        ['❤️ 生命',   `${p.hp} / ${p.maxHp}`],
-        ['⚔️ 攻击',   `${p.atk}`],
-        ['🔷 行动力', `${p.stamina} / ${p.maxStamina}`],
-        ['🪙 金币',   `${p.gold}`],
-        ['🕐 回合计',  `${gs.turn}`],
-        ['📅 天数',    `${gs.day}`],
-      ];
-      for (const [label, value] of stats) {
-        const row = createEl('div', { class: ['player-info-row'], parent: this.bodyWrap });
-        createEl('span', { class: ['stat-label'], text: label, parent: row });
-        createEl('span', { class: ['stat-value'], text: value, parent: row });
-      }
-
-      // 当前状态：数据驱动列出角色身上**全部**生效 buff/debuff（不做白名单过滤），
-      // 名称按术语样式（【】+配色+可点释义），强度与剩余回合用正文样式，实时随 BUFF 事件刷新。
-      const buffs = gs.activeBuffs || [];
-      for (const b of buffs) {
-        const def = getBuff(b.id);
-        const name = def?.name || b.id;
-        const meta = stateMetaText({
-          strength: typeof b.params?.strength === 'number' ? b.params.strength : null,
-          remainingTurns: b.remainingTurns ?? null,
-          remainingDays: b.remainingDays ?? null,
-        });
-        const row = createEl('div', {
-          style: { fontSize: '13px', color: '#3a2e20', padding: '4px 0', borderTop: '1px dashed #d4c4a4' },
-          parent: this.bodyWrap,
-        });
-        createEl('span', { text: `${def?.emoji || '❓'} `, parent: row });
-        renderTermText(row, `${termLabel(name)}${meta ? ` ${meta}` : ''}：${stateMeaning(name, def?.description)}`);
-      }
-    }
-
-    // 门禁设施归属的生物（含关门后已收纳的），与物种无关
-    if (owned.length > 0) {
-      this._renderCreatureCards(ownedIds, gs, {
-        title: `🏠 所属生物（${owned.length}）· 点击查看详情`,
-        marginTop: isPlayerHere ? '12px' : '0',
-      });
+    if (this.playerDetailOpen && isPlayerHere) {
+      this._renderPlayerDetail(gs);
       return;
     }
 
-    if (!isPlayerHere) {
+    const total = (isPlayerHere ? 1 : 0) + owned.length;
+    if (total === 0) {
       createEl('div', {
         style: { padding: '20px 10px', textAlign: 'center', color: '#b0a090', fontSize: '13px' },
         text: '（该地块上无单位）',
         parent: this.bodyWrap,
       });
+      return;
+    }
+
+    // 统一口径：先列全部单位（角色 + 生物），点击具体单位再进详情
+    createEl('div', {
+      style: { fontSize: '13px', fontWeight: '700', color: '#3a2e20', marginBottom: '8px' },
+      text: `单位（${total}）· 点击查看详情`,
+      parent: this.bodyWrap,
+    });
+    if (isPlayerHere) this._renderPlayerCard(gs);
+    if (owned.length > 0) {
+      this._renderCreatureCards(ownedIds, gs, { marginTop: isPlayerHere ? '10px' : '0' });
+    }
+  }
+
+  /** 单位列表里的「角色」卡片（外圈 / 生效小径格统一） */
+  _renderPlayerCard(gs) {
+    const p = gs.player;
+    const card = createEl('div', {
+      class: ['unit-card', 'player-card'],
+      style: {
+        display: 'flex', alignItems: 'center', gap: '8px', padding: '8px',
+        border: '2px solid #d4c4a4', borderRadius: '8px',
+        backgroundColor: 'rgba(255,250,230,0.6)', cursor: 'pointer',
+      },
+      attrs: { title: '余默' },
+      parent: this.bodyWrap,
+      onclick: () => {
+        this.playerDetailOpen = true;
+        this._renderBody();
+      },
+    });
+    card.appendChild(iconEl('ui', 'player', {
+      def: CHARACTERS?.yumo, fallback: CHARACTERS?.yumo?.emoji || '🧑‍🎤', size: '28px',
+    }));
+    createEl('span', { text: '余默', style: { fontWeight: '700', color: '#3a2e20' }, parent: card });
+    createEl('span', {
+      text: `❤️ ${p.hp} / ${p.maxHp}`,
+      style: { fontSize: '12px', color: '#8a6a3a' },
+      parent: card,
+    });
+  }
+
+  /** 角色详情（数值 + 当前全部 buff/debuff） */
+  _renderPlayerDetail(gs) {
+    const top = createEl('div', {
+      style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' },
+      parent: this.bodyWrap,
+    });
+    createEl('button', {
+      class: 'action-btn',
+      style: { padding: '2px 12px', fontSize: '14px', flexShrink: '0' },
+      text: '←',
+      attrs: { title: '返回单位列表' },
+      parent: top,
+      onclick: () => {
+        this.playerDetailOpen = false;
+        this._renderBody();
+      },
+    });
+    top.appendChild(iconEl('ui', 'player', {
+      def: CHARACTERS?.yumo, fallback: CHARACTERS?.yumo?.emoji || '🧑‍🎤', size: '24px',
+    }));
+    createEl('span', {
+      style: { fontSize: '16px', fontWeight: '700', color: '#3a2e20' },
+      text: '余默',
+      parent: top,
+    });
+
+    const p = gs.player;
+    const stats = [
+      ['❤️ 生命',   `${p.hp} / ${p.maxHp}`],
+      ['⚔️ 攻击',   `${p.atk}`],
+      ['🔷 行动力', `${p.stamina} / ${p.maxStamina}`],
+      ['🪙 金币',   `${p.gold}`],
+      ['🕐 回合计',  `${gs.turn}`],
+      ['📅 天数',    `${gs.day}`],
+    ];
+    for (const [label, value] of stats) {
+      const row = createEl('div', { class: ['player-info-row'], parent: this.bodyWrap });
+      createEl('span', { class: ['stat-label'], text: label, parent: row });
+      createEl('span', { class: ['stat-value'], text: value, parent: row });
+    }
+
+    // 当前状态：数据驱动列出角色身上**全部**生效 buff/debuff（不做白名单过滤），
+    // 名称按术语样式（【】+配色+可点释义），强度与剩余回合用正文样式，实时随 BUFF 事件刷新。
+    const buffs = gs.activeBuffs || [];
+    for (const b of buffs) {
+      const def = getBuff(b.id);
+      const name = def?.name || b.id;
+      const meta = stateMetaText({
+        strength: typeof b.params?.strength === 'number' ? b.params.strength : null,
+        remainingTurns: b.remainingTurns ?? null,
+        remainingDays: b.remainingDays ?? null,
+      });
+      const row = createEl('div', {
+        style: { fontSize: '13px', color: '#3a2e20', padding: '4px 0', borderTop: '1px dashed #d4c4a4' },
+        parent: this.bodyWrap,
+      });
+      createEl('span', { text: `${def?.emoji || '❓'} `, parent: row });
+      renderTermText(row, `${termLabel(name)}${meta ? ` ${meta}` : ''}：${stateMeaning(name, def?.description)}`);
     }
   }
 
@@ -1580,6 +1639,87 @@ export class InfoPanel {
         parent: this.bodyWrap,
       });
     }
+
+    if (cell.isPathOuter) this._renderFenceGoButton(gs);
+  }
+
+  /**
+   * 生效小径格按「外圈地块」对待：提供「前往」。
+   * 无载具仅相邻可走；有载具沿用 VehicleSystem 的可达判定与目标式移动。
+   */
+  _renderFenceGoButton(gs) {
+    const dims = Distance.fenceDimsOf(gs);
+    const fenceRef = {
+      kind: 'fence',
+      row: Math.floor(this.currentFenceIdx / dims.cols),
+      col: this.currentFenceIdx % dims.cols,
+    };
+    if (refsEqual(playerRef(gs), fenceRef)) return;
+
+    const hasVehicle = !!(gs.vehicle?.current);
+    const me = refXY(gs, playerRef(gs));
+    const target = refXY(gs, fenceRef);
+    if (!me || !target) return;
+
+    const dx = target.x - me.x;
+    const dy = target.y - me.y;
+    const isAdj = Math.abs(dx) + Math.abs(dy) === 1;
+
+    let canGo = false;
+    let goReason = null;
+    let reach = null;
+    if (hasVehicle) {
+      reach = VehicleSystem.canVehicleReach(gs, fenceRef);
+      canGo = reach.ok;
+      goReason = reach.reason || null;
+    } else {
+      canGo = isAdj;
+      goReason = '不是相邻格';
+    }
+
+    if (!canGo) {
+      createEl('div', {
+        style: { marginTop: '6px', fontSize: '12px', color: '#b0a090', textAlign: 'center' },
+        text: hasVehicle
+          ? `❌ 载具无法到达（${goReason || '不在移动范围内'}）`
+          : '❌ 不可前往（不是相邻格）',
+        parent: this.bodyWrap,
+      });
+      return;
+    }
+
+    createEl('button', {
+      class: 'action-btn',
+      style: { width: '100%', fontSize: '14px', background: '#fff0c0', marginTop: '10px' },
+      text: hasVehicle ? '🚗 前往（载具）' : '🚪 前往（一步抵达）',
+      parent: this.bodyWrap,
+      onclick: () => {
+        const director = window.__gameDirector;
+        if (!director) return;
+        if (!hasVehicle) {
+          let dir = null;
+          if (dx > 0) dir = 'right';
+          else if (dx < 0) dir = 'left';
+          else if (dy > 0) dir = 'down';
+          else if (dy < 0) dir = 'up';
+          if (dir) director.move(dir);
+          return;
+        }
+        const pattern = reach?.def?.movePattern;
+        const result = pattern === 'directional'
+          ? VehicleSystem.tryMove(gs, {
+            type: 'direction',
+            direction: dx > 0 ? 'right' : dx < 0 ? 'left' : dy > 0 ? 'down' : 'up',
+          })
+          : VehicleSystem.tryMove(gs, { type: 'target', targetRef: fenceRef });
+        if (!result.ok) {
+          EventBus.emit(GE.TOAST_SHOW, {
+            text: `🚗 载具移动失败：${result.reason || '未知原因'}`,
+            duration: 1500,
+          });
+        }
+      },
+    });
   }
 
   // ════════════════════════════════════════════════════════════
@@ -1618,6 +1758,13 @@ export class InfoPanel {
   // ════════════════════════════════════════════════════════════
   _renderFenceUnitsTab(cell, gs) {
     const creatureIds = cell.creatures || [];
+    const dims = Distance.fenceDimsOf(gs);
+    const fenceRef = {
+      kind: 'fence',
+      row: Math.floor(this.currentFenceIdx / dims.cols),
+      col: this.currentFenceIdx % dims.cols,
+    };
+    const playerHere = refsEqual(playerRef(gs), fenceRef);
 
     // 详情页视图（本面板内切换，不新建面板）
     if (this.creatureDetailId) {
@@ -1628,8 +1775,13 @@ export class InfoPanel {
       }
       this.creatureDetailId = null; // 已不在该格 → 回列表
     }
+    if (this.playerDetailOpen && playerHere) {
+      this._renderPlayerDetail(gs);
+      return;
+    }
 
-    if (creatureIds.length === 0) {
+    const total = creatureIds.length + (playerHere ? 1 : 0);
+    if (total === 0) {
       createEl('div', {
         style: { padding: '20px 10px', textAlign: 'center', color: '#b0a090', fontSize: '13px', fontStyle: 'italic' },
         text: '（此格暂无生物）',
@@ -1638,9 +1790,15 @@ export class InfoPanel {
       return;
     }
 
-    this._renderCreatureCards(creatureIds, gs, {
-      title: `生物列表（${creatureIds.length}）· 点击查看详情`,
+    createEl('div', {
+      style: { fontSize: '13px', fontWeight: '700', color: '#3a2e20', marginBottom: '8px' },
+      text: `单位（${total}）· 点击查看详情`,
+      parent: this.bodyWrap,
     });
+    if (playerHere) this._renderPlayerCard(gs);
+    if (creatureIds.length > 0) {
+      this._renderCreatureCards(creatureIds, gs, { marginTop: playerHere ? '10px' : '0' });
+    }
   }
 
   // ════════════════════════════════════════════════════════════
@@ -1818,6 +1976,7 @@ export class InfoPanel {
       this.currentTileIdx = tileIdx;
       this.currentFenceIdx = null;
       this.creatureDetailId = null;
+      this.playerDetailOpen = false;
       this._renderBody();
     });
 
@@ -1827,6 +1986,7 @@ export class InfoPanel {
       this.currentFenceIdx = fenceIdx;
       this.currentTileIdx = null;
       this.creatureDetailId = null;
+      this.playerDetailOpen = false;
       this._renderBody();
     });
 

@@ -25,6 +25,7 @@ import { StaminaSystem } from './StaminaSystem.js';
 import { drawFromPool } from './RandomPool.js';
 import { Random } from '../core/Random.js';
 import { MapExpandSystem, EXPAND_AXIS } from './MapExpandSystem.js';
+import { getTile, playerRef, contentEntries, refsEqual, fenceIdxOf, isFenceRef } from '../core/TileAccess.js';
 
 /** 可作为肥料目标的植物类设施（含 v0.5 新增的三种田块） */
 const PLANT_FACILITIES = new Set([
@@ -41,26 +42,33 @@ const PLANT_FACILITIES = new Set([
  * 好处是完全复用设施自身的产出逻辑，不另写一套数值（避免两处口径漂移）。
  * 只动 contentId，索引、地形、状态都不变，isMine() 判定依旧成立。
  */
-export function runScopedDaily(gs, tileIdx, times = 1) {
-  const tiles = gs.map.outerTiles;
-  const target = tiles[tileIdx];
-  if (!target) return 0;
+export function runScopedDaily(gs, target, times = 1) {
+  const entries = contentEntries(gs);
+  const found = entries.find((e) => refsEqual(e.ref, target));
+  const targetTile = found?.tile;
+  if (!targetTile) return 0;
 
-  const stash = tiles.map((t) => t.contentId);
-  const savedFlags = { ...(target.dailyFlags || {}) };
+  const stash = entries.map((e) => e.tile.contentId);
+  const savedFlags = { ...(targetTile.dailyFlags || {}) };
   try {
-    for (let i = 0; i < tiles.length; i++) {
-      if (i !== tileIdx) tiles[i].contentId = null;
+    for (const e of entries) {
+      if (e.tile !== targetTile) e.tile.contentId = null;
     }
     for (let n = 0; n < times; n++) {
-      target.dailyFlags = {};
-      HookDispatcher.fire('onDailyStart', { gs, scopedTileIdx: tileIdx });
+      targetTile.dailyFlags = {};
+      // 设施 hook 用 scopedTileIdx !== undefined 判定「只结算这一格」，栅栏格传 -1 占位
+      HookDispatcher.fire('onDailyStart', {
+        gs,
+        scopedTileIdx: typeof target === 'number' ? target : -1,
+      });
     }
   } finally {
-    for (let i = 0; i < tiles.length; i++) tiles[i].contentId = stash[i];
-    target.dailyFlags = savedFlags;
+    entries.forEach((e, i) => { e.tile.contentId = stash[i]; });
+    targetTile.dailyFlags = savedFlags;
   }
-  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+  EventBus.emit(GE.TILE_UPDATED, isFenceRef(target)
+    ? { tileIdx: null, tileRef: target, fenceIdx: fenceIdxOf(gs, target) }
+    : { tileIdx: target });
   return times;
 }
 
@@ -68,9 +76,9 @@ function ensureCooldowns(gs) {
   if (!gs.itemCooldowns) gs.itemCooldowns = {};
 }
 
-/** 该格是否是肥料可作用的植物类田块 */
-export function isPlantTarget(gs, tileIdx) {
-  const t = gs.map.outerTiles[tileIdx];
+/** 该格是否是肥料可作用的植物类田块（ref：外圈 idx / 生效小径格） */
+export function isPlantTarget(gs, target) {
+  const t = getTile(gs, target);
   return !!(t && t.contentId && PLANT_FACILITIES.has(t.contentId));
 }
 
@@ -116,14 +124,14 @@ export function useItem(gs, itemId, opts = {}) {
     }
 
     case 'facility_trigger_twice': {
-      const tileIdx = opts.tileIdx;
-      const tile = gs.map.outerTiles[tileIdx];
+      const targetRef = opts.tileRef ?? opts.tileIdx;
+      const tile = getTile(gs, targetRef);
       // 无效目标也照常消耗（物品库备注：无效时不返还已消耗的道具）
       if (!tile || !tile.contentId || !PLANT_FACILITIES.has(tile.contentId)) {
         EventBus.emit(GE.TOAST_SHOW, { text: '🧪 这里不是可施肥的田块（道具已消耗）', duration: 1800 });
         break;
       }
-      runScopedDaily(gs, tileIdx, eff.triggerCount || 2);
+      runScopedDaily(gs, targetRef, eff.triggerCount || 2);
       EventBus.emit(GE.TOAST_SHOW, { text: `🧪 ${ITEMS[tile.contentId]?.name || '田块'} 立刻结算 ${eff.triggerCount || 2} 次每日效果`, duration: 1800 });
       break;
     }
@@ -177,8 +185,8 @@ export function useItem(gs, itemId, opts = {}) {
 
     case 'placed_daily_roll':
     case 'placed_sleep_heal': {
-      const tileIdx = opts.tileIdx;
-      const tile = gs.map.outerTiles[tileIdx];
+      const targetRef = opts.tileRef ?? opts.tileIdx;
+      const tile = getTile(gs, targetRef);
       if (!tile) return { ok: false, reason: 'invalidTileIdx' };
       tile.contentState = tile.contentState || {};
       tile.contentState.placedItems = tile.contentState.placedItems || [];
@@ -188,7 +196,9 @@ export function useItem(gs, itemId, opts = {}) {
       }
       tile.contentState.placedItems.push({ itemId, placedDay: gs.day });
       consumed = false;  // A-11：§14.2 放置型「被放置到地块后持续生效，道具不消失」—— 放置后仍留在背包
-      EventBus.emit(GE.TILE_CONTENT_CHANGED, { tileIdx });
+      EventBus.emit(GE.TILE_CONTENT_CHANGED, isFenceRef(targetRef)
+        ? { tileIdx: null, tileRef: targetRef, fenceIdx: fenceIdxOf(gs, targetRef) }
+        : { tileIdx: targetRef });
       EventBus.emit(GE.TOAST_SHOW, { text: `📦 已放置 ${ITEMS[itemId]?.name || itemId}`, duration: 1600 });
       break;
     }
@@ -206,7 +216,12 @@ export function useItem(gs, itemId, opts = {}) {
     gs.itemCooldowns[itemId] = cd; // B-10：剩余回合数（TurnSystem.advanceTurn 每回合 -1）
   }
 
-  HookDispatcher.fire('onUseItem', { gs, itemId, tileIdx: opts.tileIdx });
+  HookDispatcher.fire('onUseItem', {
+    gs,
+    itemId,
+    tileIdx: opts.tileIdx,
+    tileRef: opts.tileRef,
+  });
   EventBus.emit(GE.INVENTORY_CHANGE);
   devLog.info('[UseItem]', itemId, 'used, effect=', eff.type);
   return { ok: true };
@@ -214,7 +229,7 @@ export function useItem(gs, itemId, opts = {}) {
 
 /** 每日开始：结算放置型道具 */
 export function onDailyStart(gs) {
-  for (const tile of gs.map.outerTiles) {
+  for (const { tile } of contentEntries(gs)) {
     const list = tile.contentState?.placedItems;
     if (!Array.isArray(list) || list.length === 0) continue;
     for (const p of list) {
@@ -236,7 +251,7 @@ export function onDailyStart(gs) {
 
 /** 睡觉时：结算放置型道具（艾草熏香） */
 export function onSleep(gs) {
-  const tile = gs.map.outerTiles[gs.player.x];
+  const tile = getTile(gs, playerRef(gs));
   const list = tile?.contentState?.placedItems;
   if (!Array.isArray(list)) return 0;
   let total = 0;

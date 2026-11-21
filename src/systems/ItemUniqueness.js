@@ -12,6 +12,7 @@
 // 把结果当作 exclude 集合使用。占位物品一定不具有【唯一】，由 isUniqueItem 直接排除。
 
 import { ITEMS } from '../data/items.js';
+import { contentEntries, refsEqual } from '../core/TileAccess.js';
 
 /**
  * 是否带【唯一】。
@@ -49,13 +50,14 @@ export function collectOwnedUniqueIds(gs) {
 
 /**
  * 已被商店占用（已抽取、未售出）的唯一物品。
- * @param {number|null} exceptTileIdx 生成库存的这家店自身要排除（刷新时旧货会消失）
+ * @param {number|object|null} exceptRef 生成库存的这家店自身要排除（刷新时旧货会消失）；
+ *   可为外圈 idx 或 fence ref（生效小径格）
  * @returns {Set<string>}
  */
-export function collectReservedUniqueIds(gs, exceptTileIdx = null) {
+export function collectReservedUniqueIds(gs, exceptRef = null) {
   const held = new Set();
-  for (const t of gs?.map?.outerTiles || []) {
-    if (exceptTileIdx != null && t.idx === exceptTileIdx) continue;
+  for (const { ref, tile: t } of contentEntries(gs)) {
+    if (exceptRef != null && refsEqual(ref, exceptRef)) continue;
     const stock = t.contentState?.shop?.stock;
     if (!Array.isArray(stock)) continue;
     for (const item of stock) {
@@ -66,8 +68,8 @@ export function collectReservedUniqueIds(gs, exceptTileIdx = null) {
 }
 
 /** 全部不可再抽取的唯一物品 = 已拥有 ∪ 已被商店占用 */
-export function unavailableUniqueIds(gs, exceptTileIdx = null) {
+export function unavailableUniqueIds(gs, exceptRef = null) {
   const all = collectOwnedUniqueIds(gs);
-  for (const id of collectReservedUniqueIds(gs, exceptTileIdx)) all.add(id);
+  for (const id of collectReservedUniqueIds(gs, exceptRef)) all.add(id);
   return all;
 }

@@ -49,6 +49,12 @@ export function createInitialState(opts = {}) {
         terrainAmount: 0,
         creatures: [],
         items: [],
+        // v0.6「小径」：栅栏格也可以成为地块内容载体（生效小径 = 临时外圈地块）
+        contentId: null,
+        contentState: {},
+        states: [],
+        dailyFlags: {},
+        isPathOuter: false,
       });
     }
   }
@@ -75,6 +81,8 @@ export function createInitialState(opts = {}) {
       faction: 'party',     // 我方共用实体（含全部角色属性；见 data/factions.js）
       x: HOME_IDX,          // 初始在家（左下）
       y: 0,                 // 外圈格索引模式下 y 暂不使用
+      // v0.6：玩家可站在生效小径所在的栅栏格；loc 是权威位置，x/position 仅为兼容镜像
+      loc: { kind: 'outer', idx: HOME_IDX },
       hp: 100,
       maxHp: 100,
       atk: 10,
