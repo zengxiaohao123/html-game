@@ -450,18 +450,20 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
     随整块上移，**不贴屏幕右缘**（右侧整列属于选项）。**没有推进提示**：不显示「继续」「请选择」。
   - 选项区 `.option-area`：右侧竖排（`left:65.3vw / right:5.6vw`，不再为跳过预留右侧空间），
     **上沿固定 `top:22.5vh`（参考图首条位置）**，`bottom` 由 `_layout()` 按正文 rect 动态写入
-    （`bottom = innerHeight - textEl.bottom`），`display:flex; flex-direction:column; justify-content:space-between`
-    把上下两端定死后多出来的高度**均摊进卡片间距**（整列向上铺满，不再是堆在下方的一坨）；
-    因此**最后一项卡片底边 === 事件文本块最底部**，正文换行 / 窗口 resize 时重算。
+    （`bottom = innerHeight - textEl.bottom`）作为选项区底边界；
+    `display:flex; flex-direction:column; justify-content:flex-start`，首条卡片 `margin-top:auto`、末条卡片 `margin-bottom:auto`，
+    上下剩余高度均分，**选项组整体在选项区内垂直居中**：1 个选项落在中部；2 个选项成组靠近中部、两条之间保留 `3vh` 间隔；
+    3 个及以上以整组中线对齐选项区中线。不再使用 `space-between` 把选项上下铺开。
     每个 `.story-option` 是**不透明深松林青绿卡片**（`#2e4844→#243a37→#1c2f2d` 纵向渐变 + 暖色顶部薄高光 + 1px 竖纹 + 茶金细边 + 左侧茶金内条），
-    `flex:0 0 auto` + `min-height:17.6vh`、最小间距 `3vh`（参考节距 `20.6vh` 是参考作品在 `83%H` 收尾的短列数值，本作只沿用首条 `22.5vh` 与卡高）；
-    实测三项长文本：首条 `22.6%H`、节距约 `27.7vh`、间距约 `10.4vh`。四项时 `.option-area.is-four` 收到 `16vh` / `2.2vh`。
-    自然高度总和仍超出可用高度时，`_layout()` 依次尝试 `3 / 2.4 / 1.8 / 1.2 / 0.6 / 0vh` 间距直到 `scrollHeight <= clientHeight`，
-    保证最后一项不越过正文块底边。
+    `flex:0 0 auto` + `min-height:17.6vh`、默认间距 `3vh`（参考节距 `20.6vh` 是参考作品在 `83%H` 收尾的短列数值，本作只沿用首条 `22.5vh` 与卡高）。
+    四项时 `.option-area.is-four` 收到 `16vh` / `2.2vh`。
+    自然高度总和仍超出可用高度时，`_layout()` 依次尝试 `3 / 2.4 / 1.8 / 1.2 / 0.6 / 0vh` 间距直到 `scrollHeight <= clientHeight`。
+    超过 4 项时 `.option-area.is-scroll` 固定 `2.2vh` 间距并 `overflow-y:auto` 内部滚动；
+    内容溢出时 `auto` 边距归零、从顶部开始滚动，内容不足一屏时仍按居中规则处理。
     卡内：`.story-option-bar` 标题行（`2.8vh / 700 / #f8f3e3` 暖白 + 茶金细分隔线）+ `.story-option-desc` 描述（`2.2vh / #d7e2d3`，`sub / detail` 全部常驻，不渲染数字徽章）。
     **待确认态（一次点击）**：`.story-option.is-armed` 用 `transform: translateX(-1.7vw)` 向左"被拉出"一段
     （实测卡左缘 `65.7%W → 64.0%W`），左缘 `::before` 同时长出一枚金色把手（`grip-in 0.16s`），阴影加重向右投射；
-    位移只走 `transform`（不参与布局），因此最后一项底边与正文块底边的对齐、其它卡的位置都不受影响。
+    位移只走 `transform`（不参与布局），因此选项组的居中位置与其它卡的位置都不受影响。
   - 确认行 `.story-option-confirm-row`：描述下方**始终占位**的 `3.6vh` 行（`margin-top:auto` 贴卡底），内含「你确定这么做？」与圆形印章；
     出现时不压字、不顶开描述、不推移其它选项。
 - **背景无暗斑**：`.story-mask` 只有一层 `rgba(14,20,24,.34)` 平铺色；旧的 `.story-wash` 与 `.option-scrim`（径向渐变椭圆暗斑）**已删除**。
@@ -469,17 +471,21 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 - **快捷栏让位**：`StoryUI.show()` 给 `document.body` 加 `story-active`，`_hide()` 移除；`story.css` 中 `body.story-active .hotbar-wrapper{display:none}`
   （快捷栏根 `.hotbar` 带 inline `display:flex`，所以隐藏外层 wrapper）。原因：文本块已下移到屏幕底部，快捷栏正压在该区域，且事件期间快捷栏本就被输入封锁。
 - **数据驱动**：`STORY_SHOW {script, ctx}` 播放；`script = {id,title,start,nodes,onEnd}`，
-  `nodes[key] = {text,options?,next?,end?,onEnter?}`，`Option = {id,label,sub,detail,disabled,disabledReason,effects,next,end,onSelect}`。
+  `nodes[key] = {text,options?,next?,end?,onEnter?}`，
+  `Option = {id,label,sub,detail,disabled,disabledReason,effects,branches?,next,end,onSelect}`；
+  `branches = [{weight,effects?,next?,end?}]` 为概率分叉，确认时按权重抽签，命中分支覆盖 `effects` / `next`。
   事件点（RES-001）由 `buildEventStory(entry)` 生成脚本：节点表来自 `src/data/events/<事件id>.js`；
-  条目可带 `prepare(gs, ctx)`，进入时生成本次专用 EventDef（如摊位商品与实付价），不修改共享定义。UI 不写死任何文案。
+  条目可带 `prepare(gs, ctx)`，进入时生成本次专用 EventDef（如摊位商品与实付价、翻车现场按金币灰化购买项），不修改共享定义。UI 不写死任何文案。
   摊位购买每次只抽 1 种物品；数量 = 交集（≥1、原始总价 ≤60、唯一 ≤1、全部 ≤4），载具同样 ≤4；实付价按原始总价 40%~150% 随机。
 - **多级状态机**：`option.next` 可指向任意节点，目标节点可再次带 `options`，深度不限；
   节点 / 选项 id 与层级关系**只存在于数据**，不上屏（选项区只渲染 `label/sub/detail`，数字键 `1~9` 只作隐藏快捷键）。
   没有 `options` 且没有 `next` 的节点是终止节点：正文即为结果文本，进入结果态，点击屏幕任意处关闭事件（`result-dismiss`）。
 - **描述与选项同屏**：事件首节点直接带 `options`，不得新增「你打算怎么做？」类过渡问句节点；
   选项确认后直接落到下一层描述（同样带 `options`），中间不再插一层需要点击的文本。
-- **选项驱动结算**：事件**进入不结算**；只有选项确认时，`StoryUI._settleOption(opt)` 调
-  `applyEventEffects(gs, opt.effects, ctx)`，在确认的同一 tick 执行，同一事件内同一 `option.id` 只执行一次。
+- **选项驱动结算**：事件**进入不结算**；只有选项确认时，`StoryUI._settleOption(opt, effects)` 调
+  `applyEventEffects(gs, effects, ctx)`，在确认的同一 tick 执行，同一事件内同一 `option.id` 只执行一次。
+  选项带 `branches` 时先由 `_pickBranch(opt)` 按 `weight` 抽签：命中分支的 `effects` 作为 `effectsOverride` 传入结算、
+  其 `next` 优先于 `option.next`；未配置分支时退回 `opt.effects` / `opt.next`。
   效果词表：`gold / item / stamina / heal / terrain / buff / creature / vehicle`（载具进载具页，不进背包）；执行器内部复用
   `InventorySystem` / `StaminaSystem` / `HealSystem` / `CreatureSystem` / 地形写入及既有 EventBus 事件，
   不新建平行数值系统。跳过、推进正文、静默关闭均不结算。

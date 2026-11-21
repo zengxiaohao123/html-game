@@ -640,6 +640,87 @@ head('J. 正式事件：文案、可重复性、摊位变量、载具效果');
   const inv1 = vg.inventory.items.reduce((s, x) => s + (x.qty || 0), 0);
   check(vg.vehicle.available.length === vehicles0 + 1 && inv1 === inv0,
     'J-15 载具效果：载具页 +1，背包不增加', vg.vehicle.available.map((v) => v.id));
+
+  // ── 事件 3：翻车现场（可重复、六选一、金币不足灰化）──
+  const mount = getEventDef('evt_mount_03');
+  check(!!mount && mount.repeatability === 'repeatable' && mount.name === '翻车现场',
+    'J-16 翻车现场存在且可重复');
+  check(mount?.nodes.intro.text
+    === '一阵哐当乱响从路边传来。一辆货车侧翻在地，车辕歪斜，一个男人被压在车架底下，正手脚并用地往外挣。你把他从木架下拉出来，他一骨碌爬起身，拍去满身灰土，不等你开口便搓着手堆起笑：“这趟纯属意外，您可别往心里去。车上这些家伙省草料、肯出力，您是我的恩人——就打5折，不，2折，卖给您如何？”',
+    'J-17 翻车现场正文逐字来自事件库');
+
+  const poorMount = mount.prepare(createInitialState({ gold: 0 }));
+  const richMount = mount.prepare(createInitialState({ gold: 100 }));
+  const poorOpts = poorMount.nodes.intro.options;
+  const richOpts = richMount.nodes.intro.options;
+  check(poorOpts.length === 6 && poorOpts.slice(0, 5).every((o) => o.disabled) && !poorOpts[5].disabled,
+    'J-18 金币不足：五个购买项灰化，离开仍可选');
+  check(richOpts.length === 6 && richOpts.every((o) => !o.disabled),
+    'J-19 金币充足：六个选项全部可选');
+  const horseOpt = richOpts.find((o) => o.id === 'horse');
+  check(horseOpt.sub === '3 金币 · 马匹×1' && horseOpt.next === 'horse_end'
+    && horseOpt.effects.some((e) => e.type === 'gold' && e.amount === -3)
+    && horseOpt.effects.some((e) => e.type === 'vehicle' && e.itemId === 'item_horse'),
+    'J-20 购买项：文案逐字、扣金币并进载具页', horseOpt);
+  check(mount.nodes.leave_end.text
+    === '你对这些载具没有兴趣，转身离开了此地，留下男人在原地训斥他的坐骑们。',
+    'J-21 离开选项接到结果文本节点');
+
+  // ── 事件 4：林缘菜畦（每日限1次、85/15 概率分叉）──
+  const garden = getEventDef('evt_garden_04');
+  check(!!garden && garden.repeatability === 'daily' && garden.name === '林缘菜畦',
+    'J-22 林缘菜畦存在且每日限1次');
+  check(garden?.nodes.intro.text
+    === '风从林隙里钻过来，带着一股新翻泥土的潮气。林缘留着半畦无人照看的菜地，豆荚垂在旧木桩上，菜叶被虫蛀出几个窟窿，地垄上踩出浅浅的痕迹。看不出是谁栽下的，也看不出还会不会有人来收。',
+    'J-23 林缘菜畦正文逐字来自事件库');
+  const digOpt = garden.nodes.intro.options.find((o) => o.id === 'dig');
+  const pickOpt = garden.nodes.intro.options.find((o) => o.id === 'pick');
+  check(digOpt.sub === '行动力-3' && !digOpt.detail
+    && digOpt.branches?.length === 2
+    && digOpt.branches[0].weight === 85 && digOpt.branches[1].weight === 15
+    && digOpt.branches[0].next === 'dig_full_end' && digOpt.branches[1].next === 'dig_heal_end',
+    'J-24 翻找选项：常驻只显示行动力-3，85%/15% 分叉指向不同结果');
+  check(digOpt.branches[0].effects.some((e) => e.itemId === 'item_pea' && e.qty === 4)
+    && !digOpt.branches[1].effects.some((e) => e.type === 'item'),
+    'J-25 分叉收益：85% 给作物，15% 仅回血');
+  check(pickOpt.sub === '行动力-1' && !pickOpt.effects.some((e) => e.type === 'heal'),
+    'J-26 轻量拾取：只扣行动力并给少量作物');
+  check(garden.nodes.leave_end.text
+    === '你没有停下脚步，沿着林缘的小路继续走，身后那半畦菜地重新隐进了树影里。',
+    'J-27 离开选项接到结果文本节点');
+
+  // 概率分叉运行时：强制随机数分别走 85% / 15%
+  {
+    const rand0 = Math.random;
+    gs.player.stamina = 10;
+    gs.player.hp = Math.floor(gs.player.maxHp * 0.5);
+    const pea0 = qty('item_pea');
+    const cabbage0 = qty('item_cabbage');
+    const corn0 = qty('item_corn');
+    Math.random = () => 0.01;
+    openAtChoice(garden);
+    choose(ui.optionBtns[0]);
+    Math.random = rand0;
+    check(ui.nodeKey === 'dig_full_end', 'J-28 85% 分支落到 dig_full_end', ui.nodeKey);
+    check(qty('item_pea') === pea0 + 4 && qty('item_cabbage') === cabbage0 + 2
+      && qty('item_corn') === corn0 + 2, 'J-29 85% 分支发放豌豆×4 / 卷心菜×2 / 玉米×2');
+    check(gs.player.stamina === 7 && gs.player.hp === gs.player.maxHp,
+      'J-30 85% 分支扣行动力 3 并回满生命', { stamina: gs.player.stamina, hp: gs.player.hp });
+  }
+  {
+    const rand0 = Math.random;
+    gs.player.stamina = 10;
+    gs.player.hp = Math.floor(gs.player.maxHp * 0.5);
+    const pea0 = qty('item_pea');
+    Math.random = () => 0.99;
+    openAtChoice(garden);
+    choose(ui.optionBtns[0]);
+    Math.random = rand0;
+    check(ui.nodeKey === 'dig_heal_end', 'J-31 15% 分支落到 dig_heal_end', ui.nodeKey);
+    check(qty('item_pea') === pea0, 'J-32 15% 分叉不发作物');
+    check(gs.player.stamina === 7 && gs.player.hp === gs.player.maxHp,
+      'J-33 15% 分支同样扣行动力 3 并回满生命', { stamina: gs.player.stamina, hp: gs.player.hp });
+  }
 }
 
 // ════════════════════════════════════════════════════════════

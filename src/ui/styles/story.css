@@ -279,8 +279,9 @@ body.story-active .hotbar-wrapper {
 
 /* ── 选项区（右侧竖列） ──
  * 上沿锚在参考图首条位置 22.5vh，下沿由 JS 贴着正文块底边（bottom 用 px 覆盖）；
- * space-between 把多出来的高度摊到卡片之间（间距拉开、整体向上铺开），
- * 卡片自身保持 17.6vh 的自然高度，最后一项底边仍与正文块底边严格平齐。 */
+ * 选项整体在选项区内**垂直居中**：首条 margin-top:auto、末条 margin-bottom:auto
+ * 平分剩余高度，1 个选项落在中部，2 个选项成组靠近中部并保留 gap。
+ * 内容超出时 auto 边距自动归零，从顶部开始滚动，保证每一条都能滚到。 */
 .option-area {
   position: absolute;
   left: 65.3vw;
@@ -289,10 +290,13 @@ body.story-active .hotbar-wrapper {
   bottom: 4vh;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 3vh;
   pointer-events: auto;
 }
+
+.option-area > .story-option:first-child { margin-top: auto; }
+.option-area > .story-option:last-child { margin-bottom: auto; }
 
 /* 单个选项：不透明深松林卡片，白字标题 + 浅苔绿描述 + 底部预留确认行 */
 .story-option {
@@ -342,7 +346,7 @@ body.story-active .hotbar-wrapper {
 .option-area.is-four { gap: 2.2vh; }
 .option-area.is-four .story-option { min-height: 16vh; }
 
-/* 选项超过 4 个：固定节距、选项区内部上下滚动（末条不再强制贴正文块底边） */
+/* 选项超过 4 个：固定节距、选项区内部上下滚动；内容不足一屏时仍按 auto 边距居中 */
 .option-area.is-scroll {
   justify-content: flex-start;
   gap: 2.2vh;

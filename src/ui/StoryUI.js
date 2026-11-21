@@ -663,10 +663,12 @@ export class StoryUI {
     // 淡出期间整块选项区不再响应点击（重复点击无效）
     this.optionAreaEl.style.pointerEvents = 'none';
 
-    const pending = this._resolveNext(opt, i);
+    // 概率分叉：选项可带 branches，确认时抽签决定本次效果与去向
+    const branch = this._pickBranch(opt);
+    const pending = this._resolveNext(opt, i, branch);
 
     // 业务先于动画：结算效果 + 回调 + 正文立即切换
-    this._settleOption(opt);
+    this._settleOption(opt, branch?.effects);
     try {
       if (typeof opt.onSelect === 'function') opt.onSelect({ ...this.ctx, option: opt });
     } catch (err) {
@@ -700,13 +702,36 @@ export class StoryUI {
   }
 
   /**
+   * 概率分叉抽签：branches = [{ weight, effects?, next?, end? }]。
+   * 未配置 branches / 权重全为 0 时返回 null，退回选项自身的 effects / next。
+   */
+  _pickBranch(opt) {
+    const list = Array.isArray(opt?.branches)
+      ? opt.branches.filter((b) => b && Number(b.weight) > 0)
+      : [];
+    if (!list.length) return null;
+    const total = list.reduce((sum, b) => sum + Number(b.weight), 0);
+    if (!(total > 0)) return null;
+    let roll = Math.random() * total;
+    for (const b of list) {
+      roll -= Number(b.weight);
+      if (roll < 0) return b;
+    }
+    return list[list.length - 1];
+  }
+
+  /**
    * 选项驱动的结算入口。
    * 只在选项确认的同一 tick 调用；同一事件里同一节点同一选项只结算一次。
    * 词表与执行逻辑在 src/systems/EventEffects.js，UI 不写死任何数值规则。
+   * @param {object} opt 选项
+   * @param {Array<object>} [effectsOverride] 概率分叉抽中的那组 effects（缺省用 opt.effects）
    * @returns {string[]} 效果摘要（空数组 = 该选项没有结算效果）
    */
-  _settleOption(opt) {
-    const effects = Array.isArray(opt?.effects) ? opt.effects : [];
+  _settleOption(opt, effectsOverride) {
+    const effects = Array.isArray(effectsOverride)
+      ? effectsOverride
+      : (Array.isArray(opt?.effects) ? opt.effects : []);
     if (effects.length === 0) return [];
     const gs = this.ctx.gs || this.director?.getGS?.() || null;
     if (!gs) {
@@ -736,10 +761,11 @@ export class StoryUI {
     return summary;
   }
 
-  _resolveNext(opt, i) {
+  _resolveNext(opt, i, branch = null) {
     const node = this._node();
+    if (branch?.end) return { kind: 'end' };
     if (opt.end) return { kind: 'end' };
-    const key = opt.next || node?.next || null;
+    const key = branch?.next || opt.next || node?.next || null;
     if (!key) return { kind: 'end' };
     if (!this.script?.nodes?.[key]) {
       devLog.warn('[StoryUI] 选项跳转目标不存在', i, key);

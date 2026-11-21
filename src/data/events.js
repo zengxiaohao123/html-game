@@ -38,6 +38,9 @@
 //     detail?:         选项描述的第二段（与 sub 同一视觉参数；缺省不显示）
 //     disabled?/disabledReason?: 灰化不可选
 //     effects?:        EventEffect[]  结算效果；选项确认的同一 tick 执行且只执行一次
+//     branches?:       [{ weight, effects?, next?, end? }]  概率分叉：
+//                      确认时按 weight 抽签，命中分支的 effects 覆盖选项 effects，
+//                      next 优先于选项 next；未配置时退回选项自身的 effects / next
 //     next?:           跳转节点 id（任意深度；缺省 = 本事件结束）
 //     end?:            true = 选择后结束事件
 //   }
@@ -48,11 +51,15 @@
 
 import evt_peddler_01 from './events/evt_peddler_01.js';
 import evt_stall_02 from './events/evt_stall_02.js';
+import evt_mount_03 from './events/evt_mount_03.js';
+import evt_garden_04 from './events/evt_garden_04.js';
 
 /** 全部事件定义（新增事件直接往这里加数组项） */
 export const EVENT_DEFS = [
   evt_peddler_01,
   evt_stall_02,
+  evt_mount_03,
+  evt_garden_04,
 ];
 
 /** 按 id 取事件定义；找不到返回 null */
