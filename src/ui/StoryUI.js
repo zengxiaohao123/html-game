@@ -371,6 +371,8 @@ export class StoryUI {
     EventBus.emit(GE.DIALOG_SHOW, {
       title: '跳过',
       content: '跳过当前剧情 / 事件？遇到选项时只会跳到选项处，仍需手动选择。',
+      // 与信息区同手感：出现时向左滑入、选完后快速向右滑出（仅睡觉 / 跳过两个入口）
+      slide: true,
       options: [
         { label: '取消', safe: true, onSelect: () => {} },
         { label: '跳过', onSelect: () => { this.skip(); } },

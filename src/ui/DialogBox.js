@@ -8,6 +8,8 @@
 //   · 点击别处 = 取消待确认；点击其他选项 = 切换待确认项
 //   · 再次点击已选中项 = 确认：同一 tick 立即执行结果，随后整卡 1.5 秒淡出
 //     （统一走 ConfirmAction.js，不再有「延迟 2 秒生效 / 先复原再执行」）
+//   · 只有睡觉 / 跳过两个入口传 `slide: true`：卡片改为与信息区同手感的横向滑动
+//     出现（自右向左滑入）/ 确认后快速向右滑出，卡片尺寸不变；其余弹窗仍走淡出。
 //
 // 调用：
 //   EventBus.emit(GE.DIALOG_SHOW, {
@@ -19,6 +21,7 @@
 //     ],
 //     escClose: true,          // 默认 true
 //     backdropClose: true,     // 默认 true
+//     slide: false,            // true = 睡觉 / 跳过专用横向滑入滑出
 //   });
 
 import { EventBus } from '../core/EventBus.js';
@@ -31,6 +34,13 @@ import { unshield } from './InputGuard.js';
 // 全局只有一个 DialogBox（main.js 单例）；多实例（冒烟测试会反复 new）时，
 // 只让最后挂载的实例响应 DIALOG_SHOW，避免多个实例抢同一事件、互相 disarm。
 let _activeDialog = null;
+
+/** 睡觉 / 跳过弹窗的横向滑入滑出时长（与信息区同手感，快速但不生硬） */
+export const DIALOG_SLIDE_MS = 280;
+/** 滑出终点：卡片宽度 + 右侧 20px 定位偏移，保证完全移出屏幕右侧 */
+const SLIDE_OUT_X = 'calc(100% + 40px)';
+/** 卡片基准位姿（right:20px + top:52%，纵向居中） */
+const BOX_REST_TRANSFORM = 'translate(0, -50%)';
 
 export class DialogBox {
   constructor() {
@@ -52,6 +62,9 @@ export class DialogBox {
     this._suppressBackdropClose = false;
     this._offDisarm = null;
     this.confirmFadeMs = CONFIRM_FADE_MS; // 冒烟测试可覆写以加速（文档口径 1.5 秒）
+    this.slideMs = DIALOG_SLIDE_MS;       // 睡觉 / 跳过滑入滑出时长（测试可覆写加速）
+    this._slideAnim = false;              // 本次弹窗是否为睡觉 / 跳过（横向滑动）
+    this._slideToken = 0;                 // 连开连关时作废过期的滑入回调
   }
 
   mount(parent = qs('body')) {
@@ -162,6 +175,7 @@ export class DialogBox {
       title = '提示', content = '',
       options = [{ label: '确定', onSelect: () => {} }],
       escClose = true, backdropClose = true,
+      slide = false,
     } = payload;
 
     this.titleEl.textContent = title;
@@ -193,6 +207,23 @@ export class DialogBox {
     this.mask.style.opacity = '1';
     this.mask.style.transition = 'opacity 0.3s ease';
     this.mask.style.display = 'block';
+
+    // 睡觉 / 跳过：卡片不做淡入淡出，改为从屏幕右侧向左滑入（尺寸不变）。
+    // 先无过渡地放到屏幕外，再在下一帧挂过渡滑到位，避免出现「闪现」。
+    this._slideAnim = slide === true;
+    const slideToken = ++this._slideToken;
+    this.box.style.transition = 'none';
+    this.box.style.transform = this._slideAnim ? `translate(${SLIDE_OUT_X}, -50%)` : BOX_REST_TRANSFORM;
+    if (this._slideAnim) {
+      const raf = typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame
+        : (fn) => setTimeout(fn, 0);
+      raf(() => {
+        if (slideToken !== this._slideToken || !this.visible || !this._slideAnim) return;
+        this.box.style.transition = `transform ${this.slideMs}ms ease-out`;
+        this.box.style.transform = BOX_REST_TRANSFORM;
+      });
+    }
 
     // §16.4：点击别处 = 取消选中（有选中时不关闭）；无选中时沿用 backdropClose 关闭
     this.mask.onclick = (e) => {
@@ -253,11 +284,17 @@ export class DialogBox {
     if (!ConfirmAction.isArmed(btn)) ConfirmAction.arm(btn, { hintEl: this._hintEl, text: CONFIRM_TEXT });
     btn?.classList?.add('dialog-opt-flash');
     if (this._hintEl) this._hintEl.style.display = 'none';
+    // 睡觉 / 跳过：业务当场执行后，整卡快速向右滑出屏幕（不做 1.5 秒淡出）；
+    // 遮罩继续挂点击盾，滑出期间点击不会穿透到下层按钮。
+    if (this._slideAnim && this.box?.style) {
+      this.box.style.transition = `transform ${this.slideMs}ms ease-in`;
+      this.box.style.transform = `translate(${SLIDE_OUT_X}, -50%)`;
+    }
     ConfirmAction.trigger(btn, () => {
       if (typeof opt?.onSelect === 'function') opt.onSelect();
     }, {
       fadeTarget: this.mask,
-      fadeMs: this.confirmFadeMs,
+      fadeMs: this._slideAnim ? this.slideMs : this.confirmFadeMs,
       onFaded: () => this.hide(),
     });
   }
@@ -270,6 +307,13 @@ export class DialogBox {
     this.mask.style.display = 'none';
     this.mask.style.opacity = '1';
     this.mask.style.pointerEvents = '';
+    // 复位卡片位姿：下一次弹窗（无论是否滑动）都从屏幕内的基准位置开始
+    this._slideAnim = false;
+    this._slideToken += 1;
+    if (this.box?.style) {
+      this.box.style.transition = 'none';
+      this.box.style.transform = BOX_REST_TRANSFORM;
+    }
     unshield(this.mask); // 淡出中途被强制关闭时也要摘掉点击盾
     this._optBtns = [];
     this._opts = [];

@@ -397,6 +397,7 @@ check(dialogs.length === dlgBefore + 1, 'E-05 ESC 打开跳过确认弹窗');
 const dlg = dialogs[dialogs.length - 1];
 check(dlg.options.length === 2 && dlg.options[0].label === '取消' && dlg.options[0].safe === true,
   'E-06 跳过确认含「取消」(安全) + 「跳过」');
+check(dlg.slide === true, 'E-06b 跳过确认弹窗走横向滑动动画');
 check(ui.visible === true, 'E-07 未确认前不跳过');
 ui.closeSilently('test');
 

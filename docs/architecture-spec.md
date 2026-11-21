@@ -392,6 +392,15 @@ canHostEternalContent(gs, ref)             // 【永恒】内容禁止置于临�
 - **关闭不重开**：信息区已滑出时 `visible === false`，移动事件不会 `_renderBody()` / `slideIn()`，即不会擅自重新打开面板。
 - **验收**：`tools/smoke-ui.mjs`「信息区：角色移动后立即刷新，仍停留在原本选中的那一格」（栅栏格 / 外圈格 / 关闭态三条）。
 
+### 2.4.9 睡觉 / 跳过弹窗的横向滑动动画（2026-11-21）
+
+- `DialogBox` 新增可选 payload `slide: true`，**仅** `GameDirector.requestSleep()` 与 `StoryUI.requestSkip()` 传入；其余弹窗不传，继续 1.5 秒淡出（`CONFIRM_FADE_MS`）。
+- **滑入**：`show()` 先无过渡把卡片置为 `translate(calc(100% + 40px), -50%)`（屏幕右侧外），下一帧挂 `transform ${slideMs}ms ease-out` 回到 `translate(0, -50%)`；`_slideToken` 作废连开连关时的过期回调。
+- **滑出**：`_confirmOption()` 先挂 `transform ${slideMs}ms ease-in` 把整卡移出屏幕右侧，再走 `ConfirmAction.trigger({ fadeTarget: mask, fadeMs: slideMs, onFaded: hide })`；mask 本身透明，只承担点击盾作用，不产生额外淡出。业务仍与点击同一 tick 执行。
+- **尺寸不变**：动画只改 `transform`，不动 `width / maxWidth`；`hide()` 复位卡片位姿，后续任意弹窗从屏内基准位开始。
+- 时长 `DIALOG_SLIDE_MS = 280`，实例字段 `slideMs` 供冒烟测试覆写加速。
+- **验收**：`tools/smoke-ui.mjs`「睡觉 / 跳过弹窗：横向滑入 + 选完快速向右滑出（其余弹窗保持淡出）」、§16.10 睡觉链路、`tools/smoke-story.mjs` E-06b。
+
 ### 2.5 RealtimeClock（统一实时时钟 / 渲染插值）
 
 ```js

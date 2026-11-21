@@ -1153,13 +1153,14 @@ head_('§16.20 中央接线：开新面板关旧面板 / 打开面板不切换�
   BuildSystem.exitBuildMode(gs);   // 还原，避免建造模式影响后续用例
 }
 
-head_('§16.10 睡觉：先文字弹窗 → 弹窗内二次确认 → 同一 tick 换日 → 1.5s 淡出；P 键同链路');
+head_('§16.10 睡觉：先文字弹窗 → 弹窗内二次确认 → 同一 tick 换日 → 快速滑出；P 键同链路');
 {
   const ConfirmAction = await import('../src/ui/ConfirmAction.js');
   const { DialogBox } = await import('../src/ui/DialogBox.js');
   const dlg = trackDlg(new DialogBox());
   dlg.mount();
   dlg.confirmFadeMs = 30; // 冒烟加速；真实 1.5 秒
+  dlg.slideMs = 30;       // 睡觉弹窗走滑动动画，同样加速
   director.dialogBox = dlg;
   const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -2390,6 +2391,53 @@ head_('第 11 批 §16.4：DialogBox 选项两段式 + 数字键等效 + 弹窗�
   EventBus.emit(GE.DIALOG_SHOW, { title: 'ESC 测试', options: [{ label: '好', onSelect: () => {} }] });
   key('Escape');
   assert(dlg.visible === false, 'ESC → 关闭弹窗');
+}
+
+// ════════════════════════════════════════════════════════════
+head_('睡觉 / 跳过弹窗：横向滑入 + 选完快速向右滑出（其余弹窗保持淡出）');
+{
+  const { DialogBox } = await import('../src/ui/DialogBox.js');
+  const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+  const dlgSlide = trackDlg(new DialogBox());
+  dlgSlide.mount();
+  dlgSlide.slideMs = 30;
+  director.dialogBox = dlgSlide;
+  const savedStamina = gs.player.stamina;
+
+  // ① 睡觉入口：payload 带 slide:true，出现后卡片停在基准位（尺寸不变）
+  gs.player.stamina = 5;
+  director.requestSleep();
+  assert(dlgSlide.visible, '睡觉弹窗出现');
+  assert(dlgSlide._slideAnim === true, '睡觉弹窗启用横向滑动模式');
+  assert(dlgSlide.box.style.transform === 'translate(0, -50%)',
+    '滑入终态：卡片回到基准位（由右向左滑入）', dlgSlide.box.style.transform);
+  assert((dlgSlide.box.style.transition || '').includes('transform'),
+    '滑入使用 transform 过渡（不改宽高）', dlgSlide.box.style.transition);
+  assert(dlgSlide.box.style.width === '380px', '窗口自身大小不变', dlgSlide.box.style.width);
+
+  // ② 选择完成 → 整卡快速向右滑出；滑出期间遮罩持续挂点击盾
+  dlgSlide._optBtns[0].click(); // 取消（safe：单击即确认）
+  assert((dlgSlide.box.style.transform || '').includes('calc(100% + 40px)'),
+    '选完后整卡向右滑出屏幕', dlgSlide.box.style.transform);
+  assert((dlgSlide.box.style.transition || '').includes(`${dlgSlide.slideMs}ms`),
+    '滑出为快速过渡', dlgSlide.box.style.transition);
+  assert(dlgSlide.mask.getAttribute('data-click-shield') === '1', '滑出期间点击盾生效');
+  await sleepMs(80);
+  assert(dlgSlide.visible === false, '滑出结束 → 弹窗关闭');
+  assert(dlgSlide.box.style.transform === 'translate(0, -50%)',
+    '关闭后卡片位姿复位，后续弹窗不受影响');
+
+  // ③ 未标记 slide 的普通弹窗仍走淡出，卡片不位移
+  EventBus.emit(GE.DIALOG_SHOW, {
+    title: '普通确认',
+    options: [{ label: '取消', safe: true, onSelect: () => {} }, { label: '确定', onSelect: () => {} }],
+  });
+  assert(dlgSlide._slideAnim === false && dlgSlide.box.style.transform === 'translate(0, -50%)',
+    '未标记 slide 的弹窗保持淡出：无横向位移', dlgSlide.box.style.transform);
+  dlgSlide._optBtns[0].click();
+  assert(!(dlgSlide.box.style.transform || '').includes('calc('), '普通弹窗确认后不滑出');
+  dlgSlide.hide();
+  gs.player.stamina = savedStamina;
 }
 
 // ════════════════════════════════════════════════════════════

@@ -385,6 +385,8 @@ export class GameDirector {
     EventBus.emit(GE.DIALOG_SHOW, {
       title: '睡觉',
       content: '行动力尚未耗尽，是否确定睡觉？',
+      // 与信息区同手感：出现时向左滑入、选完后快速向右滑出（仅睡觉 / 跳过两个入口）
+      slide: true,
       options: [
         { label: '取消', safe: true, onSelect: () => {} },
         { label: '睡觉', onSelect: () => { SleepSystem.sleep(this.gs, /* isAuto = */ false); } },
