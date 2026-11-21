@@ -350,6 +350,8 @@ canHostEternalContent(gs, ref)             // 【永恒】内容禁止置于临�
 - **地形图标链路**：`Assets.terrains` 必须登记全部地形 id（含 `terrain_path` 与旧别名 `path` → `🛤️`），保证 `Assets.getEmoji/getIcon` 不返回 `❓`；`HotBar._createItemIcon` 的资产组判定需依次尝试 `facilities → resources → items → terrains`，并以物品库 emoji 兜底，保证小径在背包 / 快捷栏 / 地块三态都有可见图标。
 - **地图地形层**：`MapView._terrainLayer` 在无 PNG 贴图时追加居中 emoji（`data-terrain-emoji`），`_terrainColor('terrain_path')` 给 `#d9c7a0`；外圈与栅栏格共用同一层实现。
 - **信息区 tab 口径**：地形信息**只在「状态」tab** 展示，地块内容 tab 不再承载地形。
+  - 地形行统一由地形定义取数：`getTerrain(tId)` 的 `name` + `description`（逐字物品库文案），外圈 `_renderStateTab` 与栅栏格 `_renderFenceStateTab` 同一口径。
+  - **禁止读储量字段**：没有储量机制的地形（如 `terrain_path`）不得拼接 `terrainAmount`——小径无元素量，绝不能显示「储量 0」。
   - 有地块内容（外圈或生效小径格）：内容 tab 按统一 `_renderContentHead(contentId)` 渲染图标 + 名称 + 词条徽章 + 描述；外圈与栅栏格同口径。
   - 无地块内容：外圈内容 tab 只保留基本功能选项（「前往」/「无法抵达」）；**生效小径格同样生成该 tab**（哪怕没有内容，也必须给出「前往 / 无法抵达」）；普通栅栏格不生成。
 - **内容 tab 单一渲染路径（2026-11-21）**：`_renderContentTab(tile, gs, { afterHead })` 同时服务外圈与生效小径格，操作目标一律取 `this._contentRef`（外圈数字 idx / fence ref），因此商店、魔法商店、土豆田块、鸡舍、狩猎等专属功能选项在生效小径格上与外圈完全一致。栅栏格仅额外通过 `afterHead` 插入「物品堆」区块。
@@ -382,6 +384,13 @@ canHostEternalContent(gs, ref)             // 【永恒】内容禁止置于临�
 - **不抢点击**：除上述两种情况外不调用 `preventDefault / stopPropagation`，普通点击原效果不变。
 - **与术语浮层无冲突**：`TermText` 的关闭监听同样在 document 捕获阶段，仅隐藏浮层、不拦截事件；点击盾吞掉的点击仍会顺带关闭浮层（关闭是附带结果），不会形成双重触发，也不会把点击从下层按钮抢走。
 - **验收**：`tools/smoke-ui.mjs`「输入分发：一次点击只对最高层级功能选项生效 / 淡出期点击盾不穿透」、二次确认三态中的点击盾断言。
+
+### 2.4.8 信息区实时刷新与选中保持（2026-11-21）
+
+- **移动即刷新**：`InfoPanel._subscribeEvents()` 订阅 `GE.MOVE`（徒步 / 载具 / 传送统一广播）。回调仅在 `this.visible` 为真且存在选中对象（`currentTileIdx` / `currentFenceIdx` / `mode === 'bless'`）时调用 `_renderBody()`，因此信息区打开时角色一移动就立刻重绘。
+- **保持选中格**：刷新只重绘既有 `currentTileIdx` / `currentFenceIdx` 指向的那一格，**不得**改成 `playerRef(gs)` 所在格；选中的切换只由 `TILE_CLICKED` / `FENCE_TILE_CLICKED` 驱动。
+- **关闭不重开**：信息区已滑出时 `visible === false`，移动事件不会 `_renderBody()` / `slideIn()`，即不会擅自重新打开面板。
+- **验收**：`tools/smoke-ui.mjs`「信息区：角色移动后立即刷新，仍停留在原本选中的那一格」（栅栏格 / 外圈格 / 关闭态三条）。
 
 ### 2.5 RealtimeClock（统一实时时钟 / 渲染插值）
 

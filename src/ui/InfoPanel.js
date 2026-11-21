@@ -1630,25 +1630,21 @@ export class InfoPanel {
   }
 
   // ════════════════════════════════════════════════════════════
-  // 栅栏内地块 —— 状态 tab（地形（含"无地形"）+ 储量）
+  // 栅栏内地块 —— 状态 tab（地形（含"无地形"））
+  //   描述一律取地形定义（与外圈状态 tab 同一口径），不读储量字段：
+  //   小径等无元素量的地形没有储量机制，不能拼出「储量 0」。
   // ════════════════════════════════════════════════════════════
   _renderFenceStateTab(cell, gs) {
     const tId = normTerrain(cell.terrain);
     // 与外圈状态 tab 同一数据源（含小径等新地形，避免本地映射漏项）
-    const terrainName = getTerrain(cell.terrain).name;
+    const tDef = getTerrain(tId);
 
     const row = createEl('div', { class: ['state-row'], parent: this.bodyWrap });
     row.appendChild(iconEl('terrains', tId, {
       size: '20px',
       fallback: Assets.getEmoji('terrains', cell.terrain || 'terrain_none'),
     }));
-    createEl('span', {
-      class: ['state-name'],
-      text: tId === 'terrain_none'
-        ? '无地形：可在此放置地形或建筑'
-        : `${terrainName}：储量 ${cell.terrainAmount ?? 0}`,
-      parent: row,
-    });
+    renderTermText(row, `${termLabel(tDef.name)}：${tDef.description}`, { class: 'state-name' });
 
     createEl('div', {
       style: { padding: '8px 4px', color: '#b0a090', fontSize: '12px', fontStyle: 'italic' },
@@ -1926,6 +1922,15 @@ export class InfoPanel {
     EventBus.on(GE.TILE_UPDATED, (payload = {}) => {
       const { tileIdx } = payload;
       if (tileIdx !== undefined && tileIdx !== null && tileIdx === this.currentTileIdx) {
+        this._renderBody();
+      }
+    });
+
+    // 角色移动（徒步 / 载具 / 传送）：信息区若正打开，立即实时重绘一次。
+    // 只刷新「原本选中的那一格」，不把选中格切到角色当前所在格。
+    EventBus.on(GE.MOVE, () => {
+      if (!this.visible) return;
+      if (this.currentTileIdx !== null || this.currentFenceIdx !== null || this.mode === 'bless') {
         this._renderBody();
       }
     });

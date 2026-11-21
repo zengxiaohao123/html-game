@@ -1698,7 +1698,10 @@ head_('小径修复：栅栏内容 tab / 地形只在状态 tab / 单位同格�
     '地块内容 tab 正确显示小麦田块名称');
   assert(!hasText(infoPanel.root, '地形：'), '地块内容 tab 不再显示地形信息（地形只在状态 tab）');
   buttonsWithText(infoPanel.root, '状态')[0].click();
-  assert(hasText(infoPanel.root, '小径'), '状态 tab 显示小径地形');
+  assert(hasText(infoPanel.root, `小径：${ITEMS.terrain_path.description}`),
+    '状态 tab 显示小径的完整地形描述（取自地形定义）');
+  assert(!hasText(infoPanel.root, '储量'),
+    '小径没有储量机制，状态 tab 不出现「储量」文案');
 
   // ── B) 无地块内容、且不是生效小径的普通栅栏格：不出现地块内容 tab ──
   cell.contentId = null;
@@ -1844,6 +1847,53 @@ head_('小径修复：栅栏内容 tab / 地形只在状态 tab / 单位同格�
   gs.player.nextMoveNoStamina = savedFree;
   if (gs.vehicle) gs.vehicle.current = savedVehicleCurrent;
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+}
+
+// ════════════════════════════════════════════════════════════
+head_('信息区：角色移动后立即刷新，仍停留在原本选中的那一格');
+{
+  const savedPx = gs.player.x;
+  const savedLoc = gs.player.loc;
+
+  // ── A) 选中栅栏内容格 → 角色移动 → 立即重绘，选中格不变 ──
+  const fi = 0;
+  const cell = gs.map.fence[fi];
+  const savedContentId = cell.contentId;
+  cell.contentId = 'facility_henhouse';
+  cell.contentState = {};
+  EventBus.emit(GE.FENCE_TILE_CLICKED, { fenceIdx: fi });
+  assert(infoPanel.visible, '信息区已打开');
+  const fenceBodyBefore = infoPanel.bodyWrap.children[0];
+  gs.player.loc = null;
+  gs.player.x = 0;
+  EventBus.emit(GE.MOVE, { fromRef: 0, toRef: 1, fromIdx: 0, toIdx: 1, path: [1], distance: 1 });
+  assert(infoPanel.mode === 'fence' && infoPanel.currentFenceIdx === fi && infoPanel.currentTileIdx === null,
+    '移动后仍停留在原本选中的栅栏格（不切到角色当前格）',
+    { mode: infoPanel.mode, fence: infoPanel.currentFenceIdx, tile: infoPanel.currentTileIdx });
+  assert(infoPanel.bodyWrap.children[0] !== fenceBodyBefore, '移动后信息区立即重绘一次');
+
+  // ── B) 选中外圈地块 → 角色移动 → 立即重绘，选中 idx 不变 ──
+  infoPanel.selectTile(2);
+  const outerBodyBefore = infoPanel.bodyWrap.children[0];
+  gs.player.x = 5;
+  EventBus.emit(GE.MOVE, { fromRef: 0, toRef: 5, fromIdx: 0, toIdx: 5, path: [1, 2, 3, 4, 5], distance: 5 });
+  assert(infoPanel.mode === 'tile' && infoPanel.currentTileIdx === 2,
+    '移动后仍停留在原本选中的外圈地块（不切到角色当前格）',
+    { mode: infoPanel.mode, tile: infoPanel.currentTileIdx });
+  assert(infoPanel.bodyWrap.children[0] !== outerBodyBefore, '外圈选中态同样立即重绘');
+
+  // ── C) 信息区已关闭 → 移动不擅自打开 ──
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+  const transformClosed = infoPanel.root.style.transform;
+  EventBus.emit(GE.MOVE, { fromRef: 0, toRef: 6, fromIdx: 0, toIdx: 6, path: [6], distance: 1 });
+  assert(!infoPanel.visible && infoPanel.root.style.transform === transformClosed,
+    '信息区关闭时移动不会擅自重新打开');
+
+  // ── 还原 ──
+  gs.player.x = savedPx;
+  gs.player.loc = savedLoc;
+  cell.contentId = savedContentId;
+  cell.contentState = {};
 }
 
 // ════════════════════════════════════════════════════════════
