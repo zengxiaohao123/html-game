@@ -6,7 +6,8 @@
 //   ① 需确认的动作先进入文字弹窗（DialogBox），在弹窗内点目标选项才进入待确认态：
 //      按钮底色变化 + 弹窗内出现「你确定这么做？」（不允许在图标旁 / 屏幕角落出现行内提示）
 //   ② 二次点击：同一 tick 立即执行业务回调（不许延迟、不许先复原再执行）
-//   ③ 执行后：弹窗 / 卡片在 1.5 秒内淡出，期间 pointer-events:none，重复点击无效
+//   ③ 执行后：弹窗 / 卡片在 1.5 秒内淡出，期间挂点击盾（data-click-shield），
+//      点击被吞掉：重复点击无效，也不会穿透给下层按钮
 //   ④ 首次点击后点别处（空白 / 切 tab / 其它按钮）：取消待确认态并复原
 //   ⑤ 快捷键与鼠标点击共用同一入口（睡觉 P 键与按钮都先弹同一个文字弹窗）
 //
@@ -16,6 +17,7 @@
 //   ConfirmAction.handleOutsideClick(target);                 // 点别处取消（document 捕获阶段自动挂）
 
 import { devLog } from '../core/Logger.js';
+import { shield, unshield } from './InputGuard.js';
 
 export const CONFIRM_TEXT = '你确定这么做？';
 export const CONFIRM_FADE_MS = 1500;      // 统一淡出时长（常量，不得各面板自行定义）
@@ -60,7 +62,8 @@ function applyDoneStyle(btn) {
   btn.style.background = CONFIRM_DONE_BG;
   btn.style.borderColor = '#b8912f';
   btn.style.boxShadow = 'none';
-  btn.style.pointerEvents = 'none';  // 淡出期间不可再点
+  // 淡出期间不可再点：用点击盾吞掉点击（pointer-events:none 会让点击穿透给下层按钮）
+  shield(btn);
   btn.style.cursor = 'default';
   btn.classList.add('confirm-done');
 }
@@ -137,6 +140,8 @@ export function disarm(btn) {
   if (!rec) return false;
   if (rec.fadeTimer) { clearTimeout(rec.fadeTimer); rec.fadeTimer = null; }
   restore(btn, { ...rec.orig, pointerEvents: rec.orig.pointerEvents });
+  unshield(btn);
+  unshield(rec.fadeTarget);
   btn?.classList?.remove('confirm-armed');
   btn?.classList?.remove('confirm-done');
   hideHint(rec);
@@ -184,10 +189,12 @@ export function trigger(btn, onConfirm, opts = {}) {
   const fadeMs = Number.isFinite(opts.fadeMs) ? opts.fadeMs : CONFIRM_FADE_MS;
   rec.fadeMs = fadeMs;
   const target = opts.fadeTarget || null;
+  rec.fadeTarget = target;
   if (target?.style) {
     target.style.transition = `opacity ${fadeMs}ms ease`;
     target.style.opacity = '0';
-    target.style.pointerEvents = 'none';
+    // 点击盾：淡出期点击被吞掉（不重复执行，也不穿透到下层按钮）
+    shield(target);
   }
   rec.fadeTimer = setTimeout(() => {
     rec.fadeTimer = null;

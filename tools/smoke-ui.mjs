@@ -153,6 +153,10 @@ const { CATEGORY_TABS } = await import('../src/ui/CategoryBar.js');
 const { VehiclePanel } = await import('../src/ui/panels/VehiclePanel.js');
 const { TaskPanel } = await import('../src/ui/panels/TaskPanel.js');
 const { CodexPanel } = await import('../src/ui/panels/CodexPanel.js');
+const { installInputGuard, shield, unshield, isShielded, closestAction, isActionable } =
+  await import('../src/ui/InputGuard.js');
+installInputGuard(); // 镜像 main.js：输入分发守卫在任何 UI 挂载前装好
+const guardClickFns = [...(docCaptureListeners.click || [])]; // [点击盾, 最高层判定]
 
 let pass = 0, fail = 0;
 function assert(cond, msg, extra) {
@@ -1189,8 +1193,8 @@ head_('§16.10 睡觉：先文字弹窗 → 弹窗内二次确认 → 同一 tic
     '取消后再点一次「睡觉」→ 重新待确认、不换日');
   dlg._optBtns[1].click();
   assert(gs.day === dayBefore + 1, '第二次点「睡觉」→ 同一 tick 立即换日');
-  assert(dlg.visible === true && dlg.mask.style.opacity === '0' && dlg.mask.style.pointerEvents === 'none',
-    '生效后弹窗淡出中且不可再点');
+  assert(dlg.visible === true && dlg.mask.style.opacity === '0' && dlg.mask.getAttribute('data-click-shield') === '1',
+    '生效后弹窗淡出中且不可再点（点击盾）');
   await sleepMs(80);
   assert(dlg.visible === false, '淡出结束 → 弹窗关闭');
 
@@ -1273,18 +1277,80 @@ head_('统一二次确认 ConfirmAction：1.5s 淡出 / 淡出期锁定 / 点别
     fadeTarget: target, onFaded: () => { faded++; }, fadeMs: 30,
   });
   assert(ok === true && hits === 1, 'trigger → 同一 tick 执行业务（不延迟）');
-  assert(target.style.opacity === '0' && target.style.pointerEvents === 'none',
-    '淡出目标透明度归零且不可再点');
-  assert(ConfirmAction.isConfirming(btn) && btn.style.pointerEvents === 'none', '淡出期间按钮锁定');
+  assert(target.style.opacity === '0' && target.getAttribute('data-click-shield') === '1',
+    '淡出目标透明度归零且挂点击盾（不可再点、不穿透）');
+  assert(ConfirmAction.isConfirming(btn) && btn.getAttribute('data-click-shield') === '1',
+    '淡出期间按钮锁定（点击盾）');
   assert(ConfirmAction.trigger(btn, () => { hits++; }, { fadeTarget: target, fadeMs: 30 }) === false,
     '淡出期间重复点击无效');
 
   await new Promise((r) => setTimeout(r, 80));
   assert(faded === 1 && hits === 1, '淡出结束 → onFaded 触发一次，业务不重复');
-  assert(!ConfirmAction.isConfirming(btn) && btn.style.pointerEvents === '', '淡出结束 → 按钮复原可再点');
+  assert(!ConfirmAction.isConfirming(btn) && btn.getAttribute('data-click-shield') === null,
+    '淡出结束 → 按钮复原可再点（摘下点击盾）');
+}
+
+head_('输入分发：一次点击只对最高层级功能选项生效 / 淡出期点击盾不穿透');
+{
+  // ① 守卫已装：click 捕获 = [点击盾, 最高层判定]，pointerdown 也有点击盾
+  assert(guardClickFns.length === 2 && (docCaptureListeners.pointerdown || []).length >= 1,
+    '输入分发守卫：click 捕获（点击盾 + 最高层判定）与 pointerdown 点击盾均已注册',
+    { click: guardClickFns.length, pointerdown: (docCaptureListeners.pointerdown || []).length });
+
+  // ② 点击盾：淡出中的元素仍参与命中，但点击被吞掉，不触发下层按钮
+  const lowerBtn = new FakeEl('button');
+  let lowerHits = 0;
+  lowerBtn.onclick = () => { lowerHits++; };
+  const fading = new FakeEl('div');
+  const fadingChild = new FakeEl('span');
+  fading.appendChild(fadingChild);
+  shield(fading);
+  assert(isShielded(fadingChild) === true, '子元素继承祖先的点击盾状态');
+  let prevented = false, stopped = false;
+  for (const fn of (docCaptureListeners.click || [])) {
+    fn({ type: 'click', target: fadingChild, preventDefault() { prevented = true; }, stopPropagation() { stopped = true; } });
+  }
+  assert(prevented && stopped, '点击盾：捕获阶段 preventDefault + stopPropagation（不重复生效、不穿透）');
+  assert(lowerHits === 0, '淡出元素之下的按钮不会被点到');
+  unshield(fading);
+  assert(isShielded(fadingChild) === false, '摘下点击盾后恢复普通命中');
+
+  // ③ 命中点被更高层选项覆盖 → 只让最高层那一个生效（下层动作不执行）
+  const topBtn = new FakeEl('button');
+  let topHits = 0;
+  topBtn.onclick = () => { topHits++; };
+  const lowerAction = new FakeEl('button');
+  let lowerActionHits = 0;
+  lowerAction.onclick = () => { lowerActionHits++; };
+  document.elementFromPoint = () => topBtn; // 模拟：同一位置视觉最高层是 topBtn
+  let p2 = false, s2 = false;
+  guardClickFns[1]({
+    type: 'click', target: lowerAction, clientX: 10, clientY: 10,
+    preventDefault() { p2 = true; }, stopPropagation() { s2 = true; },
+  });
+  await new Promise((r) => setTimeout(r, 0));
+  assert(p2 && s2, '落点被更高层选项覆盖 → 下层点击被拦截');
+  assert(lowerActionHits === 0, '下层功能选项不生效');
+  assert(topHits === 1, '最高层级的功能选项生效一次', topHits);
+  delete document.elementFromPoint;
+
+  // ④ 普通点击不改判：不抢点击
+  let p3 = false, s3 = false;
+  guardClickFns[1]({
+    type: 'click', target: topBtn, clientX: 10, clientY: 10,
+    preventDefault() { p3 = true; }, stopPropagation() { s3 = true; },
+  });
+  assert(!p3 && !s3, '正常命中（无更高层覆盖）→ 不拦截、不抢点击');
+
+  // ⑤ 功能选项识别（按钮 / 对话框选项）
+  assert(isActionable(new FakeEl('button')), '按钮识别为功能选项');
+  assert(isActionable({ tagName: 'DIV', classList: { contains: (c) => c === 'dialog-opt' } }),
+    '对话框选项 .dialog-opt 识别为功能选项');
+  assert(closestAction(fadingChild) === null, '普通文本节点不是功能选项');
 }
 
 head_('二次确认三态：取消后必须重新 arm（禁止跳过待确认直接执行）');
+
 {
   const ConfirmAction = await import('../src/ui/ConfirmAction.js');
   const { DialogBox } = await import('../src/ui/DialogBox.js');
@@ -2243,7 +2309,7 @@ head_('第 11 批 §16.4：DialogBox 选项两段式 + 数字键等效 + 弹窗�
   assert(picked === '丙', '确认后同一 tick 立即触发 onSelect（不延迟、不先复原）', picked);
   assert(dlg._optBtns[2].style.background === '#f7e6a8', '确认项淡金色背景');
   assert(dlg._optBtns[2].classList.contains('dialog-opt-flash'), '确认项闪烁类已加');
-  assert(dlg.mask.style.pointerEvents === 'none', '淡出期间整卡不可再点');
+  assert(dlg.mask.getAttribute('data-click-shield') === '1', '淡出期间整卡不可再点（点击盾）');
   key('1');
   assert(dlg._selectedIdx === 2, '确认动画期间其他数字键无效', dlg._selectedIdx);
 

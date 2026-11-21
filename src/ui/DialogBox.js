@@ -26,6 +26,7 @@ import { GE } from '../core/GameEvents.js';
 import { createEl, qs } from './dom.js';
 import * as ConfirmAction from './ConfirmAction.js';
 import { CONFIRM_TEXT, CONFIRM_FADE_MS } from './ConfirmAction.js';
+import { unshield } from './InputGuard.js';
 
 // 全局只有一个 DialogBox（main.js 单例）；多实例（冒烟测试会反复 new）时，
 // 只让最后挂载的实例响应 DIALOG_SHOW，避免多个实例抢同一事件、互相 disarm。
@@ -269,6 +270,7 @@ export class DialogBox {
     this.mask.style.display = 'none';
     this.mask.style.opacity = '1';
     this.mask.style.pointerEvents = '';
+    unshield(this.mask); // 淡出中途被强制关闭时也要摘掉点击盾
     this._optBtns = [];
     this._opts = [];
     this._selectedIdx = -1;

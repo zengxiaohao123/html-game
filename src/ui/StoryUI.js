@@ -35,6 +35,7 @@ import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { createEl, qs, clearChildren } from './dom.js';
 import { CONFIRM_TEXT, CONFIRM_FADE_MS } from './ConfirmAction.js';
+import { shield, unshield } from './InputGuard.js';
 import { applyEventEffects } from '../systems/EventEffects.js';
 
 /** 超过该数量的选项改为上下滚动（4 个及以内仍按参考图整列铺开） */
@@ -651,6 +652,7 @@ export class StoryUI {
       this.optionAreaEl.style.removeProperty?.('--option-fade-ms');
       this.optionAreaEl.style.display = 'none';
       this.optionAreaEl.style.pointerEvents = '';
+      unshield(this.optionAreaEl);
     }
   }
 
@@ -663,10 +665,11 @@ export class StoryUI {
     this._hints = [];
     this._confirmBtns = [];
     this._armedIndex = -1;
-    if (!this._options.length) { area.style.display = 'none'; return; }
+    if (!this._options.length) { area.style.display = 'none'; unshield(area); return; }
 
     area.style.display = 'flex';
     area.style.pointerEvents = '';
+    unshield(area);
     // 3 个选项照参考图节距（卡高 17.6 + 间距 3 ≈ 20.6vh）；4 个选项收紧；
     // 超过 4 个改为固定节距 + 选项区内部上下滚动，不再压缩卡片互相叠压。
     const scroll = this._options.length > SCROLL_OPTION_THRESHOLD;
@@ -840,8 +843,8 @@ export class StoryUI {
     this._armedIndex = -1;
     card.classList.remove('is-armed');
     card.classList.add('is-confirmed');
-    // 淡出期间整块选项区不再响应点击（重复点击无效）
-    this.optionAreaEl.style.pointerEvents = 'none';
+    // 淡出期间整块选项区吞掉点击（重复点击无效），且不穿透给下层剧情遮罩 / 按钮
+    shield(this.optionAreaEl);
 
     // 概率分叉：选项可带 branches，确认时抽签决定本次效果与去向
     const branch = this._pickBranch(opt);

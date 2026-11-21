@@ -374,6 +374,15 @@ canHostEternalContent(gs, ref)             // 【永恒】内容禁止置于临�
 - **不关闭的两种情况**：目标在浮层内部（`popoverEl.contains(target)`）、目标是术语本身（`.term-inline`，交给术语重新定位）。
 - **验收**：`tools/smoke-ui.mjs` §21-4（捕获阶段注册 / 点外部关闭 / 不吞点击 / 浮层内与术语本身不关闭）。
 
+### 2.4.7 输入分发与点击穿透（2026-11-21）
+
+- **公共层单一实现**：新增 `src/ui/InputGuard.js`，`main.js` 启动时 `installInputGuard()` 一次（幂等），在 `document` 捕获阶段处理点击，不在各按钮里逐个打补丁。
+- **点击盾（防穿透）**：二次确认执行后的淡出元素（`ConfirmAction` 的按钮 + `fadeTarget`、`StoryUI` 选项区）不再设 `pointer-events:none`——那会让点击落到下层按钮；改为 `shield(el)` 打 `data-click-shield` 属性，保留命中测试，捕获阶段 `preventDefault + stopPropagation` 吞掉点击。淡出结束 / 弹窗隐藏时 `unshield`（`disarm`、`DialogBox.hide`、`StoryUI._clearOptions/_renderOptions`）。
+- **最高层级唯一动作**：`closestAction()` 沿祖先链识别按钮 / `.dialog-opt` / `.hotbar-slot` / `.map-tile` / `[data-action]` 等功能选项；点击时用 `document.elementFromPoint` 取实际命中点，若命中点属于更高层的另一个选项，则拦截本次事件并把动作交给最高层那一个（`__inputGuardRetarget` 防重入）。
+- **不抢点击**：除上述两种情况外不调用 `preventDefault / stopPropagation`，普通点击原效果不变。
+- **与术语浮层无冲突**：`TermText` 的关闭监听同样在 document 捕获阶段，仅隐藏浮层、不拦截事件；点击盾吞掉的点击仍会顺带关闭浮层（关闭是附带结果），不会形成双重触发，也不会把点击从下层按钮抢走。
+- **验收**：`tools/smoke-ui.mjs`「输入分发：一次点击只对最高层级功能选项生效 / 淡出期点击盾不穿透」、二次确认三态中的点击盾断言。
+
 ### 2.5 RealtimeClock（统一实时时钟 / 渲染插值）
 
 ```js

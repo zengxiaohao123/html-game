@@ -42,6 +42,7 @@ import { VehiclePanel } from './ui/panels/VehiclePanel.js';
 import { TaskPanel } from './ui/panels/TaskPanel.js';
 import { CodexPanel } from './ui/panels/CodexPanel.js';
 import { MainMenu } from './ui/MainMenu.js';
+import { installInputGuard } from './ui/InputGuard.js';
 
 function loadStylesheet(href) {
   if (document.querySelector(`link[href="${href}"]`)) return;
@@ -64,6 +65,10 @@ loadStylesheet('./src/ui/styles/story.css');
 loadStylesheet('./src/ui/styles/map-highlight.css');
 
 devLog.info('=== 转盘农场 Phase 2B 启动中 ===');
+
+// 0. 输入分发守卫（§2.4.7）：一次点击只对一个最高层级功能选项生效，
+//    淡出元素吞点击而不穿透；必须在任何 UI 挂载前装好。
+installInputGuard();
 
 // 1. 主导演
 //    不在这里 start()：进入主地图只能由「新的游戏」或「读档成功」触发。
