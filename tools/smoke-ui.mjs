@@ -312,14 +312,17 @@ head_('§16.3b 地形变化实时刷新：只更新该格地形背景层，不�
   const otherElBefore = mapView.tileEls.get(otherIdx);
   assert(bgOf(tileElBefore)?.getAttribute('data-terrain') === 'terrain_grass', '前置：该格已渲染草地');
   infoPanel.selectTile(tileIdx);
-  assert(hasText(infoPanel.bodyWrap, '草地'), '前置：信息区显示草地');
+  // 地形只在「状态」tab 展示（地块内容 tab 不再承载地形）
+  buttonsWithText(infoPanel.tabsWrap, '状态')[0].click();
+  assert(hasText(infoPanel.bodyWrap, '草地'), '前置：信息区状态 tab 显示草地');
 
   // 草元素量被吃空 → 数据为无地形；不做其它操作，只发地形事件
   tile.terrainAmount = 0;
   tile.terrain = 'terrain_none';
   EventBus.emit(GE.TILE_TERRAIN_CHANGED, { tileIdx });
-  assert(hasText(infoPanel.bodyWrap, '无地形') && !hasText(infoPanel.bodyWrap, '草地'),
-    '信息区地形字段同步刷新为无地形');
+  assert(!hasText(infoPanel.bodyWrap, '草地'), '无地块内容时地块内容 tab 不再显示地形信息');
+  const labelsNoState = (infoPanel._currentTabs || []).map((t) => t.label).join('/');
+  assert(labelsNoState === '地块内容', `无地形/状态 → 只有地块内容 tab（实测 ${labelsNoState}）`);
   const bgAfter = bgOf(mapView.tileEls.get(tileIdx));
   assert(bgAfter?.getAttribute('data-terrain') === 'terrain_none', '草地耗尽 → 地形层即时变为无地形');
   assert(!bgAfter?.style.backgroundImage?.includes('tile_grass.png'), '空地形不再显示草地贴图', bgAfter?.style.backgroundImage);
@@ -334,7 +337,9 @@ head_('§16.3b 地形变化实时刷新：只更新该格地形背景层，不�
   const bgWater = bgOf(mapView.tileEls.get(tileIdx));
   assert(bgWater?.getAttribute('data-terrain') === 'terrain_water', '地形替换 → 该格即时更新为水面');
   assert(bgWater?.style.backgroundImage?.includes('tile_water.png'), '替换后使用新地形贴图', bgWater?.style.backgroundImage);
-  assert(hasText(infoPanel.bodyWrap, '水面'), '信息区地形字段同步刷新为水面');
+  assert(hasText(infoPanel.tabsWrap, '状态'), '有地形 → 状态 tab 重新出现');
+  buttonsWithText(infoPanel.tabsWrap, '状态')[0].click();
+  assert(hasText(infoPanel.bodyWrap, '水面'), '信息区状态 tab 同步刷新为水面');
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
   assert(mapView.tileEls.get(tileIdx) === tileElBefore, '替换地形同样不重建整格 DOM');
 
@@ -1568,6 +1573,122 @@ head_('第 10 批任务 A：InfoPanel 精修后 tab/地形文案状态正确');
   buttonsWithText(infoPanel.root, '地块内容')[0].click();
   assert(infoPanel.activeTabIdx === 0, '点地块内容 tab → activeTabIdx=0');
   tile.terrain = savedTerrain;
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
+}
+
+head_('小径修复：栅栏内容 tab / 地形只在状态 tab / 单位同格排版');
+{
+  const { ITEMS } = await import('../src/data/items.js');
+  // ── A) 生效小径格上放小麦田：内容 tab 显示小麦田块信息，地形只在状态 tab ──
+  const cell = gs.map.fence[0];
+  const fi = 0;
+  const savedCell = {
+    contentId: cell.contentId, terrain: cell.terrain, terrainAmount: cell.terrainAmount,
+    isPathOuter: cell.isPathOuter, creatures: cell.creatures,
+  };
+  cell.contentId = 'facility_wheat';
+  cell.contentState = {};
+  cell.terrain = 'terrain_path';
+  cell.terrainAmount = 0;
+  cell.isPathOuter = true;
+  cell.creatures = [];
+
+  EventBus.emit(GE.FENCE_TILE_CLICKED, { fenceIdx: fi });
+  const labels = (infoPanel._currentTabs || []).map((t) => t.label).join('/');
+  assert(labels.includes('地块内容') && labels.includes('状态'),
+    `有内容的小径格 → 地块内容 + 状态 tab（实测 ${labels}）`);
+  assert(hasText(infoPanel.root, ITEMS['facility_wheat'].name),
+    '地块内容 tab 正确显示小麦田块名称');
+  assert(!hasText(infoPanel.root, '地形：'), '地块内容 tab 不再显示地形信息（地形只在状态 tab）');
+  buttonsWithText(infoPanel.root, '状态')[0].click();
+  assert(hasText(infoPanel.root, '小径'), '状态 tab 显示小径地形');
+
+  // ── B) 无地块内容的栅栏内格：不出现地块内容 tab ──
+  cell.contentId = null;
+  EventBus.emit(GE.FENCE_TILE_CLICKED, { fenceIdx: fi });
+  const labelsEmpty = (infoPanel._currentTabs || []).map((t) => t.label).join('/');
+  assert(!labelsEmpty.includes('地块内容'),
+    `无内容的栅栏格 → 不显示地块内容 tab（实测 ${labelsEmpty}）`);
+
+  // ── C) 单位排版：角色与生物同网格，角色优先第一格 ──
+  const savedCreatures = (cell.creatures || []).slice();
+  const savedGsCreatures = gs.creatures.slice();
+  const savedPx = gs.player.x;
+  const savedLoc = gs.player.loc;
+  gs.creatures.push({
+    id: 't_layout_chick', kind: 'chick', hp: 50, maxHp: 50, atk: 0, growth: 0, growthMax: 100,
+    mood: 0, stage: 'chick', category: 'friendly', lastFed: true, activeBuffs: [],
+  });
+  cell.creatures = ['t_layout_chick'];
+  gs.player.x = null;
+  gs.player.loc = { kind: 'fence', row: cell.row, col: cell.col };
+  EventBus.emit(GE.FENCE_TILE_CLICKED, { fenceIdx: fi });
+  const unitTab = buttonsWithText(infoPanel.root, '单位')[0];
+  unitTab.click();
+  const playerCard = findAll(infoPanel.root, (el) => el._classes && el._classes.has('player-card'))[0];
+  const chickCard = findAll(infoPanel.root, (el) => el.attributes && el.attributes.title === '小鸡')[0];
+  assert(!!playerCard && !!chickCard, '角色卡与生物卡都出现在单位 tab');
+  assert(playerCard && chickCard && playerCard.parentNode === chickCard.parentNode,
+    '角色卡与生物卡在同一个网格容器内（角色不单独占一行）');
+  assert(playerCard && playerCard.parentNode && playerCard.parentNode.children[0] === playerCard,
+    '角色卡优先排在网格第一格');
+
+  // ── 还原 ──
+  gs.player.x = savedPx;
+  gs.player.loc = savedLoc;
+  gs.creatures.length = 0;
+  gs.creatures.push(...savedGsCreatures);
+  cell.creatures = savedCreatures;
+  Object.assign(cell, {
+    contentId: savedCell.contentId, terrain: savedCell.terrain,
+    terrainAmount: savedCell.terrainAmount, isPathOuter: savedCell.isPathOuter,
+    creatures: savedCell.creatures,
+  });
+
+  // ── D) 前往 / 无法抵达：统一功能选项形态，互相排斥 ──
+  const { Distance } = await import('../src/core/Distance.js');
+  const savedPx2 = gs.player.x;
+  const savedLoc2 = gs.player.loc;
+  const savedFree = gs.player.nextMoveNoStamina;
+  const savedVehicleCurrent = gs.vehicle?.current ?? null;
+  if (gs.vehicle) gs.vehicle.current = null;
+  gs.player.loc = null;
+  gs.player.x = 0;
+  gs.player.nextMoveNoStamina = false;
+
+  const size = gs.map.size;
+  const p0 = Distance.outerIdxToXY(size, 0);
+  const adjIdx = Distance.outerXYToIdx(size, p0.x < size - 1 ? p0.x + 1 : p0.x - 1, p0.y);
+  infoPanel.selectTile(adjIdx);
+  assert(findAll(infoPanel.root, (el) => el._classes && el._classes.has('action-btn')
+    && el._text === '前往（消耗行动力1）').length === 1,
+    '可前往：显示「前往（消耗行动力1）」，不再显示载具名称');
+
+  gs.player.nextMoveNoStamina = true;
+  infoPanel._renderBody();
+  assert(findAll(infoPanel.root, (el) => el._classes && el._classes.has('action-btn')
+    && el._text === '前往（消耗行动力0）').length === 1,
+    '免行动力移动：显示「前往（消耗行动力0）」');
+  gs.player.nextMoveNoStamina = false;
+
+  const far = gs.map.outerTiles.find((t) => {
+    const q = Distance.outerIdxToXY(size, t.idx);
+    return Math.abs(q.x - p0.x) + Math.abs(q.y - p0.y) >= 2;
+  });
+  infoPanel.selectTile(far.idx);
+  const noBtn = findAll(infoPanel.root,
+    (el) => el._classes && el._classes.has('action-btn') && el._text === '无法抵达')[0];
+  assert(!!noBtn, '不可前往：显示为功能选项「无法抵达」');
+  assert(!!noBtn && noBtn.attributes.disabled !== undefined, '「无法抵达」不可点击（disabled）');
+  assert(!!noBtn && noBtn.style.background === '#d9534f', '「无法抵达」底色为红色');
+  assert(!findAll(infoPanel.root, (el) => el._text && el._text.includes('不可前往')).length,
+    '不再显示旧文案「不可前往」');
+
+  // ── 还原 ──
+  gs.player.x = savedPx2;
+  gs.player.loc = savedLoc2;
+  gs.player.nextMoveNoStamina = savedFree;
+  if (gs.vehicle) gs.vehicle.current = savedVehicleCurrent;
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
 }
 

@@ -39,17 +39,19 @@ export const Assets = {
     resource_magic_shop: '🔮',
   },
 
-  // ── 地形（键与物品库 terrain_* 一致；后 4 个为旧 id 别名，兼容旧存档）──
+  // ── 地形（键与物品库 terrain_* 一致；后 5 个为旧 id 别名，兼容旧存档）──
   terrains: {
     terrain_none: '⬜',
     terrain_grass: '🟩',
     terrain_water: '🌊',
     terrain_ice: '🧊',
+    terrain_path: '🛤️',
     // 旧 id 别名
     none: '⬜',
     grass: '🟩',
     water: '🌊',
     mud: '⬜',
+    path: '🛤️',
   },
 
   // ── UI 图标（状态栏/功能区/emoji 占位）──

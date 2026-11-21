@@ -267,6 +267,27 @@ console.log('\n═══ 8b. 扩建自动延续（上侧） ═══');
   check(gs.map.fence[fIdx(gs, 2, 0)].isPathOuter === true, '原纵向小径仍保持生效');
 }
 
+console.log('\n═══ 8c. 原外圈小径不触发自动延续 ═══');
+{
+  const gs = makeGS();
+  // 真实外圈右边缘三格改成小径（互相连通 → 属于同一个生效连通块），
+  // 但它们本来就是外圈格，不属于「原栅栏内、因连通被视为外圈」的对象。
+  for (const y of [1, 2, 3]) {
+    const t = gs.map.outerTiles[oIdx(gs, 4, y)];
+    t.terrain = PATH;
+    t.terrainAmount = 0;
+  }
+  recomputePathEffect(gs);
+  const comps = computePathComponents(gs);
+  check(comps.components.some((c) => c.effective && c.fenceIdx.length === 0),
+    '纯外圈小径也能形成生效连通块（前置条件成立）');
+
+  const out = expandMapInPlace(gs, EXPAND_AXIS.LENGTH);
+  check(!!out.ok, '扩建成功');
+  check(Array.isArray(out.continued) && out.continued.length === 0,
+    `原外圈小径不启用自动延续（实际补 ${out.continued?.length} 格）`);
+}
+
 console.log('\n═══ 9. 存档往返 ═══');
 {
   const gs = makeGS();

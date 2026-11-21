@@ -157,15 +157,28 @@ export function expandMapInPlace(gs, axis) {
   const oldFDims = { rows: oldRows - 2, cols: oldCols - 2 };
   const newFDims = { rows: newRows - 2, cols: newCols - 2 };
 
-  // ── 0. 扩建前记录「已连通小径」位于受扩建影响边缘的端点 ──
-  //    列扩建（长度 +1）会切断贴着右边缘的端点；行扩建（宽度 +1）会切断贴着上边缘的端点。
-  //    扩建完成后在同一结算内自动补一格小径，保证玩家看不到中间的断开态。
+  // ── 0. 扩建前记录「需要自动延续」的生效小径栅栏格 ──
+  //    对象限定：本次扩建前原属栅栏内、因连通小径被视为外圈（isPathOuter）的格子，
+  //    且位于从右往左第二列（列扩建）或从上往下第二行（行扩建）。
+  //    原本就是外圈、只是地形改成小径的格子不触发自动延续（用户裁定）。
+  //    扩建完成后在同一结算内补一格小径，保证玩家看不到中间的断开态。
   const { components } = computePathComponents(gs);
-  const affectedTerminals = [];
+  const continuedTargets = [];
+  const seenTargets = new Set();
   for (const comp of components) {
     if (!comp.effective) continue;
-    for (const t of comp.outerTerminals) {
-      if (isLength ? t.x === oldCols - 1 : t.y === 0) affectedTerminals.push({ x: t.x, y: t.y });
+    for (const fi of comp.fenceIdx) {
+      const row = Math.floor(fi / oldFDims.cols);
+      const col = fi % oldFDims.cols;
+      const x = col + 1;
+      const y = row + 1;
+      if (isLength ? x !== oldCols - 2 : y !== 1) continue;
+      const tx = isLength ? oldCols - 1 : x;
+      const ty = isLength ? y : 1;
+      const key = `${tx},${ty}`;
+      if (seenTargets.has(key)) continue;
+      seenTargets.add(key);
+      continuedTargets.push({ x: tx, y: ty });
     }
   }
 
@@ -360,7 +373,8 @@ export function expandMapInPlace(gs, axis) {
   }
 
   // ── 8. 小径自动延续（原子结算）──
-  //    对每个受影响的连通小径端点，在「扩建后紧贴端点内侧」补一格小径地形：
+  //    对每个「原栅栏内、因连通被视为外圈、位于第二列/第二行」的生效小径格，
+  //    在「扩建后紧贴其内侧」补一格小径地形：
   //      列扩建（右侧）：补在从右往左第二列（同一行）
   //      行扩建（上侧）：补在从上往下第二行（同一列）
   //    补格免费、不消耗物品；补格与连通重算在同一次结算中完成，
@@ -368,10 +382,8 @@ export function expandMapInPlace(gs, axis) {
   //    若无法补格（不在图内 / 目标格已有内容），则不做特殊处理，
   //    由随后的 recomputePathEffect 按普通还原流程直接结算（用户裁定：不弹确认）。
   const continued = [];
-  for (const t of affectedTerminals) {
-    const tx = isLength ? oldCols - 1 : t.x;
-    const ty = isLength ? t.y : 1;
-    const ref = refOfXY(gs, tx, ty);
+  for (const t of continuedTargets) {
+    const ref = refOfXY(gs, t.x, t.y);
     if (ref === null) continue;
     const cell = getTile(gs, ref);
     if (!cell) continue;

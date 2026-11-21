@@ -396,7 +396,7 @@ export class MapView {
     // 单元格边长（像素）：外圈格与栅栏格都由几何层保证等于 tileSize
     const cellSide = BASE_TILE_PX * ratio;
     const side = TERRAIN_FILL_SIDE * cellSide;
-    return createEl('div', {
+    const layer = createEl('div', {
       class: ['tile-terrain-bg'],
       attrs: {
         'data-terrain': terrainId,
@@ -422,6 +422,22 @@ export class MapView {
         zIndex: '0',
       },
     });
+    // 无 PNG 的地形（如小径）也要有可见标识：居中回退 emoji，避免出现空白块
+    if (!png) {
+      layer.appendChild(createEl('span', {
+        class: ['tile-terrain-emoji'],
+        text: Assets.getEmoji('terrains', terrainId),
+        attrs: { 'data-terrain-emoji': terrainId },
+        style: {
+          position: 'absolute', inset: '0',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: `${Math.max(10, Math.round(side * 0.5))}px`,
+          lineHeight: '1', opacity: '0.85',
+          fontFamily: '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif',
+        },
+      }));
+    }
+    return layer;
   }
 
   _terrainLayerElOf(tileEl) {
@@ -623,6 +639,7 @@ export class MapView {
       case 'terrain_grass': return '#a8e6a1';
       case 'terrain_water': return '#87ceeb';
       case 'terrain_ice':   return '#d9f0ff';
+      case 'terrain_path':  return '#d9c7a0';
       case 'terrain_none':
       default:              return '#f5f0e1';
     }

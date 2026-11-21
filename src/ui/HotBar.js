@@ -322,7 +322,15 @@ export class HotBar {
           group = 'items';
           fallback = item;
         } else {
-          fallback = '❓';
+          // 地形（含小径）：与背包同口径走 terrains 组，再回退物品库 emoji
+          const terrain = Assets.getEmoji('terrains', itemId);
+          const libEmoji = ITEMS?.[itemId]?.emoji;
+          if (terrain && terrain !== '❓') {
+            group = 'terrains';
+            fallback = terrain;
+          } else if (libEmoji) {
+            fallback = libEmoji;
+          }
         }
       }
     }

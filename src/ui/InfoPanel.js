@@ -287,7 +287,8 @@ export class InfoPanel {
     } else if (this.mode === 'fence') {
       const cell = gs?.map?.fence?.[this.currentFenceIdx];
       if (cell) {
-        tabs.push({ label: '地块内容', render: 'fenceContent' });
+        // 地块内容 tab 只在该格确有地块内容时出现（地形信息只在状态 tab）
+        if (cell.contentId) tabs.push({ label: '地块内容', render: 'fenceContent' });
         if (this._fenceHasState(cell)) tabs.push({ label: '状态', render: 'fenceState' });
         // v0.6：生效小径格是临时外圈，玩家可站上去；生物按既有栅栏格归属
         const dims = Distance.fenceDimsOf(gs);
@@ -422,7 +423,12 @@ export class InfoPanel {
   // ════════════════════════════════════════════════════════════
   // Tab —— 地块内容（第一行图标+名字；词条逐行；收获滑动条；文字功能按钮一行一个）
   // ════════════════════════════════════════════════════════════
-  _renderContentTab(tile, gs) {
+
+  /**
+   * 地块内容头部：图标 + 名字 + 词条徽章 + 描述。
+   * 外圈地块与栅栏内（生效小径）地块共用同一口径，保证同样内容显示一致。
+   */
+  _renderContentHead(contentId) {
     const titleRow = createEl('div', {
       style: {
         display: 'flex', alignItems: 'center', gap: '10px',
@@ -432,67 +438,46 @@ export class InfoPanel {
     });
 
     let iconNode, name, descriptions;
-    const contentId = tile.contentId;
-    if (contentId) {
-      if (contentId.startsWith('skill_')) {
-        // 技能卡地块：从 SKILLS 查中文名
-        const sk = SKILLS[contentId];
-        iconNode = iconEl('ui', contentId, { def: sk, fallback: sk?.emoji || '⚡', size: '32px' });
-        name = sk?.name || contentId;
-        // 描述逐字来自物品库（SKILLS 已引用 ITEMS），按数据里的 \n 分行
-        descriptions = sk?.description
-          ? String(sk.description).split('\n').filter(Boolean)
-          : ['（词条未配置）'];
-      } else {
-        const group = contentId.startsWith('resource_') ? 'resources' : 'facilities';
-        const def = getDef(contentId);
-        iconNode = iconEl(group, contentId, {
-          def, size: '32px',
-          fallback: def?.emoji || Assets.getEmoji(group, contentId),
-        });
-        name = (def && def.name) || contentId;
-        // §16.4 词条描述以物品库为准：回退 def.description（facilities.js 按物品库生成）
-        descriptions = (def && def.description)
-          ? String(def.description).split('\n').filter(Boolean)
-          : ['（词条未配置）'];
-      }
+    if (contentId.startsWith('skill_')) {
+      // 技能卡地块：从 SKILLS 查中文名
+      const sk = SKILLS[contentId];
+      iconNode = iconEl('ui', contentId, { def: sk, fallback: sk?.emoji || '⚡', size: '32px' });
+      name = sk?.name || contentId;
+      // 描述逐字来自物品库（SKILLS 已引用 ITEMS），按数据里的 \n 分行
+      descriptions = sk?.description
+        ? String(sk.description).split('\n').filter(Boolean)
+        : ['（词条未配置）'];
     } else {
-      // 空地：显示地形（含"无地形"），名称与描述逐字来自物品库（terrains.js → ITEMS）
-      const tId = normTerrain(tile.terrain);
-      const tDef = getTerrain(tId);
-      iconNode = iconEl('terrains', tId, {
-        size: '32px',
-        fallback: Assets.getEmoji('terrains', tile.terrain || 'terrain_none'),
+      const group = contentId.startsWith('resource_') ? 'resources' : 'facilities';
+      const def = getDef(contentId);
+      iconNode = iconEl(group, contentId, {
+        def, size: '32px',
+        fallback: def?.emoji || Assets.getEmoji(group, contentId),
       });
-      name = tDef.name;
-      descriptions = [tDef.description];
+      name = (def && def.name) || contentId;
+      // §16.4 词条描述以物品库为准：回退 def.description（facilities.js 按物品库生成）
+      descriptions = (def && def.description)
+        ? String(def.description).split('\n').filter(Boolean)
+        : ['（词条未配置）'];
     }
 
     titleRow.appendChild(iconNode);
     createEl('span', { text: name, parent: titleRow });
 
     // 展示词条（【永恒】【唯一】等）：统一徽章入口，不混入描述正文
-    renderTraitBadges(this.bodyWrap, contentId ? ITEMS[contentId]?.traits : null, { marginBottom: '8px' });
-
-    // 地形提示
-    if (tile.terrain && normTerrain(tile.terrain) !== 'terrain_none') {
-      const tRow = createEl('div', {
-        style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#8a6a3a', marginBottom: '8px' },
-        parent: this.bodyWrap,
-      });
-      tRow.appendChild(iconEl('terrains', tile.terrain, {
-        size: '18px',
-        fallback: Assets.getEmoji('terrains', tile.terrain),
-      }));
-      // 第 10 批：显示中文地形名（不再露出原始 id）
-      const tName = getTerrain(tile.terrain).name;
-      createEl('span', { text: `地形：${tName}`, parent: tRow });
-    }
+    renderTraitBadges(this.bodyWrap, ITEMS[contentId]?.traits, { marginBottom: '8px' });
 
     // 词条描述（每条一行）；文本中的【术语】统一走 TermText 行内组件（可点开释义）
     for (const desc of descriptions) {
       renderTermText(this.bodyWrap, desc, { tag: 'div', class: 'facility-desc-row' });
     }
+  }
+
+  _renderContentTab(tile, gs) {
+    const contentId = tile.contentId;
+    // 有地块内容：标题行（图标 + 名字）+ 词条徽章 + 描述。
+    // 无地块内容：不渲染地形（地形只在「状态」tab），只保留下方「前往 / 无法抵达」基本功能选项。
+    if (contentId) this._renderContentHead(contentId);
 
     // 设施类地块 —— 功能选项区（§16.4：区分"身处该格"vs"随时可点"）
     // L-04：只有"存在额外功能选项"的设施才渲染功能区；无选项设施（麦田/水稻/玉米/卷心菜/
@@ -1071,61 +1056,35 @@ export class InfoPanel {
       // 其他 resource_ 前缀（如未来的新资源点）— 词条自动触发，无额外功能选项
     }
 
-    // ── "前往"按钮（根据载具状态决定可达范围和调用方式） ──
+    // ── "前往"功能选项（统一形态：前往（消耗行动力x） / 无法抵达，二者互斥） ──
     if (gs && !refsEqual(playerRef(gs), tile.idx)) {
       const hasVehicle = !!(gs.vehicle?.current);
       let canGo = false;
-      let goLabel = '🚪 前往（一步抵达）';
-      let goDisabled = false;
-      let goReason = null;
-      let reachInfo = null;  // { pattern, maxRange, ... }
+      let reachInfo = null;  // { pattern, maxRange, freeStamina, ... }
 
       if (!hasVehicle) {
         // 无载具：只允许相邻格（玩家可能在生效小径格上，统一按网格坐标判定）
         const me = refXY(gs, playerRef(gs));
         const tg = refXY(gs, tile.idx);
         const isAdj = !!me && !!tg && Math.abs(tg.x - me.x) + Math.abs(tg.y - me.y) === 1;
-        if (isAdj) {
-          canGo = true;
-        } else {
-          canGo = false;
-          goReason = '不是相邻格';
-        }
+        canGo = isAdj;
       } else {
-        // 有载具：按载具 movePattern 判断可达性
+        // 有载具：按载具 movePattern 判断可达性（判断规则不变）
         const reach = VehicleSystem.canVehicleReach(gs, tile.idx);
         if (reach.ok) {
           canGo = true;
           reachInfo = reach.def;
-          // 动态拼按钮文字
-          if (reachInfo.movePattern === 'directional') {
-            goLabel = `🚗 ${reachInfo.emoji || ''} ${reachInfo.name}：前往（同方向最多 ${reachInfo.maxRange} 格）`;
-          } else if (reachInfo.movePattern === 'line') {
-            goLabel = `🧹 ${reachInfo.emoji || ''} ${reachInfo.name}：前往（同行/同列任意格）`;
-          } else if (reachInfo.movePattern === 'any') {
-            goLabel = `✨ ${reachInfo.emoji || ''} ${reachInfo.name}：前往（任意格）`;
-          }
-          const left = gs.vehicle.current.usageLeft;
-          goLabel += Number.isFinite(left)
-            ? ` · 剩 ${left} 次`
-            : (reachInfo.perDayLimit ? ` · 每天限 ${reachInfo.perDayLimit} 次` : ' · 不限次数');
-        } else {
-          canGo = false;
-          goReason = reach.reason;
         }
       }
 
-      createEl('div', {
-        style: { marginTop: '10px', textAlign: 'center' },
-        parent: this.bodyWrap,
-      });
+      // 真实行动力消耗：芋圆免消耗 / 载具 freeStamina → 0，否则徒步与载具均为 1
+      const staminaCost = (gs.player.nextMoveNoStamina || (hasVehicle && reachInfo?.freeStamina)) ? 0 : 1;
 
       if (canGo) {
         createEl('button', {
           class: 'action-btn',
           style: { width: '100%', fontSize: '14px', background: '#fff0c0' },
-          text: goLabel,
-          disabled: goDisabled,
+          text: `前往（消耗行动力${staminaCost}）`,
           parent: this.bodyWrap,
           onclick: () => {
             const director = window.__gameDirector;
@@ -1168,11 +1127,16 @@ export class InfoPanel {
           },
         });
       } else {
-        createEl('div', {
-          style: { marginTop: '6px', fontSize: '12px', color: '#b0a090', textAlign: 'center' },
-          text: hasVehicle
-            ? `❌ 载具无法到达（${goReason || '不在移动范围内'}）`
-            : '❌ 不可前往（不是相邻格）',
+        // 不可前往：同一个功能选项位置，改为不可点击的红色「无法抵达」（与「前往」互斥）
+        createEl('button', {
+          class: 'action-btn',
+          style: {
+            width: '100%', fontSize: '14px',
+            background: '#d9534f', color: '#fff',
+            border: '1px solid #c9302c', cursor: 'not-allowed',
+          },
+          text: '无法抵达',
+          attrs: { disabled: 'disabled' },
           parent: this.bodyWrap,
         });
       }
@@ -1313,37 +1277,46 @@ export class InfoPanel {
       text: `单位（${total}）· 点击查看详情`,
       parent: this.bodyWrap,
     });
-    if (isPlayerHere) this._renderPlayerCard(gs);
-    if (owned.length > 0) {
-      this._renderCreatureCards(ownedIds, gs, { marginTop: isPlayerHere ? '10px' : '0' });
-    }
+    // 角色与生物同网格：角色为普通一格，仅优先排在第一个
+    this._renderCreatureCards(ownedIds, gs, { playerFirst: isPlayerHere });
   }
 
-  /** 单位列表里的「角色」卡片（外圈 / 生效小径格统一） */
-  _renderPlayerCard(gs) {
+  /** 单位列表里的「角色」卡片：与生物卡同规格同网格，优先排在第一格 */
+  _renderPlayerCard(gs, parent) {
     const p = gs.player;
     const card = createEl('div', {
       class: ['unit-card', 'player-card'],
       style: {
-        display: 'flex', alignItems: 'center', gap: '8px', padding: '8px',
+        padding: '8px 6px',
         border: '2px solid #d4c4a4', borderRadius: '8px',
-        backgroundColor: 'rgba(255,250,230,0.6)', cursor: 'pointer',
+        backgroundColor: 'rgba(255,250,230,0.6)',
+        textAlign: 'center', cursor: 'pointer',
       },
       attrs: { title: '余默' },
-      parent: this.bodyWrap,
+      parent,
       onclick: () => {
         this.playerDetailOpen = true;
         this._renderBody();
       },
     });
     card.appendChild(iconEl('ui', 'player', {
-      def: CHARACTERS?.yumo, fallback: CHARACTERS?.yumo?.emoji || '🧑‍🎤', size: '28px',
+      def: CHARACTERS?.yumo, fallback: CHARACTERS?.yumo?.emoji || '🧑‍🎤', size: '36px',
     }));
-    createEl('span', { text: '余默', style: { fontWeight: '700', color: '#3a2e20' }, parent: card });
-    createEl('span', {
-      text: `❤️ ${p.hp} / ${p.maxHp}`,
-      style: { fontSize: '12px', color: '#8a6a3a' },
+    const maxHp = p.maxHp || p.hp || 1;
+    const pct = Math.max(0, Math.min(100, Math.round(((p.hp ?? 0) / maxHp) * 100)));
+    const barOuter = createEl('div', {
+      style: {
+        width: '100%', height: '6px', marginTop: '6px',
+        background: '#e0d5c0', borderRadius: '3px', overflow: 'hidden',
+      },
       parent: card,
+    });
+    createEl('div', {
+      style: {
+        width: `${pct}%`, height: '100%',
+        background: pct > 50 ? '#7cb342' : (pct > 25 ? '#e8a900' : '#c0392b'),
+      },
+      parent: barOuter,
     });
   }
 
@@ -1409,7 +1382,7 @@ export class InfoPanel {
   }
 
   /** 生物头像 + 血条网格（栅栏地块 / 设施所属生物共用） */
-  _renderCreatureCards(creatureIds, gs, { title = '', marginTop = '0' } = {}) {
+  _renderCreatureCards(creatureIds, gs, { title = '', marginTop = '0', playerFirst = false } = {}) {
     if (title) {
       createEl('div', {
         style: { fontSize: '13px', fontWeight: '700', color: '#3a2e20', marginBottom: '8px', marginTop },
@@ -1425,6 +1398,9 @@ export class InfoPanel {
       },
       parent: this.bodyWrap,
     });
+
+    // 角色优先占据网格第一格（与生物卡同规格）
+    if (playerFirst) this._renderPlayerCard(gs, grid);
 
     for (const id of creatureIds) {
       const c = gs.creatures?.find(x => x.id === id);
@@ -1578,35 +1554,13 @@ export class InfoPanel {
   }
 
   // ════════════════════════════════════════════════════════════
-  // 栅栏内地块 —— 地块内容 tab（第一行图标+名字；地形 + 地形量 + 物品）
+  // 栅栏内地块 —— 地块内容 tab（仅当该格有地块内容；地形只在状态 tab）
   // ════════════════════════════════════════════════════════════
   _renderFenceContentTab(cell, gs) {
-    const TERRAIN_NAMES = {
-      terrain_none: '无地形', terrain_grass: '草地', terrain_water: '水面', terrain_ice: '冰面',
-      none: '无地形', grass: '草地', water: '水面', mud: '无地形',
-    };
+    if (!cell.contentId) return;
 
-    // 第一行：左图标（地形）右名字
-    const titleRow = createEl('div', {
-      style: { display: 'flex', alignItems: 'center', gap: '10px', fontSize: '17px', fontWeight: '700', color: '#3a2e20', marginBottom: '10px' },
-      parent: this.bodyWrap,
-    });
-    const tId = normTerrain(cell.terrain);
-    titleRow.appendChild(iconEl('terrains', tId, {
-      size: '30px',
-      fallback: Assets.getEmoji('terrains', cell.terrain || 'terrain_none'),
-    }));
-    const terrainName = TERRAIN_NAMES[cell.terrain] || cell.terrain || '空地';
-    createEl('span', { text: `${terrainName} · 栅栏内 (${cell.row}, ${cell.col})`, parent: titleRow });
-
-    // terrain amount
-    if (cell.terrain && normTerrain(cell.terrain) !== 'terrain_none') {
-      createEl('div', {
-        style: { fontSize: '13px', color: '#888', marginBottom: '6px' },
-        text: `储量：${cell.terrainAmount ?? 0}`,
-        parent: this.bodyWrap,
-      });
-    }
+    // 与外圈地块同一口径：图标 + 名字 + 词条徽章 + 描述
+    this._renderContentHead(cell.contentId);
 
     // items
     if (cell.items && cell.items.length > 0) {
@@ -1630,14 +1584,6 @@ export class InfoPanel {
           : iconEl('items', item?.id || '', { size: '18px', def: item, fallback: '📦' }));
         createEl('span', { text: `${name} ×${qty}`, parent: row });
       }
-    }
-
-    if ((!cell.items || cell.items.length === 0) && (!cell.terrain || normTerrain(cell.terrain) === 'terrain_none')) {
-      createEl('div', {
-        style: { color: '#999', fontSize: '12px', fontStyle: 'italic', marginTop: '8px' },
-        text: '（空地，可放置地形或建筑）',
-        parent: this.bodyWrap,
-      });
     }
 
     if (cell.isPathOuter) this._renderFenceGoButton(gs);
@@ -1666,32 +1612,37 @@ export class InfoPanel {
     const isAdj = Math.abs(dx) + Math.abs(dy) === 1;
 
     let canGo = false;
-    let goReason = null;
     let reach = null;
     if (hasVehicle) {
       reach = VehicleSystem.canVehicleReach(gs, fenceRef);
       canGo = reach.ok;
-      goReason = reach.reason || null;
     } else {
       canGo = isAdj;
-      goReason = '不是相邻格';
     }
 
     if (!canGo) {
-      createEl('div', {
-        style: { marginTop: '6px', fontSize: '12px', color: '#b0a090', textAlign: 'center' },
-        text: hasVehicle
-          ? `❌ 载具无法到达（${goReason || '不在移动范围内'}）`
-          : '❌ 不可前往（不是相邻格）',
+      // 不可前往：同一个功能选项位置，改为不可点击的红色「无法抵达」（与「前往」互斥）
+      createEl('button', {
+        class: 'action-btn',
+        style: {
+          width: '100%', fontSize: '14px', marginTop: '10px',
+          background: '#d9534f', color: '#fff',
+          border: '1px solid #c9302c', cursor: 'not-allowed',
+        },
+        text: '无法抵达',
+        attrs: { disabled: 'disabled' },
         parent: this.bodyWrap,
       });
       return;
     }
 
+    // 真实行动力消耗：芋圆免消耗 / 载具 freeStamina → 0，否则徒步与载具均为 1
+    const staminaCost = (gs.player.nextMoveNoStamina || (hasVehicle && reach?.def?.freeStamina)) ? 0 : 1;
+
     createEl('button', {
       class: 'action-btn',
       style: { width: '100%', fontSize: '14px', background: '#fff0c0', marginTop: '10px' },
-      text: hasVehicle ? '🚗 前往（载具）' : '🚪 前往（一步抵达）',
+      text: `前往（消耗行动力${staminaCost}）`,
       parent: this.bodyWrap,
       onclick: () => {
         const director = window.__gameDirector;
@@ -1727,11 +1678,8 @@ export class InfoPanel {
   // ════════════════════════════════════════════════════════════
   _renderFenceStateTab(cell, gs) {
     const tId = normTerrain(cell.terrain);
-    const TERRAIN_NAMES = {
-      terrain_none: '无地形', terrain_grass: '草地', terrain_water: '水面', terrain_ice: '冰面',
-      none: '无地形', grass: '草地', water: '水面', mud: '无地形',
-    };
-    const terrainName = TERRAIN_NAMES[cell.terrain] || cell.terrain || '无地形';
+    // 与外圈状态 tab 同一数据源（含小径等新地形，避免本地映射漏项）
+    const terrainName = getTerrain(cell.terrain).name;
 
     const row = createEl('div', { class: ['state-row'], parent: this.bodyWrap });
     row.appendChild(iconEl('terrains', tId, {
@@ -1795,10 +1743,8 @@ export class InfoPanel {
       text: `单位（${total}）· 点击查看详情`,
       parent: this.bodyWrap,
     });
-    if (playerHere) this._renderPlayerCard(gs);
-    if (creatureIds.length > 0) {
-      this._renderCreatureCards(creatureIds, gs, { marginTop: playerHere ? '10px' : '0' });
-    }
+    // 角色与生物同网格：角色为普通一格，仅优先排在第一个
+    this._renderCreatureCards(creatureIds, gs, { playerFirst: playerHere });
   }
 
   // ════════════════════════════════════════════════════════════
