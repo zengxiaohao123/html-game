@@ -40,6 +40,8 @@ import { getBehaviorProfile, resolveBehavior } from '../data/creatureBehavior.js
 import { ITEMS } from '../data/items.js';
 import { normalizeTerrain } from '../data/terrains.js';
 import { InventorySystem } from './InventorySystem.js';
+import { produce, CHANNEL } from './ProduceSystem.js';
+import { syncCreatureBlueAura } from './BlueBreathSystem.js';
 import { CombatSystem } from './CombatSystem.js';
 import { capacityExtra } from './CapacitySystem.js';
 import { fenceDimsOf, outerIdxToXY } from '../core/Distance.js';
@@ -1166,6 +1168,7 @@ export function stepCreatures(gs, dtSec) {
   const fence = fenceRect(gs);
   if (fence.x1 <= fence.x0) return;
   let tileChanged = false;
+  let anyMoved = false;
 
   for (const c of gs.creatures) {
     if (!c || c.hp <= 0) continue;
@@ -1197,6 +1200,7 @@ export function stepCreatures(gs, dtSec) {
       tileChanged = true;
     }
     if (c.pos.x !== beforeX || c.pos.y !== beforeY) {
+      anyMoved = true;
       if (c.behaviorState === 'idle' && applyTerrainChange(gs, c, beforeX, beforeY)) tileChanged = true;
     }
 
@@ -1206,7 +1210,9 @@ export function stepCreatures(gs, dtSec) {
     c.renderDur = dtSec;
   }
 
-  // ⑤ 一次性广播：只有地块内容真的变化才发（连续移动本身由渲染层逐帧绘制）
+  // ⑤ 【蓝息】动态光环：生物进出范围时即时增减（不落盘）
+  if (anyMoved) syncCreatureBlueAura(gs);
+  // 一次性广播：只有地块内容真的变化才发（连续移动本身由渲染层逐帧绘制）
   if (tileChanged) EventBus.emit(GE.TILE_UPDATED);
 }
 
@@ -1354,19 +1360,36 @@ export function onDayEnd(gs) {
           henTile.contentState = henTile.contentState || {};
           const cs = henTile.contentState;
           const eggTotal = () => (cs.eggStored || 0) + (cs.eggStoredGolden || 0);
-          if (eggTotal() < 10) {
-            cs.eggStored = (cs.eggStored || 0) + 1;
-            EventBus.emit(GE.TILE_UPDATED, { tileIdx: henTile.idx });
-          } else {
+          // 鸡蛋 / 优质蛋属于鸡舍「产出的产物」：统一走 produce 漏斗（产出时 / 蓝息变异）
+          produce(gs, {
+            ref: henTile.idx, itemId: 'item_egg', qty: 1, channel: CHANNEL.STORE,
+            apply: (k) => {
+              const room = 10 - eggTotal();
+              if (room <= 0) return 0;
+              const add = Math.min(k, room);
+              cs.eggStored = (cs.eggStored || 0) + add;
+              return add;
+            },
+          });
+          EventBus.emit(GE.TILE_UPDATED, { tileIdx: henTile.idx });
+          if (eggTotal() >= 10) {
             devLog.warn('[CreatureSystem] 鸡舍鸡蛋储存已满(10/10)，本次鸡蛋直接丢弃:', c.id);
           }
           // 优质蛋：心情 ×10%（心情负视为 0%）——OUT-21；与鸡蛋共享同一储存额度，满额同样丢弃
           const qualityChance = Math.max(0, (c.mood || 0) * 0.1);
           if (Random.chance(qualityChance)) {
-            if (eggTotal() < 10) {
-              cs.eggStoredGolden = (cs.eggStoredGolden || 0) + 1;
-              EventBus.emit(GE.TILE_UPDATED, { tileIdx: henTile.idx });
-            } else {
+            produce(gs, {
+              ref: henTile.idx, itemId: 'item_golden_egg', qty: 1, channel: CHANNEL.STORE,
+              apply: (k) => {
+                const room = 10 - eggTotal();
+                if (room <= 0) return 0;
+                const add = Math.min(k, room);
+                cs.eggStoredGolden = (cs.eggStoredGolden || 0) + add;
+                return add;
+              },
+            });
+            EventBus.emit(GE.TILE_UPDATED, { tileIdx: henTile.idx });
+            if (eggTotal() >= 10) {
               devLog.warn('[CreatureSystem] 鸡舍鸡蛋储存已满(10/10)，本次优质蛋直接丢弃:', c.id);
             }
           }

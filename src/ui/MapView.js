@@ -21,6 +21,7 @@ import { CreatureView } from './CreatureView.js';
 import { MineView } from './MineView.js';
 import * as Geometry from '../core/Geometry.js';
 import { playerRef, refsEqual, refOfXY, isLegalStandRef, tileRefKey, fenceRefOfIdx } from '../core/TileAccess.js';
+import { blueBreathSources } from '../systems/BlueBreathSystem.js';
 import { createEl, qs, iconEl } from './dom.js';
 
 // 地图区留白（像素）：外圈边长可扩展时，由可用区域反算每格像素，避免扩图后错位/挤压。
@@ -51,6 +52,8 @@ export class MapView {
     // 生物层：按 renderPos 逐帧绘制，节点缓存、只更新 transform（不每帧重建 DOM）
     this.creatureLayer = null;
     this.creatureView = null;       // 纯色圆形表现层（节点缓存）
+    // 【蓝息】圆周表现层（只画圆，美术后续补；zIndex 低于内容图标与玩家）
+    this.blueAuraLayer = null;
     // 场上实体【土豆地雷】层（zIndex 18，低于生物层）
     this.mineLayer = null;
     this.mineView = null;
@@ -200,6 +203,56 @@ export class MapView {
     const tiles = gs.map.outerTiles;
     for (const tile of tiles) {
       this._renderOneTile(tile, gs);
+    }
+    this.renderBlueAura(gs);
+  }
+
+  /** 【蓝息】表现层：只画圆周（美术特性后续补），点击穿透 */
+  _ensureBlueAuraLayer() {
+    if (this.blueAuraLayer || !this.root) return;
+    this.blueAuraLayer = createEl('div', {
+      class: 'blue-aura-layer',
+      style: {
+        position: 'absolute',
+        left: '0',
+        top: '0',
+        width: '100%',
+        height: '100%',
+        pointerEvents: 'none',
+        zIndex: '1',
+      },
+      parent: this.root,
+    });
+  }
+
+  /** 按蓝星果田块储存数重绘蓝息圆周（1 格 = 1 米） */
+  renderBlueAura(gs = this.gs) {
+    if (!this.root) return;
+    this._ensureBlueAuraLayer();
+    const layer = this.blueAuraLayer;
+    if (!layer) return;
+    layer.innerHTML = '';
+    if (!gs) return;
+    const ts = this.tileSize;
+    for (const src of blueBreathSources(gs)) {
+      const center = Geometry.tileCenter(gs, src.ref);
+      if (!center) continue;
+      const rPx = src.radius * ts;
+      createEl('div', {
+        class: 'blue-aura-circle',
+        style: {
+          position: 'absolute',
+          left: `${center.x * ts - rPx}px`,
+          top: `${center.y * ts - rPx}px`,
+          width: `${rPx * 2}px`,
+          height: `${rPx * 2}px`,
+          borderRadius: '50%',
+          border: '2px dashed rgba(70,140,255,0.75)',
+          background: 'radial-gradient(circle, rgba(90,170,255,0.16) 0%, rgba(90,170,255,0.06) 70%, rgba(90,170,255,0) 100%)',
+          boxSizing: 'border-box',
+        },
+        parent: layer,
+      });
     }
   }
 
@@ -999,6 +1052,7 @@ export class MapView {
         this._refreshFenceContent(fenceIdx);
         EventBus.emit(GE.FENCE_TILE_UPDATED, { ...payload });
       }
+      this.renderBlueAura(this.gs);
     });
 
     // TILE_UPDATED
@@ -1018,6 +1072,7 @@ export class MapView {
       } else {
         this.renderAllTiles(this.gs);
       }
+      this.renderBlueAura(this.gs);
     });
 
     // 建造模式切换

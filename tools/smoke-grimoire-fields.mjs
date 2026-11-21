@@ -167,8 +167,8 @@ head('2. 庆丰收：只有 ≥3 相连簇内的水稻田块产出 ×2');
   put(4, RICE);                              // 孤立稻田（4 的邻居是 3/5，均非水稻）
   give('grimoire_harvest_cereal');
   HookDispatcher.fire('onDailyStart', { gs });
-  // 草地 +1 → 基础 2/块；相连 3 块 ×2 = 4/块，孤立 1 块仍为 2
-  check(straw() === 4 * 3 + 2, '稻草 = 4×3（簇内翻倍）+ 2（孤立不翻倍）', straw());
+  // v0.6 水稻改写：基础 1/块（草地不再 +1，自身水面才 +2）；相连 3 块 ×2 = 2/块，孤立 1 块仍为 1
+  check(straw() === 2 * 3 + 1, '稻草 = 2×3（簇内翻倍）+ 1（孤立不翻倍）', straw());
 
   // 簇被拆开后不再翻倍
   reset();
@@ -176,7 +176,7 @@ head('2. 庆丰收：只有 ≥3 相连簇内的水稻田块产出 ×2');
   gs.inventory.items = [];
   give('grimoire_harvest_cereal');
   HookDispatcher.fire('onDailyStart', { gs });
-  check(straw() === 2 * 3, '不足 3 相连时不翻倍', straw());
+  check(straw() === 1 * 3, '不足 3 相连时不翻倍', straw());
 }
 
 // ════════════════════════════════════════════════════════════
@@ -272,9 +272,9 @@ head('7. 仓廪实：稻草 / 小麦田块双向视同');
   check(FieldEffects.isFieldInCluster(gs, 2, 'rice', 3), '麦田参与水稻连片判定 → ≥3 相连',
     FieldEffects.fieldClusterSizeMap(gs, 'rice').get(2));
 
-  // 产出结算：水稻 2 块各 2→4（簇内翻倍）；麦田 1 块 3→6（视同水稻后同样享受庆丰收）
+  // 产出结算（v0.6）：水稻 2 块各 1→2（簇内翻倍）；麦田 1 块 3→6（视同水稻后同样享受庆丰收）
   HookDispatcher.fire('onDailyStart', { gs });
-  check(straw() === 8, '水稻产出 = 4×2', straw());
+  check(straw() === 4, '水稻产出 = 2×2', straw());
   check(wheat() === 6, '麦田产出 = (2+1)×2', wheat());
 
   // 稻香远按视同后的数量回复 2×3 = 6

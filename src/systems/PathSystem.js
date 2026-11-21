@@ -11,6 +11,7 @@
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
+import { syncBlueBreath } from './BlueBreathSystem.js';
 import { devLog } from '../core/Logger.js';
 import { computePathComponents } from '../core/PathGraph.js';
 import {
@@ -115,6 +116,7 @@ export function teleportPlayerToNearestLegal(gs) {
 
   if (best === null) return false;
   setPlayerRef(gs, best);
+  syncBlueBreath(gs);
   EventBus.emit(GE.MOVE, {
     fromIdx: typeof from === 'number' ? from : null,
     toIdx: typeof best === 'number' ? best : null,

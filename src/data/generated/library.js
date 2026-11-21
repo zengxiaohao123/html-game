@@ -3,22 +3,22 @@
 // 手工维护的部分只有 tools/lib_meta.json（编号 → id / emoji）。
 
 export const LIB_STAT = {
-  "total": 105,
+  "total": 123,
   "byTier1": {
-    "产物": 15,
+    "产物": 24,
     "载具": 15,
-    "地块内容": 42,
+    "地块内容": 51,
     "道具": 28,
     "地形": 5
   },
   "pools": 13,
-  "outputs": 31,
-  "glossary": 41,
+  "outputs": 48,
+  "glossary": 47,
   "creatures": 3,
   "todo": 30
 };
 
-/** 物品总表（105 条）—— 表格第 2 张工作表 */
+/** 物品总表（123 条）—— 表格第 2 张工作表 */
 export const ITEMS = {
   item_wheat: {
   "id": "item_wheat",
@@ -306,6 +306,243 @@ export const ITEMS = {
   "stackByValue": true,
   "sources": "见『产出与掉落』OUT-30（幽怜草田块；价值与枯萎见 OUT-31 / OUT-32）",
   "notes": "幽怜草初始价格为12.价值按照幽怜草田块所写的规则增长；不同价值分堆，不可叠放"
+},
+  item_lavender: {
+  "id": "item_lavender",
+  "libCode": "PRD-CROP-012",
+  "name": "薰衣草",
+  "emoji": "💜",
+  "icon": null,
+  "tier1": "产物",
+  "tier2": "作物",
+  "tier3": null,
+  "hiddenTags": [
+    "农作物"
+  ],
+  "owner": null,
+  "rarity": 2,
+  "value": 3,
+  "valueMode": "固定值",
+  "traits": [],
+  "description": "淡紫色的小花，香气持久。",
+  "triggers": [],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "见『产出与掉落』OUT-33 / OUT-34 / OUT-35（薰衣草花田）",
+  "notes": null
+},
+  item_sunflower: {
+  "id": "item_sunflower",
+  "libCode": "PRD-CROP-013",
+  "name": "向日葵",
+  "emoji": "🌻",
+  "icon": null,
+  "tier1": "产物",
+  "tier2": "作物",
+  "tier3": null,
+  "hiddenTags": [
+    "农作物"
+  ],
+  "owner": null,
+  "rarity": 2,
+  "value": 4,
+  "valueMode": "固定值",
+  "traits": [],
+  "description": "始终朝着太阳的大花。",
+  "triggers": [],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "见『产出与掉落』OUT-36（向日葵花田临时特性）",
+  "notes": "由【产出时】特性概率产出，可递归触发"
+},
+  item_hops: {
+  "id": "item_hops",
+  "libCode": "PRD-CROP-014",
+  "name": "啤酒花",
+  "emoji": "🍺",
+  "icon": null,
+  "tier1": "产物",
+  "tier2": "作物",
+  "tier3": null,
+  "hiddenTags": [
+    "农作物"
+  ],
+  "owner": null,
+  "rarity": 2,
+  "value": 3,
+  "valueMode": "固定值",
+  "traits": [],
+  "description": "酿造用的球果，带着苦香。",
+  "triggers": [],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "见『产出与掉落』OUT-37（啤酒花田块）",
+  "notes": "储存类，上限 18"
+},
+  item_pumpkin: {
+  "id": "item_pumpkin",
+  "libCode": "PRD-CROP-015",
+  "name": "南瓜",
+  "emoji": "🎃",
+  "icon": null,
+  "tier1": "产物",
+  "tier2": "作物",
+  "tier3": null,
+  "hiddenTags": [
+    "农作物"
+  ],
+  "owner": null,
+  "rarity": 2,
+  "value": 5,
+  "valueMode": "固定值",
+  "traits": [],
+  "description": "沉甸甸的橙色果实。",
+  "triggers": [],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "见『产出与掉落』OUT-39（南瓜田块）",
+  "notes": "储存类，上限 1"
+},
+  item_starfruit: {
+  "id": "item_starfruit",
+  "libCode": "PRD-CROP-016",
+  "name": "杨桃",
+  "emoji": "⭐",
+  "icon": null,
+  "tier1": "产物",
+  "tier2": "作物",
+  "tier3": null,
+  "hiddenTags": [
+    "农作物"
+  ],
+  "owner": null,
+  "rarity": 3,
+  "value": 8,
+  "valueMode": "固定值",
+  "traits": [],
+  "description": "切开像星星的黄色果实。",
+  "triggers": [],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "见『产出与掉落』OUT-41（杨桃田块）",
+  "notes": null
+},
+  item_mushroom: {
+  "id": "item_mushroom",
+  "libCode": "PRD-CROP-017",
+  "name": "蘑菇",
+  "emoji": "🍄",
+  "icon": null,
+  "tier1": "产物",
+  "tier2": "作物",
+  "tier3": null,
+  "hiddenTags": [
+    "农作物"
+  ],
+  "owner": null,
+  "rarity": 1,
+  "value": 3,
+  "valueMode": "固定值",
+  "traits": [],
+  "description": "阴湿处生长的伞菌。",
+  "triggers": [],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "见『产出与掉落』OUT-43（蘑菇田块）",
+  "notes": "储存类，上限 6"
+},
+  item_blackberry: {
+  "id": "item_blackberry",
+  "libCode": "PRD-CROP-018",
+  "name": "黑莓",
+  "emoji": "🫐",
+  "icon": null,
+  "tier1": "产物",
+  "tier2": "作物",
+  "tier3": null,
+  "hiddenTags": [
+    "农作物"
+  ],
+  "owner": null,
+  "rarity": 2,
+  "value": 3,
+  "valueMode": "固定值",
+  "traits": [],
+  "description": "酸甜的深紫色浆果。",
+  "triggers": [],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "见『产出与掉落』OUT-45 / OUT-46（黑莓田块）",
+  "notes": null
+},
+  item_sorrel: {
+  "id": "item_sorrel",
+  "libCode": "PRD-CROP-019",
+  "name": "酢浆草",
+  "emoji": "🍀",
+  "icon": null,
+  "tier1": "产物",
+  "tier2": "作物",
+  "tier3": null,
+  "hiddenTags": [
+    "农作物"
+  ],
+  "owner": null,
+  "rarity": 2,
+  "value": 3,
+  "valueMode": "固定值",
+  "traits": [],
+  "description": "三片心形叶的小草。",
+  "triggers": [],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "见『产出与掉落』OUT-47 / OUT-48（酢浆草田块）",
+  "notes": null
+},
+  item_blue_starfruit: {
+  "id": "item_blue_starfruit",
+  "libCode": "PRD-CROP-020",
+  "name": "蓝星果",
+  "emoji": "💙",
+  "icon": null,
+  "tier1": "产物",
+  "tier2": "作物",
+  "tier3": null,
+  "hiddenTags": [
+    "农作物"
+  ],
+  "owner": null,
+  "rarity": 4,
+  "value": 12,
+  "valueMode": "固定值",
+  "traits": [
+    "湛蓝",
+    "违禁品"
+  ],
+  "description": "泛着幽蓝微光的果实。",
+  "triggers": [],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "见『产出与掉落』OUT-49（蓝星果田块）",
+  "notes": "一定是【湛蓝】【违禁品】，不走变异概率；储存类，上限 7"
 },
   item_egg: {
   "id": "item_egg",
@@ -873,7 +1110,7 @@ export const ITEMS = {
   "value": 1,
   "valueMode": "固定值",
   "traits": [],
-  "description": "• 【每一日开始时】获得稻草 ×1。若所在地块地形为草地，额外获得稻草 ×1；若相邻地块有水面地形，额外获得稻草 ×2\n• 【受祝福时】接下来 5 日内，每一日开始时获得稻草 ×1",
+  "description": "• 【每一日开始时】获得稻草*1。若所处地块地形为水面，则额外获得稻草*2\n• 【受祝福时】接下来的5日，每一日开始时获得稻草*1",
   "triggers": [
     "每一日开始时",
     "受祝福时"
@@ -883,7 +1120,7 @@ export const ITEMS = {
   "stackMax": 999,
   "stackByValue": false,
   "sources": "文档未指定具体途径；地块内容通过开局随机分配、商店、事件、奖励等获得（汇总自 9 章）",
-  "notes": "相邻指四方向任意一格，栅栏内也算；相连 3 个以上时受魔导书【庆丰收】影响"
+  "notes": "相邻水面不再加成；自身地形为水面时额外 +2（合计 3）；相连 3 个以上仍受魔导书【庆丰收】影响，翻倍后水面田为 6 稻草；仓廪实/春光好/稻香远效果不变。"
 },
   facility_potato: {
   "id": "facility_potato",
@@ -1215,6 +1452,257 @@ export const ITEMS = {
   "stackByValue": false,
   "sources": "文档未指定具体途径；地块内容通过开局随机分配、商店、事件、奖励等获得（汇总自 9 章）",
   "notes": "任意途径回复生命值都算，请注意订阅其他回复生命值的途径"
+},
+  facility_lavender: {
+  "id": "facility_lavender",
+  "libCode": "FAC-017",
+  "name": "薰衣草花田",
+  "emoji": "💜",
+  "icon": null,
+  "tier1": "地块内容",
+  "tier2": "田块",
+  "tier3": null,
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 2,
+  "value": 1,
+  "valueMode": "固定值",
+  "traits": [],
+  "description": "• 【经过时】获得金币*1，并有20%概率获得薰衣草*1\n• 【受祝福时】获得薰衣草*2",
+  "triggers": [
+    "经过时",
+    "受祝福时"
+  ],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径；地块内容通过开局随机分配、商店、事件、奖励等获得（汇总自 9 章）",
+  "notes": "经过时无每日限次；金币走金币系统；20% 失败时仍获得金币。"
+},
+  facility_sunflower: {
+  "id": "facility_sunflower",
+  "libCode": "FAC-018",
+  "name": "向日葵花田",
+  "emoji": "🌻",
+  "icon": null,
+  "tier1": "地块内容",
+  "tier2": "田块",
+  "tier3": null,
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 3,
+  "value": 1,
+  "valueMode": "固定值",
+  "traits": [],
+  "description": "• 【每一日开始时】使周围8格的随机1格田块获得持续一天的临时特性：【产出时】产量+1，并有10%概率获得向日葵*1\n• 【受祝福时】使周围8格的所有田块获得该临时特性",
+  "triggers": [
+    "每一日开始时",
+    "受祝福时"
+  ],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径；地块内容通过开局随机分配、商店、事件、奖励等获得（汇总自 9 章）",
+  "notes": "特性不可叠加；给予时优先选择未获得该特性的田块；多块向日葵按外圈顺序依次结算、不重复给同一格；周围8格不含自身；【产出时】为独立词条（见词条字典）。"
+},
+  facility_hops: {
+  "id": "facility_hops",
+  "libCode": "FAC-019",
+  "name": "啤酒花田块",
+  "emoji": "🍺",
+  "icon": null,
+  "tier1": "地块内容",
+  "tier2": "田块",
+  "tier3": null,
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 2,
+  "value": 1,
+  "valueMode": "固定值",
+  "traits": [],
+  "description": "• 【每一日开始时】【每一日结束时】【受祝福时】储存啤酒花*1（至多18）\n• 【经过时】自动取走储存的啤酒花\n啤酒花需要浇水，当相邻格的地形有水面时，激活特性：【产出时】产量+2",
+  "triggers": [
+    "每一日开始时",
+    "每一日结束时",
+    "受祝福时",
+    "经过时",
+    "产出时"
+  ],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径；地块内容通过开局随机分配、商店、事件、奖励等获得（汇总自 9 章）",
+  "notes": "相邻不含自身，按四方向判定；浇水由相邻水面代替，不新增浇水操作；【产出时】+2 仅在相邻水面时生效。"
+},
+  facility_pumpkin: {
+  "id": "facility_pumpkin",
+  "libCode": "FAC-020",
+  "name": "南瓜田块",
+  "emoji": "🎃",
+  "icon": null,
+  "tier1": "地块内容",
+  "tier2": "田块",
+  "tier3": null,
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 3,
+  "value": 1,
+  "valueMode": "固定值",
+  "traits": [],
+  "description": "• 【每一日结束时】获得12成长值。成长值达到100后，储存南瓜*1（至多1），并有50%概率获得南瓜田块*1\n• 【进入时】取走南瓜，南瓜田块也随之消失\n• 【受祝福时】获得30成长值",
+  "triggers": [
+    "每一日结束时",
+    "进入时",
+    "受祝福时"
+  ],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径；地块内容通过开局随机分配、商店、事件、奖励等获得（汇总自 9 章）",
+  "notes": "获得的南瓜田块直接入背包；成长值每块独立；满 100 后不再累积；拆除/替换前自动采摘已储存南瓜；进入时无南瓜则不消失。"
+},
+  facility_starfruit: {
+  "id": "facility_starfruit",
+  "libCode": "FAC-021",
+  "name": "杨桃田块",
+  "emoji": "⭐",
+  "icon": null,
+  "tier1": "地块内容",
+  "tier2": "田块",
+  "tier3": null,
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 4,
+  "value": 1,
+  "valueMode": "固定值",
+  "traits": [],
+  "description": "• 【每一日开始时】【每一日结束时】【进入时】获得8成长值。成长值达到200后，获得杨桃*1并将成长值重置为100\n• 【受祝福时】获得16成长值",
+  "triggers": [
+    "每一日开始时",
+    "每一日结束时",
+    "进入时",
+    "受祝福时"
+  ],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径；地块内容通过开局随机分配、商店、事件、奖励等获得（汇总自 9 章）",
+  "notes": "成长值每块独立；达到 200 时溢出部分丢弃并置为 100；获得杨桃直接入背包。"
+},
+  facility_mushroom: {
+  "id": "facility_mushroom",
+  "libCode": "FAC-022",
+  "name": "蘑菇田块",
+  "emoji": "🍄",
+  "icon": null,
+  "tier1": "地块内容",
+  "tier2": "田块",
+  "tier3": null,
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 2,
+  "value": 1,
+  "valueMode": "固定值",
+  "traits": [],
+  "description": "• 【每一日开始时】储存蘑菇*2（至多6）。储存超出上限时向相邻空地块扩散1个蘑菇田块\n• 【进入时】可以取走储存的蘑菇\n• 【受祝福时】储存蘑菇*5。储存超出上限扩散\n蘑菇田块所在地块地形为水面时，所有特性失效",
+  "triggers": [
+    "每一日开始时",
+    "进入时",
+    "受祝福时"
+  ],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径；地块内容通过开局随机分配、商店、事件、奖励等获得（汇总自 9 章）",
+  "notes": "扩散目标须为外圈地块且地块内容为空，多个候选随机选一个；一次超上限只扩散 1 块、多余丢弃；被压制或位于水面时全部特性失效。"
+},
+  facility_blackberry: {
+  "id": "facility_blackberry",
+  "libCode": "FAC-023",
+  "name": "黑莓田块",
+  "emoji": "🫐",
+  "icon": null,
+  "tier1": "地块内容",
+  "tier2": "田块",
+  "tier3": null,
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 3,
+  "value": 1,
+  "valueMode": "固定值",
+  "traits": [],
+  "description": "• 【每一日开始时】获得黑莓*2。【压制】周围8格的非黑莓田块\n• 【受祝福时】获得黑莓*2。暂时解除【压制】，持续4天",
+  "triggers": [
+    "每一日开始时",
+    "受祝福时"
+  ],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径；地块内容通过开局随机分配、商店、事件、奖励等获得（汇总自 9 章）",
+  "notes": "【压制】=禁用该地块所有特性；日初先结算压制再结算其他田块产出；多次受祝福不叠加、持续时间重置；解除=立刻清除周围8格压制，且本日与接下来3日的日初不再施加。"
+},
+  facility_sorrel: {
+  "id": "facility_sorrel",
+  "libCode": "FAC-024",
+  "name": "酢浆草田块",
+  "emoji": "🍀",
+  "icon": null,
+  "tier1": "地块内容",
+  "tier2": "田块",
+  "tier3": null,
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 2,
+  "value": 1,
+  "valueMode": "固定值",
+  "traits": [],
+  "description": "• 【经过时】本日内，本田块受到【压制】\n• 【每一日结束时】【受祝福时】获得酢浆草*4",
+  "triggers": [
+    "经过时",
+    "每一日结束时",
+    "受祝福时"
+  ],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径；地块内容通过开局随机分配、商店、事件、奖励等获得（汇总自 9 章）",
+  "notes": "自压制按术语定义当日全部特性失效，日末与受祝福均不结算。"
+},
+  facility_blue_star_fruit: {
+  "id": "facility_blue_star_fruit",
+  "libCode": "FAC-025",
+  "name": "蓝星果田块",
+  "emoji": "💙",
+  "icon": null,
+  "tier1": "地块内容",
+  "tier2": "田块",
+  "tier3": null,
+  "hiddenTags": [],
+  "owner": null,
+  "rarity": 5,
+  "value": 1,
+  "valueMode": "固定值",
+  "traits": [],
+  "description": "• 【每一日开始时】储存蓝星果*1（至多7）。储存的蓝星果会散发小范围【蓝息】，数量越多范围越大\n• 【进入时】可以取走蓝星果\n蓝息：范围内的其他田块种出的作物有10%概率变异为【湛蓝】【违禁品】作物；位于范围内的角色与生物的最大生命值、攻击力+25%，生物的移速+50%；特殊NPC进入范围时会对玩家的农场例行搜查，收缴所有【违禁品】（不检查背包和出货箱）",
+  "triggers": [
+    "每一日开始时",
+    "进入时"
+  ],
+  "stackRule": "同名同价值可叠（单格999）",
+  "stackable": true,
+  "stackMax": 999,
+  "stackByValue": false,
+  "sources": "文档未指定具体途径；地块内容通过开局随机分配、商店、事件、奖励等获得（汇总自 9 章）",
+  "notes": "蓝息半径=0.6+0.2×(储存数-1)米，按田块中心距判定；蓝星果田块自身在范围内但不参与变异；范围重叠取最高、不叠加、不重复判定；角色/生物增益为动态光环；NPC 搜查系统未开发，暂不制作。"
 },
   resource_event: {
   "id": "resource_event",
@@ -2962,6 +3450,86 @@ export const POOLS = {
       "rarity": 4,
       "placeholder": false,
       "notes": null
+    },
+    {
+      "libCode": "FAC-017",
+      "id": "facility_lavender",
+      "name": "薰衣草花田",
+      "price": null,
+      "weight": 2.0,
+      "rarity": 2,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "FAC-019",
+      "id": "facility_hops",
+      "name": "啤酒花田块",
+      "price": null,
+      "weight": 2.0,
+      "rarity": 2,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "FAC-020",
+      "id": "facility_pumpkin",
+      "name": "南瓜田块",
+      "price": null,
+      "weight": 3.0,
+      "rarity": 3,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "FAC-021",
+      "id": "facility_starfruit",
+      "name": "杨桃田块",
+      "price": null,
+      "weight": 4.0,
+      "rarity": 4,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "FAC-022",
+      "id": "facility_mushroom",
+      "name": "蘑菇田块",
+      "price": null,
+      "weight": 2.0,
+      "rarity": 2,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "FAC-023",
+      "id": "facility_blackberry",
+      "name": "黑莓田块",
+      "price": null,
+      "weight": 3.0,
+      "rarity": 3,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "FAC-024",
+      "id": "facility_sorrel",
+      "name": "酢浆草田块",
+      "price": null,
+      "weight": 2.0,
+      "rarity": 2,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "FAC-025",
+      "id": "facility_blue_star_fruit",
+      "name": "蓝星果田块",
+      "price": null,
+      "weight": 5.0,
+      "rarity": 5,
+      "placeholder": false,
+      "notes": null
     }
   ]
 },
@@ -3290,16 +3858,6 @@ export const POOLS = {
       "notes": "候选不足时补入"
     },
     {
-      "libCode": "FAC-014",
-      "id": "facility_dandelion",
-      "name": "蒲公英田块",
-      "price": 12,
-      "weight": null,
-      "rarity": 3,
-      "placeholder": false,
-      "notes": null
-    },
-    {
       "libCode": "FAC-015",
       "id": "facility_ghost_grass",
       "name": "幽怜草田块",
@@ -3378,6 +3936,96 @@ export const POOLS = {
       "rarity": 2,
       "placeholder": false,
       "notes": null
+    },
+    {
+      "libCode": "FAC-017",
+      "id": "facility_lavender",
+      "name": "薰衣草花田",
+      "price": 8,
+      "weight": 2.0,
+      "rarity": 2,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "FAC-018",
+      "id": "facility_sunflower",
+      "name": "向日葵花田",
+      "price": 12,
+      "weight": 3.0,
+      "rarity": 3,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "FAC-019",
+      "id": "facility_hops",
+      "name": "啤酒花田块",
+      "price": 8,
+      "weight": 2.0,
+      "rarity": 2,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "FAC-020",
+      "id": "facility_pumpkin",
+      "name": "南瓜田块",
+      "price": 12,
+      "weight": 3.0,
+      "rarity": 3,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "FAC-021",
+      "id": "facility_starfruit",
+      "name": "杨桃田块",
+      "price": 16,
+      "weight": 4.0,
+      "rarity": 4,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "FAC-022",
+      "id": "facility_mushroom",
+      "name": "蘑菇田块",
+      "price": 8,
+      "weight": 2.0,
+      "rarity": 2,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "FAC-023",
+      "id": "facility_blackberry",
+      "name": "黑莓田块",
+      "price": 12,
+      "weight": 3.0,
+      "rarity": 3,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "FAC-024",
+      "id": "facility_sorrel",
+      "name": "酢浆草田块",
+      "price": 8,
+      "weight": 2.0,
+      "rarity": 2,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "FAC-025",
+      "id": "facility_blue_star_fruit",
+      "name": "蓝星果田块",
+      "price": 20,
+      "weight": 5.0,
+      "rarity": 5,
+      "placeholder": false,
+      "notes": null
     }
   ]
 },
@@ -3415,16 +4063,6 @@ export const POOLS = {
       "price": 4,
       "weight": null,
       "rarity": 1,
-      "placeholder": false,
-      "notes": null
-    },
-    {
-      "libCode": "PRD-CROP-004",
-      "id": "item_tulip",
-      "name": "郁金香",
-      "price": 12,
-      "weight": null,
-      "rarity": 2,
       "placeholder": false,
       "notes": null
     },
@@ -3494,6 +4132,86 @@ export const POOLS = {
       "name": "幽怜草",
       "price": 32,
       "weight": null,
+      "rarity": 4,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "PRD-CROP-012",
+      "id": "item_lavender",
+      "name": "薰衣草",
+      "price": 6,
+      "weight": 2.0,
+      "rarity": 2,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "PRD-CROP-013",
+      "id": "item_sunflower",
+      "name": "向日葵",
+      "price": 8,
+      "weight": 3.0,
+      "rarity": 2,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "PRD-CROP-014",
+      "id": "item_hops",
+      "name": "啤酒花",
+      "price": 6,
+      "weight": 2.0,
+      "rarity": 2,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "PRD-CROP-015",
+      "id": "item_pumpkin",
+      "name": "南瓜",
+      "price": 10,
+      "weight": 3.0,
+      "rarity": 2,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "PRD-CROP-016",
+      "id": "item_starfruit",
+      "name": "杨桃",
+      "price": 16,
+      "weight": 4.0,
+      "rarity": 3,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "PRD-CROP-017",
+      "id": "item_mushroom",
+      "name": "蘑菇",
+      "price": 6,
+      "weight": 1.0,
+      "rarity": 1,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "PRD-CROP-019",
+      "id": "item_sorrel",
+      "name": "酢浆草",
+      "price": 6,
+      "weight": 2.0,
+      "rarity": 2,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "PRD-CROP-020",
+      "id": "item_blue_starfruit",
+      "name": "蓝星果",
+      "price": 24,
+      "weight": 4.0,
       "rarity": 4,
       "placeholder": false,
       "notes": null
@@ -4694,7 +5412,7 @@ export const POOLS = {
 },
 };
 
-/** 产出与掉落（31 条）—— 表格第 5 张工作表 */
+/** 产出与掉落（48 条）—— 表格第 5 张工作表 */
 export const OUTPUTS = [
   {
     "code": "OUT-01",
@@ -5005,10 +5723,180 @@ export const OUTPUTS = [
     "trigger": "每一日开始时",
     "condition": "本日未受到过祝福则直接枯萎",
     "notes": "枯萎后变为空地块"
+  },
+  {
+    "code": "OUT-33",
+    "fromType": "田块",
+    "source": "薰衣草花田",
+    "product": "金币",
+    "amount": "×1",
+    "trigger": "经过时",
+    "condition": "无每日限次",
+    "notes": null
+  },
+  {
+    "code": "OUT-34",
+    "fromType": "田块",
+    "source": "薰衣草花田",
+    "product": "薰衣草",
+    "amount": "×1（20%）",
+    "trigger": "经过时",
+    "condition": "与金币同次结算",
+    "notes": null
+  },
+  {
+    "code": "OUT-35",
+    "fromType": "田块",
+    "source": "薰衣草花田",
+    "product": "薰衣草",
+    "amount": "×2",
+    "trigger": "受祝福时",
+    "condition": null,
+    "notes": null
+  },
+  {
+    "code": "OUT-36",
+    "fromType": "田块",
+    "source": "向日葵花田",
+    "product": "临时特性",
+    "amount": "×1 / 持续1天",
+    "trigger": "每一日开始时",
+    "condition": "周围8格随机1格田块；受祝福时改为全部8格",
+    "notes": "不可叠加；优先未获得的田块"
+  },
+  {
+    "code": "OUT-37",
+    "fromType": "田块",
+    "source": "啤酒花田块",
+    "product": "啤酒花",
+    "amount": "×1（储存，上限18）",
+    "trigger": "每一日开始时 / 每一日结束时 / 受祝福时",
+    "condition": "经过时自动取走储存",
+    "notes": null
+  },
+  {
+    "code": "OUT-38",
+    "fromType": "田块",
+    "source": "啤酒花田块",
+    "product": "产量+2（【产出时】）",
+    "amount": "—",
+    "trigger": "产出时",
+    "condition": "相邻格地形为水面时激活",
+    "notes": "四方向相邻，不含自身"
+  },
+  {
+    "code": "OUT-39",
+    "fromType": "田块",
+    "source": "南瓜田块",
+    "product": "成长值",
+    "amount": "+12 / 日",
+    "trigger": "每一日结束时",
+    "condition": "达到100储存南瓜×1（上限1），50%获得南瓜田块×1；受祝福+30",
+    "notes": "每块独立"
+  },
+  {
+    "code": "OUT-40",
+    "fromType": "田块",
+    "source": "南瓜田块",
+    "product": "南瓜",
+    "amount": "×1",
+    "trigger": "进入时",
+    "condition": "取走后南瓜田块消失",
+    "notes": null
+  },
+  {
+    "code": "OUT-41",
+    "fromType": "田块",
+    "source": "杨桃田块",
+    "product": "成长值",
+    "amount": "+8",
+    "trigger": "每一日开始时 / 每一日结束时 / 进入时",
+    "condition": "达到200获得杨桃×1并重置为100；受祝福+16",
+    "notes": "每块独立"
+  },
+  {
+    "code": "OUT-42",
+    "fromType": "田块",
+    "source": "蘑菇田块",
+    "product": "蘑菇",
+    "amount": "×2（储存，上限6）",
+    "trigger": "每一日开始时",
+    "condition": "受祝福时改为×5；超上限时扩散",
+    "notes": null
+  },
+  {
+    "code": "OUT-43",
+    "fromType": "田块",
+    "source": "蘑菇田块",
+    "product": "蘑菇田块",
+    "amount": "×1",
+    "trigger": "每一日开始时 / 受祝福时",
+    "condition": "储存超上限时向相邻外圈空地块扩散",
+    "notes": "多个候选随机；一次只扩散1块"
+  },
+  {
+    "code": "OUT-44",
+    "fromType": "田块",
+    "source": "黑莓田块",
+    "product": "黑莓",
+    "amount": "×2",
+    "trigger": "每一日开始时",
+    "condition": "并压制周围8格非黑莓田块",
+    "notes": null
+  },
+  {
+    "code": "OUT-45",
+    "fromType": "田块",
+    "source": "黑莓田块",
+    "product": "黑莓",
+    "amount": "×2",
+    "trigger": "受祝福时",
+    "condition": "暂时解除压制，持续4天",
+    "notes": null
+  },
+  {
+    "code": "OUT-46",
+    "fromType": "田块",
+    "source": "酢浆草田块",
+    "product": "酢浆草",
+    "amount": "×4",
+    "trigger": "每一日结束时",
+    "condition": "本日被自压制则不结算",
+    "notes": null
+  },
+  {
+    "code": "OUT-47",
+    "fromType": "田块",
+    "source": "酢浆草田块",
+    "product": "酢浆草",
+    "amount": "×4",
+    "trigger": "受祝福时",
+    "condition": "本日被自压制则不结算",
+    "notes": null
+  },
+  {
+    "code": "OUT-48",
+    "fromType": "田块",
+    "source": "蓝星果田块",
+    "product": "蓝星果",
+    "amount": "×1（储存，上限7）",
+    "trigger": "每一日开始时",
+    "condition": "进入时可取走",
+    "notes": null
+  },
+  {
+    "code": "OUT-49",
+    "fromType": "田块",
+    "source": "蓝星果田块",
+    "product": "蓝息",
+    "amount": "半径 0.6+0.2×(n-1) 米",
+    "trigger": "每一日开始时",
+    "condition": "范围内其他田块作物 10% 变异为【湛蓝】【违禁品】；角色/生物属性提升",
+    "notes": "动态光环，重叠取最高"
   }
 ];
 
-/** 词条字典（41 条）—— 表格第 4 张工作表 */
+/** 词条字典（47 条）—— 表格第 4 张工作表 */
 export const GLOSSARY = [
   {
     "term": "经过时",
@@ -5255,6 +6143,42 @@ export const GLOSSARY = [
     "type": "展示标签",
     "meaning": "仅用于展示的标签，不代表实际机制（提示效果与哪类设施相关）。",
     "notes": "泡沫、郁金香，简单！、经济上行"
+  },
+  {
+    "term": "产出时",
+    "type": "触发时点",
+    "meaning": "产出任意产物时触发。来源必须是地块内容自身的特性（含魔导书赋予的特性）；魔导书直接发放物品等非地块内容来源不触发。价值变化而非数量增加不算产出；储存已满导致没有实际产出时不算。",
+    "notes": "本次新增：向日葵田块临时特性、啤酒花田块水面加成"
+  },
+  {
+    "term": "压制",
+    "type": "Debuff",
+    "meaning": "禁用该地块所有特性。",
+    "notes": "黑莓田块施加；酢浆草田块自压制；解除方式见黑莓田块"
+  },
+  {
+    "term": "蓝息",
+    "type": "系统机制",
+    "meaning": "蓝星果田块储存蓝星果后散发的圆形范围：半径 0.6+0.2×(储存数-1) 米。范围内其他田块种出的作物有 10% 概率变异为【湛蓝】【违禁品】；范围内角色与生物最大生命值、攻击力 +25%，生物移速 +50%。范围重叠取最高、不叠加、不重复判定。",
+    "notes": "蓝星果田块自身在范围内，但不参与变异"
+  },
+  {
+    "term": "湛蓝",
+    "type": "展示标签",
+    "meaning": "仅用于展示的标签，表示该物品呈湛蓝色。",
+    "notes": "与【违禁品】是两个独立词条"
+  },
+  {
+    "term": "违禁品",
+    "type": "展示标签",
+    "meaning": "仅用于展示的标签，表示该物品属于违禁品。",
+    "notes": "代码层面与【湛蓝】独立"
+  },
+  {
+    "term": "成长值",
+    "type": "系统机制",
+    "meaning": "南瓜田块 / 杨桃田块各自独立累计的数值，达到阈值后结算产出。拆除或替换时成长值随之丢失。",
+    "notes": "随地块 contentState 入档"
   }
 ];
 

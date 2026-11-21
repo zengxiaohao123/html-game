@@ -44,14 +44,24 @@ export function countItem(gs, itemId, bag = 'items') {
 // §9 / §14.3：每格叠加上限 999，超出另开一格（背包容量无限，§16.15）
 export const STACK_MAX = 999;
 
+/** 展示词条分堆键：词条不同不视为同种物品（【湛蓝】【违禁品】） */
+export function tagKeyOf(tags) {
+  if (!Array.isArray(tags) || tags.length === 0) return '';
+  return tags.slice().sort().join('|');
+}
+
 export function addItem(gs, itemId, qty, extra = {}) {
   if (!itemId || qty <= 0) return 0;
   const list = gs.inventory.items;
   // 带 value 的物品（如郁金香）不能合并到同一 itemId 的堆里 —— 分堆存 value
   const useValue = extra?.value !== undefined;
   const matchValue = useValue ? extra.value : undefined;
+  const tags = Array.isArray(extra?.tags) && extra.tags.length > 0 ? extra.tags.slice() : null;
+  const wantTagKey = tagKeyOf(tags);
   const matches = list.filter(i =>
-    i.itemId === itemId && (useValue ? i.value === matchValue : i.value === undefined));
+    i.itemId === itemId &&
+    (useValue ? i.value === matchValue : i.value === undefined) &&
+    tagKeyOf(i.tags) === wantTagKey);
   // B-19：先填满已有堆（至 999），剩余按 999 另开新格
   let left = qty;
   for (const e of matches) {
@@ -67,6 +77,7 @@ export function addItem(gs, itemId, qty, extra = {}) {
     const put = Math.min(STACK_MAX, left);
     const entry = { itemId, qty: put };
     if (useValue) entry.value = matchValue;
+    if (tags) entry.tags = tags;
     list.push(entry);
     left -= put;
   }
@@ -118,11 +129,15 @@ export function addToOutbox(gs, itemId, qty, extra = {}) {
   if (!itemId || qty <= 0) return false;
   const outbox = gs.inventory.outbox;
   const useValue = extra?.value !== undefined;
+  const tags = Array.isArray(extra?.tags) && extra.tags.length > 0 ? extra.tags.slice() : null;
+  const wantTagKey = tagKeyOf(tags);
   let targetIdx = -1;
   if (useValue) {
-    targetIdx = outbox.findIndex(i => i.itemId === itemId && i.value === extra.value);
+    targetIdx = outbox.findIndex(i => i.itemId === itemId && i.value === extra.value
+      && tagKeyOf(i.tags) === wantTagKey);
   } else {
-    targetIdx = outbox.findIndex(i => i.itemId === itemId && i.value === undefined);
+    targetIdx = outbox.findIndex(i => i.itemId === itemId && i.value === undefined
+      && tagKeyOf(i.tags) === wantTagKey);
   }
   if (targetIdx >= 0) {
     outbox[targetIdx].qty += qty;
@@ -134,6 +149,7 @@ export function addToOutbox(gs, itemId, qty, extra = {}) {
     }
     const entry = { itemId, qty };
     if (useValue) entry.value = extra.value;
+    if (tags) entry.tags = tags;
     outbox.push(entry);
   }
   EventBus.emit(GE.INVENTORY_CHANGE, { type: 'add', bag: 'outbox', itemId, qty });
@@ -200,12 +216,12 @@ export function loadFromOutbox(gs) {
  * 从背包/出货箱里精确搬一批 entry（携带 value 等所有属性）
  * @returns {object|null} { itemId, qty, ...extra } 实际搬走的 entry 快照（qty 已调整）
  */
-function _takeEntryFromBag(gs, bagName, itemId, qty) {
+function _takeEntryFromBag(gs, bagName, itemId, qty, tagKey = '') {
   const list = gs.inventory[bagName];
   if (!list || list.length === 0) return null;
-  // 找第一个匹配 entry（有 value 的优先合并到同 value 堆，无 value 的匹配无 value 堆）
-  // 简化：找第一个足够数量的 entry（郁金香不同 value 分堆了，每次搬单独 entry）
-  const entryIdx = list.findIndex(e => e.itemId === itemId && e.qty > 0);
+  // 找第一个匹配 entry（同 itemId + 同展示词条键的堆；value 由堆自身携带）
+  const entryIdx = list.findIndex(e => e.itemId === itemId && e.qty > 0
+    && tagKeyOf(e.tags) === tagKey);
   if (entryIdx < 0) return null;
   const entry = list[entryIdx];
   const actualRemove = Math.min(qty, entry.qty);
@@ -213,31 +229,33 @@ function _takeEntryFromBag(gs, bagName, itemId, qty) {
   if (entry.qty <= 0) list.splice(entryIdx, 1);
   const snapshot = { itemId: entry.itemId, qty: actualRemove };
   if (entry.value !== undefined) snapshot.value = entry.value;
+  if (entry.tags !== undefined) snapshot.tags = entry.tags.slice();
   return snapshot;
 }
 
 /**
- * 在背包 <-> 出货箱之间搬移物品（完整保留 value 等 entry 属性）
+ * 在背包 <-> 出货箱之间搬移物品（完整保留 value / tags 等 entry 属性）
  */
-export function moveItemBetween(gs, from, to, itemId, qty) {
+export function moveItemBetween(gs, from, to, itemId, qty, tagKey = '') {
   if (from === to) return false;
   if (qty <= 0) return false;
 
-  // 从 from bag 里拿走完整 entry 快照（带 value）
-  const snapshot = _takeEntryFromBag(gs, from, itemId, qty);
+  // 从 from bag 里拿走完整 entry 快照（带 value / tags）
+  const snapshot = _takeEntryFromBag(gs, from, itemId, qty, tagKey);
   if (!snapshot) return false;
 
   EventBus.emit(GE.INVENTORY_CHANGE, { type: 'remove', bag: from, itemId, qty: snapshot.qty });
 
-  // 放到 to bag（保留 value）
+  // 放到 to bag（保留 value / tags）
+  const extra = { value: snapshot.value, tags: snapshot.tags };
   let ok;
   if (to === 'items') {
-    ok = addItem(gs, snapshot.itemId, snapshot.qty, { value: snapshot.value });
+    ok = addItem(gs, snapshot.itemId, snapshot.qty, extra);
   } else {
-    ok = addToOutbox(gs, snapshot.itemId, snapshot.qty, { value: snapshot.value });
+    ok = addToOutbox(gs, snapshot.itemId, snapshot.qty, extra);
     if (!ok) {
       // 回滚
-      addItem(gs, snapshot.itemId, snapshot.qty, { value: snapshot.value });
+      addItem(gs, snapshot.itemId, snapshot.qty, extra);
       EventBus.emit(GE.INVENTORY_CHANGE, { type: 'add', bag: from, itemId: snapshot.itemId, qty: snapshot.qty });
     }
   }
@@ -252,4 +270,5 @@ export const InventorySystem = {
   removeFromOutbox,
   loadFromOutbox,
   moveItemBetween,
+  tagKeyOf,
 };

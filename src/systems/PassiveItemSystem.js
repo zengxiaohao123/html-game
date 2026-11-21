@@ -20,6 +20,8 @@ import * as InventorySystem from './InventorySystem.js';
 import { HealSystem } from './HealSystem.js';
 import { FieldEffects } from './FieldEffects.js';
 import { contentEntries } from '../core/TileAccess.js';
+import { produce } from './ProduceSystem.js';
+import { isSuppressed } from './SuppressSystem.js';
 
 let wiredEpoch = -1;
 let hpListenerAttached = false;
@@ -68,7 +70,9 @@ function wireHooks() {
     if (InventorySystem.countItem(gs, 'grimoire_golden_wave') < 1) return;
     const ref = tileRef ?? tileIdx;
     if (!FieldEffects.hasGoldenWaveTrait(gs, ref)) return;
-    InventorySystem.addItem(gs, 'item_wheat', 1);
+    if (isSuppressed(gs, ref)) return;
+    // 黄金浪属于「魔导书赋予该地块的特性」→ 算地块内容产出，参与【产出时】
+    produce(gs, { ref, itemId: 'item_wheat', qty: 1 });
     EventBus.emit(GE.TOAST_SHOW, { text: '🌾 黄金浪：经过麦浪 → 小麦 +1', duration: 1200 });
     devLog.info('[Passive] 黄金浪 经过田块', typeof ref === 'number' ? ref : `f:${ref.row},${ref.col}`, '→ 小麦 +1');
   });
@@ -232,6 +236,8 @@ export function syncPumpkin(gs) {
     const st = t.contentState || {};
     stored += (st.potatoStored || 0) + (st.strawberryStored || 0);
     stored += (st.peaStored || 0) + (st.dandelionStored ? 1 : 0) + (st.ghostStored ? 1 : 0);
+    // v0.6 新增储存类田块（用户 2026-11-21 确认「悲恸南瓜可以吃到新的储存类作物」）
+    stored += (st.hopsStored || 0) + (st.mushroomStored || 0) + (st.blueStored || 0) + (st.pumpkinStored || 0);
   }
   gs._pumpkin = gs._pumpkin || { stored: 0, hpApplied: 0, atkApplied: 0 };
   const delta = stored - gs._pumpkin.stored;

@@ -13,6 +13,7 @@ import { GE } from '../core/GameEvents.js';
 import { HookDispatcher } from '../core/HookDispatcher.js';
 import { devLog } from '../core/Logger.js';
 import { InventorySystem } from './InventorySystem.js';
+import { FieldAuraSystem } from './FieldAuraSystem.js';
 import { CreatureSystem } from './CreatureSystem.js';
 import { CombatSystem } from './CombatSystem.js';
 import { TalentSystem } from './TalentSystem.js';
@@ -101,7 +102,12 @@ export function startNewDay(gs) {
   // 5. 出货箱自动换成金币（InventorySystem.loadFromOutbox 按 items[].value 合计）
   InventorySystem.loadFromOutbox(gs);
 
-  // 6. 触发所有 onDailyStart hook（设施产出、生物刷新等 —— 此时 capacity.friendlyOverloaded 已就绪，wheat 等可据此归 0）
+  // 6. 田块光环优先结算（v0.6 §16.5）：
+  //    清理过期【产出时】临时特性 → 黑莓重新施加【压制】 → 向日葵授予【产出时】，
+  //    全部先于其它田块的 onDailyStart，保证当天产出当次生效。
+  FieldAuraSystem.preDailyStart(gs);
+
+  // 6.1 触发所有 onDailyStart hook（设施产出、生物刷新等 —— 此时 capacity.friendlyOverloaded 已就绪，wheat 等可据此归 0）
   HookDispatcher.fire('onDailyStart', { gs });
 
   // 6.1 放置型消耗道具的每日结算（陷阱 10% / 资源地块 30% 得随机物品）

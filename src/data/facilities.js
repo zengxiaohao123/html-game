@@ -48,6 +48,9 @@ import { HealSystem } from '../systems/HealSystem.js';
 import { ShopSystem } from '../systems/ShopSystem.js';
 import { StaminaSystem } from '../systems/StaminaSystem.js';
 import { syncPumpkin, hasGrimoire } from '../systems/PassiveItemSystem.js';
+import { produce, CHANNEL, takeStoredToBag } from '../systems/ProduceSystem.js';
+import { isSuppressed } from '../systems/SuppressSystem.js';
+import { FIELD_DEFS } from './fields/index.js';
 import {
   POTATO_BLESS_ADD,
   addPotatoStored,
@@ -224,15 +227,17 @@ const FacilityWheat = {
       let total = 0;
       for (const { ref, tile } of contentEntries(gs)) {
         if (tile.contentId !== this.id) continue;
+        if (isSuppressed(gs, ref)) continue; // 【压制】禁用该地块所有特性
         let qty = 2;
         if (normalizeTerrain(tile.terrain) === 'terrain_grass') qty += 1;
         // 魔导书【庆丰收】：该格视同水稻田块且处在「≥3 相连」的簇内 → 该格产出 +100%
         // （仓廪实生效时小麦田块也视同水稻田块，同样享受本加成）
         qty *= FieldEffects.harvestMultiplier(gs, ref);
+        // 统一走 produce 漏斗：该格若带【产出时】临时特性（向日葵）本次 +1
+        qty = produce(gs, { ref, itemId: 'item_wheat', qty });
         total += qty;
       }
       if (total > 0) {
-        InventorySystem.addItem(gs, 'item_wheat', total);
         EventBus.emit(GE.TOAST_SHOW, { text: `🌾 每日 +${total} 小麦`, duration: 2000 });
         devLog.info('[wheat] onDailyStart total =', total);
       }
@@ -240,85 +245,16 @@ const FacilityWheat = {
 
     // onBlessed：祝福发生时立即再触发一次（立即 ×3 产出；草地不加成，按物品库文案固定 ×3）
     HookDispatcher.register('onBlessed', ({ gs, tileIdx, tileRef }) => {
-      if (!isMine(gs, refOf(tileIdx, tileRef), this.id)) return;
-      const qty = 3;
-      InventorySystem.addItem(gs, 'item_wheat', qty);
+      const ref = refOf(tileIdx, tileRef);
+      if (!isMine(gs, ref, this.id)) return;
+      if (isSuppressed(gs, ref)) return;
+      const qty = produce(gs, { ref, itemId: 'item_wheat', qty: 3 });
       EventBus.emit(GE.TOAST_SHOW, { text: `🌾 祝福 +${qty} 小麦`, duration: 2000 });
       devLog.info('[wheat] onBlessed instant +', qty);
     }, this);
   },
 };
 
-// ════════════════════════════════════════════════════════════════
-// 4. FacilityRice  🌱  —— 稻田
-// 【每一日开始时】稻草 ×1（草地 +1，相邻水面 +2）
-// 【受祝福时】接下来 5 日每日开始时额外 +1
-// Phase 2A 简化：祝福效果通过 tile.states 里存 riceBlessDaysRemaining + dailyBonus 字段实现
-// ════════════════════════════════════════════════════════════════
-const FacilityRice = {
-  id: 'facility_rice',
-  name: '水稻田块',
-  emoji: Assets.facilities.facility_rice,
-  value: 3,
-  description: ITEMS.facility_rice.description,
-
-  register() {
-    // onDailyStart
-    HookDispatcher.register('onDailyStart', ({ gs }) => {
-      // §13.2：友善超载惩罚「友善类收益归 0」明确排除小麦/水稻 —— 水稻产出不受惩罚影响
-      // 魔导书【庆丰收】按"当日相连状态"逐格即时求值（FieldEffects），不缓存跨日 flags
-      let totalBase = 0;
-      let totalBonusFromBless = 0;
-
-      for (const { ref, tile: t } of contentEntries(gs)) {
-        if (t.contentId !== this.id) continue;
-        let qty = 1;
-        if (normalizeTerrain(t.terrain) === 'terrain_grass') qty += 1;
-        if (hasAdjacentWater(gs, ref)) qty += 2;
-        // 魔导书【庆丰收】：处在「≥3 个水稻田块相连」簇内的水稻田块，基础产出 +100%
-        qty *= FieldEffects.harvestMultiplier(gs, ref);
-        totalBase += qty;
-
-        // 受祝福 5 日额外 +1（独立的 rice_bless state，与 1 天 blessed state 分离）
-        const riceBlessStates = (t.states || []).filter(s => s.type === 'rice_bless');
-        for (const bs of riceBlessStates) {
-          if (bs.remainingDays && bs.remainingDays > 0) {
-            totalBonusFromBless += 1;
-            bs.remainingDays -= 1;
-          }
-        }
-        // 清理已过期的
-        t.states = (t.states || []).filter(s =>
-          !(s.type === 'rice_bless' && s.remainingDays !== undefined && s.remainingDays <= 0),
-        );
-      }
-
-      const total = totalBase + totalBonusFromBless;
-      if (total > 0) {
-        InventorySystem.addItem(gs, 'item_rice_straw', total);
-        const msg = `🌱 每日 +${totalBase} 稻草` + (totalBonusFromBless > 0 ? `（祝福 +${totalBonusFromBless}）` : '');
-        EventBus.emit(GE.TOAST_SHOW, { text: msg, duration: 2200 });
-      }
-    }, this);
-
-    // onBlessed：push 独立 rice_bless state，remainingDays = 5（与 1 天 blessed 分离）
-    // Phase 2B：再被祝福时取 Math.max（不叠加）
-    HookDispatcher.register('onBlessed', ({ gs, tileIdx, tileRef }) => {
-      const ref = refOf(tileIdx, tileRef);
-      if (!isMine(gs, ref, this.id)) return;
-      const tile = getTile(gs, ref);
-      let rb = tile.states.find(s => s.type === 'rice_bless');
-      if (!rb) {
-        rb = { type: 'rice_bless', remainingDays: 5 };
-        tile.states.push(rb);
-      } else {
-        rb.remainingDays = Math.max(rb.remainingDays, 5); // 取最长，不叠加
-      }
-      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 稻田受祝福 → 未来 ${rb.remainingDays} 日每日 +1 稻草`, duration: 2400 });
-      devLog.info('[rice] onBlessed rice_bless remainingDays =', rb.remainingDays);
-    }, this);
-  },
-};
 
 // ════════════════════════════════════════════════════════════════
 // 5. FacilityPotato  🥔  —— 土豆田
@@ -339,6 +275,7 @@ const FacilityPotato = {
     HookDispatcher.register('onDailyStart', ({ gs }) => {
       for (const { ref, tile: t } of contentEntries(gs)) {
         if (t.contentId !== this.id) continue;
+        if (isSuppressed(gs, ref)) continue;
         // 用 tile.dailyFlags 每日标记"今日已储"，避免重复
         const key = flagKey(this.id, 'onDailyStart');
         if (t.dailyFlags[key]) continue;
@@ -347,7 +284,10 @@ const FacilityPotato = {
         let add = 3;
         const blessed = t.states?.some(s => s.type === 'blessed');
         if (blessed) add = 5;
-        addPotatoStored(gs, t, add);
+        produce(gs, {
+          ref, itemId: 'item_potato', qty: add, channel: CHANNEL.STORE,
+          apply: (k) => addPotatoStored(gs, t, k),
+        });
         devLog.info('[potato] tile', tileRefKey(ref), 'stored →', potatoStoredOf(t), '/', potatoCapacity(gs));
       }
       // A-12：田间储存变化 → 同步悲恸南瓜加成
@@ -365,8 +305,13 @@ const FacilityPotato = {
     HookDispatcher.register('onBlessed', ({ gs, tileIdx, tileRef }) => {
       const ref = refOf(tileIdx, tileRef);
       if (!isMine(gs, ref, this.id)) return;
+      if (isSuppressed(gs, ref)) return;
       const tile = getTile(gs, ref);
-      const added = addPotatoStored(gs, tile, POTATO_BLESS_ADD);
+      let added = 0;
+      produce(gs, {
+        ref, itemId: 'item_potato', qty: POTATO_BLESS_ADD, channel: CHANNEL.STORE,
+        apply: (k) => { const a = addPotatoStored(gs, tile, k); added += a; return a; },
+      });
       const cap = potatoCapacity(gs);
       const cur = hasPotatoHardship(gs) ? potatoTotalStored(gs) : potatoStoredOf(tile);
       EventBus.emit(GE.TOAST_SHOW, { text: `✨ 祝福储存 +${added} 土豆（现 ${cur}/${cap}）`, duration: 2000 });
@@ -438,11 +383,19 @@ const FacilityStrawberry = {
       // §13.2：友善超载惩罚 → 友善类收益归 0（除小麦/水稻）
       if (gs.capacity?.friendlyOverloaded) return;
       const tile = getTile(gs, ref);
+      if (isSuppressed(gs, ref)) return;
       const key = flagKey(this.id, 'onPass');
       if (tile.dailyFlags[key]) return;
       tile.dailyFlags[key] = true;
       const state = tile.contentState || (tile.contentState = {});
-      state.strawberryStored = Math.min(STRAWBERRY_MAX, (state.strawberryStored || 0) + 1);
+      produce(gs, {
+        ref, itemId: 'item_strawberry', qty: 1, channel: CHANNEL.STORE,
+        apply: (k) => {
+          const before = state.strawberryStored || 0;
+          state.strawberryStored = Math.min(STRAWBERRY_MAX, before + k);
+          return state.strawberryStored - before;
+        },
+      });
       EventBus.emit(GE.TILE_UPDATED, tilePayloadOf(gs, ref));
       syncPumpkin(gs); // A-12
     }, this);
@@ -459,11 +412,20 @@ const FacilityStrawberry = {
       // §13.2：友善超载惩罚 → 友善类收益归 0（除小麦/水稻）
       if (gs.capacity?.friendlyOverloaded) return;
       const tile = getTile(gs, ref);
+      if (isSuppressed(gs, ref)) return;
       const state = tile.contentState || (tile.contentState = {});
       const rnd = Math.floor(Math.random() * 4) + 2; // 2~5
-      const before = state.strawberryStored || 0;
-      state.strawberryStored = Math.min(STRAWBERRY_MAX, before + rnd);
-      const actuallyAdded = state.strawberryStored - before;
+      let actuallyAdded = 0;
+      produce(gs, {
+        ref, itemId: 'item_strawberry', qty: rnd, channel: CHANNEL.STORE,
+        apply: (k) => {
+          const before = state.strawberryStored || 0;
+          state.strawberryStored = Math.min(STRAWBERRY_MAX, before + k);
+          const a = state.strawberryStored - before;
+          actuallyAdded += a;
+          return a;
+        },
+      });
       EventBus.emit(GE.TOAST_SHOW, { text: `✨ 祝福储存 +${actuallyAdded} 草莓（上限 ${STRAWBERRY_MAX}）`, duration: 2000 });
       EventBus.emit(GE.TILE_UPDATED, tilePayloadOf(gs, ref));
       syncPumpkin(gs); // A-12
@@ -494,6 +456,7 @@ const FacilityPea = {
       const tiles = contentEntries(gs);
       for (const { ref, tile: t } of tiles) {
         if (t.contentId !== this.id) continue;
+        if (isSuppressed(gs, ref)) continue;
         const state = t.contentState || (t.contentState = {});
         const lastTurn = state.peaLastSkillTurn ?? -999;
         if (gs.turn - lastTurn < 2) {
@@ -501,7 +464,14 @@ const FacilityPea = {
           continue;
         }
         state.peaLastSkillTurn = gs.turn;
-        state.peaStored = Math.min(PEA_MAX, (state.peaStored || 0) + 1);
+        produce(gs, {
+          ref, itemId: 'item_pea', qty: 1, channel: CHANNEL.STORE,
+          apply: (k) => {
+            const before = state.peaStored || 0;
+            state.peaStored = Math.min(PEA_MAX, before + k);
+            return state.peaStored - before;
+          },
+        });
         devLog.info('[pea] tile', tileRefKey(ref), '+1 pea (turn', gs.turn, '), now', state.peaStored);
         EventBus.emit(GE.TILE_UPDATED, tilePayloadOf(gs, ref));
       }
@@ -523,11 +493,12 @@ const FacilityPea = {
     HookDispatcher.register('onBlessed', ({ gs, tileIdx, tileRef }) => {
       const ref = refOf(tileIdx, tileRef);
       if (!isMine(gs, ref, this.id)) return;
+      if (isSuppressed(gs, ref)) return;
       const tile = getTile(gs, ref);
       const state = tile.contentState || (tile.contentState = {});
       const stored = state.peaStored || 0;
       if (stored > 0) {
-        InventorySystem.addItem(gs, 'item_pea', stored);
+        takeStoredToBag(gs, ref, 'item_pea', stored);
         state.peaStored = 0;
         EventBus.emit(GE.TOAST_SHOW, { text: `✨ 祝福自动收获 +${stored} 豌豆`, duration: 2000 });
         EventBus.emit(GE.TILE_UPDATED, tilePayloadOf(gs, ref));
@@ -700,14 +671,13 @@ const FacilityCorn = {
   register() {
     // onCreatureAdded：任何生物（友善/危险/高危）增加时，每块玉米田 +1 玉米
     HookDispatcher.register('onCreatureAdded', ({ gs }) => {
-      const tiles = contentEntries(gs).filter(e => e.tile.contentId === this.id);
+      const tiles = contentEntries(gs).filter(e => e.tile.contentId === this.id && !isSuppressed(gs, e.ref));
       if (tiles.length === 0) return;
       let total = 0;
-      for (const t of tiles) {
-        total += 1;
+      for (const { ref } of tiles) {
+        total += produce(gs, { ref, itemId: 'item_corn', qty: 1 });
       }
       if (total > 0) {
-        InventorySystem.addItem(gs, 'item_corn', total);
         EventBus.emit(GE.TOAST_SHOW, { text: `🌽 生物增加 → +${total} 玉米`, duration: 1800 });
         devLog.info('[corn] onCreatureAdded +', total);
       }
@@ -777,12 +747,13 @@ const FacilityCabbage = {
     HookDispatcher.register('onDailyStart', ({ gs }) => {
       for (const { ref, tile: t } of contentEntries(gs)) {
         if (t.contentId !== this.id) continue;
+        if (isSuppressed(gs, ref)) continue;
         const key = flagKey(this.id, 'onDailyStart');
         if (t.dailyFlags[key]) continue;
         t.dailyFlags[key] = true;
 
-        // 1) 先 +2 卷心菜
-        InventorySystem.addItem(gs, 'item_cabbage', 2);
+        // 1) 先 +2 卷心菜（走 produce：该格带【产出时】则本次 +1）
+        produce(gs, { ref, itemId: 'item_cabbage', qty: 2 });
         EventBus.emit(GE.TOAST_SHOW, { text: `🥬 每日 +2 卷心菜`, duration: 1500 });
 
         const enemies = gs.creatures.filter(c => c.category !== 'friendly' && c.hp > 0);
@@ -1291,18 +1262,18 @@ const FacilityMugwort = {
 
   register() {
     HookDispatcher.register('onDailyStart', ({ gs }) => {
-      const tiles = contentEntries(gs).filter(e => e.tile.contentId === this.id);
+      const tiles = contentEntries(gs).filter(e => e.tile.contentId === this.id && !isSuppressed(gs, e.ref));
       if (!tiles.length) return;
-      const total = tiles.length * 2;
-      InventorySystem.addItem(gs, 'item_mugwort', total);
+      let total = 0;
+      for (const { ref } of tiles) total += produce(gs, { ref, itemId: 'item_mugwort', qty: 2 });
       EventBus.emit(GE.TOAST_SHOW, { text: `🍃 艾草田块 +${total} 艾草`, duration: 1800 });
     }, this);
 
     HookDispatcher.register('onHeal', ({ gs, amount = 0 }) => {
       if (amount <= 0) return;
-      const tiles = contentEntries(gs).filter(e => e.tile.contentId === this.id);
+      const tiles = contentEntries(gs).filter(e => e.tile.contentId === this.id && !isSuppressed(gs, e.ref));
       if (!tiles.length) return;
-      InventorySystem.addItem(gs, 'item_mugwort', tiles.length);
+      for (const { ref } of tiles) produce(gs, { ref, itemId: 'item_mugwort', qty: 1 });
       devLog.info('[mugwort] onHeal +', tiles.length);
     }, this);
 
@@ -1366,11 +1337,13 @@ export function registerSkillHooks() {
 // ════════════════════════════════════════════════════════════════
 
 export const ALL_FACILITIES = [
-  // 16 种设施（FAC-001 ~ FAC-016）
-  FacilityHome, FacilityTent, FacilityWheat, FacilityRice, FacilityPotato,
+  // 16 种设施（FAC-001 ~ FAC-016；水稻已迁至 data/fields/rice.js）
+  FacilityHome, FacilityTent, FacilityWheat, FacilityPotato,
   FacilityTulip, FacilityStrawberry, FacilityPea, FacilityHenhouse, FacilitySlimehouse,
   FacilityCorn, FacilityCabbage,
   FacilityWildSeed, FacilityDandelion, FacilityGhostGrass, FacilityMugwort,
+  // 田块增量结构（一田块一文件，见 data/fields/）：水稻 v0.6 改写 + 9 种新田块
+  ...FIELD_DEFS,
   // 6 种资源类地块内容（RES-001 ~ RES-006）
   ResourceEvent, ResourceReward, ResourceHunt, ResourceShop, ResourceBus, ResourceMagicShop,
 ];

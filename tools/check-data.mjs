@@ -191,6 +191,7 @@ const TERM_TO_HOOK = {
   合成或加工时: 'onCraft',
   使用时: 'onUseItem',
   角色回复生命值时: 'onHeal',
+  产出时: 'onProduce',
   连携技: null, // 实时窗口，不走 hook
 };
 try {

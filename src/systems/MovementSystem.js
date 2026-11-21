@@ -26,6 +26,7 @@ import { TalentSystem } from './TalentSystem.js';
 import { VehicleSystem } from './VehicleSystem.js';
 import { StaminaSystem } from './StaminaSystem.js';
 import { normalizeTerrain } from '../data/terrains.js';
+import { syncBlueBreath } from './BlueBreathSystem.js';
 import {
   playerRef,
   setPlayerRef,
@@ -193,6 +194,8 @@ export function moveStep(gs, direction) {
   // 3. 更新玩家位置（冰面滑行的终点）
   setPlayerRef(gs, finalRef);
   for (const ref of path) markVisited(gs, ref);
+  // 蓝息光环随位置动态更新（进入/离开范围即时生效）
+  syncBlueBreath(gs);
 
   // 4. 触发【进入时】：仅最终停留格
   fireEnterHooks(gs, finalRef);

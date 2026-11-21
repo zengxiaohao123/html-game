@@ -16,7 +16,9 @@
 //   onUseSkill          角色使用技能时（用于豌豆架）
 //   onEveryNTurn        每 N 回合（用于豌豆架每 2 回合限 1 次）
 //   onCreatureDefeated  生物被击败时
+//   onCreatureAdded     生物增加时（玉米田块）
 //   onEventResolve      事件/选项结算时
+//   onProduce           产出任意产物时（【产出时】）
 
 export const HOOK_TYPES = [
   'onEnter',           // 进入时：仅最终停留格
@@ -38,6 +40,7 @@ export const HOOK_TYPES = [
   'onCreatureDefeated',// 生物被击败时
   'onCreatureAdded',   // 生物增加时（玉米田块）
   'onEventResolve',    // 事件/选项结算时
+  'onProduce',         // 产出任意产物时（【产出时】；来源必须是地块内容特性）
 ];
 
 // hookType → [{ cb, ctx }]

@@ -17,6 +17,7 @@
 //     chanceUsedToday: false,
 //   }
 
+import { syncBlueBreath } from './BlueBreathSystem.js';
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
@@ -431,6 +432,7 @@ export function tryMove(gs, opts = {}) {
 
   // 更新位置
   setPlayerRef(gs, targetRef);
+  syncBlueBreath(gs);
 
   // 到达后额外效果（拓荒者 +5 行动力；购物车 +4 金币）
   if (def.staminaGain) {

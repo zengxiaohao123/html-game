@@ -44,6 +44,7 @@ export class InventoryPanel {
     this.actionQtyLabel = null;  // 行动区当前数量显示 DOM（缓存，render 时复用）
     this.selectedTabIdx = 0;
     this.selectedItemId = null;  // 当前选中 itemId
+    this.selectedTagKey = '';    // 当前选中堆的展示词条键（词条不同 = 不同物品堆）
     this.selectedFrom = null;    // 'items' | 'outbox'
     this.currentQty = 1;         // 行动区当前数量
     this.maxQty = 1;             // 行动区数量上限
@@ -204,21 +205,38 @@ export class InventoryPanel {
     }
 
     for (const entry of list) {
+      const entryTagKey = InventorySystem.tagKeyOf(entry.tags);
       const slot = createEl('div', {
         class: [
           'inv-big-slot',
-          this.selectedItemId === entry.itemId && this.selectedFrom === 'items' ? 'selected' : '',
+          this.selectedItemId === entry.itemId && this.selectedTagKey === entryTagKey
+            && this.selectedFrom === 'items' ? 'selected' : '',
         ],
         parent: grid,
       });
 
       const name = this._resolveName(entry.itemId);
+      const tagSuffix = Array.isArray(entry.tags) && entry.tags.length > 0
+        ? `（${entry.tags.map(t => `【${t}】`).join('')}）` : '';
       // §16.15：左侧物品图标格，无文字（iconEl 渲染）
       const iconWrap = createEl('div', { class: 'inv-big-emoji', parent: slot });
       iconWrap.appendChild(this._iconElFor(entry.itemId, '38px'));
       // 数量角标：右下角常驻（数量为 1 也显示），pointer-events:none 不影响格子点击
       createEl('div', { class: 'inv-big-qty', text: `×${entry.qty}`, parent: slot });
-      slot.title = `${name} ×${entry.qty}`;
+      // 展示词条角标（【湛蓝】【违禁品】）：词条不同的堆分别展示
+      if (Array.isArray(entry.tags) && entry.tags.length > 0) {
+        createEl('div', {
+          style: {
+            position: 'absolute', left: '2px', top: '2px', right: '2px',
+            fontSize: '10px', lineHeight: '1.1', color: '#2b6cff',
+            fontWeight: '700', textAlign: 'left', pointerEvents: 'none',
+            overflow: 'hidden',
+          },
+          text: entry.tags.map(t => `【${t}】`).join(''),
+          parent: slot,
+        });
+      }
+      slot.title = `${name}${tagSuffix} ×${entry.qty}`;
 
       // 拖拽（§16.15 / §16.19 / §16.23）：所有背包物品都可拖进 HotBar（产物 / 消耗道具 /
       // 放置型道具 / 装备 / 收藏品）。拖拽开始后背包自动关闭露出地图与快捷栏：
@@ -261,7 +279,7 @@ export class InventoryPanel {
 
       slot.addEventListener('click', (e) => {
         e.stopPropagation();
-        this._activateAction('items', entry.itemId, entry.qty);
+        this._activateAction('items', entry.itemId, entry.qty, entryTagKey);
       });
     }
   }
@@ -329,6 +347,8 @@ export class InventoryPanel {
 
     // 显性词条：统一徽章入口，不混入描述正文
     renderTraitBadges(this.detailEl, ITEM?.traits);
+    // 该堆的展示词条（【湛蓝】【违禁品】）：随堆显示，不写进物品静态词条
+    renderTraitBadges(this.detailEl, entry.tags, { marginTop: '4px' });
 
     // 描述（topRow 下方独立一行；pre-line 保留数据里的换行；其中【术语】行内可点开释义)
     renderTermText(this.detailEl, desc, { tag: 'div', class: 'inv-detail-desc' });
@@ -426,6 +446,7 @@ export class InventoryPanel {
       parent: actionRow,
       onclick: () => {
         this.selectedItemId = null;
+        this.selectedTagKey = '';
         this.selectedFrom = null;
         this.currentQty = 1;
         this.maxQty = 1;
@@ -445,9 +466,11 @@ export class InventoryPanel {
           this.selectedFrom === 'items' ? 'outbox' : 'items',
           this.selectedItemId,
           this.currentQty,
+          this.selectedTagKey,
         );
         // 清空选中状态，让 UI 回到"未选中"
         this.selectedItemId = null;
+        this.selectedTagKey = '';
         this.selectedFrom = null;
         this.currentQty = 1;
         this.maxQty = 1;
@@ -498,8 +521,9 @@ export class InventoryPanel {
   }
 
   /** 点物品激活行动区（只更新 selected 状态 + 重渲染详情/行动） */
-  _activateAction(from, itemId, maxQty) {
+  _activateAction(from, itemId, maxQty, tagKey = '') {
     this.selectedItemId = itemId;
+    this.selectedTagKey = tagKey;
     this.selectedFrom = from;
     this.maxQty = maxQty;
     this.currentQty = 1; // 默认从 1 开始（每次选物品默认只搬 1 个，玩家再调整）
@@ -523,6 +547,17 @@ export class InventoryPanel {
         const iconWrap = createEl('div', { class: 'inv-big-emoji', parent: slot });
         iconWrap.appendChild(this._iconElFor(entry.itemId, '22px'));
         if (entry.qty > 1) createEl('div', { class: 'inv-big-qty', text: `×${entry.qty}`, parent: slot });
+        if (Array.isArray(entry.tags) && entry.tags.length > 0) {
+          createEl('div', {
+            style: {
+              position: 'absolute', left: '1px', top: '1px', right: '1px',
+              fontSize: '9px', lineHeight: '1.1', color: '#2b6cff', fontWeight: '700',
+              overflow: 'hidden', pointerEvents: 'none',
+            },
+            text: entry.tags.map(t => `【${t}】`).join(''),
+            parent: slot,
+          });
+        }
 
         // M-10：优先显示条目实际价值（如郁金香每日随机价），回退物品库静态价值
         const ITEM = ITEMS[entry.itemId];
@@ -539,7 +574,7 @@ export class InventoryPanel {
 
         slot.addEventListener('click', (e) => {
           e.stopPropagation();
-          this._activateAction('outbox', entry.itemId, entry.qty);
+          this._activateAction('outbox', entry.itemId, entry.qty, InventorySystem.tagKeyOf(entry.tags));
         });
       } else {
         createEl('div', {
@@ -552,13 +587,14 @@ export class InventoryPanel {
   }
 
   // ─────────────────────── 工具 ───────────────────────
-  _findEntry(from, itemId) {
+  _findEntry(from, itemId, tagKey = this.selectedTagKey || '') {
     const gs = this._getGS();
     if (!gs) return null;
     const list = from === 'outbox'
       ? (gs.inventory?.outbox || [])
       : (gs.inventory?.items || []);
-    return list.find(e => e && e.itemId === itemId);
+    return list.find(e => e && e.itemId === itemId
+      && (from === 'outbox' || InventorySystem.tagKeyOf(e.tags) === tagKey));
   }
 
   _getGS() {

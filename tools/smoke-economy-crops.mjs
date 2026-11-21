@@ -130,11 +130,13 @@ const give = (id, qty = 1) => InventorySystem.addItem(gs, id, qty);
 head('1. 拆除 / 替换前自动采摘（通用规则）');
 {
   reset();
-  check(AUTO_HARVEST_ON_REMOVE.size === 7, '自动采摘集合 = 7 种地块内容',
+  check(AUTO_HARVEST_ON_REMOVE.size === 11, '自动采摘集合 = 11 种地块内容（v0.6 新增啤酒花/南瓜/蘑菇/蓝星果）',
     [...AUTO_HARVEST_ON_REMOVE]);
   check(['facility_potato', 'facility_strawberry', 'facility_pea', 'facility_tulip',
-    'facility_dandelion', 'facility_ghost_grass', 'facility_henhouse'].every((id) => AUTO_HARVEST_ON_REMOVE.has(id)),
-  '土豆 / 草莓 / 豌豆 / 郁金香 / 蒲公英 / 幽怜草 / 鸡舍 均覆盖');
+    'facility_dandelion', 'facility_ghost_grass', 'facility_henhouse',
+    'facility_hops', 'facility_pumpkin', 'facility_mushroom', 'facility_blue_star_fruit']
+    .every((id) => AUTO_HARVEST_ON_REMOVE.has(id)),
+  '土豆 / 草莓 / 豌豆 / 郁金香 / 蒲公英 / 幽怜草 / 鸡舍 / 啤酒花 / 南瓜 / 蘑菇 / 蓝星果 均覆盖');
   check(!AUTO_HARVEST_ON_REMOVE.has('facility_slimehouse'), '史莱姆屋不在自动采摘集合内（不储存黏液）');
 
   // 土豆：拆除时把本块存量带回背包

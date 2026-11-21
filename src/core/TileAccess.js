@@ -161,6 +161,25 @@ export function neighborRefs(gs, ref) {
   return [0, 1, 2, 3].map((d) => neighborRef(gs, ref, d)).filter((r) => r !== null);
 }
 
+/** [左上,上,右上,左,右,左下,下,右下] 的网格增量（8 邻接） */
+export const DIR8_DELTA = [
+  { dx: -1, dy: -1 }, { dx: 0, dy: -1 }, { dx: 1, dy: -1 },
+  { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
+  { dx: -1, dy: 1 }, { dx: 0, dy: 1 }, { dx: 1, dy: 1 },
+];
+
+/** 8 邻接全部地块 ref（不含 null、不含自身） */
+export function neighborRefs8(gs, ref) {
+  const p = refXY(gs, ref);
+  if (!p) return [];
+  const out = [];
+  for (const d of DIR8_DELTA) {
+    const r = refOfXY(gs, p.x + d.dx, p.y + d.dy);
+    if (r !== null) out.push(r);
+  }
+  return out;
+}
+
 /** 两个地块是否 4 邻接 */
 export function areAdjacent(gs, a, b) {
   const p = refXY(gs, a);
@@ -295,6 +314,7 @@ export function legalStandRefs(gs) {
 export const TileAccess = {
   PATH_TERRAIN,
   DIR_DELTA,
+  DIR8_DELTA,
   isFenceRef,
   tileRefKey,
   parseTileRefKey,
@@ -312,6 +332,7 @@ export const TileAccess = {
   refOfXY,
   neighborRef,
   neighborRefs,
+  neighborRefs8,
   areAdjacent,
   gridManhattan,
   effectivePathRefs,

@@ -97,6 +97,28 @@ export function capture(gs) {
   base.blessingQueue = [];
   delete base.blessLockUntilMs;
 
+  // 【蓝息】动态光环：剥离运行期增量，避免把临时加成写进日初基线
+  if (base.player) {
+    const aura = base._blueAura;
+    if (aura) {
+      base.player.maxHp = Math.max(1, (base.player.maxHp || 0) - (aura.hpApplied || 0));
+      base.player.atk = Math.max(0, (base.player.atk || 0) - (aura.atkApplied || 0));
+      if (Number.isFinite(base.player.hp)) base.player.hp = Math.min(base.player.hp, base.player.maxHp);
+    }
+    delete base._blueAura;
+  }
+  for (const c of base.creatures || []) {
+    if (!isPlainObject(c)) continue;
+    const aura = c._blueAura;
+    if (aura) {
+      c.maxHp = Math.round(((c.maxHp || 0) - (aura.hpApplied || 0)) * 10) / 10;
+      c.atk = Math.round(((c.atk || 0) - (aura.atkApplied || 0)) * 10) / 10;
+      if (Number.isFinite(c.hp)) c.hp = Math.min(c.hp, c.maxHp);
+      if (aura.speedApplied) c.speedPerTile = Math.round(c.speedPerTile * 1.5 * 1000) / 1000;
+      delete c._blueAura;
+    }
+  }
+
   // 随机：只存主种子，不存日内已抽过的进度
   base.rng = { masterSeed: gs?.rng?.masterSeed };
 

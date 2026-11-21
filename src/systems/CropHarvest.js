@@ -20,6 +20,11 @@ import { syncPumpkin } from './PassiveItemSystem.js';
 import { isFenceRef, fenceIdxOf } from '../core/TileAccess.js';
 import { POTATO_ID, potatoStoredOf } from './PotatoSystem.js';
 import { TULIP_ID, pickTulip } from './TulipSystem.js';
+import { takeStoredToBag } from './ProduceSystem.js';
+import { HOPS_ID, hopsStoredOf } from '../data/fields/hops.js';
+import { PUMPKIN_ID, pumpkinStoredOf } from '../data/fields/pumpkin.js';
+import { MUSHROOM_ID, mushroomStoredOf } from '../data/fields/mushroom.js';
+import { BLUE_FIELD_ID, blueStoredOf } from '../data/fields/blue_star_fruit.js';
 
 export const STRAWBERRY_ID = 'facility_strawberry';
 export const PEA_ID = 'facility_pea';
@@ -36,6 +41,10 @@ export const AUTO_HARVEST_ON_REMOVE = new Set([
   DANDELION_ID,
   GHOST_GRASS_ID,
   HENHOUSE_ID,
+  HOPS_ID,
+  PUMPKIN_ID,
+  MUSHROOM_ID,
+  BLUE_FIELD_ID,
 ]);
 
 const harvestEntry = (itemId, qty, value) => ({ itemId, qty, value });
@@ -101,6 +110,38 @@ export function harvestCropBeforeRemove(gs, tile, ref = null) {
         InventorySystem.addItem(gs, 'item_golden_egg', golden);
         result.harvested.push(harvestEntry('item_golden_egg', golden));
       }
+      break;
+    }
+    case HOPS_ID: {
+      const qty = hopsStoredOf(tile);
+      if (qty <= 0) break;
+      cs.hopsStored = 0;
+      takeStoredToBag(gs, ref, 'item_hops', qty);
+      result.harvested.push(harvestEntry('item_hops', qty));
+      break;
+    }
+    case PUMPKIN_ID: {
+      const qty = pumpkinStoredOf(tile);
+      if (qty <= 0) break;
+      cs.pumpkinStored = 0;
+      takeStoredToBag(gs, ref, 'item_pumpkin', qty);
+      result.harvested.push(harvestEntry('item_pumpkin', qty));
+      break;
+    }
+    case MUSHROOM_ID: {
+      const qty = mushroomStoredOf(tile);
+      if (qty <= 0) break;
+      cs.mushroomStored = 0;
+      takeStoredToBag(gs, ref, 'item_mushroom', qty);
+      result.harvested.push(harvestEntry('item_mushroom', qty));
+      break;
+    }
+    case BLUE_FIELD_ID: {
+      const qty = blueStoredOf(tile);
+      if (qty <= 0) break;
+      cs.blueStored = 0;
+      takeStoredToBag(gs, ref, 'item_blue_starfruit', qty);
+      result.harvested.push(harvestEntry('item_blue_starfruit', qty));
       break;
     }
     case TULIP_ID: {

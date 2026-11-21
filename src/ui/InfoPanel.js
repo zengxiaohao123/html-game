@@ -52,6 +52,13 @@ import { playerRef, refsEqual, refXY, getTile, isEffectiveOuterRef } from '../co
 import { createEl, qs, iconEl } from './dom.js';
 import { renderTraitBadges, renderStateBadges } from './TraitBadges.js';
 import { renderTermText } from './TermText.js';
+import { takeStoredToBag, hasAdjacentWater, hasProduceBonus } from '../systems/ProduceSystem.js';
+import { isSuppressed } from '../systems/SuppressSystem.js';
+import { isInBlueBreath, blueRadiusFor, syncBlueBreath } from '../systems/BlueBreathSystem.js';
+import { HOPS_MAX } from '../data/fields/hops.js';
+import { MUSHROOM_MAX } from '../data/fields/mushroom.js';
+import { PUMPKIN_THRESHOLD } from '../data/fields/pumpkin.js';
+import { STARFRUIT_THRESHOLD, STARFRUIT_GAIN } from '../data/fields/starfruit.js';
 
 
 /** 滑入/滑出 transform（§16.4：面板用 top/bottom 双锚点固定高度，只做横向滑入滑出） */
@@ -487,6 +494,56 @@ export class InfoPanel {
   }
 
   /**
+   * 新田块运行状态（只读）：成长值 / 水面失效 / 压制 / 蓝息 / 【产出时】。
+   * 储存数量在「身处该格」时由下方操作区显示，离开该格时在此补一行。
+   */
+  _renderFieldStatus(tile, contentId, gs, ref) {
+    const cs = tile.contentState || {};
+    const onTile = refsEqual(playerRef(gs), ref);
+    const rows = [];
+
+    if (contentId === 'facility_hops') {
+      const n = Math.max(0, Math.min(HOPS_MAX, Number(cs.hopsStored) || 0));
+      if (!onTile) rows.push(`🍺 已储存 ${n} / ${HOPS_MAX}`);
+      rows.push(hasAdjacentWater(gs, ref)
+        ? '💧 相邻水面：已浇水，【产出时】产量 +2'
+        : '💧 相邻无水面：未浇水，不触发【产出时】产量 +2');
+    } else if (contentId === 'facility_mushroom') {
+      const n = Math.max(0, Math.min(MUSHROOM_MAX, Number(cs.mushroomStored) || 0));
+      if (!onTile) rows.push(`🍄 已储存 ${n} / ${MUSHROOM_MAX}`);
+      if (normalizeTerrain(tile.terrain) === 'terrain_water') rows.push('🌊 地块为水面：所有特性失效');
+    } else if (contentId === 'facility_blue_star_fruit') {
+      const n = Math.max(0, Math.min(7, Number(cs.blueStored) || 0));
+      if (!onTile) rows.push(`💙 已储存 ${n} / 7`);
+      rows.push(n > 0 ? `💙 蓝息半径 ${blueRadiusFor(n).toFixed(1)} 米` : '💙 尚未储存蓝星果，暂无蓝息');
+    } else if (contentId === 'facility_pumpkin') {
+      const growth = Math.max(0, Number(cs.pumpkinGrowth) || 0);
+      const stored = Math.max(0, Math.min(1, Number(cs.pumpkinStored) || 0));
+      rows.push(`🎃 成长值 ${growth} / ${PUMPKIN_THRESHOLD}${stored > 0 ? '（已储存南瓜 ×1）' : ''}`);
+    } else if (contentId === 'facility_starfruit') {
+      const growth = Math.max(0, Number(cs.starfruitGrowth) || 0);
+      rows.push(`⭐ 成长值 ${growth} / ${STARFRUIT_THRESHOLD}（开始 / 结束 / 进入时 +${STARFRUIT_GAIN}）`);
+    }
+
+    if (contentId !== 'facility_blue_star_fruit' && isInBlueBreath(gs, ref)) {
+      rows.push('💙 处于蓝息范围内：产出作物 10% 变异为【湛蓝】【违禁品】');
+    }
+    if (hasProduceBonus(gs, ref)) rows.push('✨ 【产出时】加成生效中（本次产量 +1）');
+    if (isSuppressed(gs, ref)) {
+      const until = Number(cs.suppressUntilDay);
+      rows.push(`⛔ 压制中：特性失效${Number.isFinite(until) ? `至第 ${until} 日` : ''}`);
+    }
+
+    for (const text of rows) {
+      createEl('div', {
+        style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
+        text,
+        parent: this.bodyWrap,
+      });
+    }
+  }
+
+  /**
    * 地块内容 tab（外圈地块 / 栅栏内生效小径格共用）。
    * ref 统一走 this._contentRef：外圈 = 数字 idx，栅栏生效格 = fence ref，
    * 因此同一套「专属功能选项 + 前往/无法抵达」对两类地块都成立。
@@ -503,6 +560,8 @@ export class InfoPanel {
     // 无地块内容：不渲染地形（地形只在「状态」tab），只保留下方「前往 / 无法抵达」基本功能选项。
     if (contentId) this._renderContentHead(contentId);
     if (opts.afterHead) opts.afterHead();
+    // 新田块运行状态（成长值 / 水面失效 / 压制 / 蓝息 / 产出时）：只读展示
+    if (contentId) this._renderFieldStatus(tile, contentId, gs, ref);
 
     // 设施类地块 —— 功能选项区（§16.4：区分"身处该格"vs"随时可点"）
     // L-04：只有"存在额外功能选项"的设施才渲染功能区；无选项设施（麦田/水稻/玉米/卷心菜/
@@ -511,6 +570,7 @@ export class InfoPanel {
       'facility_potato', 'facility_strawberry', 'facility_pea',
       'facility_tulip', 'facility_dandelion', 'facility_ghost_grass',
       'facility_henhouse', 'facility_slimehouse',
+      'facility_hops', 'facility_mushroom', 'facility_blue_star_fruit',
     ]);
     if (contentId && FACILITIES_WITH_OPTIONS.has(contentId)) {
       const onTile = refsEqual(playerRef(gs), ref); // 玩家是否身处该格（含生效小径格）
@@ -645,6 +705,133 @@ export class InfoPanel {
               EventBus.emit(GE.INVENTORY_CHANGE);
               this._notifyTileChanged(ref);
               EventBus.emit(GE.TOAST_SHOW, { text: `🫛 收获 +${actually} 豌豆`, duration: 1800 });
+              this._renderBody();
+            },
+          });
+          break;
+        }
+
+        case 'facility_hops': {
+          // 🍺 啤酒花田块：身处该格时滑动条取走储存（经过时也会自动取走）
+          if (!onTile) break;
+          const stored = Math.max(0, Math.min(HOPS_MAX, Number(tile.contentState?.hopsStored) || 0));
+          createEl('div', {
+            style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
+            text: `🍺 已储存 ${stored} / ${HOPS_MAX}`,
+            parent: this.bodyWrap,
+          });
+          const range = this._mkHarvestSlider(this.bodyWrap, stored);
+          const qtyLabel = createEl('div', {
+            style: { fontSize: '13px', color: '#5a4a3a', textAlign: 'center', margin: '4px 0' },
+            text: `选择取走数量：${stored}`,
+            parent: this.bodyWrap,
+          });
+          range.addEventListener('input', () => {
+            qtyLabel.textContent = `选择取走数量：${range.value}`;
+          });
+          createEl('button', {
+            class: 'action-btn',
+            style: { width: '100%', fontSize: '13px', background: '#e8d8a0' },
+            text: '🍺 取走啤酒花',
+            disabled: stored <= 0,
+            parent: this.bodyWrap,
+            onclick: () => {
+              const qty = parseInt(range.value, 10) || 0;
+              if (qty <= 0) return;
+              const curTile = readTile();
+              const cs = curTile.contentState || (curTile.contentState = {});
+              const actually = Math.min(qty, cs.hopsStored || 0);
+              if (actually <= 0) return;
+              takeStoredToBag(gs, ref, 'item_hops', actually);
+              cs.hopsStored = (cs.hopsStored || 0) - actually;
+              syncPumpkin(gs);
+              this._notifyTileChanged(ref);
+              EventBus.emit(GE.TOAST_SHOW, { text: `🍺 取走 +${actually} 啤酒花`, duration: 1800 });
+              this._renderBody();
+            },
+          });
+          break;
+        }
+
+        case 'facility_mushroom': {
+          // 🍄 蘑菇田块：身处该格时滑动条取走储存
+          if (!onTile) break;
+          const stored = Math.max(0, Math.min(MUSHROOM_MAX, Number(tile.contentState?.mushroomStored) || 0));
+          createEl('div', {
+            style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
+            text: `🍄 已储存 ${stored} / ${MUSHROOM_MAX}`,
+            parent: this.bodyWrap,
+          });
+          const range = this._mkHarvestSlider(this.bodyWrap, stored);
+          const qtyLabel = createEl('div', {
+            style: { fontSize: '13px', color: '#5a4a3a', textAlign: 'center', margin: '4px 0' },
+            text: `选择取走数量：${stored}`,
+            parent: this.bodyWrap,
+          });
+          range.addEventListener('input', () => {
+            qtyLabel.textContent = `选择取走数量：${range.value}`;
+          });
+          createEl('button', {
+            class: 'action-btn',
+            style: { width: '100%', fontSize: '13px', background: '#e0d0c0' },
+            text: '🍄 取走蘑菇',
+            disabled: stored <= 0,
+            parent: this.bodyWrap,
+            onclick: () => {
+              const qty = parseInt(range.value, 10) || 0;
+              if (qty <= 0) return;
+              const curTile = readTile();
+              const cs = curTile.contentState || (curTile.contentState = {});
+              const actually = Math.min(qty, cs.mushroomStored || 0);
+              if (actually <= 0) return;
+              takeStoredToBag(gs, ref, 'item_mushroom', actually);
+              cs.mushroomStored = (cs.mushroomStored || 0) - actually;
+              syncPumpkin(gs);
+              this._notifyTileChanged(ref);
+              EventBus.emit(GE.TOAST_SHOW, { text: `🍄 取走 +${actually} 蘑菇`, duration: 1800 });
+              this._renderBody();
+            },
+          });
+          break;
+        }
+
+        case 'facility_blue_star_fruit': {
+          // 💙 蓝星果田块：身处该格时滑动条取走储存；取走后蓝息范围同步收缩
+          if (!onTile) break;
+          const stored = Math.max(0, Math.min(7, Number(tile.contentState?.blueStored) || 0));
+          createEl('div', {
+            style: { fontSize: '12px', color: '#666', marginBottom: '6px' },
+            text: `💙 已储存 ${stored} / 7`,
+            parent: this.bodyWrap,
+          });
+          const range = this._mkHarvestSlider(this.bodyWrap, stored);
+          const qtyLabel = createEl('div', {
+            style: { fontSize: '13px', color: '#5a4a3a', textAlign: 'center', margin: '4px 0' },
+            text: `选择取走数量：${stored}`,
+            parent: this.bodyWrap,
+          });
+          range.addEventListener('input', () => {
+            qtyLabel.textContent = `选择取走数量：${range.value}`;
+          });
+          createEl('button', {
+            class: 'action-btn',
+            style: { width: '100%', fontSize: '13px', background: '#cfe4ff' },
+            text: '💙 取走蓝星果',
+            disabled: stored <= 0,
+            parent: this.bodyWrap,
+            onclick: () => {
+              const qty = parseInt(range.value, 10) || 0;
+              if (qty <= 0) return;
+              const curTile = readTile();
+              const cs = curTile.contentState || (curTile.contentState = {});
+              const actually = Math.min(qty, cs.blueStored || 0);
+              if (actually <= 0) return;
+              takeStoredToBag(gs, ref, 'item_blue_starfruit', actually);
+              cs.blueStored = (cs.blueStored || 0) - actually;
+              syncPumpkin(gs);
+              syncBlueBreath(gs);
+              this._notifyTileChanged(ref);
+              EventBus.emit(GE.TOAST_SHOW, { text: `💙 取走 +${actually} 蓝星果`, duration: 1800 });
               this._renderBody();
             },
           });
