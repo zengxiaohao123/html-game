@@ -84,14 +84,22 @@ const body = new FakeEl('body');
 const head = new FakeEl('head');
 const app = new FakeEl('div'); app.id = 'app'; body.appendChild(app);
 const docListeners = Object.create(null);
+const docCaptureListeners = Object.create(null); // 捕获阶段监听（opts === true 或 {capture:true}）
 
 globalThis.document = {
   body,
   head,
   createElement: (t) => new FakeEl(t),
   createElementNS: (ns, t) => new FakeEl(t),
-  addEventListener: (t, fn) => { (docListeners[t] ??= []).push(fn); },
-  removeEventListener: (t, fn) => { const a = docListeners[t]; if (a) { const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1); } },
+  addEventListener: (t, fn, opts) => {
+    const capture = opts === true || !!(opts && opts.capture);
+    ((capture ? docCaptureListeners : docListeners)[t] ??= []).push(fn);
+  },
+  removeEventListener: (t, fn) => {
+    for (const buckets of [docListeners, docCaptureListeners]) {
+      const a = buckets[t]; if (a) { const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1); }
+    }
+  },
   querySelector: (sel) => {
     if (sel === 'body') return body;
     if (sel === '#app') return app;
@@ -3626,9 +3634,32 @@ head_('§21 术语行内组件（唯一实现）+ 展示词条徽章分离 + 状
   assert(popLeft <= 1280 - 260 - 8 + 1, `靠近右侧时浮层夹回视口内（left=${popLeft}）`);
   assert(popTop >= 8 && popTop <= 720 - 8, '浮层纵向不溢出视口');
 
-  // ── 4) 点外部关闭
-  (docListeners.click || []).forEach((fn) => fn({ target: new FakeEl('div') }));
-  assert(pop.style.display === 'none', '点击术语以外的区域 → 浮层关闭');
+  // ── 4) 公共层关闭：捕获阶段 click，点任意非术语位置关闭且不吞点击
+  //    各面板 / 地块普遍 stopPropagation，只有捕获阶段监听才不会被吞掉。
+  assert((docCaptureListeners.click || []).length >= 1,
+    '术语浮层关闭监听挂在 document 捕获阶段（stopPropagation 无法吞掉）');
+  assert((docCaptureListeners.pointerdown || []).length >= 1,
+    'pointerdown 捕获兜底（disabled 控件不派发 click 也能关闭）');
+  termEls[1].click(); // 重新打开浮层
+  assert(pop.style.display === 'block', '前置：浮层已显示');
+  let prevented = false, stopped = false;
+  (docCaptureListeners.click || []).forEach((fn) => fn({
+    target: new FakeEl('div'),
+    preventDefault() { prevented = true; },
+    stopPropagation() { stopped = true; },
+  }));
+  assert(pop.style.display === 'none', '点击术语以外的任意位置 → 浮层关闭');
+  assert(!prevented && !stopped,
+    '关闭浮层不吞点击：不调用 preventDefault / stopPropagation（原效果照常生效）');
+
+  // 点浮层内部不关闭
+  termEls[0].click();
+  (docCaptureListeners.click || []).forEach((fn) => fn({ target: pop.children[0] }));
+  assert(pop.style.display === 'block', '点击浮层内部不关闭');
+  // 点术语本身不关闭（交给术语自身重新定位）
+  (docCaptureListeners.click || []).forEach((fn) => fn({ target: termEls[0] }));
+  assert(pop.style.display === 'block', '点击术语本身不关闭（由术语重新定位）');
+  hideTermPopover();
 
   // ── 5) 展示词条徽章外观不受影响（两套组件）
   const badgeBox = new FakeEl('div');

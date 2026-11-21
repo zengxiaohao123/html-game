@@ -119,7 +119,14 @@ function ensurePopover() {
     },
     parent: document.body,
   });
-  document.addEventListener('click', onDocClick);
+  // 统一关闭规则挂在公共层：捕获阶段监听 document click。
+  // 各面板 / 地块的 click 处理器普遍 stopPropagation，冒泡阶段会被吞掉；
+  // 捕获阶段先于它们执行，保证背包 / 图鉴 / 商店 / 事件 / 角色页 / 快捷栏提示里
+  // 点任意非术语位置都能关闭浮层。
+  // 注意：这里不调用 preventDefault / stopPropagation —— 本次点击的原有效果照常生效。
+  // pointerdown 兜住 disabled 控件（浏览器不对其派发 click）与无 click 的空白区域。
+  document.addEventListener('pointerdown', onDocClick, true);
+  document.addEventListener('click', onDocClick, true);
   document.addEventListener('keydown', onDocKey);
   window.addEventListener('scroll', hideTermPopover, true);
   window.addEventListener('resize', hideTermPopover);

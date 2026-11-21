@@ -367,6 +367,13 @@ canHostEternalContent(gs, ref)             // 【永恒】内容禁止置于临�
 - **放置自动合成**：`ForgeSystem.findCraftableRecipe(gs, itemId)` 统一「能产出该物品且材料足够的首个配方」判定，`ensureStockForPlace(gs, itemId)` 在库存不足时自动 `craft` 一次；`MapView._handleBuildPlaceAt`（内容 / 地形 / 栅栏地形 / 放置型道具）与 `ItemTargeting.useAtTile`（指向模式点击、合法目标校验之后）都先走该兜底，因此数量 0 但材料足够时点地块即自动合成并放置。
 - **验收**：`tools/smoke-ui.mjs` §16.19（数量恒显 / 灰化 / 可点击）与 §19-5（切模式保留 9 号位 / 自动合成放置）。
 
+### 2.4.6 术语释义浮层关闭口径（2026-11-21）
+
+- **公共层单一实现**：`TermText.js` 的 `ensurePopover()` 在 `document` 上注册捕获阶段监听（`pointerdown` + `click`，`capture: true`）。各面板 / 地块的处理器普遍 `stopPropagation`，冒泡阶段会被吞掉；捕获阶段先于它们执行，因此背包、图鉴、商店、事件文本、角色页、快捷栏提示等全站位置统一生效。
+- **不吞点击**：关闭只做 `hideTermPopover()`（`display:none`），绝不调用 `preventDefault` / `stopPropagation`，本次点击的原有效果照常执行；`pointerdown` 兜住 disabled 控件（浏览器不对其派发 `click`）。
+- **不关闭的两种情况**：目标在浮层内部（`popoverEl.contains(target)`）、目标是术语本身（`.term-inline`，交给术语重新定位）。
+- **验收**：`tools/smoke-ui.mjs` §21-4（捕获阶段注册 / 点外部关闭 / 不吞点击 / 浮层内与术语本身不关闭）。
+
 ### 2.5 RealtimeClock（统一实时时钟 / 渲染插值）
 
 ```js
