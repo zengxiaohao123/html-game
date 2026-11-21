@@ -2,24 +2,29 @@
 // 《林缘菜畦》—— 每日限 1 次；单层三选一，选项 1 带 85% / 15% 概率分叉。
 // 文案逐字来自《事件库.xlsx》事件总表 / 节点表 / 选项表（前者优先）。
 //
+// 结算拆分（只显示代价、未显示奖励的选项）：
+//   初始选项常驻只显示行动力代价；代价在选择时结算。
+//   奖励（作物 / 回血）放到结果节点的唯一「结果确认」选项被确认后再发放。
+//
 // 概率分叉（选项表备注）：
-//   85%：行动力-3，豌豆×4、卷心菜×2、玉米×2，回复所有生命值 → dig_full_end
-//   15%：行动力-3，回复所有生命值 → dig_heal_end
-//   未选择时不展示作物与回血，常驻仅提示行动力-3。
+//   85%：行动力-3 → dig_full_end（奖励：豌豆×4、卷心菜×2、玉米×2、生命+100%）
+//   15%：行动力-3 → dig_heal_end（奖励：生命+100%）
 
-/** 85%：出力翻摘换厚补给 + 回满生命 */
-const DIG_FULL_EFFECTS = [
-  { type: 'stamina', amount: -3 },
+/** 代价：选择时立即结算 */
+const DIG_COST = [{ type: 'stamina', amount: -3 }];
+const PICK_COST = [{ type: 'stamina', amount: -1 }];
+
+/** 奖励：后续唯一结果选项确认时结算 */
+const DIG_FULL_REWARD = [
   { type: 'item', itemId: 'item_pea', qty: 4 },
   { type: 'item', itemId: 'item_cabbage', qty: 2 },
   { type: 'item', itemId: 'item_corn', qty: 2 },
   { type: 'heal', percent: 1 },
 ];
-
-/** 15%：只回满生命 */
-const DIG_HEAL_EFFECTS = [
-  { type: 'stamina', amount: -3 },
-  { type: 'heal', percent: 1 },
+const DIG_HEAL_REWARD = [{ type: 'heal', percent: 1 }];
+const PICK_REWARD = [
+  { type: 'item', itemId: 'item_pea', qty: 2 },
+  { type: 'item', itemId: 'item_cabbage', qty: 2 },
 ];
 
 export default {
@@ -38,8 +43,8 @@ export default {
           label: '顺着地垄翻找一遍',
           sub: '行动力-3',
           branches: [
-            { weight: 85, effects: DIG_FULL_EFFECTS, next: 'dig_full_end' },
-            { weight: 15, effects: DIG_HEAL_EFFECTS, next: 'dig_heal_end' },
+            { weight: 85, effects: DIG_COST, next: 'dig_full_end' },
+            { weight: 15, effects: DIG_COST, next: 'dig_heal_end' },
           ],
           next: 'dig_full_end',
         },
@@ -47,11 +52,7 @@ export default {
           id: 'pick',
           label: '顺手摘几把现成的',
           sub: '行动力-1',
-          effects: [
-            { type: 'stamina', amount: -1 },
-            { type: 'item', itemId: 'item_pea', qty: 2 },
-            { type: 'item', itemId: 'item_cabbage', qty: 2 },
-          ],
+          effects: PICK_COST,
           next: 'pick_end',
         },
         {
@@ -64,15 +65,39 @@ export default {
     },
     dig_full_end: {
       text: '你蹲下身，顺着地垄把能摘的都摘了一遍，篓子很快堆满。挑几个最嫩的就着露水吃了，胃里落了实诚的东西，身上的乏跟着松下来，余下的菜捆好抱在怀里。',
-      end: true,
+      options: [
+        {
+          id: 'dig_full_take',
+          label: '收下这一篓菜',
+          sub: '获得豌豆×4、卷心菜×2、玉米×2 · 生命+100%',
+          effects: DIG_FULL_REWARD,
+          end: true,
+        },
+      ],
     },
     dig_heal_end: {
       text: '你顺着地垄翻找了半晌，能入口的却没多少。挑出几把嚼了垫垫肚子，缓过一阵劲，地垄上也就只剩些青梗子，再没有什么可拿的。',
-      end: true,
+      options: [
+        {
+          id: 'dig_heal_take',
+          label: '就着菜叶垫垫肚子',
+          sub: '生命+100%',
+          effects: DIG_HEAL_REWARD,
+          end: true,
+        },
+      ],
     },
     pick_end: {
       text: '你没往深处走，只在边上捋了几把长得像样的菜，搭在臂弯里，便继续往前去了。',
-      end: true,
+      options: [
+        {
+          id: 'pick_take',
+          label: '把菜收进臂弯',
+          sub: '获得豌豆×2、卷心菜×2',
+          effects: PICK_REWARD,
+          end: true,
+        },
+      ],
     },
     leave_end: {
       text: '你没有停下脚步，沿着林缘的小路继续走，身后那半畦菜地重新隐进了树影里。',

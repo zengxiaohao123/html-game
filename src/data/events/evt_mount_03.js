@@ -44,6 +44,15 @@ const PURCHASES = [
   { id: 'horn', label: '买下唤风号角', sub: '8 金币 · 唤风号角×1', itemId: 'item_horn', cost: 8, next: 'horn_end' },
 ];
 
+/** 每次进入独立抽取的出现概率；未出现的选项不渲染，其余保持原顺序前移 */
+const APPEAR_CHANCE = {
+  horse: 1,
+  dragon: 1,
+  tractor: 0.5,
+  broom: 0.5,
+  horn: 0.3,
+};
+
 /** 购买项：金币不足时灰化（不显示额外提示） */
 function purchaseOption(purchase, gold) {
   return {
@@ -59,9 +68,10 @@ function purchaseOption(purchase, gold) {
   };
 }
 
-/** 每次进入按当前金币决定哪些购买项可点 */
+/** 每次进入：先按出现概率抽本次摊位，再按当前金币决定哪些购买项可点 */
 function prepare(gs) {
   const gold = getGold(gs);
+  const visible = PURCHASES.filter((p) => Math.random() < APPEAR_CHANCE[p.id]);
   return {
     ...MOUNT_DEF,
     nodes: {
@@ -69,7 +79,7 @@ function prepare(gs) {
       intro: {
         ...NODES.intro,
         options: [
-          ...PURCHASES.map((p) => purchaseOption(p, gold)),
+          ...visible.map((p) => purchaseOption(p, gold)),
           {
             id: 'leave',
             label: '转身离开',

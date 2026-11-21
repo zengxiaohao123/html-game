@@ -512,7 +512,7 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
   `Option = {id,label,sub,detail,disabled,disabledReason,effects,branches?,next,end,onSelect}`；
   `branches = [{weight,effects?,next?,end?}]` 为概率分叉，确认时按权重抽签，命中分支覆盖 `effects` / `next`。
   事件点（RES-001）由 `buildEventStory(entry)` 生成脚本：节点表来自 `src/data/events/<事件id>.js`；
-  条目可带 `prepare(gs, ctx)`，进入时生成本次专用 EventDef（如摊位商品与实付价、翻车现场按金币灰化购买项），不修改共享定义。UI 不写死任何文案。
+  条目可带 `prepare(gs, ctx)`，进入时生成本次专用 EventDef（如摊位商品与实付价、翻车现场按出现概率抽出本次可买的载具并按金币灰化），不修改共享定义。UI 不写死任何文案。
   摊位购买每次只抽 1 种物品；数量 = 交集（≥1、原始总价 ≤60、唯一 ≤1、全部 ≤4），载具同样 ≤4；实付价按原始总价 40%~150% 随机。
 - **多级状态机**：`option.next` 可指向任意节点，目标节点可再次带 `options`，深度不限；
   节点 / 选项 id 与层级关系**只存在于数据**，不上屏（选项区只渲染 `label/sub/detail`，数字键 `1~9` 只作隐藏快捷键）。
@@ -526,6 +526,10 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
   效果词表：`gold / item / stamina / heal / terrain / buff / creature / vehicle`（载具进载具页，不进背包）；执行器内部复用
   `InventorySystem` / `StaminaSystem` / `HealSystem` / `CreatureSystem` / 地形写入及既有 EventBus 事件，
   不新建平行数值系统。跳过、推进正文、静默关闭均不结算。
+- **只显示代价的选项（代价 / 奖励拆分）**：初始选项的 `sub` / `detail` 只说明代价、未说明奖励时，代价在选项确认时结算；
+  未说明的奖励拆到后续结果节点的**唯一结果选项**，确认后再结算。该选项有自拟 `label` 与奖励说明，按普通选项交互（含二次确认），
+  已说过的代价不重复。原本同时显示代价与奖励、或只有奖励的选项维持原结算时点，不新增结果选项。
+  当前 `evt_garden_04` 的 `dig` / `pick` 走此规则。
 - **公共 API**：`show(script, ctx)` / `advance()` / `skip()` / `requestSkip()` / `refresh()` / `closeSilently(reason)`；
   只读 `visible` 供 InputGate 使用。`refresh()` 不重建待确认 / 淡出中的选项，避免打断玩家手势。
 - **推进**：`advance()` 在选项节点直接返回 `false`（不可越过选择）；节点 `end` 或无 `next` → 结束。
