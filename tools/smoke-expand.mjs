@@ -36,7 +36,7 @@ const { migrateGS } = await import('../src/state/migrate.js');
 const { Distance } = await import('../src/core/Distance.js');
 const { ITEMS } = await import('../src/data/items.js');
 const { POTIONS } = await import('../src/data/potions.js');
-const { STARTER_ITEMS } = await import('../src/data/starterPack.js');
+const { STARTER_ITEMS, createTestCoverageItems } = await import('../src/data/starterPack.js');
 const { TERRAINS } = await import('../src/data/terrains.js');
 const { SKILLS } = await import('../src/data/characters.js');
 const { BuildSystem } = await import('../src/systems/BuildSystem.js');
@@ -368,6 +368,16 @@ head('X8 背包/文本');
   const starterSrc = readFileSync(new URL('../src/data/starterPack.js', import.meta.url), 'utf8');
   check(starterSrc.includes('item_farm_expand_length') && starterSrc.includes('item_farm_expand_width'),
     '测试初始物品写在 starterPack 数据表中');
+
+  // 测试便利包：全部田块 / 资源 / 道具每种至少 3 个（唯一物品按唯一规则只给 1 个）
+  const coverage = createTestCoverageItems();
+  const missing = coverage.filter(({ itemId, qty }) => InventorySystem.countItem(gs, itemId) < qty);
+  check(coverage.length >= 21 + 6, '测试包覆盖全部田块与资源', coverage.length);
+  check(missing.length === 0, '新开局背包覆盖全部田块/资源/道具', missing.map(m => m.itemId));
+  check(InventorySystem.countItem(gs, 'facility_sunflower') >= 3, '新田块开局即 ≥3 个',
+    InventorySystem.countItem(gs, 'facility_sunflower'));
+  check(InventorySystem.countItem(gs, 'resource_magic_shop') >= 3, '资源开局即 ≥3 个',
+    InventorySystem.countItem(gs, 'resource_magic_shop'));
 }
 
 head('X9 回档/跨日：扩建受日初基线约束');

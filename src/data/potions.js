@@ -27,14 +27,9 @@ export const POTIONS = {
     useEffect: {
       type: 'facility_trigger_twice',
       triggerCount: 2,
-      validFacilityCategory: 'plant_field',  // 必须是植物类设施（田块/花田等）
-      // 对鸡舍、史莱姆屋等无效；若该设施不含【每一日开始时】类效果也无效
-      invalidNoReturn: true,                  // 无效时不返还已消耗的道具
-      validFacilityIds: [
-        'facility_wheat', 'facility_rice', 'facility_potato',
-        'facility_tulip', 'facility_strawberry', 'facility_pea',
-        'facility_corn', 'facility_cabbage',
-      ],
+      // 目标判定见 UseItemSystem.hasDailyStartTrait()：检索物品库触发时点是否含
+      // 【每一日开始时】，不维护名单；不含该时点的地块无效，且不返还已消耗的道具。
+      invalidNoReturn: true,
     },
   },
 

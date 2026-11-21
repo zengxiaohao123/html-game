@@ -101,7 +101,7 @@ import {
 } from '../src/systems/BlueBreathSystem.js';
 import { produce } from '../src/systems/ProduceSystem.js';
 import { hasProduceBonus, hasAdjacentWater, grantProduceBonus } from '../src/systems/ProduceSystem.js';
-import { useItem } from '../src/systems/UseItemSystem.js';
+import { useItem, hasDailyStartTrait } from '../src/systems/UseItemSystem.js';
 
 let pass = 0, fail = 0;
 function check(cond, msg, extra) {
@@ -405,6 +405,47 @@ head('12. 初级肥料：对有日初效果的新田块结算 2 次');
   const r = useItem(gs, 'item_fertilizer', { tileIdx: ANCHOR });
   check(r && r.ok !== false, '啤酒花田块可作为肥料目标', r);
   check(at(ANCHOR).contentState.hopsStored === 2, '施肥结算 2 次 → 储存 2', at(ANCHOR).contentState.hopsStored);
+}
+
+// ════════════════════════════════════════════════════════════
+head('13. 初级肥料：按【每一日开始时】词条判定，不维护名单');
+{
+  reset();
+  InventorySystem.addItem(gs, 'item_fertilizer', 6);
+
+  check(hasDailyStartTrait('facility_sunflower') && hasDailyStartTrait('facility_starfruit'),
+    '向日葵 / 杨桃（日初涨成长值）具有日初特性');
+  check(!hasDailyStartTrait('facility_pumpkin') && !hasDailyStartTrait('facility_lavender')
+    && !hasDailyStartTrait('facility_sorrel'), '南瓜 / 薰衣草 / 酢浆草不具有日初特性');
+
+  // 向日葵：日初授予邻格【产出时】，施肥后当次生效
+  const nb = neighborRefs8(gs, ANCHOR)[0];
+  put(ANCHOR, 'facility_sunflower');
+  put(nb, 'facility_hops', 'terrain_grass');
+  const rSun = useItem(gs, 'item_fertilizer', { tileIdx: ANCHOR });
+  check(rSun && rSun.ok !== false, '向日葵可作为肥料目标', rSun);
+  check(at(nb).contentState.produceBonusDay === gs.day, '向日葵日初被重复结算 → 邻格获得【产出时】', at(nb).contentState);
+
+  // 杨桃：每次日初 +8 成长值，施肥 2 次 = 16
+  put(ANCHOR, 'facility_starfruit');
+  useItem(gs, 'item_fertilizer', { tileIdx: ANCHOR });
+  check(at(ANCHOR).contentState.starfruitGrowth === 16, '杨桃施肥结算 2 次 → 成长值 16', at(ANCHOR).contentState.starfruitGrowth);
+
+  // 南瓜 / 薰衣草 / 酢浆草：不具日初特性，使用后不产生任何日初效果
+  put(ANCHOR, 'facility_pumpkin');
+  const goldBefore = gs.player.gold;
+  const rPump = useItem(gs, 'item_fertilizer', { tileIdx: ANCHOR });
+  check(rPump && rPump.ok !== false, '肥料对南瓜仍照常消耗', rPump);
+  check(!at(ANCHOR).contentState.pumpkinGrowth, '南瓜成长值不受肥料影响', at(ANCHOR).contentState);
+
+  put(ANCHOR, 'facility_lavender');
+  useItem(gs, 'item_fertilizer', { tileIdx: ANCHOR });
+  check(gs.player.gold === goldBefore, '薰衣草不因肥料产出金币', gs.player.gold - goldBefore);
+
+  put(ANCHOR, 'facility_sorrel');
+  const sorrelState = JSON.stringify(at(ANCHOR).contentState);
+  useItem(gs, 'item_fertilizer', { tileIdx: ANCHOR });
+  check(JSON.stringify(at(ANCHOR).contentState) === sorrelState, '酢浆草不因肥料产生日初结算');
 }
 
 // ════════════════════════════════════════════════════════════

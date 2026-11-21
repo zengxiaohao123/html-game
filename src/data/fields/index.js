@@ -1,10 +1,18 @@
 // src/data/fields/index.js
-// 田块增量注册表：一个田块一个文件，新增田块只需在此追加一行。
-//
-// 已迁移：水稻（v0.6 改写）+ 9 种新增田块（FAC-017 ~ FAC-025）
-// 其余旧田块（小麦/土豆/郁金香/草莓/豌豆/玉米/卷心菜/野生种子/蒲公英/幽怜草/艾草）
-// 仍位于 facilities.js，后续可按同一模式逐个迁移，不影响本表增量追加。
+// 田块注册表：一个田块一个文件，新增田块只需在此追加一行。
+// 21 种田块（FAC-001 ~ FAC-025）全部在本目录；facilities.js 只保留设施与资源。
 
+import { WheatField } from './wheat.js';
+import { PotatoField } from './potato.js';
+import { TulipField } from './tulip.js';
+import { StrawberryField } from './strawberry.js';
+import { PeaField } from './pea.js';
+import { CornField } from './corn.js';
+import { CabbageField } from './cabbage.js';
+import { WildSeedField } from './wild_seed.js';
+import { DandelionField } from './dandelion.js';
+import { GhostGrassField } from './ghost_grass.js';
+import { MugwortField } from './mugwort.js';
 import { RiceField } from './rice.js';
 import { LavenderField } from './lavender.js';
 import { SunflowerField } from './sunflower.js';
@@ -17,6 +25,17 @@ import { SorrelField } from './sorrel.js';
 import { BlueStarFruitField } from './blue_star_fruit.js';
 
 export const FIELD_DEFS = [
+  WheatField,
+  PotatoField,
+  TulipField,
+  StrawberryField,
+  PeaField,
+  CornField,
+  CabbageField,
+  WildSeedField,
+  DandelionField,
+  GhostGrassField,
+  MugwortField,
   RiceField,
   LavenderField,
   SunflowerField,
@@ -30,6 +49,8 @@ export const FIELD_DEFS = [
 ];
 
 export {
+  WheatField, PotatoField, TulipField, StrawberryField, PeaField, CornField,
+  CabbageField, WildSeedField, DandelionField, GhostGrassField, MugwortField,
   RiceField, LavenderField, SunflowerField, HopsField, PumpkinField,
   StarfruitField, MushroomField, BlackberryField, SorrelField, BlueStarFruitField,
 };

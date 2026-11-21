@@ -68,10 +68,11 @@ export function grantSunflowerTraits(gs, opts = {}) {
 }
 
 /** 日初优先结算入口：必须在 HookDispatcher.fire('onDailyStart') 之前调用 */
-export function preDailyStart(gs) {
+export function preDailyStart(gs, opts = {}) {
+  const { onlyRef = null } = opts;
   clearExpiredProduceBonus(gs);
-  applyBlackberrySuppression(gs);
-  grantSunflowerTraits(gs);
+  applyBlackberrySuppression(gs, { onlyRef });
+  grantSunflowerTraits(gs, { onlyRef });
   syncBlueBreath(gs);
 }
 

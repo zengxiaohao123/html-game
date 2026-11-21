@@ -127,7 +127,7 @@ function coverage(label, libIds, codeIds) {
 
 if (facMod?.ALL_FACILITIES) {
   const codeIds = new Set(facMod.ALL_FACILITIES.map((f) => f.id).filter((id) => id.startsWith('facility_')));
-  // 地块内容已按二级分类拆成「田块 / 设施」，代码侧仍统一放在 facilities.js，合并比对
+  // 地块内容按二级分类拆成「田块 / 设施」：田块在 data/fields/，设施在 facilities.js，合并比对
   coverage('地块内容（田块+设施）', [...libPlots, ...libFacilities], codeIds);
 }
 if (resMod?.ALL_RESOURCE_IDS) coverage('资源', libResources, new Set(resMod.ALL_RESOURCE_IDS));

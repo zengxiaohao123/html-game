@@ -30,8 +30,11 @@ src/
 │   ├── map.js                # 地图/外圈/栅栏的状态切片
 │   └── storage.js            # localStorage 8 槽位存档读写
 ├── data/                     # 静态数据表（纯常量，无逻辑）
-│   ├── facilities.js         # 10 种田块/设施定义（含 hook 注册）
-│   ├── resources.js          # 5 种资源类地块内容定义
+│   ├── facilities.js         # 4 种设施 + 6 种资源类地块内容（含 hook 注册）；田块不再放这里
+│   ├── fields/               # 田块：一田块一文件（FIELD_DEFS），fieldKit 提供共用工具
+│   │   ├── fieldKit.js       # defineField / eachOwnTile / registerSelfHook / refreshTile 等
+│   │   ├── index.js          # FIELD_DEFS 注册表（新增田块只加一行）
+│   │   └── <田块>.js         # wheat / rice / sunflower / starfruit …（21 种）
 │   ├── characters.js         # 3 个角色 + 精灵 + 技能定义
 │   ├── creatures.js          # 生物定义（小鸡/鸡/史莱姆 7 变体）
 │   ├── items.js              # 产出物品表（小麦/鸡蛋/生肉...）
@@ -675,13 +678,13 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
 > 对应设计文档 §3.5 / §9.5 / §10.1 / §11.1 / §16.1 / §19.8；数据源为《转盘农场_物品库.xlsx》「物品总表」二级分类列。
 
 - **分类口径**：地块内容由「设施 / 资源 / 技能」三类改为**田块 / 设施 / 资源 / 技能**四类。田块＝所有植物类田块（花田同属此类）＋野生种子；设施＝生物类设施（鸡舍、史莱姆屋）＋家、帐篷。
-- **数据生成**：`tools/gen_library.py` 机械搬运表格，不改代码逻辑；`tier2` 值随表格变为 `田块`（FAC-003~008、011、012、013~016 共 12 条）与 `设施`（FAC-001、002、009、010 共 4 条）。
+- **数据生成**：`tools/gen_library.py` 机械搬运表格，不改代码逻辑；`tier2` 值随表格变为 `田块`（21 条）与 `设施`（4 条）。代码侧田块定义在 `src/data/fields/`（一田块一文件），设施与资源仍在 `src/data/facilities.js`。
 - **用词修正**：全项目地块名称统一使用「田块」表述（物品名、来源说明、备注、随机池、说明页、代码注释与运行时提示），不存在两套叫法。
 - **随机池同步拆分（2026-11-14）**：POOL-01 改名为**田块池1**（只含田块），新增 **POOL-13 设施池1**（只含设施、家除外），两池占位均为「野生种子」；商店 POOL-05 更名为「商店·田块/设施/资源池」，栏位数量不变。详见 §2.11。
 - **分类 tab**：`src/ui/CategoryBar.js` 的 `CATEGORY_TABS` 增加 `田块`，顺序为总览 → 田块 → 设施 → 资源 → 技能 → 地形 → 产物 → 道具 → 杂物。背包（9 tab）与商店售卖页共用该常量，自动同步。
 - **合成页**：`ForgePanel.TABS` 增加 `田块`（7 tab），`iconGroupOf` 与 `CodexPanel` / `InventoryPanel` 的图标分组把 `田块` 与 `设施` 一并映射到 `facilities` 资产组（`facility_*` 的图标 / emoji 仍在该组）。
 - **载具落点（2026-11-14 修正）**：`VehicleSystem.landOk` 的 `landFilter.tier2` 支持数组；VEH-010 拖拉机改为 `['田块']`——**只能去往田块**，不能去家、鸡舍、史莱姆屋、帐篷这类设施。
-- **不变项**：`初级肥料` 的 `PLANT_FACILITIES` 与魔导书田块统计仍按 contentId 判定，行为零改动；玩家可见文本（含拖拉机描述）逐字照物品库，不改写。
+- **初级肥料**：目标判定改为「物品库该地块条目的触发时点是否含【每一日开始时】」，由 `UseItemSystem.hasDailyStartTrait()` 检索词条，不再维护 `PLANT_FACILITIES` 名单；单格结算时先执行该格的黑莓压制 / 向日葵授予光环，再触发日初产出 2 次。魔导书田块统计仍按 contentId 判定；玩家可见文本（含拖拉机描述）逐字照物品库，不改写。
 - **验收**：`node tools/smoke-ui.mjs`（背包 9 tab / 售卖页 9 tab / 合成 7 tab 文案与顺序）、`node tools/smoke-v05.mjs`（拖拉机 landFilter 仅含田块、随机池拆分与唯一性断言）。
 
 ### 2.11 随机池、【唯一】与【占位】（2026-11-14）

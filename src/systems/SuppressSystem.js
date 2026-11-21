@@ -55,11 +55,15 @@ export function suppressSelfToday(gs, ref) {
 /**
  * 日初：黑莓田块重新施加压制（必须在其它田块 onDailyStart 之前调用）
  * 处于「受祝福解除期」的黑莓不施加。
+ * @param {object} [opts]
+ * @param {(number|object)} [opts.onlyRef] 只结算这一块黑莓（肥料单格结算用）
  */
-export function applyBlackberrySuppression(gs) {
+export function applyBlackberrySuppression(gs, opts = {}) {
+  const { onlyRef = null } = opts;
   let applied = 0;
   for (const { ref, tile } of contentEntries(gs)) {
     if (tile.contentId !== BLACKBERRY_ID) continue;
+    if (onlyRef !== null && String(ref) !== String(onlyRef)) continue;
     const state = tile.contentState || {};
     const releaseUntil = state.blackberryReleaseUntilDay;
     if (typeof releaseUntil === 'number' && releaseUntil >= gs.day) continue;

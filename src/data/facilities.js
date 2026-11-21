@@ -1,5 +1,10 @@
 // src/data/facilities.js
-// Phase 2A 完整版设施定义：10 种设施 + 5 种资源类地块内容（共 15 种）
+// 设施（FAC-009 ~ FAC-012）与资源类地块内容（RES-001 ~ RES-006）定义。
+//
+// 田块（FAC-001 ~ FAC-008、FAC-013 ~ FAC-025）已全部迁到 src/data/fields/：
+//   一田块一文件，见 fields/index.js 的 FIELD_DEFS。
+//   本文件只保留设施与资源，不再混放田块定义。
+//
 // 每种对象：{ id, name, emoji, register() }
 // register() 里通过 HookDispatcher.register(hookType, cb) 把【】词条挂到分发器
 // 回调 params 形状：{ gs, tileIdx, tileRef }（外圈格 tileIdx 为数字、tileRef 同值；
@@ -7,36 +12,22 @@
 //
 // 核心约定：
 //   - 判断"当前格是我这种设施"必须用 getTile(gs, tileRef ?? tileIdx).contentId === this.id
-//     绝对不能用 tileIdx === 硬编码数字（Phase 1 home 原来的 tileIdx===6 必须改！）
+//     绝对不能用 tileIdx === 硬编码数字
 //   - 每日循环必须遍历 contentEntries(gs)（外圈 + 生效小径格），不要只遍历 outerTiles
-//   - 每日限次：用 tile.dailyFlags['facility_<id>_<hookType>'] === true 存布尔
+//   - 每日限次：用 tile.dailyFlags['<id>_<hookType>'] === true 存布尔
 //     DaySystem.startNewDay() 已统一把 dailyFlags 全部重置为 {}
-//   - henhouse/slimehouse 的核心效果（生成生物）因 CreatureSystem 是 Phase 3 才创建，
-//     这里只写 Toast 占位，Phase 3 agent 接手替换为真正的 CreatureSystem 调用
 
 import { HookDispatcher } from '../core/HookDispatcher.js';
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { Assets } from '../core/Assets.js';
 import { devLog } from '../core/Logger.js';
-import { InventorySystem } from '../systems/InventorySystem.js';
 import { VehicleSystem } from '../systems/VehicleSystem.js';
-import {
-  getTile,
-  contentEntries,
-  isFenceRef,
-  fenceIdxOf,
-  refXY,
-  neighborRefs,
-  tileRefKey,
-  playerRef,
-} from '../core/TileAccess.js';
+import { getTile, contentEntries, isFenceRef, fenceIdxOf, playerRef } from '../core/TileAccess.js';
 import { CreatureSystem } from '../systems/CreatureSystem.js';
-import { CombatSystem } from '../systems/CombatSystem.js';
 import { Random } from '../core/Random.js';
-import { CREATURES, SLIME_KINDS, getCreatureDef } from './creatures.js';
+import { CREATURES, SLIME_KINDS } from './creatures.js';
 import { SKILLS } from './characters.js';
-import { normalizeTerrain } from './terrains.js';
 import { ITEMS, POOLS } from './items.js';
 import { ITEM_TO_VEHICLE, VEHICLES } from './vehicles.js';
 import { addGold } from '../systems/GoldSystem.js';
@@ -44,31 +35,12 @@ import { drawFromPool } from '../systems/RandomPool.js';
 import { drawEventDef, markEventEntered, markEventRevealed } from './eventPool.js';
 import { getEventDef } from './events.js';
 import { drawReward, grantReward } from './rewardPool.js';
-import { HealSystem } from '../systems/HealSystem.js';
 import { ShopSystem } from '../systems/ShopSystem.js';
 import { StaminaSystem } from '../systems/StaminaSystem.js';
-import { syncPumpkin, hasGrimoire } from '../systems/PassiveItemSystem.js';
-import { produce, CHANNEL, takeStoredToBag } from '../systems/ProduceSystem.js';
-import { isSuppressed } from '../systems/SuppressSystem.js';
 import { FIELD_DEFS } from './fields/index.js';
-import {
-  POTATO_BLESS_ADD,
-  addPotatoStored,
-  potatoCapacity,
-  potatoStoredOf,
-  potatoTotalStored,
-  hasPotatoHardship,
-} from '../systems/PotatoSystem.js';
-import {
-  applyTulipFluctuation,
-  tulipDisplayValue,
-} from '../systems/TulipSystem.js';
-import { FieldEffects } from '../systems/FieldEffects.js';
-import { PendingDeathQueue } from '../systems/PendingDeathQueue.js';
 import { buildEventStory } from './stories.js';
 
 // ── 小工具：地块 ref 口径（外圈数字 idx / 生效小径栅栏 ref）──
-// hook 参数同时带 tileIdx（外圈数字；栅栏格为 null）与 tileRef（栅栏格为 fence ref）。
 const refOf = (tileIdx, tileRef) => (tileRef === undefined || tileRef === null ? tileIdx : tileRef);
 
 // ── 小工具：判断是否为"我的设施"格（外圈 + 生效小径格） ──
@@ -84,17 +56,8 @@ function tilePayloadOf(gs, ref) {
 // ── 每日限次 flag key ──
 const flagKey = (id, hook) => `${id}_${hook}`;
 
-// ── 小工具：相邻水面检查（用于稻田每日产出 +2；外圈 / 生效小径格统一按网格 4 邻接）──
-function hasAdjacentWater(gs, ref) {
-  for (const nRef of neighborRefs(gs, ref)) {
-    const nTile = getTile(gs, nRef);
-    if (nTile && normalizeTerrain(nTile.terrain) === 'terrain_water') return true;
-  }
-  return false;
-}
-
 // ════════════════════════════════════════════════════════════════
-// 1. FacilityHome  🏠  —— 家（Phase 1 极简版已写，这里 refactor 为 contentId 判定 + 新增 hook）
+// 1. FacilityHome  🏠  —— 家
 // ════════════════════════════════════════════════════════════════
 const FacilityHome = {
   id: 'facility_home',
@@ -135,16 +98,13 @@ const FacilityHome = {
       EventBus.emit(GE.TOAST_SHOW, { text: '✨ 家受祝福 +1 🪙', duration: 1500 });
     }, this);
 
-    // 睡觉时：回满行动力（由 SleepSystem 主动 fire，此处只覆盖非 home/tent 睡的默认值 —— 实际上
-    // SleepSystem 会检查当前 tile.contentId，若 home/tent 它自己就回满了；这里留钩子供扩展）
+    // 睡觉时：回满行动力（SleepSystem 主逻辑已在执行前判断，这里留钩子供扩展）
     HookDispatcher.register('onSleep', ({ gs }) => {
       const cur = getTile(gs, playerRef(gs));
       if (!cur || cur.contentId !== this.id) return;
-      // SleepSystem 主逻辑已在执行前判断，但 hook 仍触发以支持"被祝福时额外回满 +3"等扩展
       if (gs.player.stamina < gs.player.maxStamina) {
         const extra = 0; // Phase 2A 暂无额外
         if (extra > 0) {
-          // 数值直接增加：允许超出上限
           StaminaSystem.gainStaminaFlat(gs, extra, { reason: 'facility_home' });
         }
       }
@@ -156,7 +116,6 @@ const FacilityHome = {
 // 2. FacilityTent  ⛺  —— 帐篷
 // 【睡觉时】改为回满行动力
 // 【受祝福时】下 1 次使用该帐篷睡觉时 +3 行动力
-// v0.5：已删除【替换时】词条 —— 被替换时旧内容与其它设施一样直接消失。
 // ════════════════════════════════════════════════════════════════
 const FacilityTent = {
   id: 'facility_tent',
@@ -166,11 +125,10 @@ const FacilityTent = {
   description: ITEMS.facility_tent.description,
 
   register() {
-    // onSleep：帐篷睡觉时回满（SleepSystem 主逻辑已在执行前判断，此处处理"受祝福时额外 +3"——
-    // 用独立的 tent_bless state（与 1 天 blessed state 分离，避免 DaySystem 先清除导致丢失）
-    // 2026-11-03 裁决：+3 属于「允许超出上限的额外增加」，必须在回满之后结算且可超上限。
-    //   因此这里不直接改 stamina，只把奖励累加到 gs.pendingSleepStaminaBonus，
-    //   由 SleepSystem 在「回满」结算之后统一走 StaminaSystem 结算。
+    // onSleep：帐篷睡觉时回满（此处处理"受祝福时额外 +3"——
+    // 用独立的 tent_bless state，避免 DaySystem 先清除 1 天 blessed 导致丢失）
+    // +3 属于「允许超出上限的额外增加」，必须在回满之后结算且可超上限：
+    //   这里只把奖励累加到 gs.pendingSleepStaminaBonus，由 SleepSystem 统一走 StaminaSystem 结算。
     HookDispatcher.register('onSleep', ({ gs }) => {
       const cur = getTile(gs, playerRef(gs));
       if (!cur || cur.contentId !== this.id) return;
@@ -205,316 +163,11 @@ const FacilityTent = {
 };
 
 // ════════════════════════════════════════════════════════════════
-// 3. FacilityWheat  🌾  —— 麦田
-// 【每一日开始时】获得小麦 ×2（草地额外 ×1）
-// 【受祝福时】获得小麦 ×3
+// 3. FacilityHenhouse  🐔  —— 鸡舍
+// 【进入时】生成 1 只小鸡（每日限 1 次，每个鸡舍至多 4 只）
+// 【进入时】取走储存的鸡蛋（至多 10）
+// 【受祝福时】属于该鸡舍的随机 1 只小鸡立刻长大
 // ════════════════════════════════════════════════════════════════
-const FacilityWheat = {
-  id: 'facility_wheat',
-  name: '小麦田块',
-  emoji: Assets.facilities.facility_wheat,
-  value: 3,
-  description: ITEMS.facility_wheat.description,
-
-  register() {
-    // onDailyStart：找所有麦田格，每格 ×2（草地 +1），总计加背包
-    // 注意：不要检查 tile.states.some(s=>s.type==='blessed') —— DaySystem 会先清除 1 天 blessed
-    // 再 fire onDailyStart。小麦的【受祝福时】效果由 wheat.onBlessed hook 立即触发（×3），
-    // 不跨日，所以这里只需处理每日基础产出即可。
-    HookDispatcher.register('onDailyStart', ({ gs }) => {
-      // §13.2：友善超载惩罚「友善类收益归 0」明确排除小麦/水稻 —— 小麦产出不受惩罚影响
-      // v0.6：生效小径格按临时外圈地块处理，与外圈格一起参与每日产出
-      let total = 0;
-      for (const { ref, tile } of contentEntries(gs)) {
-        if (tile.contentId !== this.id) continue;
-        if (isSuppressed(gs, ref)) continue; // 【压制】禁用该地块所有特性
-        let qty = 2;
-        if (normalizeTerrain(tile.terrain) === 'terrain_grass') qty += 1;
-        // 魔导书【庆丰收】：该格视同水稻田块且处在「≥3 相连」的簇内 → 该格产出 +100%
-        // （仓廪实生效时小麦田块也视同水稻田块，同样享受本加成）
-        qty *= FieldEffects.harvestMultiplier(gs, ref);
-        // 统一走 produce 漏斗：该格若带【产出时】临时特性（向日葵）本次 +1
-        qty = produce(gs, { ref, itemId: 'item_wheat', qty });
-        total += qty;
-      }
-      if (total > 0) {
-        EventBus.emit(GE.TOAST_SHOW, { text: `🌾 每日 +${total} 小麦`, duration: 2000 });
-        devLog.info('[wheat] onDailyStart total =', total);
-      }
-    }, this);
-
-    // onBlessed：祝福发生时立即再触发一次（立即 ×3 产出；草地不加成，按物品库文案固定 ×3）
-    HookDispatcher.register('onBlessed', ({ gs, tileIdx, tileRef }) => {
-      const ref = refOf(tileIdx, tileRef);
-      if (!isMine(gs, ref, this.id)) return;
-      if (isSuppressed(gs, ref)) return;
-      const qty = produce(gs, { ref, itemId: 'item_wheat', qty: 3 });
-      EventBus.emit(GE.TOAST_SHOW, { text: `🌾 祝福 +${qty} 小麦`, duration: 2000 });
-      devLog.info('[wheat] onBlessed instant +', qty);
-    }, this);
-  },
-};
-
-
-// ════════════════════════════════════════════════════════════════
-// 5. FacilityPotato  🥔  —— 土豆田
-// 【每一日开始时】储存土豆 ×3（容量 30；薯道难 → 全程共用容量池）
-// 【进入时】可以取走储存的土豆（薯道难：可一次取走所有土豆田块的土豆）
-// 【受祝福时】储存土豆 ×5
-// ════════════════════════════════════════════════════════════════
-const FacilityPotato = {
-  id: 'facility_potato',
-  name: '土豆田块',
-  emoji: Assets.facilities.facility_potato,
-  value: 4,
-  description: ITEMS.facility_potato.description,
-
-  register() {
-    // onDailyStart：所有土豆田 +3（受祝福则 +5）
-    // 魔导书：薯道难 → 全部土豆田共用容量池；薯条四重奏 → 田块数为 4 的倍数时每块 +10
-    HookDispatcher.register('onDailyStart', ({ gs }) => {
-      for (const { ref, tile: t } of contentEntries(gs)) {
-        if (t.contentId !== this.id) continue;
-        if (isSuppressed(gs, ref)) continue;
-        // 用 tile.dailyFlags 每日标记"今日已储"，避免重复
-        const key = flagKey(this.id, 'onDailyStart');
-        if (t.dailyFlags[key]) continue;
-        t.dailyFlags[key] = true;
-
-        let add = 3;
-        const blessed = t.states?.some(s => s.type === 'blessed');
-        if (blessed) add = 5;
-        produce(gs, {
-          ref, itemId: 'item_potato', qty: add, channel: CHANNEL.STORE,
-          apply: (k) => addPotatoStored(gs, t, k),
-        });
-        devLog.info('[potato] tile', tileRefKey(ref), 'stored →', potatoStoredOf(t), '/', potatoCapacity(gs));
-      }
-      // A-12：田间储存变化 → 同步悲恸南瓜加成
-      syncPumpkin(gs);
-    }, this);
-
-    // onEnter 自动取走已删除 —— 收获土豆改为 InfoPanel 手动滑动条触发（§16.4）
-    HookDispatcher.register('onEnter', ({ gs, tileIdx, tileRef }) => {
-      if (!isMine(gs, refOf(tileIdx, tileRef), this.id)) return;
-      // 占位：InfoPanel 手动操作，此处不再自动 InventorySystem.addItem
-      devLog.info('[potato] onEnter (manual harvest via InfoPanel now)');
-    }, this);
-
-    // onBlessed：储存 +5（立即触发，跳过每日 flag 检查；按容量截断）
-    HookDispatcher.register('onBlessed', ({ gs, tileIdx, tileRef }) => {
-      const ref = refOf(tileIdx, tileRef);
-      if (!isMine(gs, ref, this.id)) return;
-      if (isSuppressed(gs, ref)) return;
-      const tile = getTile(gs, ref);
-      let added = 0;
-      produce(gs, {
-        ref, itemId: 'item_potato', qty: POTATO_BLESS_ADD, channel: CHANNEL.STORE,
-        apply: (k) => { const a = addPotatoStored(gs, tile, k); added += a; return a; },
-      });
-      const cap = potatoCapacity(gs);
-      const cur = hasPotatoHardship(gs) ? potatoTotalStored(gs) : potatoStoredOf(tile);
-      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 祝福储存 +${added} 土豆（现 ${cur}/${cap}）`, duration: 2000 });
-      EventBus.emit(GE.TILE_UPDATED, tilePayloadOf(gs, ref));
-      syncPumpkin(gs); // A-12
-    }, this);
-  },
-};
-
-// ════════════════════════════════════════════════════════════════
-// 6. FacilityTulip  🌷  —— 郁金香花田
-// 【每一日开始时】价值随机 -4 ~ +10（存在 tile.contentState.tulipValue；对外显示 max(0, val)）
-// 【受祝福时】立即触发 2 次每日效果
-// Phase 2A：价值存 tile.contentState.tulipValue；取走/采摘由 Phase 2B 处理
-// ════════════════════════════════════════════════════════════════
-const FacilityTulip = {
-  id: 'facility_tulip',
-  name: '郁金香花田',
-  emoji: Assets.facilities.facility_tulip,
-  value: 8,
-  description: ITEMS.facility_tulip.description,
-
-  register() {
-    // 【每一日开始时】波动：
-    //   默认 -4~+10（历史值）；魔导书「泡沫」→ -9~+18；「郁金香，简单！」改为每回合波动（此处跳过）
-    //   叠放层数 ×（1 + 层数）；价值 < -100 强制拆除（applyTulipFluctuation 内部处理）
-    HookDispatcher.register('onDailyStart', ({ gs }) => {
-      for (const { ref, tile: t } of contentEntries(gs)) {
-        if (t.contentId !== this.id) continue;
-        const key = flagKey(this.id, 'onDailyStart');
-        if (t.dailyFlags[key]) continue;
-        t.dailyFlags[key] = true;
-        const value = applyTulipFluctuation(gs, t, 'daily', ref);
-        devLog.info('[tulip] tile', tileRefKey(ref), 'value →', value);
-      }
-    }, this);
-
-    HookDispatcher.register('onBlessed', ({ gs, tileIdx, tileRef }) => {
-      const ref = refOf(tileIdx, tileRef);
-      if (!isMine(gs, ref, this.id)) return;
-      const tile = getTile(gs, ref);
-      // 立即触发 2 次波动（叠放倍率 / 泡沫区间 / 简单！回合区间都按当前生效规则）
-      applyTulipFluctuation(gs, tile, 'bless', ref);
-      const shown = tulipDisplayValue(gs, tile);
-      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 郁金香祝福 +2 次波动，当前值 ${shown}`, duration: 2000 });
-      EventBus.emit(GE.TILE_UPDATED, tilePayloadOf(gs, ref));
-    }, this);
-  },
-};
-
-// ════════════════════════════════════════════════════════════════
-// 7. FacilityStrawberry  🍓  —— 草莓田
-// 【经过时】储存草莓 ×1（至多 5，每天限 1 次）
-// 【进入时】若草莓数量已满（≥5），取走所有；不满则什么都不做
-// 【受祝福时】储存随机 2 ~ 5 个（不超上限）
-// ════════════════════════════════════════════════════════════════
-const STRAWBERRY_MAX = 5;
-const FacilityStrawberry = {
-  id: 'facility_strawberry',
-  name: '草莓田块',
-  emoji: Assets.facilities.facility_strawberry,
-  value: 5,
-  description: ITEMS.facility_strawberry.description,
-
-  register() {
-    HookDispatcher.register('onPass', ({ gs, tileIdx, tileRef }) => {
-      const ref = refOf(tileIdx, tileRef);
-      if (!isMine(gs, ref, this.id)) return;
-      // §13.2：友善超载惩罚 → 友善类收益归 0（除小麦/水稻）
-      if (gs.capacity?.friendlyOverloaded) return;
-      const tile = getTile(gs, ref);
-      if (isSuppressed(gs, ref)) return;
-      const key = flagKey(this.id, 'onPass');
-      if (tile.dailyFlags[key]) return;
-      tile.dailyFlags[key] = true;
-      const state = tile.contentState || (tile.contentState = {});
-      produce(gs, {
-        ref, itemId: 'item_strawberry', qty: 1, channel: CHANNEL.STORE,
-        apply: (k) => {
-          const before = state.strawberryStored || 0;
-          state.strawberryStored = Math.min(STRAWBERRY_MAX, before + k);
-          return state.strawberryStored - before;
-        },
-      });
-      EventBus.emit(GE.TILE_UPDATED, tilePayloadOf(gs, ref));
-      syncPumpkin(gs); // A-12
-    }, this);
-
-    // onEnter 自动取走已删除 —— 满时手动取走改为 InfoPanel 按钮触发（§16.4）
-    HookDispatcher.register('onEnter', ({ gs, tileIdx, tileRef }) => {
-      if (!isMine(gs, refOf(tileIdx, tileRef), this.id)) return;
-      devLog.info('[strawberry] onEnter (manual full-harvest via InfoPanel now)');
-    }, this);
-
-    HookDispatcher.register('onBlessed', ({ gs, tileIdx, tileRef }) => {
-      const ref = refOf(tileIdx, tileRef);
-      if (!isMine(gs, ref, this.id)) return;
-      // §13.2：友善超载惩罚 → 友善类收益归 0（除小麦/水稻）
-      if (gs.capacity?.friendlyOverloaded) return;
-      const tile = getTile(gs, ref);
-      if (isSuppressed(gs, ref)) return;
-      const state = tile.contentState || (tile.contentState = {});
-      const rnd = Math.floor(Math.random() * 4) + 2; // 2~5
-      let actuallyAdded = 0;
-      produce(gs, {
-        ref, itemId: 'item_strawberry', qty: rnd, channel: CHANNEL.STORE,
-        apply: (k) => {
-          const before = state.strawberryStored || 0;
-          state.strawberryStored = Math.min(STRAWBERRY_MAX, before + k);
-          const a = state.strawberryStored - before;
-          actuallyAdded += a;
-          return a;
-        },
-      });
-      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 祝福储存 +${actuallyAdded} 草莓（上限 ${STRAWBERRY_MAX}）`, duration: 2000 });
-      EventBus.emit(GE.TILE_UPDATED, tilePayloadOf(gs, ref));
-      syncPumpkin(gs); // A-12
-    }, this);
-  },
-};
-
-// ════════════════════════════════════════════════════════════════
-// 8. FacilityPea  🫛  —— 豌豆架
-// 【使用技能时】储存豌豆 ×1（至多 10，每 2 回合限 1 次）—— 每 2 回合用 tile.dailyFlags['pea_last_trigger_turn']
-// 【进入时】可以取走储存的豌豆
-// 【受祝福时】自动取走储存的豌豆（不用玩家去点）
-// onUseSkill 在 Phase 3 SkillSystem 会 fire，Phase 2A 此处先占位注册好
-// ════════════════════════════════════════════════════════════════
-const PEA_MAX = 10;
-const FacilityPea = {
-  id: 'facility_pea',
-  name: '豌豆田块',
-  emoji: Assets.facilities.facility_pea,
-  value: 4,
-  description: ITEMS.facility_pea.description,
-
-  register() {
-    // onUseSkill：每 2 回合限 1 次（用 gs.turn - last >= 2 判断）
-    HookDispatcher.register('onUseSkill', ({ gs }) => {
-      // §13.2：友善超载惩罚 → 友善类收益归 0（除小麦/水稻）
-      if (gs.capacity?.friendlyOverloaded) return;
-      const tiles = contentEntries(gs);
-      for (const { ref, tile: t } of tiles) {
-        if (t.contentId !== this.id) continue;
-        if (isSuppressed(gs, ref)) continue;
-        const state = t.contentState || (t.contentState = {});
-        const lastTurn = state.peaLastSkillTurn ?? -999;
-        if (gs.turn - lastTurn < 2) {
-          // 距上次不足 2 回合，跳过
-          continue;
-        }
-        state.peaLastSkillTurn = gs.turn;
-        produce(gs, {
-          ref, itemId: 'item_pea', qty: 1, channel: CHANNEL.STORE,
-          apply: (k) => {
-            const before = state.peaStored || 0;
-            state.peaStored = Math.min(PEA_MAX, before + k);
-            return state.peaStored - before;
-          },
-        });
-        devLog.info('[pea] tile', tileRefKey(ref), '+1 pea (turn', gs.turn, '), now', state.peaStored);
-        EventBus.emit(GE.TILE_UPDATED, tilePayloadOf(gs, ref));
-      }
-      syncPumpkin(gs); // A-12
-    }, this);
-
-    // onEveryNTurn：占位（豌豆架每 2 回合限 1 次，但我们用 turn 差值判断，此处不必实现）
-    HookDispatcher.register('onEveryNTurn', () => {
-      // 豌豆架每 2 回合限 1 次 —— Phase 2A 暂不主动 fire 此 hook，SkillSystem fire onUseSkill 会做 turn 差判断
-    }, this);
-
-    // onEnter 自动取走已删除 —— 收获豌豆改为 InfoPanel 手动滑动条触发（§16.4）
-    HookDispatcher.register('onEnter', ({ gs, tileIdx, tileRef }) => {
-      if (!isMine(gs, refOf(tileIdx, tileRef), this.id)) return;
-      devLog.info('[pea] onEnter (manual harvest via InfoPanel now)');
-    }, this);
-
-    // onBlessed：自动取走储存的豌豆
-    HookDispatcher.register('onBlessed', ({ gs, tileIdx, tileRef }) => {
-      const ref = refOf(tileIdx, tileRef);
-      if (!isMine(gs, ref, this.id)) return;
-      if (isSuppressed(gs, ref)) return;
-      const tile = getTile(gs, ref);
-      const state = tile.contentState || (tile.contentState = {});
-      const stored = state.peaStored || 0;
-      if (stored > 0) {
-        takeStoredToBag(gs, ref, 'item_pea', stored);
-        state.peaStored = 0;
-        EventBus.emit(GE.TOAST_SHOW, { text: `✨ 祝福自动收获 +${stored} 豌豆`, duration: 2000 });
-        EventBus.emit(GE.TILE_UPDATED, tilePayloadOf(gs, ref));
-        syncPumpkin(gs); // A-12：取走（储存减少）也要同步
-      }
-    }, this);
-  },
-};
-
-// ════════════════════════════════════════════════════════════════
-// 9. FacilityHenhouse  🐔  —— 鸡舍（Toast 占位，Phase 3 CreatureSystem 接手）
-// 【进入时】生成 1 只小鸡（每日限 1 次，每个鸡舍至多 4 只）—— Toast 占位
-// 【进入时】取走储存的鸡蛋（至多 10）—— 2A 实现储存/取走逻辑
-// 【受祝福时】属于该鸡舍的随机 1 只小鸡立刻长大 —— Toast 占位
-// ════════════════════════════════════════════════════════════════
-const EGG_MAX = 10;
 const FacilityHenhouse = {
   id: 'facility_henhouse',
   name: '鸡舍',
@@ -590,7 +243,7 @@ const FacilityHenhouse = {
 };
 
 // ════════════════════════════════════════════════════════════════
-// 10. FacilitySlimehouse  🟢  —— 史莱姆屋（Toast 占位，Phase 3 CreatureSystem 接手）
+// 4. FacilitySlimehouse  🟢  —— 史莱姆屋
 // 【每日开始时】生成 1 只史莱姆（种类随机）
 // 【受祝福时】接下来 3 天每日开始时效果触发 2 次
 // ════════════════════════════════════════════════════════════════
@@ -604,10 +257,8 @@ const FacilitySlimehouse = {
   register() {
     // onDailyStart：生成史莱姆（祝福 3 天内 ×2）
     HookDispatcher.register('onDailyStart', ({ gs }) => {
-      const tiles = contentEntries(gs);
-      for (const { ref, tile: t } of tiles) {
+      for (const { ref, tile: t } of contentEntries(gs)) {
         if (t.contentId !== this.id) continue;
-        const state = t.contentState || (t.contentState = {});
         let times = 1;
         // 受祝福 3 天每日 ×2（独立的 slime_bless state，与 1 天 blessed 分离）
         const slimeBlessStates = (t.states || []).filter(s => s.type === 'slime_bless');
@@ -655,160 +306,15 @@ const FacilitySlimehouse = {
 };
 
 // ════════════════════════════════════════════════════════════════
-// 11. FacilityCorn  🌽  —— 玉米田块
-// §10.11
-// 【生物增加时】获得玉米 ×1
-// 【受祝福时】获得随机 1 个生物（60% 友善 / 40% 危险 / 0% 高危）
-// 注意：onCreatureAdded hook 由 CreatureSystem 在 spawnCreature 时 fire（Agent 3 实现）
-// ════════════════════════════════════════════════════════════════
-const FacilityCorn = {
-  id: 'facility_corn',
-  name: '玉米田块',
-  emoji: '🌽',
-  value: 4,
-  description: ITEMS.facility_corn.description,
-
-  register() {
-    // onCreatureAdded：任何生物（友善/危险/高危）增加时，每块玉米田 +1 玉米
-    HookDispatcher.register('onCreatureAdded', ({ gs }) => {
-      const tiles = contentEntries(gs).filter(e => e.tile.contentId === this.id && !isSuppressed(gs, e.ref));
-      if (tiles.length === 0) return;
-      let total = 0;
-      for (const { ref } of tiles) {
-        total += produce(gs, { ref, itemId: 'item_corn', qty: 1 });
-      }
-      if (total > 0) {
-        EventBus.emit(GE.TOAST_SHOW, { text: `🌽 生物增加 → +${total} 玉米`, duration: 1800 });
-        devLog.info('[corn] onCreatureAdded +', total);
-      }
-    }, this);
-
-    // onBlessed：获得随机 1 个生物（物品库 FAC-011 / OUT-14：按随机生物池 1 = POOL-02，
-    //   抽中类型后等概率随机；池内为 小鸡/母鸡/史莱姆，史莱姆再随机元素变体）
-    HookDispatcher.register('onBlessed', ({ gs, tileIdx, tileRef }) => {
-      const ref = refOf(tileIdx, tileRef);
-      if (!isMine(gs, ref, this.id)) return;
-      const hits = drawFromPool('POOL-02', 1, { gs });
-      const picked = hits[0];
-      if (!picked || !picked.id) return;
-      const kind = picked.id === 'slime' ? Random.pick(SLIME_KINDS) : picked.id;
-      const creature = CreatureSystem.spawnCreature(gs, kind, {
-        facilityId: this.id,
-        sourceTileIdx: isFenceRef(ref) ? null : ref,
-        sourceTileRef: ref,
-      });
-      if (creature) {
-        EventBus.emit(GE.TOAST_SHOW, { text: `🌽 玉米田受祝福 → ${CREATURES[kind].emoji} ${CREATURES[kind].name} 出现`, duration: 2000 });
-      } else {
-        EventBus.emit(GE.TOAST_SHOW, { text: '🌽 玉米田受祝福 → 围栏已满，无法生成生物', duration: 2000 });
-      }
-      devLog.info('[corn] onBlessed spawn', kind);
-    }, this);
-  },
-};
-
-// ════════════════════════════════════════════════════════════════
-// 12. FacilityCabbage  🥬  —— 卷心菜田块
-// §10.12
-// 【每一日开始时】获得卷心菜 ×2，然后消耗背包里的一个卷心菜投向最近敌人，造成 20 点草元素伤害
-// 【受祝福时】对所有敌人分别投掷一个卷心菜（不消耗背包中的卷心菜）
-// 伤害判定由 CombatSystem 实现，Phase 3 接入；Phase 2A 先 +菜 + Toast 占位
-// ════════════════════════════════════════════════════════════════
-const FacilityCabbage = {
-  id: 'facility_cabbage',
-  name: '卷心菜田块',
-  emoji: '🥬',
-  value: 4,
-  description: ITEMS.facility_cabbage.description,
-
-  register() {
-    // A-8 / L-07：投掷实装（物品库 FAC-012 / OUT-15）
-    //   每日开始：+2 卷心菜 → 消耗背包 1 个投向最近敌人（20 草元素伤害）；背包无卷心菜不投
-    //   【受祝福时】：下次每日开始对所有敌人分别投掷一个（不消耗背包）
-    //   注意：blessed 状态在 DaySystem.startNewDay 第 3 步就被清除（早于第 6 步 onDailyStart），
-    //   所以祝福标记必须落在 contentState 上，不能依赖 states 里的 blessed。
-    const throwCabbage = (gs, fromRef, target) => {
-      CombatSystem.applyElementalDamageToCreature(gs, target, 20, 'grass', { source: 'facility_cabbage' });
-      // 地块伤害不经过技能批次 → 击杀需要在此立即入队并 flush（掉落 / 图鉴 / 天赋回调一致）
-      if (target.hp <= 0) {
-        const deaths = new PendingDeathQueue(gs);
-        deaths.markDead(target);
-        deaths.flush();
-      }
-      EventBus.emit(GE.TOAST_SHOW, {
-        text: `🥬 卷心菜投向 ${getCreatureDef(target.kind)?.name || '敌人'} → 20 草元素伤害`,
-        duration: 1600,
-      });
-      // 外圈沿用旧日志（数字 idx），栅栏格使用 ref key
-      devLog.info('[cabbage] throw →', target.kind, 'from tile',
-        typeof fromRef === 'number' ? fromRef : tileRefKey(fromRef));
-    };
-
-    HookDispatcher.register('onDailyStart', ({ gs }) => {
-      for (const { ref, tile: t } of contentEntries(gs)) {
-        if (t.contentId !== this.id) continue;
-        if (isSuppressed(gs, ref)) continue;
-        const key = flagKey(this.id, 'onDailyStart');
-        if (t.dailyFlags[key]) continue;
-        t.dailyFlags[key] = true;
-
-        // 1) 先 +2 卷心菜（走 produce：该格带【产出时】则本次 +1）
-        produce(gs, { ref, itemId: 'item_cabbage', qty: 2 });
-        EventBus.emit(GE.TOAST_SHOW, { text: `🥬 每日 +2 卷心菜`, duration: 1500 });
-
-        const enemies = gs.creatures.filter(c => c.category !== 'friendly' && c.hp > 0);
-        const blessedThrow = !!t.contentState?.cabbageAllThrowNext;
-        if (blessedThrow) {
-          // 祝福：对所有敌人分别投掷一个，不消耗背包
-          t.contentState.cabbageAllThrowNext = false;
-          if (enemies.length === 0) {
-            EventBus.emit(GE.TOAST_SHOW, { text: '🥬 祝福投掷：当前没有敌人', duration: 1600 });
-          } else {
-            for (const c of enemies) throwCabbage(gs, ref, c);
-          }
-          continue;
-        }
-
-        // 2) 非祝福：背包里有卷心菜才投（OUT-15：没有则不投）
-        if (InventorySystem.countItem(gs, 'item_cabbage') < 1) continue;
-        if (enemies.length === 0) continue; // 没有敌人就不消耗
-        // 最近敌人：以本块位置为基准（外圈 idx → xy；栅栏格 → 全局 xy；生物在 (col+1, row+1)）
-        const txy = refXY(gs, ref);
-        let nearest = null;
-        let bestD = Infinity;
-        for (const c of enemies) {
-          const d = Math.hypot(c.fenceCol + 1 - txy.x, c.fenceRow + 1 - txy.y);
-          if (d < bestD) { bestD = d; nearest = c; }
-        }
-        if (!nearest) continue;
-        InventorySystem.removeItem(gs, 'item_cabbage', 1);
-        throwCabbage(gs, ref, nearest);
-      }
-    }, this);
-
-    // onBlessed：标记下次每日开始时对全体敌人投掷（不消耗背包）
-    HookDispatcher.register('onBlessed', ({ gs, tileIdx, tileRef }) => {
-      const ref = refOf(tileIdx, tileRef);
-      if (!isMine(gs, ref, this.id)) return;
-      const t = getTile(gs, ref);
-      t.contentState = t.contentState || {};
-      t.contentState.cabbageAllThrowNext = true;
-      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 卷心菜田受祝福 → 下次每日开始时对全体敌人投掷`, duration: 2200 });
-    }, this);
-  },
-};
-
-// ════════════════════════════════════════════════════════════════
-// ——— 资源类地块内容（5 种，共用同一套 HookDispatcher 注册方式）——
+// ——— 资源类地块内容（6 种，共用同一套 HookDispatcher 注册方式）——
 // ════════════════════════════════════════════════════════════════
 
 // ── RES-001 事件点 ──
-// 物品库：【进入时】遇到随机事件（每日限一次）；【受祝福时】显示今日此事件具体内容。
-// 备注：不观测不抽取，只在「进入事件格」或「该格受祝福」时才真正抽取（懒抽取）。
+// 【进入时】遇到随机事件（每日限一次）；【受祝福时】显示今日此事件具体内容。
+// 不观测不抽取，只在「进入事件格」或「该格受祝福」时才真正抽取（懒抽取）。
 // 抽中后把本格本日固定为该事件（eventTodayId），受祝福与进入复用同一条目。
-// 2026-11-13 事件结算改为选项驱动（设计文档 §18.1/§18.5）：
-//   进入事件只展示正文，不再在此处结算；结算效果由玩家确认选项后
-//   StoryUI → applyEventEffects 执行，同一选项只执行一次。受祝福预览不结算。
+// 进入事件只展示正文，不在此处结算；结算效果由玩家确认选项后
+// StoryUI → applyEventEffects 执行，同一选项只执行一次。受祝福预览不结算。
 function resolveEventTile(gs, ref, blessed) {
   const tile = getTile(gs, ref);
   if (!tile) return;
@@ -839,7 +345,7 @@ function resolveEventTile(gs, ref, blessed) {
       : entry;
     const script = buildEventStory(runtimeDef);
     if (!script) return;
-    // §16.5 / §18.1：真正进入事件点时打开剧情区 + 选项区（节点表由条目数据生成，UI 不写死文案）
+    // 真正进入事件点时打开剧情区 + 选项区（节点表由条目数据生成，UI 不写死文案）
     // 进入即不结算：数值/物品/地形等变化一律由玩家确认的选项 effects 决定。
     EventBus.emit(GE.STORY_SHOW, {
       script,
@@ -880,7 +386,7 @@ const ResourceEvent = {
 };
 
 // ── RES-002 奖励点 ──
-// 物品库：【进入时】获得随机奖励（每日限一次）；【受祝福时】下次进入高价值奖励概率提升。
+// 【进入时】获得随机奖励（每日限一次）；【受祝福时】下次进入高价值奖励概率提升。
 function resolveRewardTile(gs, ref) {
   const tile = getTile(gs, ref);
   if (!tile) return;
@@ -930,7 +436,7 @@ const ResourceReward = {
 };
 
 // ── RES-003 狩猎点 ──
-// 物品库：【进入时】可狩猎，概率获得随机生物（每日限一次）
+// 【进入时】可狩猎，概率获得随机生物（每日限一次）
 // 功能：狩猎普通生物（每日 40%~90%）/ 狩猎危险生物（每日 15%~75%）
 // 备注：受祝福时当日所有选项成功率 +50%，超出 100% 按 100% 计。
 const HUNT_RATES = {
@@ -954,7 +460,7 @@ export function huntCreature(gs, refOrIdx, option) {
   if (tile.dailyFlags[key]) return { ok: false, reason: 'alreadyHunted' };
 
   // 候选生物（生物池 POOL-02 按类别过滤）：
-  //   普通生物 → 友善类（小鸡/鸡）；危险生物 → 史莱姆条目（BIO-003：展开为七种元素史莱姆等概率随机一种）
+  //   普通生物 → 友善类（小鸡/鸡）；危险生物 → 史莱姆条目（展开为七种元素史莱姆等概率随机一种）
   const cat = option === 'normal' ? 'friendly' : 'danger';
   const candidates = (POOLS['POOL-02']?.entries || []).filter((e) => {
     if (e.id === 'slime') return cat === 'danger';
@@ -966,7 +472,7 @@ export function huntCreature(gs, refOrIdx, option) {
   tile.dailyFlags[key] = true; // 每日限一次：成败都消耗
 
   // 成功率在区间内随机；受祝福 → +50%，超出 100% 按 100% 计（RES-003 备注）
-  // 2026-11-04 裁决④：祝福按地块记账 —— huntBlessPending 记在本格，仅本格下一次狩猎消费
+  // 祝福按地块记账 —— huntBlessPending 记在本格，仅本格下一次狩猎消费
   let rate = range.min + Math.random() * (range.max - range.min);
   const st = (tile.contentState = tile.contentState || {});
   if (st.huntBlessPending) {
@@ -1015,7 +521,7 @@ const ResourceHunt = {
     }, this);
 
     // 受祝福：下一次进入本格狩猎地块时狩猎成功率 +50%（超出 100% 按 100% 计）
-    // 2026-11-04 裁决④：按地块记账（不是全局下次）——记在本狩猎格的 tile.contentState.huntBlessPending，
+    // 按地块记账（不是全局下次）——记在本狩猎格的 tile.contentState.huntBlessPending，
     //   仅本格下一次狩猎时消费；其他狩猎格不受影响。
     HookDispatcher.register('onBlessed', ({ gs, tileIdx, tileRef }) => {
       const ref = refOf(tileIdx, tileRef);
@@ -1034,9 +540,8 @@ const ResourceShop = {
   emoji: Assets.resources.resource_shop,
   value: 1,
   description: ITEMS.resource_shop.description,
-  internalNote: '每日至多放置 1 个；场上上限 2；不在功能区，必须通过地块功能进入',
   register() {
-    // §11.1 / §16.4 / §16.21：踩格不自动进入商店，由信息区「进入商店」功能选项进入
+    // 踩格不自动进入商店，由信息区「进入商店」功能选项进入
     HookDispatcher.register('onBlessed', ({ gs, tileIdx, tileRef }) => {
       const ref = refOf(tileIdx, tileRef);
       if (!isMine(gs, ref, this.id)) return;
@@ -1091,201 +596,6 @@ const ResourceBus = {
   },
 };
 
-// ════════════════════════════════════════════════════════════════
-// v0.5 新增 4 种设施（物品库 FAC-013 ~ FAC-016）
-// ════════════════════════════════════════════════════════════════
-
-// ── FAC-013 野生种子 🌱 ──
-// 【放置时】变为随机田块（调用【田块池1】= POOL-01）
-// 占位物品：平时不进随机池，只有池子候选不足时才补入；允许叠加，无【唯一】
-const FacilityWildSeed = {
-  id: 'facility_wild_seed',
-  name: '野生种子',
-  emoji: Assets.facilities.facility_wild_seed,
-  value: 1,
-  description: ITEMS.facility_wild_seed.description,
-  internalNote: '占位物品：允许叠加，没有【唯一】；效果需调用田块池1',
-
-  register() {
-    HookDispatcher.register('onPlace', ({ gs, tileIdx, tileRef }) => {
-      const ref = refOf(tileIdx, tileRef);
-      const tile = getTile(gs, ref);
-      if (!tile || tile.contentId !== this.id) return;
-
-      // 从田块池1 抽 1 个田块；抽中占位（野生种子）时重抽，避免自己变自己
-      let picked = null;
-      for (let i = 0; i < 8; i++) {
-        const [hit] = drawFromPool('POOL-01', 1, { unique: true, gs });
-        if (hit && hit.id && hit.id !== this.id) { picked = hit; break; }
-      }
-      if (!picked) {
-        devLog.warn('[wildSeed] 田块池1 抽不到非占位田块，保持原样');
-        return;
-      }
-      tile.contentId = picked.id;
-      EventBus.emit(GE.TILE_UPDATED, tilePayloadOf(gs, ref));
-      EventBus.emit(GE.TOAST_SHOW, { text: `🌱 野生种子长成了 ${ITEMS[picked.id]?.name || picked.name}`, duration: 2200 });
-      devLog.info('[wildSeed] →', picked.id);
-    }, this);
-  },
-};
-
-// ── FAC-014 蒲公英田块 🌼 ──
-// 【放置时】【受祝福时】储存蒲公英×1（至多 1）
-// 【移动后】按本次移动的曼哈顿距离提升储存蒲公英价值（初始 1）
-// 可随时采摘：获得等同当前价值的蒲公英 ×1，并失去该地块内容
-const FacilityDandelion = {
-  id: 'facility_dandelion',
-  name: '蒲公英田块',
-  emoji: Assets.facilities.facility_dandelion,
-  value: 1,
-  description: ITEMS.facility_dandelion.description,
-  internalNote: '每移动 1 格曼哈顿距离价值 +1（初始 1）；使用载具移动按起点到落点计算',
-
-  register() {
-    const ensureStored = (tile) => {
-      const st = tile.contentState || (tile.contentState = {});
-      if (!st.dandelionStored) {
-        st.dandelionStored = true;
-        st.dandelionValue = st.dandelionValue || 1;
-      }
-      return st;
-    };
-
-    HookDispatcher.register('onPlace', ({ gs, tileIdx, tileRef }) => {
-      const ref = refOf(tileIdx, tileRef);
-      const tile = getTile(gs, ref);
-      if (!tile || tile.contentId !== this.id) return;
-      const st = ensureStored(tile);
-      st.dandelionValue = 1;
-      syncPumpkin(gs); // A-12：储存作物数 +1
-      EventBus.emit(GE.TILE_UPDATED, tilePayloadOf(gs, ref));
-    }, this);
-
-    HookDispatcher.register('onBlessed', ({ gs, tileIdx, tileRef }) => {
-      const ref = refOf(tileIdx, tileRef);
-      const tile = getTile(gs, ref);
-      if (!tile || tile.contentId !== this.id) return;
-      ensureStored(tile);   // 已储存则不叠加（至多 1 个）
-      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 蒲公英价值提升至 ${Math.max(0, tile.contentState.dandelionValue)}`, duration: 1800 });
-      EventBus.emit(GE.TILE_UPDATED, tilePayloadOf(gs, ref));
-    }, this);
-
-    // onMoveEnd：params.distance = 本次移动的曼哈顿距离（由 MovementSystem 传入）
-    HookDispatcher.register('onMoveEnd', ({ gs, distance = 0 }) => {
-      if (distance <= 0) return;
-      const tiles = contentEntries(gs).filter(e => e.tile.contentId === this.id);
-      for (const { tile: t } of tiles) {
-        const st = t.contentState || (t.contentState = {});
-        if (!st.dandelionStored) continue;
-        st.dandelionValue = (st.dandelionValue || 1) + distance;
-      }
-      if (tiles.length) EventBus.emit(GE.TILE_UPDATED);
-    }, this);
-  },
-};
-
-// ── FAC-015 幽怜草田块 🌙 ──
-// 【放置时】储存幽怜草×1（至多 1，初始价值 12）
-// 【进入时】可以采摘
-// 【受祝福时】储存的幽怜草价值 +12（同一日内第 2 次起每次衰减 2，最低 +0）
-// 【每一日开始时】本日未受到过祝福 → 直接枯萎（地块内容消失，变空地块）
-const FacilityGhostGrass = {
-  id: 'facility_ghost_grass',
-  name: '幽怜草田块',
-  emoji: Assets.facilities.facility_ghost_grass,
-  value: 12,
-  description: ITEMS.facility_ghost_grass.description,
-  internalNote: '初始价格 12；同日第 2 次起每次价值增加 -2，最低 +0；枯萎 = 地块内容直接失去',
-
-  register() {
-    HookDispatcher.register('onPlace', ({ gs, tileIdx, tileRef }) => {
-      const ref = refOf(tileIdx, tileRef);
-      const tile = getTile(gs, ref);
-      if (!tile || tile.contentId !== this.id) return;
-      const st = tile.contentState || (tile.contentState = {});
-      st.ghostStored = true;
-      st.ghostValue = 12;
-      st.ghostBlessCountToday = 0;
-      st.ghostBlessedToday = false;
-      syncPumpkin(gs); // A-12：储存作物数 +1
-      EventBus.emit(GE.TILE_UPDATED, tilePayloadOf(gs, ref));
-    }, this);
-
-    HookDispatcher.register('onBlessed', ({ gs, tileIdx, tileRef }) => {
-      const ref = refOf(tileIdx, tileRef);
-      const tile = getTile(gs, ref);
-      if (!tile || tile.contentId !== this.id) return;
-      const st = tile.contentState || (tile.contentState = {});
-      if (!st.ghostStored) return;
-      const n = (st.ghostBlessCountToday || 0) + 1;
-      const gain = Math.max(0, 12 - 2 * (n - 1));   // 第 1 次 +12，第 2 次 +10，第 3 次 +8 …
-      st.ghostValue = (st.ghostValue || 12) + gain;
-      st.ghostBlessCountToday = n;
-      st.ghostBlessedToday = true;
-      EventBus.emit(GE.TOAST_SHOW, { text: `✨ 幽怜草价值 +${gain} → ${st.ghostValue}`, duration: 1800 });
-      EventBus.emit(GE.TILE_UPDATED, tilePayloadOf(gs, ref));
-    }, this);
-
-    HookDispatcher.register('onDailyStart', ({ gs, scopedTileIdx }) => {
-      // 初级肥料只重复「产出类」每日效果：枯萎属于跨日结算，不能让施肥把未祝福的幽怜草直接清掉
-      if (scopedTileIdx !== undefined) return;
-      for (const { ref, tile: t } of contentEntries(gs)) {
-        if (t.contentId !== this.id) continue;
-        const st = t.contentState || (t.contentState = {});
-        if (st.ghostStored && st.ghostBlessedToday === false) {
-          t.contentId = null;
-          t.contentState = {};
-          syncPumpkin(gs); // A-12：储存作物数 -1
-          EventBus.emit(GE.TOAST_SHOW, { text: '🌙 昨日未受祝福，幽怜草枯萎了', duration: 2000 });
-          EventBus.emit(GE.TILE_UPDATED, tilePayloadOf(gs, ref));
-        }
-        // 新的一天重置本日计数
-        st.ghostBlessCountToday = 0;
-        st.ghostBlessedToday = false;
-      }
-    }, this);
-  },
-};
-
-// ── FAC-016 艾草田块 🍃 ──
-// 【每一日开始时】获得艾草 ×2
-// 【角色回复生命值时】获得艾草 ×1（任意途径回血都算）
-// 【受祝福时】为角色回复 25% 生命值
-const FacilityMugwort = {
-  id: 'facility_mugwort',
-  name: '艾草田块',
-  emoji: Assets.facilities.facility_mugwort,
-  value: 2,
-  description: ITEMS.facility_mugwort.description,
-  internalNote: '任意途径回复生命值都算，注意订阅所有回血来源',
-
-  register() {
-    HookDispatcher.register('onDailyStart', ({ gs }) => {
-      const tiles = contentEntries(gs).filter(e => e.tile.contentId === this.id && !isSuppressed(gs, e.ref));
-      if (!tiles.length) return;
-      let total = 0;
-      for (const { ref } of tiles) total += produce(gs, { ref, itemId: 'item_mugwort', qty: 2 });
-      EventBus.emit(GE.TOAST_SHOW, { text: `🍃 艾草田块 +${total} 艾草`, duration: 1800 });
-    }, this);
-
-    HookDispatcher.register('onHeal', ({ gs, amount = 0 }) => {
-      if (amount <= 0) return;
-      const tiles = contentEntries(gs).filter(e => e.tile.contentId === this.id && !isSuppressed(gs, e.ref));
-      if (!tiles.length) return;
-      for (const { ref } of tiles) produce(gs, { ref, itemId: 'item_mugwort', qty: 1 });
-      devLog.info('[mugwort] onHeal +', tiles.length);
-    }, this);
-
-    HookDispatcher.register('onBlessed', ({ gs, tileIdx, tileRef }) => {
-      const tile = getTile(gs, refOf(tileIdx, tileRef));
-      if (!tile || tile.contentId !== this.id) return;
-      const actual = HealSystem.healPlayerByPercent(gs, 0.25, { source: this.id });
-      EventBus.emit(GE.TOAST_SHOW, { text: `🍃 艾草祝福 回复 ${actual} 生命`, duration: 1800 });
-    }, this);
-  },
-};
-
 // ── RES-006 魔法商店 🔮 ──
 // 【进入时】可进入魔法商店；【受祝福时】下一次进入时首次刷新免费
 // 每日至多放置 1 个；场上总数上限 2
@@ -1295,7 +605,6 @@ const ResourceMagicShop = {
   emoji: Assets.resources.resource_magic_shop,
   value: 1,
   description: ITEMS.resource_magic_shop.description,
-  internalNote: '每日至多放置 1 个；场上上限 2；首次刷新免费 = 本次进入无论第几次刷新均 0 金币，但正常消耗刷新次数',
 
   register() {
     // §11.2 / §16.4 / §16.22：踩格不自动进入魔法商店，与普通商店同一套交互 ——
@@ -1303,8 +612,7 @@ const ResourceMagicShop = {
     // 「离开后本回合不可再进入」由 ShopSystem.enterShop 的 leftAtTurn 检查执行。
     HookDispatcher.register('onBlessed', ({ gs, tileIdx, tileRef }) => {
       const ref = refOf(tileIdx, tileRef);
-      const tile = getTile(gs, ref);
-      if (!tile || tile.contentId !== this.id) return;
+      if (!isMine(gs, ref, this.id)) return;
       ShopSystem.grantFreeRefresh(gs, ref);
       EventBus.emit(GE.TOAST_SHOW, { text: '✨ 下次进入魔法商店，首次刷新免费', duration: 2000 });
     }, this);
@@ -1312,14 +620,12 @@ const ResourceMagicShop = {
 };
 
 // ════════════════════════════════════════════════════════════════
-// ——— 技能卡地块内容（skill_*） —— Phase 4 修复后 ———
-// 技能卡作为 contentId 放进 outerTiles 后，触发由 SkillSystem.triggerSkillByHook 统一处理
-// （遍历 outerTiles 找 skill_* 地块，按 hooks[hookType] + cooldown 触发）。
+// ——— 技能卡地块内容（skill_*） —— Phase 4 ———
+// 技能卡作为 contentId 放进 outerTiles 后，触发由 SkillSystem.triggerSkillByHook 统一处理。
 // 不再注册 HookDispatcher hook，不再消耗 tile.contentId（持续存在持续触发）。
-// 连携技（isLinkSkill:true）也不走 HookDispatcher，它们是实时窗口按键触发的。
 // ════════════════════════════════════════════════════════════════
 
-/** 技能卡元数据：仅提供 id/name/emoji 供 UI 渲染（不再注册 onEnter hook，SkillSystem 统一处理） */
+/** 技能卡元数据：仅提供 id/name/emoji 供 UI 渲染（SkillSystem 统一处理触发） */
 export const SKILL_FACILITIES = Object.values(SKILLS).map((skill) => ({
   id: skill.id,
   name: skill.name,
@@ -1327,7 +633,7 @@ export const SKILL_FACILITIES = Object.values(SKILLS).map((skill) => ({
 }));
 
 export function registerSkillHooks() {
-  // Phase 4 修复：技能触发已由 SkillSystem.triggerSkillByHook 统一处理
+  // 技能触发已由 SkillSystem.triggerSkillByHook 统一处理
   // 此处不再注册 HookDispatcher hook；连携技也由 LinkSkillSystem 实时窗口处理
   console.log('[facilities] SKILL_FACILITIES metadata-only (no hooks registered, SkillSystem handles trigger)');
 }
@@ -1337,26 +643,22 @@ export function registerSkillHooks() {
 // ════════════════════════════════════════════════════════════════
 
 export const ALL_FACILITIES = [
-  // 16 种设施（FAC-001 ~ FAC-016；水稻已迁至 data/fields/rice.js）
-  FacilityHome, FacilityTent, FacilityWheat, FacilityPotato,
-  FacilityTulip, FacilityStrawberry, FacilityPea, FacilityHenhouse, FacilitySlimehouse,
-  FacilityCorn, FacilityCabbage,
-  FacilityWildSeed, FacilityDandelion, FacilityGhostGrass, FacilityMugwort,
-  // 田块增量结构（一田块一文件，见 data/fields/）：水稻 v0.6 改写 + 9 种新田块
+  // 4 种设施（FAC-009 ~ FAC-012）
+  FacilityHome, FacilityTent, FacilityHenhouse, FacilitySlimehouse,
+  // 21 种田块（一田块一文件，见 data/fields/）
   ...FIELD_DEFS,
   // 6 种资源类地块内容（RES-001 ~ RES-006）
   ResourceEvent, ResourceReward, ResourceHunt, ResourceShop, ResourceBus, ResourceMagicShop,
 ];
 
 /**
- * 统一注册所有设施/资源的 hook
+ * 统一注册所有设施/资源/田块的 hook
  * GameDirector.start() 时调用一次
  */
 export function registerFacilities() {
   for (const f of ALL_FACILITIES) {
     if (typeof f.register === 'function') f.register();
   }
-  // Phase 4 —— 技能卡 skill_* onEnter hooks
   registerSkillHooks();
   // 打印各 hook 已注册数量（验收用）
   const hookSummary = [
@@ -1372,13 +674,8 @@ export function registerFacilities() {
 }
 
 /**
- * 获取某 contentId 对应的设施/资源对象（UI 渲染时查表用）
+ * 获取某 contentId 对应的设施/资源/田块对象（UI 渲染时查表用）
  */
 export function getDef(contentId) {
   return ALL_FACILITIES.find(f => f.id === contentId) || null;
 }
-
-/** Phase 1 向后兼容别名 */
-export const PHASE1_FACILITIES = [FacilityHome, FacilityWheat];
-export const FacilityHomeDef = FacilityHome;
-export const FacilityWheatDef = FacilityWheat;

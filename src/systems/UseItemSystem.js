@@ -3,7 +3,7 @@
 //
 // 使用型：使用后立刻生效、一次性结算、道具消失
 //   草药（回 20 血，冷却 5 回合）
-//   初级肥料（对植物类田块触发 2 次【每一日开始时】）
+//   初级肥料（对具有【每一日开始时】特性的田块触发 2 次日初结算）
 //   啤酒（行动力 +3，30% 获得【暴躁】）
 //   感恩节的晚餐（本日我方把友善生物也视为敌人）
 //
@@ -26,14 +26,17 @@ import { drawFromPool } from './RandomPool.js';
 import { Random } from '../core/Random.js';
 import { MapExpandSystem, EXPAND_AXIS } from './MapExpandSystem.js';
 import { getTile, playerRef, contentEntries, refsEqual, fenceIdxOf, isFenceRef } from '../core/TileAccess.js';
+import { preDailyStart } from './FieldAuraSystem.js';
 
-/** 可作为肥料目标的植物类设施（v0.6：只补有日初效果的新田块） */
-const PLANT_FACILITIES = new Set([
-  'facility_wheat', 'facility_rice', 'facility_potato', 'facility_tulip',
-  'facility_strawberry', 'facility_pea', 'facility_corn', 'facility_cabbage',
-  'facility_dandelion', 'facility_ghost_grass', 'facility_mugwort',
-  'facility_hops', 'facility_mushroom', 'facility_blackberry', 'facility_blue_star_fruit',
-]);
+/**
+ * 该田块是否具有【每一日开始时】特性。
+ * 判定依据是物品库词条（triggers 里的「每一日开始时」），不维护硬编码名单 ——
+ * 以后新增/删改田块只要物品库描述带这个触发时点，初级肥料自动适用。
+ */
+export function hasDailyStartTrait(contentId) {
+  if (!contentId) return false;
+  return (ITEMS[contentId]?.triggers || []).includes('每一日开始时');
+}
 
 /**
  * 只对某一块地结算 N 次【每一日开始时】效果。
@@ -52,6 +55,11 @@ export function runScopedDaily(gs, target, times = 1) {
   const stash = entries.map((e) => e.tile.contentId);
   const savedFlags = { ...(targetTile.dailyFlags || {}) };
   try {
+    // 光环类日初效果（黑莓压制 / 向日葵授予）同样优先结算，且只作用于本格。
+    // 必须在临时清空其它 contentId 之前执行 —— 光环需要看到邻格是田块。
+    if (hasDailyStartTrait(targetTile.contentId)) {
+      for (let n = 0; n < times; n++) preDailyStart(gs, { onlyRef: target });
+    }
     for (const e of entries) {
       if (e.tile !== targetTile) e.tile.contentId = null;
     }
@@ -77,10 +85,10 @@ function ensureCooldowns(gs) {
   if (!gs.itemCooldowns) gs.itemCooldowns = {};
 }
 
-/** 该格是否是肥料可作用的植物类田块（ref：外圈 idx / 生效小径格） */
+/** 该格是否是肥料可作用的田块（ref：外圈 idx / 生效小径格） */
 export function isPlantTarget(gs, target) {
   const t = getTile(gs, target);
-  return !!(t && t.contentId && PLANT_FACILITIES.has(t.contentId));
+  return !!(t && hasDailyStartTrait(t.contentId));
 }
 
 /** 该道具当前是否可用（冷却是否结束） */
@@ -128,7 +136,7 @@ export function useItem(gs, itemId, opts = {}) {
       const targetRef = opts.tileRef ?? opts.tileIdx;
       const tile = getTile(gs, targetRef);
       // 无效目标也照常消耗（物品库备注：无效时不返还已消耗的道具）
-      if (!tile || !tile.contentId || !PLANT_FACILITIES.has(tile.contentId)) {
+      if (!tile || !hasDailyStartTrait(tile.contentId)) {
         EventBus.emit(GE.TOAST_SHOW, { text: '🧪 这里不是可施肥的田块（道具已消耗）', duration: 1800 });
         break;
       }

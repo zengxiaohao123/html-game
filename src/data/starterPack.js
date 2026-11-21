@@ -5,6 +5,9 @@
 // 这里给一份固定的测试包：每个分类都有代表条目，覆盖放置 / 使用 / 放置型 / 收集。
 // 正式平衡时把 STARTER_ITEMS 换成随机抽取即可（接口不变）。
 
+import { ITEMS } from './items.js';
+import { isUniqueItem } from '../systems/ItemUniqueness.js';
+
 /** [itemId, 数量] */
 export const STARTER_ITEMS = [
   // ── 地形（可像设施一样拖到地块上）──
@@ -80,10 +83,46 @@ export const STARTER_ITEMS = [
   ['collectible_deadwood', 1],
 ];
 
+// ════════════════════════════════════════════════════════════════
+// 【测试便利 · 非游戏内容】覆盖式测试背包
+//
+// 用途：开发期一次性拿到全部田块 / 资源 / 道具，逐条验证词条与交互。
+// 正式配置（STARTER_ITEMS）不含这些物品，二者互不影响。
+//
+// 关闭方式：
+//   1) 把 TEST_GIVE_ALL_CONTENT 改为 false（保留代码、随时可开）；
+//   2) 或整段删除本区块，并删掉 createStarterInventory() 里对
+//      createTestCoverageItems() 的调用。
+//
+// 数量口径：每种至少 3 个；带【唯一】的物品按唯一规则只给 1 个；
+//   其余叠放 / 上限按 InventorySystem.addItem 的常规规则处理，不另开特例。
+// ════════════════════════════════════════════════════════════════
+export const TEST_GIVE_ALL_CONTENT = true;
+export const TEST_ITEM_QTY = 3;
+
+/** 覆盖范围：物品库二级分类为「田块」「资源」，或一级分类为「道具」 */
+const TEST_TIER2 = new Set(['田块', '资源']);
+const TEST_TIER1 = new Set(['道具']);
+
+export function createTestCoverageItems() {
+  if (!TEST_GIVE_ALL_CONTENT) return [];
+  const out = [];
+  for (const it of Object.values(ITEMS)) {
+    if (!(TEST_TIER2.has(it.tier2) || TEST_TIER1.has(it.tier1))) continue;
+    out.push({ itemId: it.id, qty: isUniqueItem(it.id) ? 1 : TEST_ITEM_QTY });
+  }
+  return out;
+}
+
 /**
  * 生成初始背包条目
  * @returns {Array<{itemId:string, qty:number}>}
  */
 export function createStarterInventory() {
-  return STARTER_ITEMS.map(([itemId, qty]) => ({ itemId, qty }));
+  // 同一 itemId 只保留一条，取两者较大数量（测试包要求"至少 3 个"）
+  const merged = new Map(STARTER_ITEMS);
+  for (const { itemId, qty } of createTestCoverageItems()) {
+    merged.set(itemId, Math.max(merged.get(itemId) || 0, qty));
+  }
+  return [...merged].map(([itemId, qty]) => ({ itemId, qty }));
 }
