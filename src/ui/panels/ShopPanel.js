@@ -24,6 +24,7 @@
 import { EventBus } from '../../core/EventBus.js';
 import { GE } from '../../core/GameEvents.js';
 import { createEl, qs, iconEl } from '../dom.js';
+import { refsEqual } from '../../core/TileAccess.js';
 import { devLog } from '../../core/Logger.js';
 import { ITEMS } from '../../data/items.js';
 import { renderTraitBadges } from '../TraitBadges.js';
@@ -55,6 +56,7 @@ export class ShopPanel {
     this.root = null;
     this.cardEl = null;
     this.tileIdx = -1;
+    this.shopRef = null;       // 当前商店格 ref（外圈 idx / 栅栏生效格 ref）
     this.kind = 'shop';
     this.tab = 'buy';          // 'buy' | 'sell'
     this.visible = false;
@@ -100,10 +102,10 @@ export class ShopPanel {
   }
 
   _subscribe() {
-    EventBus.on(GE.UI_PANEL_OPEN, ({ panel, tileIdx }) => {
+    EventBus.on(GE.UI_PANEL_OPEN, ({ panel, tileIdx, tileRef }) => {
       if (panel !== 'shop' && panel !== 'magicShop') return;
       if (this.visible) return;      // 防止 open() 内部再 emit 造成递归
-      this.open(tileIdx);
+      this.open(tileRef !== undefined ? tileRef : tileIdx);
     });
     EventBus.on(GE.UI_PANEL_CLOSE, ({ panel }) => {
       if ((panel === 'shop' || panel === 'magicShop') && this.visible) this.close();
@@ -117,25 +119,27 @@ export class ShopPanel {
       if (this.tab === 'sell') this._renderGrid();
     });
     // §16.21：玩家离开商店格时自动关闭商店（商店只能在所站格子上使用）
-    EventBus.on(GE.MOVE, ({ toIdx }) => {
-      if (this.visible && this.tileIdx >= 0 && toIdx !== this.tileIdx) this.close();
+    // 生效小径格（临时外圈）上的商店同样按 ref 判定
+    EventBus.on(GE.MOVE, ({ toIdx, toRef }) => {
+      if (this.visible && this.shopRef != null && !refsEqual(toRef !== undefined ? toRef : toIdx, this.shopRef)) this.close();
     });
   }
 
   // ────────────────────────────────────────── 打开 / 关闭
-  open(tileIdx) {
+  /** @param {number|object|null} tileRef 商店格（外圈 idx / 栅栏生效格 ref；null = 自动找第一家） */
+  open(tileRef) {
     const gs = this.gs;
     if (!gs) { this._rollbackStack(); return; }
-    if (tileIdx == null) {
+    if (tileRef == null) {
       const t = gs.map.outerTiles.find((x) => x.contentId === 'resource_shop' || x.contentId === 'resource_magic_shop');
-      tileIdx = t ? t.idx : -1;
+      tileRef = t ? t.idx : -1;
     }
-    if (tileIdx < 0) {
+    if (tileRef === -1) {
       EventBus.emit(GE.TOAST_SHOW, { text: '🏪 附近没有商店', duration: 1500 });
       this._rollbackStack();
       return;
     }
-    const enter = enterShop(gs, tileIdx);
+    const enter = enterShop(gs, tileRef);
     if (!enter.ok) {
       // 修复幽灵门控：进入失败（如本回合刚离开）时回收已入栈的 'shop' 条目，
       // 否则栈里有、屏幕外没有 → WASD 被锁死，而提示又要求「走一步再进」。
@@ -143,14 +147,15 @@ export class ShopPanel {
       return;
     }
 
-    this.tileIdx = tileIdx;
+    this.shopRef = tileRef;
+    this.tileIdx = typeof tileRef === 'number' ? tileRef : -1;
     this.kind = enter.shop.kind;
     this.tab = 'buy';
     this.visible = true;
     this.root.style.display = 'flex';
     this._render();
     EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'shop' });
-    devLog.info('[ShopPanel] open tile', tileIdx, this.kind);
+    devLog.info('[ShopPanel] open tile', JSON.stringify(tileRef), this.kind);
   }
 
   /** 打开失败时把栈条目退回（GameDirector 栈内统一记作 'shop'，魔法商店也一样） */
@@ -162,7 +167,7 @@ export class ShopPanel {
 
   close() {
     if (!this.visible) return;
-    leaveShop(this.gs, this.tileIdx);
+    leaveShop(this.gs, this.shopRef != null ? this.shopRef : this.tileIdx);
     this.visible = false;
     this._leaveArmed = false;
     this.root.style.display = 'none';
@@ -171,6 +176,7 @@ export class ShopPanel {
     this.detailEl = null;
     this.stageEl = null;
     this.tileIdx = -1;
+    this.shopRef = null;
     EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'shop' });
     devLog.info('[ShopPanel] close');
   }
@@ -344,7 +350,7 @@ export class ShopPanel {
       parent: this.stageEl,
     });
     this.refreshBtn.onclick = () => {
-      const res = refreshShop(this.gs, this.tileIdx);
+      const res = refreshShop(this.gs, this.shopRef);
       if (res.ok) this._render();
       else this._renderHeaderState();
     };
@@ -392,7 +398,7 @@ export class ShopPanel {
   }
 
   _renderHeaderState() {
-    const shop = getShop(this.gs, this.tileIdx);
+    const shop = getShop(this.gs, this.shopRef);
     if (this.refreshBtn && shop) {
       const cost = manualRefreshCost(shop);
       const left = refreshLeft(shop);
@@ -475,7 +481,7 @@ export class ShopPanel {
   }
 
   _renderBuyGrid() {
-    const shop = getShop(this.gs, this.tileIdx);
+    const shop = getShop(this.gs, this.shopRef);
     if (!shop) return;
     const slots = SHOP_KINDS[shop.kind].slots;
     // 4 列 × 3 行共 12 位；魔法商店只有 10 格商品，多余 2 格渲染为空格（§16.22）
@@ -663,7 +669,7 @@ export class ShopPanel {
         ok.style.cursor = 'pointer';
         ok.onclick = () => {
           const res = mode === 'buy'
-            ? buy(this.gs, this.tileIdx, slotIdx)
+            ? buy(this.gs, this.shopRef, slotIdx)
             : sell(this.gs, item.id, { ...(value !== undefined ? { value } : {}), qty: this._sellQty });
           if (res.ok) {
             this._closeDetail();

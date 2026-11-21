@@ -1603,12 +1603,69 @@ head_('小径修复：栅栏内容 tab / 地形只在状态 tab / 单位同格�
   buttonsWithText(infoPanel.root, '状态')[0].click();
   assert(hasText(infoPanel.root, '小径'), '状态 tab 显示小径地形');
 
-  // ── B) 无地块内容的栅栏内格：不出现地块内容 tab ──
+  // ── B) 无地块内容、且不是生效小径的普通栅栏格：不出现地块内容 tab ──
   cell.contentId = null;
+  cell.isPathOuter = false;
   EventBus.emit(GE.FENCE_TILE_CLICKED, { fenceIdx: fi });
   const labelsEmpty = (infoPanel._currentTabs || []).map((t) => t.label).join('/');
   assert(!labelsEmpty.includes('地块内容'),
-    `无内容的栅栏格 → 不显示地块内容 tab（实测 ${labelsEmpty}）`);
+    `无内容且非生效小径的栅栏格 → 不显示地块内容 tab（实测 ${labelsEmpty}）`);
+
+  // ── B2) 无地块内容的生效小径格（临时外圈）：始终显示地块内容 tab，含 前往/无法抵达 ──
+  const savedPlayer = { x: gs.player.x, loc: gs.player.loc };
+  cell.isPathOuter = true;
+  gs.player.x = 0;              // 外圈左上角，距离栅栏 (0,0) 不相邻
+  gs.player.loc = null;
+  EventBus.emit(GE.FENCE_TILE_CLICKED, { fenceIdx: fi });
+  const labelsPath = (infoPanel._currentTabs || []).map((t) => t.label).join('/');
+  assert(labelsPath.includes('地块内容'),
+    `生效小径格即使没有内容也显示地块内容 tab（实测 ${labelsPath}）`);
+  assert(hasText(infoPanel.root, '无法抵达'), '生效小径格：不可前往时显示「无法抵达」功能选项');
+  assert(!hasText(infoPanel.root, '地形：'), '生效小径格的地块内容 tab 不显示地形（地形只在状态 tab）');
+
+  // 相邻 → 同一个位置换成「前往（消耗行动力x）」
+  gs.player.x = 3;              // 外圈 (0,1)，与栅栏 (0,0) 相邻
+  gs.player.loc = null;
+  EventBus.emit(GE.FENCE_TILE_CLICKED, { fenceIdx: fi });
+  assert(hasText(infoPanel.root, '前往（消耗行动力1）'),
+    '生效小径格：相邻时显示「前往（消耗行动力x）」');
+  assert(!hasText(infoPanel.root, '无法抵达'), '前往与无法抵达互斥（可前往时不再显示无法抵达）');
+  gs.player.x = savedPlayer.x;
+  gs.player.loc = savedPlayer.loc;
+
+  // ── B3) 生效小径格上的内容：专属功能选项与外圈同一口径 ──
+  // 土豆田块（需身处该格）：显示收获选项
+  cell.contentId = 'facility_potato';
+  cell.contentState = { potatoStored: 5 };
+  gs.player.x = null;
+  gs.player.loc = { kind: 'fence', row: cell.row, col: cell.col };
+  EventBus.emit(GE.FENCE_TILE_CLICKED, { fenceIdx: fi });
+  assert(hasText(infoPanel.root, '⚡ 功能选项（你在该格）'),
+    '生效小径格上的土豆田块 → 显示功能选项区');
+  assert(hasText(infoPanel.root, '🥔 确认收获'), '生效小径格上的土豆田块 → 显示「确认收获」专属选项');
+  // 收获结算本身由 smoke-path 的 ref 级用例覆盖（UI 假 DOM 不支持 range 输入取值）
+
+  // 鸡舍（随时可开关门）：显示门状态 + 开关门选项
+  gs.player.loc = null;
+  gs.player.x = 0;
+  cell.contentId = 'facility_henhouse';
+  cell.contentState = {};
+  EventBus.emit(GE.FENCE_TILE_CLICKED, { fenceIdx: fi });
+  assert(hasText(infoPanel.root, '门已打开'), '生效小径格上的鸡舍 → 显示门状态');
+  assert(hasText(infoPanel.root, '关门（鸡舍生物回到屋内）'), '生效小径格上的鸡舍 → 显示关门专属选项');
+  cell.contentState = {};
+
+  // 商店（需身处该格）：显示进入商店选项
+  gs.player.loc = { kind: 'fence', row: cell.row, col: cell.col };
+  gs.player.x = null;
+  cell.contentId = 'resource_shop';
+  cell.contentState = {};
+  EventBus.emit(GE.FENCE_TILE_CLICKED, { fenceIdx: fi });
+  assert(hasText(infoPanel.root, '🏪 进入商店'), '生效小径格上的商店 → 显示「进入商店」专属选项');
+  cell.contentId = null;
+  cell.contentState = {};
+  gs.player.x = savedPlayer.x;
+  gs.player.loc = savedPlayer.loc;
 
   // ── C) 单位排版：角色与生物同网格，角色优先第一格 ──
   const savedCreatures = (cell.creatures || []).slice();

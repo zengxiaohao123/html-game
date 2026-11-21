@@ -307,6 +307,8 @@ placeFenceTerrain(gs, row, col, terrainId) // 栅栏内行/列号（0 起）→ 
 - **田块/设施/资源/技能：外圈 + 生效小径格**：`placeContent` 接受外圈 `tileIdx` 或栅栏 ref；栅栏 ref 仅当该格 `isPathOuter === true`（生效小径格）时可放，否则拒绝并提示「只能放在外圈地块或生效小径上」。`placeFenceTerrain` 只接受 `terrains.js` 里登记的地形 id，传入 `facility_*` / `skill_*` 一律按 `unknownTerrain` 拒绝。
 - **拖拽入口**：`MapView` 的 drop 用 `refOfXY` 统一解析目标（外圈优先，落到栅栏时得到 `{kind:'fence',row,col}`），再用 `isLegalStandRef` 判断是否可放；栅栏内地形拖拽由独立模块 `src/ui/FenceTerrainDrop.js` 在容器捕获阶段接管（只处理 `terrain_` 前缀并 `stopPropagation`），放置成功后调用 `mapView.renderFence(gs)` 局部重绘栅栏背景层。
 - **信息区**：`InfoPanel` 订阅 `GE.FENCE_TILE_UPDATED`，正在查看该栅栏格时重渲染「地块内容 / 状态」tab。
+- **扩建新格外圈池剔除小径（2026-11-21）**：`createOuterTile` 使用 `rollOuterSpawnTerrain()`（`OUTER_TERRAIN_SPAWN_WEIGHTS = TERRAIN_SPAWN_WEIGHTS 去掉 terrain_path`），新增外圈地块永不随机成小径；新增栅栏格仍走 `rollSpawnTerrain()`。根因：外圈生成池含小径时，连续扩建会在插入列／行的外圈格刷出小径，看起来像自动延续误写了外圈。已在生成源头收口，不做结果过滤。
+- **自动延续的坐标基准（2026-11-21）**：`MapExpandSystem` 每次扩建都用当时的 `mapDimsOf(gs)` / `fenceDimsOf(gs)` 重算 `oldFDims`，补格目标由「旧栅栏行列 + 本次插入位置」推导后用**新**尺寸的 `refOfXY` 解析；目标只可能落在栅栏格。连续快速扩建不会复用过期行列，`smoke-path` 8d 用极端随机抽样（必然落小径的 rand）回归 5 次连续扩建。
 - **统一放置对象（2026-11-21）**：三条入口（背包拖拽、快捷栏选中、背包「放置到地图」）统一支持 `facility_` / `resource_` / `skill_` / `terrain_` 前缀与放置型道具（`ItemTargeting.needsTarget`）。`InventoryPanel._isPlaceable` 纳入 `needsTarget`，背包拖拽起手同样以 `needsTarget` 进入指向；快捷栏 `_canSelectForBuild` 只放行上述类别，其余物品可放入并显示，建造模式点击仅提示「不可放置（仅显示）」。
 - **地形落到栅栏**：方法 2/3 的落点若是栅栏 ref 且为 `terrain_*`，`MapView._handleBuildPlaceAt` 走 `BuildSystem.placeFenceTerrain`（与拖拽入口的 `FenceTerrainDrop` 一致）；其余内容仍走 `placeContent`，按 `isLegalStandRef` 与【永恒】规则判定。
 - **验收**：`node tools/smoke-expand.mjs` 的 X2/X5（新栅栏格随机地形、初始格不回溯）与 X10（地形可放置、扣减、回满、越界拒绝、设施/技能不可）。
@@ -349,7 +351,9 @@ canHostEternalContent(gs, ref)             // 【永恒】内容禁止置于临�
 - **地图地形层**：`MapView._terrainLayer` 在无 PNG 贴图时追加居中 emoji（`data-terrain-emoji`），`_terrainColor('terrain_path')` 给 `#d9c7a0`；外圈与栅栏格共用同一层实现。
 - **信息区 tab 口径**：地形信息**只在「状态」tab** 展示，地块内容 tab 不再承载地形。
   - 有地块内容（外圈或生效小径格）：内容 tab 按统一 `_renderContentHead(contentId)` 渲染图标 + 名称 + 词条徽章 + 描述；外圈与栅栏格同口径。
-  - 无地块内容：外圈内容 tab 只保留基本功能选项（「前往」/「无法抵达」）；栅栏格**不生成**「地块内容」tab。
+  - 无地块内容：外圈内容 tab 只保留基本功能选项（「前往」/「无法抵达」）；**生效小径格同样生成该 tab**（哪怕没有内容，也必须给出「前往 / 无法抵达」）；普通栅栏格不生成。
+- **内容 tab 单一渲染路径（2026-11-21）**：`_renderContentTab(tile, gs, { afterHead })` 同时服务外圈与生效小径格，操作目标一律取 `this._contentRef`（外圈数字 idx / fence ref），因此商店、魔法商店、土豆田块、鸡舍、狩猎等专属功能选项在生效小径格上与外圈完全一致。栅栏格仅额外通过 `afterHead` 插入「物品堆」区块。
+- **ref 化的下游系统**：`harvestPotato` / `depositHenhouseFeed` / `setFacilityDoorOpen` / `enterShop` / `ShopPanel` 均接受 ref（数字或 fence ref）；`potatoTilesOf` 改由 `contentEntries(gs)` 取数，生效小径格上的田块参与薯道难共享池与产量统计；地块变化按 ref 类型分别广播 `TILE_UPDATED` 或 `FENCE_TILE_UPDATED(tileRef)`。
 - **单位排版**：角色卡与生物卡同规格、同网格容器（`_renderCreatureCards({playerFirst})`），角色优先占据第一格，不单独占一行。
 - **前往 / 无法抵达（统一功能选项）**：地形内容 tab 底部同一位置二选一渲染——可抵达时为 `前往（消耗行动力x）`（x 取真实消耗：`nextMoveNoStamina` 或载具 `freeStamina` → 0，否则 1；不再拼接载具名称）；不可抵达时为 `disabled` 的红色按钮 `无法抵达`。可达性判定完全沿用原逻辑（无载具相邻格 / 载具 `VehicleSystem.canVehicleReach`），外圈与生效小径格共用同一形态。
 - **验收**：`tools/smoke-ui.mjs`「小径修复：栅栏内容 tab / 地形只在状态 tab / 单位同格排版」。

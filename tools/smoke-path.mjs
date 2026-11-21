@@ -12,6 +12,11 @@ import { createInitialState } from '../src/state/gameState.js';
 import { registerFacilities } from '../src/data/facilities.js';
 import { expandMapInPlace, EXPAND_AXIS } from '../src/systems/MapExpandSystem.js';
 import { recomputePathEffect, initPathOnLoad } from '../src/systems/PathSystem.js';
+import { harvestPotato, potatoStoredOf } from '../src/systems/PotatoSystem.js';
+import { setFacilityDoorOpen } from '../src/systems/CreatureSystem.js';
+import { enterShop, leaveShop } from '../src/systems/ShopSystem.js';
+import { InventorySystem } from '../src/systems/InventorySystem.js';
+import { rollSpawnTerrain } from '../src/data/terrains.js';
 import { computePathComponents } from '../src/core/PathGraph.js';
 import { capacityExtra } from '../src/systems/CapacitySystem.js';
 import { MovementSystem } from '../src/systems/MovementSystem.js';
@@ -286,6 +291,78 @@ console.log('\n═══ 8c. 原外圈小径不触发自动延续 ═══');
   check(!!out.ok, '扩建成功');
   check(Array.isArray(out.continued) && out.continued.length === 0,
     `原外圈小径不启用自动延续（实际补 ${out.continued?.length} 格）`);
+}
+
+console.log('\n═══ 8d. 连续快速扩建：外圈地块不会随机成小径 ═══');
+{
+  const gs = makeGS();
+  paint(gs, [[1, 0], [1, 1], [1, 2]]);
+  recomputePathEffect(gs);
+
+  const prevRandom = Math.random;
+  // 极端抽样：旧随机池下（含小径权重 5）这个值必然落到 terrain_path
+  Math.random = () => 0.999;
+  let carriedBroken = 0;
+  let addedPath = 0;
+  let badContinued = 0;
+  const seq = [EXPAND_AXIS.LENGTH, EXPAND_AXIS.LENGTH, EXPAND_AXIS.WIDTH, EXPAND_AXIS.LENGTH, EXPAND_AXIS.WIDTH];
+  for (const axis of seq) {
+    const before = gs.map.outerTiles.map((t) => ({ idx: t.idx, terrain: t.terrain }));
+    const out = expandMapInPlace(gs, axis);
+    if (!out.ok) { carriedBroken++; continue; }
+    // 1) 搬运过来的外圈地块地形必须原样保留
+    for (const o of before) {
+      const ni = out.idxMap.get(o.idx);
+      if (ni === undefined) continue;
+      if (gs.map.outerTiles[ni]?.terrain !== o.terrain) carriedBroken++;
+    }
+    // 2) 新增外圈地块不得随机成小径（生成池在源头剔除）
+    for (const i of out.remap.addedOuterIdx) {
+      if (gs.map.outerTiles[i]?.terrain === PATH) addedPath++;
+    }
+    // 3) 自动延续只能落在栅栏内（原本属于栅栏、因连通被视为外圈的格子）
+    for (const r of out.continued || []) {
+      if (!r || r.kind !== 'fence') badContinued++;
+    }
+    recomputePathEffect(gs);
+  }
+  check(carriedBroken === 0, '连续扩建后搬运的外圈地块地形均未被改写');
+  check(addedPath === 0, '连续扩建新增的外圈地块不会随机成小径');
+  check(badContinued === 0, '自动延续只落在栅栏内格，从不触碰外圈地块');
+  check(rollSpawnTerrain(() => 0.999) === PATH, '栅栏内新格仍保留「随机出小径」的生成可能性');
+  Math.random = prevRandom;
+}
+
+console.log('\n═══ 8e. 生效小径格上的专属功能（ref 级） ═══');
+{
+  const gs = makeGS();
+  paint(gs, [[1, 0], [1, 1], [1, 2]]);
+  recomputePathEffect(gs);
+  const pathRef = fenceRef(1, 1);
+  const cell = getTile(gs, pathRef);
+
+  // 土豆田块：按 fence ref 收获
+  cell.contentId = 'facility_potato';
+  cell.contentState = { potatoStored: 5 };
+  const potatoBefore = InventorySystem.countItem(gs, 'item_potato');
+  const r = harvestPotato(gs, pathRef, 3);
+  check(r.actual === 3 && r.touched.length === 1, '生效小径格上的土豆田块按 ref 正常结算');
+  check(potatoStoredOf(getTile(gs, pathRef)) === 2, '生效小径格上的土豆库存正确扣减');
+  check(InventorySystem.countItem(gs, 'item_potato') === potatoBefore + 3, '收获土豆进入背包');
+
+  // 鸡舍：按 fence ref 开门 / 关门
+  cell.contentId = 'facility_henhouse';
+  cell.contentState = {};
+  const door = setFacilityDoorOpen(gs, pathRef, false);
+  check(door.ok && getTile(gs, pathRef).contentState.doorOpen === false, '生效小径格上的鸡舍按 ref 关门');
+
+  // 商店：按 fence ref 进入 / 离开
+  cell.contentId = 'resource_shop';
+  cell.contentState = {};
+  setPlayerRef(gs, pathRef);
+  const enter = enterShop(gs, pathRef);
+  check(enter.ok === true, '生效小径格上的商店按 ref 可进入');
+  leaveShop(gs, pathRef);
 }
 
 console.log('\n═══ 9. 存档往返 ═══');

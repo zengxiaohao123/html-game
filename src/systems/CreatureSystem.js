@@ -140,6 +140,21 @@ export function facilityOwnedCreatures(gs, refOrIdx, { aliveOnly = true } = {}) 
   });
 }
 
+/** 设施地块变化通知：外圈 idx → TILE_UPDATED；栅栏生效格 → FENCE_TILE_UPDATED */
+function emitFacilityTileChanged(gs, tileRef) {
+  if (typeof tileRef === 'number') {
+    EventBus.emit(GE.TILE_UPDATED, { tileIdx: tileRef });
+    return;
+  }
+  if (isFenceRef(tileRef)) {
+    const dims = fenceDimsOf(gs);
+    EventBus.emit(GE.FENCE_TILE_UPDATED, {
+      fenceIdx: tileRef.row * dims.cols + tileRef.col,
+      tileRef,
+    });
+  }
+}
+
 /** 解析扩建事件里的「旧索引 → 新索引」映射（优先用扩建系统提供的 API，缺失时按同一套搬运规则推导） */
 function resolveExpandIdxMap(payload) {
   const raw = payload?.idxMap;
@@ -1056,18 +1071,18 @@ function releaseCreatureFromHouse(gs, creature) {
  * 设置门禁设施开/关门状态，并把该设施归属的全部生物收纳 / 放回栅栏。
  * 不消耗行动力、不占回合（设计文档未规定消耗）。
  * @param {object} gs
- * @param {number} tileIdx 设施所在外圈格 idx
+ * @param {number|object} tileRef 设施所在格 ref（外圈 idx / 栅栏生效格 ref）
  * @param {boolean} open true=开门，false=关门
  * @returns {{ok:boolean, open?:boolean, count?:number, reason?:string}}
  */
-export function setFacilityDoorOpen(gs, tileIdx, open) {
-  const tile = gs?.map?.outerTiles?.[tileIdx];
+export function setFacilityDoorOpen(gs, tileRef, open) {
+  const tile = getTile(gs, tileRef);
   if (!tile) return { ok: false, reason: 'noTile' };
   if (!DOOR_FACILITIES.has(tile.contentId)) return { ok: false, reason: 'notDoorFacility' };
   const next = !!open;
   if (!tile.contentState) tile.contentState = {};
   const wasOpen = tile.contentState.doorOpen !== false;
-  const owned = facilityOwnedCreatures(gs, tileIdx);
+  const owned = facilityOwnedCreatures(gs, tileRef);
   // 门本来就开着再点开门：不重复搬运生物
   if (next && wasOpen) return { ok: true, open: true, count: owned.length };
   for (const c of owned) {
@@ -1075,7 +1090,7 @@ export function setFacilityDoorOpen(gs, tileIdx, open) {
     else putCreatureIntoHouse(gs, c);
   }
   tile.contentState.doorOpen = next;
-  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+  emitFacilityTileChanged(gs, tileRef);
   return { ok: true, open: next, count: owned.length };
 }
 
@@ -1574,8 +1589,8 @@ function updateCapacityAndPunish(gs) {
  * 2026-11-04 裁决③：真实 UI 入口已接入 InfoPanel 鸡舍功能选项「投放饲料」，与取回逻辑对称。
  * @returns {{ ok: boolean, reason?: string, deposited?: number }}
  */
-export function depositHenhouseFeed(gs, tileIdx, itemId, qty = 1) {
-  const tile = gs.map.outerTiles[tileIdx];
+export function depositHenhouseFeed(gs, tileRef, itemId, qty = 1) {
+  const tile = getTile(gs, tileRef);
   if (!tile || tile.contentId !== 'facility_henhouse') return { ok: false, reason: 'notHenhouse' };
   if (itemId !== 'item_rice_straw' && itemId !== 'item_wheat') return { ok: false, reason: 'notFeed' };
   const n = Math.min(qty, InventorySystem.countItem(gs, itemId));
@@ -1584,8 +1599,8 @@ export function depositHenhouseFeed(gs, tileIdx, itemId, qty = 1) {
   tile.contentState = tile.contentState || {};
   const store = tile.contentState.henhouseFeed || (tile.contentState.henhouseFeed = {});
   store[itemId] = (store[itemId] || 0) + n;
-  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
-  devLog.info('[CreatureSystem] depositHenhouseFeed', itemId, 'x', n, '→ tile', tileIdx);
+  emitFacilityTileChanged(gs, tileRef);
+  devLog.info('[CreatureSystem] depositHenhouseFeed', itemId, 'x', n, '→', JSON.stringify(tileRef));
   return { ok: true, deposited: n };
 }
 

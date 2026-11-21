@@ -48,7 +48,7 @@ import { POTIONS } from '../data/potions.js';
 import { getBuff } from '../data/buffs.js';
 import { ITEMS, GLOSSARY } from '../data/items.js';
 import { getTerrain, normalizeTerrain } from '../data/terrains.js';
-import { playerRef, refsEqual, refXY } from '../core/TileAccess.js';
+import { playerRef, refsEqual, refXY, getTile } from '../core/TileAccess.js';
 import { createEl, qs, iconEl } from './dom.js';
 import { renderTraitBadges, renderStateBadges } from './TraitBadges.js';
 import { renderTermText } from './TermText.js';
@@ -255,6 +255,7 @@ export class InfoPanel {
   _hideSelf(notify) {
     this.currentTileIdx = null;
     this.currentFenceIdx = null;
+    this._contentRef = null;
     this.mode = 'tile';
     this.creatureDetailId = null;
     this.slideOut();
@@ -287,8 +288,9 @@ export class InfoPanel {
     } else if (this.mode === 'fence') {
       const cell = gs?.map?.fence?.[this.currentFenceIdx];
       if (cell) {
-        // 地块内容 tab 只在该格确有地块内容时出现（地形信息只在状态 tab）
-        if (cell.contentId) tabs.push({ label: '地块内容', render: 'fenceContent' });
+        // 地块内容 tab：有地块内容时出现；生效小径格（临时外圈）始终出现（至少含「前往/无法抵达」）
+        // 地形信息只在状态 tab
+        if (cell.contentId || cell.isPathOuter === true) tabs.push({ label: '地块内容', render: 'fenceContent' });
         if (this._fenceHasState(cell)) tabs.push({ label: '状态', render: 'fenceState' });
         // v0.6：生效小径格是临时外圈，玩家可站上去；生物按既有栅栏格归属
         const dims = Distance.fenceDimsOf(gs);
@@ -390,6 +392,13 @@ export class InfoPanel {
         this._hideSelf(true);
         return;
       }
+      // 栅栏格 ref（生效小径格 = 临时外圈，功能选项按同一套 ref 逻辑工作）
+      const fdims = Distance.fenceDimsOf(gs);
+      this._contentRef = {
+        kind: 'fence',
+        row: Math.floor(this.currentFenceIdx / fdims.cols),
+        col: this.currentFenceIdx % fdims.cols,
+      };
       const tabs = this._currentTabs || [];
       const active = tabs[this.activeTabIdx];
       if (!active) { this.activeTabIdx = 0; this._rebuildTabs(); return this._renderBody(); }
@@ -407,6 +416,7 @@ export class InfoPanel {
       this._hideSelf(true);
       return;
     }
+    this._contentRef = this.currentTileIdx;
 
     const tabs = this._currentTabs || [];
     const active = tabs[this.activeTabIdx];
@@ -473,11 +483,23 @@ export class InfoPanel {
     }
   }
 
-  _renderContentTab(tile, gs) {
+  /**
+   * 地块内容 tab（外圈地块 / 栅栏内生效小径格共用）。
+   * ref 统一走 this._contentRef：外圈 = 数字 idx，栅栏生效格 = fence ref，
+   * 因此同一套「专属功能选项 + 前往/无法抵达」对两类地块都成立。
+   * @param {object} tile 当前地块对象（外圈地块或栅栏格）
+   * @param {object} gs
+   * @param {{ afterHead?: Function }} [opts] afterHead：头部渲染后的插入点（栅栏格用于插入物品堆）
+   */
+  _renderContentTab(tile, gs, opts = {}) {
     const contentId = tile.contentId;
+    const ref = this._contentRef;
+    // 实时读取当前地块（操作后状态可能已被系统替换/重建）
+    const readTile = () => getTile(gs, ref) || tile;
     // 有地块内容：标题行（图标 + 名字）+ 词条徽章 + 描述。
     // 无地块内容：不渲染地形（地形只在「状态」tab），只保留下方「前往 / 无法抵达」基本功能选项。
     if (contentId) this._renderContentHead(contentId);
+    if (opts.afterHead) opts.afterHead();
 
     // 设施类地块 —— 功能选项区（§16.4：区分"身处该格"vs"随时可点"）
     // L-04：只有"存在额外功能选项"的设施才渲染功能区；无选项设施（麦田/水稻/玉米/卷心菜/
@@ -488,8 +510,7 @@ export class InfoPanel {
       'facility_henhouse', 'facility_slimehouse',
     ]);
     if (contentId && FACILITIES_WITH_OPTIONS.has(contentId)) {
-      const tileIdx = this.currentTileIdx;
-      const onTile = refsEqual(playerRef(gs), tile.idx); // 玩家是否身处该格
+      const onTile = refsEqual(playerRef(gs), ref); // 玩家是否身处该格（含生效小径格）
       // L-04：功能选项区仅在「身处该格」或「该设施存在随时可用的选项」时渲染。
       //   郁金香/蒲公英/幽怜草（随时采摘）、鸡舍/史莱姆屋（随时开关门）属于后者；
       //   土豆/草莓/豌豆只有身处该格才有可操作选项 → 不在该格时整块不显示。
@@ -543,7 +564,7 @@ export class InfoPanel {
             onclick: () => {
               const qty = parseInt(range.value, 10) || 0;
               if (qty <= 0) return;
-              const { actual } = harvestPotato(gs, tileIdx, qty);
+              const { actual } = harvestPotato(gs, ref, qty);
               if (actual <= 0) return;
               EventBus.emit(GE.TOAST_SHOW, { text: `🥔 收获 +${actual} 土豆`, duration: 1800 });
               this._renderBody();
@@ -569,7 +590,7 @@ export class InfoPanel {
             disabled: !full,
             parent: this.bodyWrap,
             onclick: () => {
-              const curTile = gs.map.outerTiles[tileIdx];
+              const curTile = readTile();
               const cs = curTile.contentState || (curTile.contentState = {});
               const qty = cs.strawberryStored || 0;
               if (qty <= 0) return;
@@ -577,7 +598,7 @@ export class InfoPanel {
               cs.strawberryStored = 0;
               syncPumpkin(gs); // A-12
               EventBus.emit(GE.INVENTORY_CHANGE);
-              EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+              this._notifyTileChanged(ref);
               EventBus.emit(GE.TOAST_SHOW, { text: `🍓 收获 +${qty} 草莓`, duration: 1800 });
               this._renderBody();
             },
@@ -612,14 +633,14 @@ export class InfoPanel {
             onclick: () => {
               const qty = parseInt(range.value, 10) || 0;
               if (qty <= 0) return;
-              const curTile = gs.map.outerTiles[tileIdx];
+              const curTile = readTile();
               const cs = curTile.contentState || (curTile.contentState = {});
               const actually = Math.min(qty, cs.peaStored || 0);
               InventorySystem.addItem(gs, 'item_pea', actually);
               cs.peaStored = (cs.peaStored || 0) - actually;
               syncPumpkin(gs); // A-12
               EventBus.emit(GE.INVENTORY_CHANGE);
-              EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+              this._notifyTileChanged(ref);
               EventBus.emit(GE.TOAST_SHOW, { text: `🫛 收获 +${actually} 豌豆`, duration: 1800 });
               this._renderBody();
             },
@@ -670,7 +691,7 @@ export class InfoPanel {
             text: `🌷 采摘（获得 1 × 郁金香）`,
             parent: this.bodyWrap,
             onclick: () => {
-              const curTile = gs.map.outerTiles[tileIdx];
+              const curTile = readTile();
               pickTulip(gs, curTile);
               this._renderBody();
             },
@@ -692,13 +713,13 @@ export class InfoPanel {
             text: '🌼 采摘（获得 1 × 蒲公英）',
             parent: this.bodyWrap,
             onclick: () => {
-              const curTile = gs.map.outerTiles[tileIdx];
+              const curTile = readTile();
               const cur = Math.max(0, curTile.contentState?.dandelionValue || 1);
               InventorySystem.addItem(gs, 'item_dandelion', 1, { value: cur });
               curTile.contentId = null;
               curTile.contentState = {};
               syncPumpkin(gs); // A-12：储存作物数 -1
-              EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+              this._notifyTileChanged(ref);
               EventBus.emit(GE.INVENTORY_CHANGE);
               EventBus.emit(GE.TOAST_SHOW, { text: `🌼 采摘成功！获得价值 ${cur} 的蒲公英`, duration: 2000 });
               this._renderBody();
@@ -721,13 +742,13 @@ export class InfoPanel {
             text: '🌙 采摘（获得 1 × 幽怜草）',
             parent: this.bodyWrap,
             onclick: () => {
-              const curTile = gs.map.outerTiles[tileIdx];
+              const curTile = readTile();
               const cur = Math.max(0, curTile.contentState?.ghostValue || 12);
               InventorySystem.addItem(gs, 'item_ghost_grass', 1, { value: cur });
               curTile.contentId = null;
               curTile.contentState = {};
               syncPumpkin(gs); // A-12：储存作物数 -1
-              EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+              this._notifyTileChanged(ref);
               EventBus.emit(GE.INVENTORY_CHANGE);
               EventBus.emit(GE.TOAST_SHOW, { text: `🌙 采摘成功！获得价值 ${cur} 的幽怜草`, duration: 2000 });
               this._renderBody();
@@ -769,13 +790,13 @@ export class InfoPanel {
               onclick: () => {
                 const qty = parseInt(range.value, 10) || 0;
                 if (qty <= 0) return;
-                const curTile = gs.map.outerTiles[tileIdx];
+                const curTile = readTile();
                 const cs = curTile.contentState || (curTile.contentState = {});
                 const actually = Math.min(qty, cs.eggStored || 0);
                 InventorySystem.addItem(gs, 'item_egg', actually);
                 cs.eggStored = (cs.eggStored || 0) - actually;
                 EventBus.emit(GE.INVENTORY_CHANGE);
-                EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+                this._notifyTileChanged(ref);
                 EventBus.emit(GE.TOAST_SHOW, { text: `🥚 收获 +${actually} 鸡蛋`, duration: 1800 });
                 this._renderBody();
               },
@@ -799,13 +820,13 @@ export class InfoPanel {
                 onclick: () => {
                   const qty = parseInt(rangeG.value, 10) || 0;
                   if (qty <= 0) return;
-                  const curTile = gs.map.outerTiles[tileIdx];
+                  const curTile = readTile();
                   const cs = curTile.contentState || (curTile.contentState = {});
                   const actually = Math.min(qty, cs.eggStoredGolden || 0);
                   InventorySystem.addItem(gs, 'item_golden_egg', actually);
                   cs.eggStoredGolden = (cs.eggStoredGolden || 0) - actually;
                   EventBus.emit(GE.INVENTORY_CHANGE);
-                  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+                  this._notifyTileChanged(ref);
                   EventBus.emit(GE.TOAST_SHOW, { text: `⭐ 收获 +${actually} 优质蛋`, duration: 1800 });
                   this._renderBody();
                 },
@@ -846,7 +867,7 @@ export class InfoPanel {
                 onclick: () => {
                   const qty = parseInt(feedRange.value, 10) || 0;
                   if (qty <= 0) return;
-                  const r = depositHenhouseFeed(gs, tileIdx, itemId, qty);
+                  const r = depositHenhouseFeed(gs, ref, itemId, qty);
                   if (!r.ok) {
                     EventBus.emit(GE.TOAST_SHOW, { text: '🌾 背包中没有可投放的饲料', duration: 1500 });
                     return;
@@ -892,7 +913,7 @@ export class InfoPanel {
         parent: this.bodyWrap,
       });
 
-      const onTile = refsEqual(playerRef(gs), tile.idx);
+      const onTile = refsEqual(playerRef(gs), ref);
 
       // 🏹 狩猎点（RES-003）：选择狩猎普通 / 危险生物，每日限一次，需身处该格
       if (contentId === 'resource_hunt') {
@@ -924,13 +945,12 @@ export class InfoPanel {
             disabled: !onTile,
             parent: this.bodyWrap,
             onclick: () => {
-              const curIdx = this.currentTileIdx;
-              const r = huntCreature(gs, curIdx, option);
+              const r = huntCreature(gs, ref, option);
               if (!r.ok) {
                 EventBus.emit(GE.TOAST_SHOW, { text: '🏹 现在无法狩猎', duration: 1500 });
                 return;
               }
-              EventBus.emit(GE.TILE_UPDATED, { tileIdx: curIdx });
+              this._notifyTileChanged(ref);
               this._renderBody();
             },
           });
@@ -1016,13 +1036,17 @@ export class InfoPanel {
 
       if (contentId === 'resource_shop') {
         // L-04 / §11.1：入口仅限踩在【商店】地块上，其他位置不可进入
-        if (refsEqual(playerRef(gs), tile.idx)) {
+        if (refsEqual(playerRef(gs), ref)) {
           createEl('button', {
             class: 'action-btn',
             style: { width: '100%', fontSize: '14px' },
             text: '🏪 进入商店',
             parent: this.bodyWrap,
-            onclick: () => EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'shop', tileIdx: tile.idx }),
+            onclick: () => EventBus.emit(GE.UI_PANEL_OPEN, {
+              panel: 'shop',
+              tileIdx: typeof ref === 'number' ? ref : null,
+              tileRef: ref,
+            }),
           });
         } else {
           createEl('div', {
@@ -1033,13 +1057,17 @@ export class InfoPanel {
         }
       } else if (contentId === 'resource_magic_shop') {
         // §11.2：魔法商店同样仅能踩格进入
-        if (refsEqual(playerRef(gs), tile.idx)) {
+        if (refsEqual(playerRef(gs), ref)) {
           createEl('button', {
             class: 'action-btn',
             style: { width: '100%', fontSize: '14px' },
             text: '🔮 进入魔法商店',
             parent: this.bodyWrap,
-            onclick: () => EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'magicShop', tileIdx: tile.idx }),
+            onclick: () => EventBus.emit(GE.UI_PANEL_OPEN, {
+              panel: 'magicShop',
+              tileIdx: typeof ref === 'number' ? ref : null,
+              tileRef: ref,
+            }),
           });
         } else {
           createEl('div', {
@@ -1057,7 +1085,8 @@ export class InfoPanel {
     }
 
     // ── "前往"功能选项（统一形态：前往（消耗行动力x） / 无法抵达，二者互斥） ──
-    if (gs && !refsEqual(playerRef(gs), tile.idx)) {
+    // ref 兼容外圈 idx 与栅栏生效格 ref（生效小径格 = 临时外圈，可直接前往）
+    if (gs && !refsEqual(playerRef(gs), ref)) {
       const hasVehicle = !!(gs.vehicle?.current);
       let canGo = false;
       let reachInfo = null;  // { pattern, maxRange, freeStamina, ... }
@@ -1065,12 +1094,12 @@ export class InfoPanel {
       if (!hasVehicle) {
         // 无载具：只允许相邻格（玩家可能在生效小径格上，统一按网格坐标判定）
         const me = refXY(gs, playerRef(gs));
-        const tg = refXY(gs, tile.idx);
+        const tg = refXY(gs, ref);
         const isAdj = !!me && !!tg && Math.abs(tg.x - me.x) + Math.abs(tg.y - me.y) === 1;
         canGo = isAdj;
       } else {
         // 有载具：按载具 movePattern 判断可达性（判断规则不变）
-        const reach = VehicleSystem.canVehicleReach(gs, tile.idx);
+        const reach = VehicleSystem.canVehicleReach(gs, ref);
         if (reach.ok) {
           canGo = true;
           reachInfo = reach.def;
@@ -1092,7 +1121,7 @@ export class InfoPanel {
             if (!hasVehicle) {
               // 无载具：普通 1 步相邻移动（保持原逻辑）
               const { x: px, y: py } = refXY(gs, playerRef(gs));
-              const { x: tx, y: ty } = refXY(gs, tile.idx);
+              const { x: tx, y: ty } = refXY(gs, ref);
               let dir = null;
               if (tx > px) dir = 'right';
               else if (tx < px) dir = 'left';
@@ -1106,7 +1135,7 @@ export class InfoPanel {
               if (pattern === 'directional') {
                 // 轮子：算出方向，走 tryMove({ type:'direction', direction })
                 const { x: px, y: py } = refXY(gs, playerRef(gs));
-                const { x: tx, y: ty } = refXY(gs, tile.idx);
+                const { x: tx, y: ty } = refXY(gs, ref);
                 let dir = null;
                 if (tx > px) dir = 'right';
                 else if (tx < px) dir = 'left';
@@ -1114,8 +1143,8 @@ export class InfoPanel {
                 else if (ty < py) dir = 'up';
                 result = VehicleSystem.tryMove(gs, { type: 'direction', direction: dir });
               } else {
-                // 扫帚 / 巧遇：指定目标格
-                result = VehicleSystem.tryMove(gs, { type: 'target', targetIdx: tile.idx });
+                // 扫帚 / 巧遇：指定目标格（targetRef 同时支持外圈 idx 与 fence ref）
+                result = VehicleSystem.tryMove(gs, { type: 'target', targetRef: ref });
               }
               if (!result.ok) {
                 EventBus.emit(GE.TOAST_SHOW, {
@@ -1157,6 +1186,18 @@ export class InfoPanel {
 
     // §16.4：功能选项 / 操作按钮统一放进固定操作区（滚动区之外），常驻可见不随正文滚动
     this._promoteActionButtons();
+  }
+
+  /** 地块变化通知：外圈 → TILE_UPDATED(tileIdx)；栅栏生效格 → FENCE_TILE_UPDATED(fenceIdx + tileRef) */
+  _notifyTileChanged(ref) {
+    if (typeof ref === 'number') {
+      EventBus.emit(GE.TILE_UPDATED, { tileIdx: ref });
+      return;
+    }
+    const gs = this._getGS();
+    const dims = gs ? Distance.fenceDimsOf(gs) : null;
+    const fenceIdx = dims && ref ? ref.row * dims.cols + ref.col : null;
+    EventBus.emit(GE.FENCE_TILE_UPDATED, { fenceIdx, tileRef: ref });
   }
 
   /**
@@ -1448,8 +1489,8 @@ export class InfoPanel {
    * 关门把归属生物收进设施（不可见、不移动，仍占容量、仍可在「单位」查看）；
    * 开门把归属生物随机放回栅栏内合法位置。野生生物（sourceTileIdx 为空）不受影响。
    */
-  _renderDoorControl(tile, gs, { name }) {
-    const owned = facilityOwnedCreatures(gs, tile.idx);
+  _renderDoorControl(tile, gs, { name, ref = this._contentRef }) {
+    const owned = facilityOwnedCreatures(gs, ref);
     const doorOpen = (tile.contentState || {}).doorOpen !== false;
     createEl('div', {
       style: { fontSize: '12px', color: '#666', margin: '2px 0 6px' },
@@ -1464,7 +1505,7 @@ export class InfoPanel {
       text: doorOpen ? `🚪 关门（${name}生物回到屋内）` : `🚪 开门（${name}生物放回栅栏）`,
       parent: this.bodyWrap,
       onclick: () => {
-        const r = setFacilityDoorOpen(gs, tile.idx, !doorOpen);
+        const r = setFacilityDoorOpen(gs, ref, !doorOpen);
         if (!r.ok) return;
         EventBus.emit(GE.TOAST_SHOW, {
           text: r.open
@@ -1554,15 +1595,16 @@ export class InfoPanel {
   }
 
   // ════════════════════════════════════════════════════════════
-  // 栅栏内地块 —— 地块内容 tab（仅当该格有地块内容；地形只在状态 tab）
+  // 栅栏内地块 —— 地块内容 tab（与外圈同一口径；生效小径格始终有该 tab）
   // ════════════════════════════════════════════════════════════
   _renderFenceContentTab(cell, gs) {
-    if (!cell.contentId) return;
+    // 头部 / 专属功能选项 / 前往-无法抵达 全部复用外圈实现（ref 由 this._contentRef 提供），
+    // 无地块内容的生效小径格也能得到「前往 / 无法抵达」。
+    this._renderContentTab(cell, gs, { afterHead: () => this._renderFenceItems(cell, gs) });
+  }
 
-    // 与外圈地块同一口径：图标 + 名字 + 词条徽章 + 描述
-    this._renderContentHead(cell.contentId);
-
-    // items
+  /** 栅栏格上的物品堆（外圈没有该区块） */
+  _renderFenceItems(cell, gs) {
     if (cell.items && cell.items.length > 0) {
       createEl('div', {
         style: { marginTop: '8px', fontSize: '14px', fontWeight: '700', color: '#3a2e20', marginBottom: '6px' },
@@ -1585,92 +1627,6 @@ export class InfoPanel {
         createEl('span', { text: `${name} ×${qty}`, parent: row });
       }
     }
-
-    if (cell.isPathOuter) this._renderFenceGoButton(gs);
-  }
-
-  /**
-   * 生效小径格按「外圈地块」对待：提供「前往」。
-   * 无载具仅相邻可走；有载具沿用 VehicleSystem 的可达判定与目标式移动。
-   */
-  _renderFenceGoButton(gs) {
-    const dims = Distance.fenceDimsOf(gs);
-    const fenceRef = {
-      kind: 'fence',
-      row: Math.floor(this.currentFenceIdx / dims.cols),
-      col: this.currentFenceIdx % dims.cols,
-    };
-    if (refsEqual(playerRef(gs), fenceRef)) return;
-
-    const hasVehicle = !!(gs.vehicle?.current);
-    const me = refXY(gs, playerRef(gs));
-    const target = refXY(gs, fenceRef);
-    if (!me || !target) return;
-
-    const dx = target.x - me.x;
-    const dy = target.y - me.y;
-    const isAdj = Math.abs(dx) + Math.abs(dy) === 1;
-
-    let canGo = false;
-    let reach = null;
-    if (hasVehicle) {
-      reach = VehicleSystem.canVehicleReach(gs, fenceRef);
-      canGo = reach.ok;
-    } else {
-      canGo = isAdj;
-    }
-
-    if (!canGo) {
-      // 不可前往：同一个功能选项位置，改为不可点击的红色「无法抵达」（与「前往」互斥）
-      createEl('button', {
-        class: 'action-btn',
-        style: {
-          width: '100%', fontSize: '14px', marginTop: '10px',
-          background: '#d9534f', color: '#fff',
-          border: '1px solid #c9302c', cursor: 'not-allowed',
-        },
-        text: '无法抵达',
-        attrs: { disabled: 'disabled' },
-        parent: this.bodyWrap,
-      });
-      return;
-    }
-
-    // 真实行动力消耗：芋圆免消耗 / 载具 freeStamina → 0，否则徒步与载具均为 1
-    const staminaCost = (gs.player.nextMoveNoStamina || (hasVehicle && reach?.def?.freeStamina)) ? 0 : 1;
-
-    createEl('button', {
-      class: 'action-btn',
-      style: { width: '100%', fontSize: '14px', background: '#fff0c0', marginTop: '10px' },
-      text: `前往（消耗行动力${staminaCost}）`,
-      parent: this.bodyWrap,
-      onclick: () => {
-        const director = window.__gameDirector;
-        if (!director) return;
-        if (!hasVehicle) {
-          let dir = null;
-          if (dx > 0) dir = 'right';
-          else if (dx < 0) dir = 'left';
-          else if (dy > 0) dir = 'down';
-          else if (dy < 0) dir = 'up';
-          if (dir) director.move(dir);
-          return;
-        }
-        const pattern = reach?.def?.movePattern;
-        const result = pattern === 'directional'
-          ? VehicleSystem.tryMove(gs, {
-            type: 'direction',
-            direction: dx > 0 ? 'right' : dx < 0 ? 'left' : dy > 0 ? 'down' : 'up',
-          })
-          : VehicleSystem.tryMove(gs, { type: 'target', targetRef: fenceRef });
-        if (!result.ok) {
-          EventBus.emit(GE.TOAST_SHOW, {
-            text: `🚗 载具移动失败：${result.reason || '未知原因'}`,
-            duration: 1500,
-          });
-        }
-      },
-    });
   }
 
   // ════════════════════════════════════════════════════════════

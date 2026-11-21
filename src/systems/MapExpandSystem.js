@@ -38,7 +38,7 @@ import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { FENCE_ORIGIN_X, FENCE_ORIGIN_Y } from '../core/Geometry.js';
-import { rollSpawnTerrain, getTerrain } from '../data/terrains.js';
+import { rollSpawnTerrain, rollOuterSpawnTerrain, getTerrain } from '../data/terrains.js';
 import { outerIdxToXY, mapDimsOf } from '../core/Distance.js';
 import { computePathComponents } from '../core/PathGraph.js';
 import { recomputePathEffect } from './PathSystem.js';
@@ -72,9 +72,9 @@ export function getLastExpandRemap() {
   return lastExpandRemap;
 }
 
-/** 新外圈地块（与 createInitialState 的地块 schema 一致） */
+/** 新外圈地块（与 createInitialState 的地块 schema 一致；外圈生成池不含小径） */
 function createOuterTile(idx) {
-  const terrainId = rollSpawnTerrain();
+  const terrainId = rollOuterSpawnTerrain();
   return {
     idx,
     terrain: terrainId,

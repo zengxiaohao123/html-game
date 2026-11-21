@@ -12,6 +12,8 @@ import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { InventorySystem } from './InventorySystem.js';
 import { hasGrimoire, syncPumpkin } from './PassiveItemSystem.js';
+import { contentEntries, getTile, isFenceRef } from '../core/TileAccess.js';
+import { fenceDimsOf } from '../core/Distance.js';
 
 export const POTATO_ID = 'facility_potato';
 export const POTATO_BASE_CAP = 30;
@@ -23,7 +25,21 @@ export const GRIMOIRE_POTATO_HARDSHIP = 'grimoire_potato_hardship';
 export const GRIMOIRE_POTATO_MINE = 'grimoire_potato_mine';
 export const GRIMOIRE_FRIES_QUARTET = 'grimoire_fries_quartet';
 
-const potatoTilesOf = (gs) => (gs?.map?.outerTiles || []).filter((t) => t?.contentId === POTATO_ID);
+/** 场上全部土豆田块（含放在生效小径格上的——生效小径格按外圈地块对待） */
+const potatoEntriesOf = (gs) => contentEntries(gs).filter((e) => e.tile?.contentId === POTATO_ID);
+const potatoTilesOf = (gs) => potatoEntriesOf(gs).map((e) => e.tile);
+
+/** 地块变化通知：外圈 idx → TILE_UPDATED；栅栏生效格 → FENCE_TILE_UPDATED */
+function emitPotatoTileChanged(gs, ref) {
+  if (typeof ref === 'number') {
+    EventBus.emit(GE.TILE_UPDATED, { tileIdx: ref });
+    return;
+  }
+  if (isFenceRef(ref)) {
+    const dims = fenceDimsOf(gs);
+    EventBus.emit(GE.FENCE_TILE_UPDATED, { fenceIdx: ref.row * dims.cols + ref.col, tileRef: ref });
+  }
+}
 
 /** 场上土豆田块数量 */
 export function countPotatoTiles(gs) {
@@ -81,11 +97,11 @@ export function addPotatoStored(gs, tile, amount) {
 /**
  * 收获土豆：薯道难时从所有田块依次扣减，否则只扣当前块。
  * @param {object} gs
- * @param {number} tileIdx 玩家所在的土豆田块
+ * @param {number|object} tileRef 玩家所在的土豆田块（外圈 idx / 栅栏生效格 ref）
  * @param {number} qty 期望收获数量
- * @returns {{ actual: number, touched: number[] }}
+ * @returns {{ actual: number, touched: (number|object)[] }}
  */
-export function harvestPotato(gs, tileIdx, qty) {
+export function harvestPotato(gs, tileRef, qty) {
   const num = Math.max(0, Math.floor(Number(qty) || 0));
   if (num <= 0) return { actual: 0, touched: [] };
 
@@ -93,26 +109,26 @@ export function harvestPotato(gs, tileIdx, qty) {
   let actual = 0;
   if (hasPotatoHardship(gs)) {
     let left = num;
-    for (const t of potatoTilesOf(gs)) {
+    for (const e of potatoEntriesOf(gs)) {
       if (left <= 0) break;
-      const stored = potatoStoredOf(t);
+      const stored = potatoStoredOf(e.tile);
       if (stored <= 0) continue;
       const take = Math.min(stored, left);
-      t.contentState.potatoStored = stored - take;
-      if (t.contentState.potatoStored <= 0) t.contentState.potatoStored = 0;
-      touched.push(t.idx);
+      e.tile.contentState.potatoStored = stored - take;
+      if (e.tile.contentState.potatoStored <= 0) e.tile.contentState.potatoStored = 0;
+      touched.push(e.ref);
       actual += take;
       left -= take;
     }
   } else {
-    const tile = gs?.map?.outerTiles?.[tileIdx];
+    const tile = getTile(gs, tileRef);
     const stored = potatoStoredOf(tile);
     const take = Math.min(stored, num);
     if (take > 0) {
       const cs = tile.contentState || (tile.contentState = {});
       cs.potatoStored = stored - take;
       if (cs.potatoStored <= 0) cs.potatoStored = 0;
-      touched.push(tileIdx);
+      touched.push(tileRef);
       actual = take;
     }
   }
@@ -122,7 +138,7 @@ export function harvestPotato(gs, tileIdx, qty) {
   InventorySystem.addItem(gs, 'item_potato', actual);
   syncPumpkin(gs);
   EventBus.emit(GE.INVENTORY_CHANGE);
-  for (const idx of touched) EventBus.emit(GE.TILE_UPDATED, { tileIdx: idx });
+  for (const ref of touched) emitPotatoTileChanged(gs, ref);
   return { actual, touched };
 }
 

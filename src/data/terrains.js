@@ -70,6 +70,14 @@ export const TERRAIN_SPAWN_WEIGHTS = [
   { id: 'terrain_path', weight: 5 },
 ];
 
+/**
+ * 外圈新地块的生成池：**不含小径**。
+ * 小径只应存在于栅栏内（连通后才被视为外圈）；若外圈新格随机刷成小径，
+ * 扩建时会被误认成「自动填补把外圈地块改成了小径」，并污染连通判定，
+ * 因此外圈生成池直接剔除 terrain_path（在生成源头收口，而不是事后过滤）。
+ */
+export const OUTER_TERRAIN_SPAWN_WEIGHTS = TERRAIN_SPAWN_WEIGHTS.filter((x) => x.id !== 'terrain_path');
+
 /** 旧值 → 新 id 的别名（'mud' 是历史遗留，v0.5 无此地形，归一无地形） */
 const LEGACY_ALIAS = {
   none: 'terrain_none',
@@ -97,13 +105,23 @@ export function terrainHasElement(value) {
   return getTerrain(value).elementAmount > 0;
 }
 
-/** 按权重随机一个初始地形 id（供地图生成用） */
-export function rollSpawnTerrain(rand = Math.random) {
-  const total = TERRAIN_SPAWN_WEIGHTS.reduce((s, x) => s + x.weight, 0);
+/** 按权重从指定池中随机一个初始地形 id */
+function rollWeighted(weights, rand) {
+  const total = weights.reduce((s, x) => s + x.weight, 0);
   let r = rand() * total;
-  for (const x of TERRAIN_SPAWN_WEIGHTS) {
+  for (const x of weights) {
     r -= x.weight;
     if (r <= 0) return x.id;
   }
   return 'terrain_none';
+}
+
+/** 按权重随机一个初始地形 id（供地图生成用；栅栏内外通用池） */
+export function rollSpawnTerrain(rand = Math.random) {
+  return rollWeighted(TERRAIN_SPAWN_WEIGHTS, rand);
+}
+
+/** 外圈新地块的初始地形（池内不含小径，见 OUTER_TERRAIN_SPAWN_WEIGHTS） */
+export function rollOuterSpawnTerrain(rand = Math.random) {
+  return rollWeighted(OUTER_TERRAIN_SPAWN_WEIGHTS, rand);
 }
