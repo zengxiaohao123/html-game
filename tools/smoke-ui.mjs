@@ -547,13 +547,13 @@ head_('§16.8 FuncBar：右起顺序 + 无底板 + 设置按钮可点');
   assert(settingsPanel.visible === false, 'UI_PANEL_CLOSE(settings) → 设置面板关闭（新订阅生效）');
 }
 
-head_('§16.19 HotBar：数量恒显 / 0 时「可合成」判定');
+head_('§16.19 HotBar：数量恒显 0 / 可合成不置灰 / 材料不足置灰');
 {
   for (let i = 0; i < 10; i++) gs.hotbar[i] = { itemId: 'facility_tent' };
   hotBar.renderFromGS(gs);
   const qtyEls = findAll(hotBar.root, (el) => el._classes && el._classes.has('slot-qty'));
   assert(qtyEls.length === 10, '10 格右下角数量恒显（有物品的格）', qtyEls.length);
-  // 找一个配方：备齐材料 → 产物数量 0 时应显示「可合成」
+  // 找一个配方：备齐材料 → 产物数量 0 时仍显示 0，且不置灰（放置时自动合成）
   const recipeId = Object.keys(RECIPES)[0];
   const r = RECIPES[recipeId];
   const outId = r.outputs[0].itemId;
@@ -562,7 +562,30 @@ head_('§16.19 HotBar：数量恒显 / 0 时「可合成」判定');
   const idx = gs.inventory.items.findIndex((e) => e.itemId === outId);
   if (idx >= 0) gs.inventory.items[idx].qty = 0;
   hotBar.renderFromGS(gs);
-  assert(hasText(hotBar.root, '可合成'), '数量为 0 且材料足够 → 显示「可合成」');
+  const qty9 = findAll(hotBar.slotEls[9], (el) => el._classes && el._classes.has('slot-qty'))[0];
+  assert(qty9 && qty9.textContent === '0', '数量为 0 且材料足够 → 显示 0（不再显示「可合成」）', qty9?.textContent);
+  assert(!hasText(hotBar.root, '可合成'), '快捷栏不再出现「可合成」文案');
+  assert(!hotBar.slotEls[9].classList.contains('no-stock'), '数量为 0 但可合成 → 不置灰');
+
+  // 数量 0 且材料不足 → 灰底，但仍可点击选中（放置由 BuildSystem 拒绝）
+  gs.hotbar[8] = { itemId: 'facility_tent' };
+  const tentEntries16 = gs.inventory.items.filter((e) => e.itemId === 'facility_tent');
+  const tentQtys16 = tentEntries16.map((e) => e.qty);
+  for (const e of tentEntries16) e.qty = 0;
+  hotBar.renderFromGS(gs);
+  assert(hotBar.slotEls[8].classList.contains('no-stock'), '数量 0 且材料不足 → 灰底');
+  const prevDir16 = window.__gameDirector;
+  window.__gameDirector = director; // HotBar._getCurrentGS 依赖（镜像 main.js）
+  hotBar.buildMode = true;
+  hotBar.slotEls[8].click();
+  assert(hotBar.selectedSlotIdx === 8, '灰底槽仍可点击选中');
+  hotBar._clearSelection();
+  hotBar.buildMode = false;
+  window.__gameDirector = prevDir16;
+  tentEntries16.forEach((e, i) => { e.qty = tentQtys16[i]; }); // 还原库存（后续用例依赖）
+  gs.hotbar[9] = null;
+  gs.hotbar[8] = null;
+  hotBar.renderFromGS(gs);
 }
 
 head_('§16.4 InfoPanel：1/4 宽 + 动态 tab（按选中对象生成）+ 面板栈接线');
@@ -2415,12 +2438,13 @@ head_('第 13 批 波 2：UI 修复验证（门控 / 信息区 / 商店 / 建造
   if (settingsPanel.visible) settingsPanel.hide();
   BuildSystem.exitBuildMode(gs);
 
-  // ── M-07：进入建造模式默认选中 1 号位 ──
+  // ── M-07：进入建造模式默认选中 1 号位；切回探索模式保留该选中 ──
   window.__gameDirector = director; // HotBar._getCurrentGS 依赖（镜像 main.js）
   BuildSystem.enterBuildMode(gs);
   assert(hotBar.selectedSlotIdx === 0, 'M-07：进入建造模式默认选中 1 号位');
   BuildSystem.exitBuildMode(gs);
-  assert(hotBar.selectedSlotIdx === null, 'M-07：退出建造模式清空选中');
+  assert(hotBar.selectedSlotIdx === 0, 'M-07：切回探索模式保留已选槽位（不再清空）');
+  hotBar._clearSelection();
   window.__gameDirector = null;
 
   // ── M-06：快捷编队打开时 ✕ / 遮罩先关二级（§16.20） ──
@@ -3439,6 +3463,64 @@ head_('§19 HotBar 全类型物品：拖入 / 点击响应 / 建造模式放置'
 
     gs.buildMode = false;
     EventBus.emit(GE.UI_MODE_CHANGE, { mode: 'explore' });
+  }
+
+  // ── 5) 切模式保留选中槽位；数量 0 但可合成 → 放置时自动合成并放置 ──
+  {
+    const tentSlotIdx = 8; // 9 号位
+    gs.hotbar[tentSlotIdx] = { itemId: 'facility_tent' };
+    InventorySystem.addItem(gs, 'facility_tent', 1);
+    hotBar.renderFromGS(gs);
+    // 探索模式点 9 号位 → 切建造模式仍是 9 号位
+    hotBar.slotEls[tentSlotIdx].click();
+    assert(hotBar.selectedSlotIdx === tentSlotIdx, '探索模式：点选 9 号位成功');
+    gs.buildMode = true;
+    EventBus.emit(GE.UI_MODE_CHANGE, { mode: 'build' });
+    assert(hotBar.selectedSlotIdx === tentSlotIdx && hotBar.selectedContentId === 'facility_tent',
+      '切换建造模式：保留已选 9 号位（不再跳回 1 号位）',
+      { idx: hotBar.selectedSlotIdx, id: hotBar.selectedContentId });
+    assert(hotBar.slotEls[tentSlotIdx].classList.contains('selected'), '保留的槽位仍带 selected 类');
+    assert(gs.uiState.selectedBuildContentId === 'facility_tent', '保留的槽位仍同步给 MapView');
+    const pickEmptyTile = () => gs.map.outerTiles.find((t) =>
+      !t.contentId && !(t.contentState?.placedItems?.length) && t.idx !== gs.player.x).idx;
+    const keepTile = pickEmptyTile();
+    mapView.tileEls.get(keepTile).click();
+    assert(gs.map.outerTiles[keepTile].contentId === 'facility_tent',
+      '切模式后点地块 → 直接放置 9 号位物品');
+
+    // 数量 0 但可合成：临时注册「1 小麦 → 1 帐篷」配方，验证放置时自动合成
+    const tmpRecipeId = '__smoke_craftable_tent';
+    RECIPES[tmpRecipeId] = {
+      id: tmpRecipeId,
+      name: '测试合成帐篷',
+      emoji: '⛺',
+      ingredients: [{ itemId: 'item_wheat', qty: 1 }],
+      outputs: [{ itemId: 'facility_tent', qty: 1 }],
+      description: '测试用：1 小麦 → 1 帐篷',
+    };
+    const tentEntry = gs.inventory.items.find((e) => e.itemId === 'facility_tent');
+    if (tentEntry) tentEntry.qty = 0;
+    InventorySystem.addItem(gs, 'item_wheat', 1);
+    const wheatBefore = InventorySystem.countItem(gs, 'item_wheat');
+    hotBar.renderFromGS(gs);
+    assert(!hotBar.slotEls[tentSlotIdx].classList.contains('no-stock'), '数量 0 但可合成 → 不置灰');
+    const qtyEl = findAll(hotBar.slotEls[tentSlotIdx], (el) => el._classes && el._classes.has('slot-qty'))[0];
+    assert(qtyEl && qtyEl.textContent === '0', '可合成时数量仍显示 0', qtyEl?.textContent);
+    hotBar.slotEls[tentSlotIdx].click(); // 同槽再点 = 取消
+    hotBar.slotEls[tentSlotIdx].click(); // 重新选中
+    assert(hotBar.selectedSlotIdx === tentSlotIdx, '可合成槽位可点击选中');
+    // 直接复用上一格（帐篷替换帐篷，旧内容丢弃）——地块数量有限，不依赖更多空格
+    const craftTile = keepTile;
+    mapView.tileEls.get(craftTile).click();
+    assert(gs.map.outerTiles[craftTile].contentId === 'facility_tent',
+      '数量 0 可合成：点地块 → 自动合成并放置');
+    assert(InventorySystem.countItem(gs, 'item_wheat') === wheatBefore - 1, '自动合成消耗 1 份材料');
+    assert(InventorySystem.countItem(gs, 'facility_tent') === 0, '合成产物被放置消耗（库存仍为 0）');
+    delete RECIPES[tmpRecipeId];
+
+    gs.buildMode = false;
+    EventBus.emit(GE.UI_MODE_CHANGE, { mode: 'explore' });
+    hotBar._clearSelection();
   }
 
   // 清理：快捷栏清空、界面回探索态（不影响后续用例）

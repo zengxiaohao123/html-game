@@ -24,28 +24,21 @@
   cursor: pointer;
 }
 
-/* 建造模式下：高亮可选中 */
-body.build-mode .hotbar-slot.has-content {
-  border-color: #b8860b;
-  animation: hotbar-build-pulse 1.2s ease-in-out infinite;
+/* 数量为 0 且材料也不足：灰底（仍可点击选中，但不能放置） */
+.hotbar-slot.no-stock {
+  background-color: rgba(150, 150, 150, 0.55);
 }
 
-body.build-mode .hotbar-slot.has-content:hover {
+body.build-mode .hotbar-slot.has-content:not(.selected):hover {
   background-color: #fff3b0;
 }
 
-/* 选中态（黄色高亮） */
+/* 选中态：只保留金色边框 + 光晕，不再铺金色底色 */
 .hotbar-slot.selected {
   border-color: #e8a900 !important;
   border-width: 3px !important;
-  background-color: #ffe066 !important;
   box-shadow: 0 0 0 3px rgba(232, 169, 0, 0.5), 0 3px 8px rgba(0, 0, 0, 0.25) !important;
   transform: translateY(-2px);
-}
-
-@keyframes hotbar-build-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(232, 169, 0, 0.0); }
-  50%      { box-shadow: 0 0 0 4px rgba(232, 169, 0, 0.35); }
 }
 
 /* 建造模式下的地图可放置提示（由 MapView 直接在 tile 上挂载类） */

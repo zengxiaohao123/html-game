@@ -237,12 +237,15 @@ export class HotBar {
     }
   }
 
-  /** 把选中的 contentId 同步到 gs.uiState.selectedBuildContentId */
+  /** 把选中的 contentId 同步到 gs.uiState.selectedBuildContentId（仅可放置内容才写入） */
   _syncSelectionToGS() {
     const gs = this._getCurrentGS();
     if (!gs) return;
     if (!gs.uiState) gs.uiState = {};
-    gs.uiState.selectedBuildContentId = this.selectedContentId;
+    gs.uiState.selectedBuildContentId =
+      this.selectedContentId && this._canSelectForBuild(this.selectedContentId)
+        ? this.selectedContentId
+        : null;
   }
 
   /** 从 GS 渲染 */
@@ -269,40 +272,29 @@ export class HotBar {
         const invEntry = gs.inventory?.items?.find(e => e.itemId === slot.itemId);
         const qty = invEntry?.qty ?? 0;
 
-        // §16.19 右下角恒显数量；数量为 0 时：可合成且材料够 → 「可合成」，否则「0」
-        const craftable = qty === 0 && this._canCraftItem(gs, slot.itemId);
+        // 数量 0 且材料也不足 → 灰底（仍可点击选中，放置会被 BuildSystem 拒绝）；
+        // 数量 0 但材料够合成 → 不置灰，放置时由 BuildSystem/ItemTargeting 自动合成
+        slotEl.classList.toggle('no-stock',
+          qty === 0 && !ForgeSystem.findCraftableRecipe(gs, slot.itemId));
+
+        // 数量恒显（0 也照常显示 0）
         createEl('div', {
           class: ['slot-qty'],
-          text: qty > 0 ? `${qty}` : (craftable ? '可合成' : '0'),
-          style: craftable
-            ? { fontSize: '8px', color: '#2e7d32', fontWeight: '800' }
-            : {},
+          text: `${qty}`,
           parent: slotEl,
         });
       } else {
-        slotEl.classList.remove('has-content');
+        slotEl.classList.remove('has-content', 'no-stock');
         slotEl.classList.add('empty');
         slotEl.style.opacity = '';
       }
     }
 
-    // 若选中 slot 的物品库存归 0 → 清除选中
-    if (this.selectedSlotIdx !== null) {
-      const curSlot = gs.hotbar[this.selectedSlotIdx];
-      const inv = curSlot?.itemId ? gs.inventory?.items?.find(e => e.itemId === curSlot.itemId) : null;
-      if (!inv || inv.qty < 1) {
-        this._clearSelection();
-      }
+    // 选中槽的物品被移出快捷栏（拖走 / 清空）→ 取消选中；
+    // 数量为 0 时不再清除选中（可合成则放置时自动合成）
+    if (this.selectedSlotIdx !== null && !gs.hotbar[this.selectedSlotIdx]?.itemId) {
+      this._clearSelection();
     }
-  }
-
-  /** §16.19 数量为 0 时判断该物品是否可合成且背包材料足够 */
-  _canCraftItem(gs, itemId) {
-    for (const r of ForgeSystem.getAllRecipes()) {
-      const isOutput = (r.outputs || []).some(o => o.itemId === itemId);
-      if (isOutput && ForgeSystem.canCraft(gs, r.id)) return true;
-    }
-    return false;
   }
 
   /** slot 内物品图标（按前缀/数据表选 group，回退原 emoji） */
@@ -360,17 +352,43 @@ export class HotBar {
     // 建造模式切换
     EventBus.on(GE.UI_MODE_CHANGE, ({ mode }) => {
       const build = mode === 'build';
+      const wasBuild = this.buildMode;
       this.buildMode = build;
-      if (build) {
-        document.body.classList.add('build-mode');
-        // §16.14 修复：进入建造模式默认选中 1 号位（1 号位有内容时），避免「无法放置」状态
+      if (build) document.body.classList.add('build-mode');
+      else document.body.classList.remove('build-mode');
+
+      // 已点选过的槽位在两种模式间保留（探索点 9 号位 → 切建造仍是 9 号位）
+      if (this.selectedSlotIdx !== null) {
+        const gs = this._getCurrentGS();
+        const itemId = gs?.hotbar?.[this.selectedSlotIdx]?.itemId || null;
+        if (!itemId) {
+          this._clearSelection();
+        } else if (build) {
+          // 进入建造模式：恢复选中 + 恢复放置型道具的指向高亮
+          this._selectSlot(this.selectedSlotIdx);
+          if (ItemTargeting.needsTarget(itemId) && !ItemTargeting.isActive()) {
+            this._targetingFromHotbar = true;
+            const res = ItemTargeting.start(gs, itemId);
+            if (!res?.ok) this._targetingFromHotbar = false;
+          }
+          this._syncSelectionToGS();
+          return;
+        } else {
+          // 回到探索模式：保留选中视觉，只撤掉建造模式留下的指向高亮
+          if (this._targetingFromHotbar) {
+            ItemTargeting.cancel('modeSwitch');
+            this._targetingFromHotbar = false;
+          }
+          return;
+        }
+      }
+
+      // 没有历史选中：进入建造模式时默认选中 1 号位（可参与建造时），避免「无法放置」状态
+      if (build && !wasBuild) {
         const first = this._getCurrentGS()?.hotbar?.[0];
         // 1 号位可参与建造才自动选中；否则静默清空（避免进入建造模式就弹出“不可选”提示）
         if (first?.itemId && this._canSelectForBuild(first.itemId)) this._handleSlotClick(0);
         else this._clearSelection();
-      } else {
-        document.body.classList.remove('build-mode');
-        this._clearSelection();
       }
     });
   }

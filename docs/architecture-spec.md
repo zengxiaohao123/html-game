@@ -358,6 +358,15 @@ canHostEternalContent(gs, ref)             // 【永恒】内容禁止置于临�
 - **前往 / 无法抵达（统一功能选项）**：地形内容 tab 底部同一位置二选一渲染——可抵达时为 `前往（消耗行动力x）`（x 取真实消耗：`nextMoveNoStamina` 或载具 `freeStamina` → 0，否则 1；不再拼接载具名称）；不可抵达时为 `disabled` 的红色按钮 `无法抵达`。可达性判定完全沿用原逻辑（无载具相邻格 / 载具 `VehicleSystem.canVehicleReach`），外圈与生效小径格共用同一形态。
 - **验收**：`tools/smoke-ui.mjs`「小径修复：栅栏内容 tab / 地形只在状态 tab / 单位同格排版」。
 
+### 2.4.5 快捷物品栏口径（2026-11-21）
+
+- **选中状态跨模式保留**：`HotBar` 的 `GE.UI_MODE_CHANGE` 分支不再在退出建造模式时清空 `selectedSlotIdx`；只要该槽仍有物品就 `_selectSlot(idx)` 保留（进入建造模式时同时恢复放置型道具的指向高亮）。仅当选中槽物品被移出快捷栏（`renderFromGS` 发现 `hotbar[idx].itemId` 为空）时才取消选中；从未选中过时进入建造模式仍默认选中 1 号位。
+- **同步口径**：`_syncSelectionToGS()` 只在 `_canSelectForBuild(contentId)` 成立时写 `gs.uiState.selectedBuildContentId`，非放置物品即使保持选中也不会让 MapView 误走放置分支。
+- **视觉**：删除 `body.build-mode .hotbar-slot.has-content` 的金色脉冲动画与 `@keyframes hotbar-build-pulse`；`.hotbar-slot.selected` 只保留金色边框 + 光晕，不再铺金色底色（hover 高亮用 `:not(.selected)` 排除选中格）。
+- **数量与灰化**：`slot-qty` 恒显数字（数量 0 也显示 `0`，不再出现「可合成」文案）；`qty === 0 && !ForgeSystem.findCraftableRecipe(gs, itemId)` 时挂 `.no-stock` 灰底类，仍可点击选中，放置由 `BuildSystem` 以 `noItem` 拒绝。
+- **放置自动合成**：`ForgeSystem.findCraftableRecipe(gs, itemId)` 统一「能产出该物品且材料足够的首个配方」判定，`ensureStockForPlace(gs, itemId)` 在库存不足时自动 `craft` 一次；`MapView._handleBuildPlaceAt`（内容 / 地形 / 栅栏地形 / 放置型道具）与 `ItemTargeting.useAtTile`（指向模式点击、合法目标校验之后）都先走该兜底，因此数量 0 但材料足够时点地块即自动合成并放置。
+- **验收**：`tools/smoke-ui.mjs` §16.19（数量恒显 / 灰化 / 可点击）与 §19-5（切模式保留 9 号位 / 自动合成放置）。
+
 ### 2.5 RealtimeClock（统一实时时钟 / 渲染插值）
 
 ```js

@@ -15,6 +15,7 @@ import { GE } from '../core/GameEvents.js';
 import { devLog } from '../core/Logger.js';
 import { POTIONS } from '../data/potions.js';
 import { isPlantTarget, useItem } from './UseItemSystem.js';
+import { ForgeSystem } from './ForgeSystem.js';
 import { getTile, effectivePathRefs, isFenceRef } from '../core/TileAccess.js';
 
 let state = { active: false, itemId: null, gs: null };
@@ -104,6 +105,8 @@ export function useAtTile(gs, itemId, target) {
     EventBus.emit(GE.TOAST_SHOW, { text: '🚫 这里不能使用该道具', duration: 1500 });
     return { ok: false, reason: 'invalidTarget' };
   }
+  // 快捷栏「数量为 0 但可合成」：结算前自动消耗材料合成 1 次（合法目标才合成，避免白扣材料）
+  ForgeSystem.ensureStockForPlace(gs, itemId);
   return useItem(gs, itemId, isFenceRef(target) ? { tileRef: target } : { tileIdx: target });
 }
 

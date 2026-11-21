@@ -15,6 +15,7 @@ import { POTIONS } from '../data/potions.js';
 import { ITEMS } from '../data/items.js';
 import { BuildSystem } from '../systems/BuildSystem.js';
 import { ItemTargeting } from '../systems/ItemTargeting.js';
+import { ForgeSystem } from '../systems/ForgeSystem.js';
 import { SKILLS } from '../data/characters.js';
 import { CreatureView } from './CreatureView.js';
 import { MineView } from './MineView.js';
@@ -326,6 +327,8 @@ export class MapView {
       });
       return;
     }
+    // 快捷栏「数量为 0 但可合成」：放置前自动消耗材料合成 1 次（库存够时无操作）
+    ForgeSystem.ensureStockForPlace(gs, contentId);
     // 放置型道具（陷阱 / 艾草熏香…）从 HotBar 选中：与背包指向模式共用同一套合法性判定与结算
     // （首次选中已由 ItemTargeting.start 建立高亮；这里兜住连续放置 / 未成功建立指向的情况）
     if (ItemTargeting.needsTarget(contentId)) {

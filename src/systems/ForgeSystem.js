@@ -69,9 +69,34 @@ export function craft(gs, recipeId) {
   return { ok: true, returnedMaterial };
 }
 
+/**
+ * 找出能产出该物品、且材料足够的第一个配方（没有则 null）。
+ * 快捷栏「数量为 0 但可合成」的判定与放置兜底共用这一处，避免两处口径漂移。
+ */
+export function findCraftableRecipe(gs, itemId) {
+  for (const r of getAllRecipes()) {
+    const isOutput = (r.outputs || []).some(o => o.itemId === itemId);
+    if (isOutput && canCraft(gs, r.id)) return r;
+  }
+  return null;
+}
+
+/**
+ * 快捷栏「数量为 0 但可合成」的放置兜底：
+ * 库存不足时自动消耗材料合成 1 次；返回是否已有库存可继续放置。
+ */
+export function ensureStockForPlace(gs, itemId) {
+  if (InventorySystem.countItem(gs, itemId) > 0) return true;
+  const r = findCraftableRecipe(gs, itemId);
+  if (!r) return false;
+  return craft(gs, r.id).ok === true;
+}
+
 export const ForgeSystem = {
   getRecipe,
   getAllRecipes,
   canCraft,
   craft,
+  findCraftableRecipe,
+  ensureStockForPlace,
 };
