@@ -27,6 +27,15 @@
 /* 数量为 0 且材料也不足：灰底（仍可点击选中，但不能放置） */
 .hotbar-slot.no-stock {
   background-color: rgba(150, 150, 150, 0.55);
+  border-color: rgba(110, 110, 110, 0.85) !important;
+}
+
+/* 不足物品本体也要一眼看出：图标与数量整体去色 + 降低不透明度，
+   而不是只靠底色区分（底色调浅后与正常格差异过小） */
+.hotbar-slot.no-stock .slot-emoji,
+.hotbar-slot.no-stock .slot-qty {
+  filter: grayscale(1);
+  opacity: 0.45;
 }
 
 body.build-mode .hotbar-slot.has-content:not(.selected):hover {

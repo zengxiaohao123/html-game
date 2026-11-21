@@ -48,7 +48,7 @@ import { POTIONS } from '../data/potions.js';
 import { getBuff } from '../data/buffs.js';
 import { ITEMS, GLOSSARY } from '../data/items.js';
 import { getTerrain, normalizeTerrain } from '../data/terrains.js';
-import { playerRef, refsEqual, refXY, getTile } from '../core/TileAccess.js';
+import { playerRef, refsEqual, refXY, getTile, isEffectiveOuterRef } from '../core/TileAccess.js';
 import { createEl, qs, iconEl } from './dom.js';
 import { renderTraitBadges, renderStateBadges } from './TraitBadges.js';
 import { renderTermText } from './TermText.js';
@@ -288,13 +288,16 @@ export class InfoPanel {
     } else if (this.mode === 'fence') {
       const cell = gs?.map?.fence?.[this.currentFenceIdx];
       if (cell) {
-        // 地块内容 tab：有地块内容时出现；生效小径格（临时外圈）始终出现（至少含「前往/无法抵达」）
-        // 地形信息只在状态 tab
-        if (cell.contentId || cell.isPathOuter === true) tabs.push({ label: '地块内容', render: 'fenceContent' });
-        if (this._fenceHasState(cell)) tabs.push({ label: '状态', render: 'fenceState' });
-        // v0.6：生效小径格是临时外圈，玩家可站上去；生物按既有栅栏格归属
         const dims = Distance.fenceDimsOf(gs);
         const fenceRef = { kind: 'fence', row: Math.floor(this.currentFenceIdx / dims.cols), col: this.currentFenceIdx % dims.cols };
+        // 单一判定：生效小径格 = 临时外圈（与外圈同口径），tab / 内容 / 前往共用
+        const outerLike = isEffectiveOuterRef(gs, fenceRef);
+        // 地块内容 tab：有地块内容时出现；临时外圈格始终出现（至少含「前往/无法抵达」）
+        // 非临时外圈格没有「前往」（角色不能进栅栏内），因此不再凭空生成内容 tab
+        if (cell.contentId || outerLike) tabs.push({ label: '地块内容', render: 'fenceContent' });
+        // 状态 tab 恒有：无地形时也显示「无地形：…」，不能再出现「tab 完全不显示」
+        tabs.push({ label: '状态', render: 'fenceState' });
+        // v0.6：生效小径格是临时外圈，玩家可站上去；生物按既有栅栏格归属
         const playerHere = refsEqual(playerRef(gs), fenceRef);
         if (playerHere || (cell.creatures || []).length > 0) tabs.push({ label: '单位', render: 'fenceUnits' });
       }
@@ -313,10 +316,16 @@ export class InfoPanel {
       }
     }
 
-    if (tabs.length === 0) return;
+    // 先记下旧 tab 再落盘：即使本次没有 tab，也不能沿用上一次的 _currentTabs——
+    // 否则 _renderBody 会把旧 tab 的 render 套到新地块上（曾导致「内容 tab + 前往」串格）。
+    const prevRender = this._currentTabs?.[this.activeTabIdx]?.render;
+    this._currentTabs = tabs;
+    if (tabs.length === 0) {
+      this.activeTabIdx = 0;
+      return;
+    }
 
     // 顺位固定：兜底与「当前 tab 失效」都落到 0（地块内容 / 祈福）
-    const prevRender = this._currentTabs?.[this.activeTabIdx]?.render;
     if (this.activeTabIdx === undefined || this.activeTabIdx >= tabs.length) {
       this.activeTabIdx = 0;
     } else if (prevRender !== undefined && !tabs.some(t => t.render === prevRender)) {
@@ -346,12 +355,6 @@ export class InfoPanel {
     if ((tile.states || []).length > 0) return true;
     if ((tile.contentState?.placedItems || []).length > 0) return true;
     return false;
-  }
-
-  /** 栅栏内地块是否有「状态」：地形（无地形不算）；状态 tab 目前只渲染地形 */
-  _fenceHasState(cell) {
-    if (!cell) return false;
-    return !!(cell.terrain && normTerrain(cell.terrain) !== 'terrain_none');
   }
 
   _renderBody() {
@@ -1088,6 +1091,9 @@ export class InfoPanel {
     // ref 兼容外圈 idx 与栅栏生效格 ref（生效小径格 = 临时外圈，可直接前往）
     if (gs && !refsEqual(playerRef(gs), ref)) {
       const hasVehicle = !!(gs.vehicle?.current);
+      // 单一判定：只有「按外圈对待」的地块（外圈 + 生效小径）才可前往；
+      // 普通栅栏内格角色进不去，即使与玩家相邻也必须显示「无法抵达」。
+      const canEnter = isEffectiveOuterRef(gs, ref);
       let canGo = false;
       let reachInfo = null;  // { pattern, maxRange, freeStamina, ... }
 
@@ -1096,10 +1102,10 @@ export class InfoPanel {
         const me = refXY(gs, playerRef(gs));
         const tg = refXY(gs, ref);
         const isAdj = !!me && !!tg && Math.abs(tg.x - me.x) + Math.abs(tg.y - me.y) === 1;
-        canGo = isAdj;
+        canGo = canEnter && isAdj;
       } else {
         // 有载具：按载具 movePattern 判断可达性（判断规则不变）
-        const reach = VehicleSystem.canVehicleReach(gs, ref);
+        const reach = canEnter ? VehicleSystem.canVehicleReach(gs, ref) : { ok: false };
         if (reach.ok) {
           canGo = true;
           reachInfo = reach.def;

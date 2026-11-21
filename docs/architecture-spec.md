@@ -365,6 +365,7 @@ canHostEternalContent(gs, ref)             // 【永恒】内容禁止置于临�
 - **选中状态跨模式保留**：`HotBar` 的 `GE.UI_MODE_CHANGE` 分支不再在退出建造模式时清空 `selectedSlotIdx`；只要该槽仍有物品就 `_selectSlot(idx)` 保留（进入建造模式时同时恢复放置型道具的指向高亮）。仅当选中槽物品被移出快捷栏（`renderFromGS` 发现 `hotbar[idx].itemId` 为空）时才取消选中；从未选中过时进入建造模式仍默认选中 1 号位。
 - **同步口径**：`_syncSelectionToGS()` 只在 `_canSelectForBuild(contentId)` 成立时写 `gs.uiState.selectedBuildContentId`，非放置物品即使保持选中也不会让 MapView 误走放置分支。
 - **视觉**：删除 `body.build-mode .hotbar-slot.has-content` 的金色脉冲动画与 `@keyframes hotbar-build-pulse`；`.hotbar-slot.selected` 只保留金色边框 + 光晕，不再铺金色底色（hover 高亮用 `:not(.selected)` 排除选中格）。
+- **不足物品可辨识（2026-11-21）**：数量 0 且材料不足 / 不可合成时，`.hotbar-slot.no-stock` 除灰底外，其 `.slot-emoji` 与 `.slot-qty` 追加 `filter: grayscale(1); opacity: .45`，物品本体去色，保证与正常槽位一眼可分。
 - **数量与灰化**：`slot-qty` 恒显数字（数量 0 也显示 `0`，不再出现「可合成」文案）；`qty === 0 && !ForgeSystem.findCraftableRecipe(gs, itemId)` 时挂 `.no-stock` 灰底类，仍可点击选中，放置由 `BuildSystem` 以 `noItem` 拒绝。
 - **放置自动合成**：`ForgeSystem.findCraftableRecipe(gs, itemId)` 统一「能产出该物品且材料足够的首个配方」判定，`ensureStockForPlace(gs, itemId)` 在库存不足时自动 `craft` 一次；`MapView._handleBuildPlaceAt`（内容 / 地形 / 栅栏地形 / 放置型道具）与 `ItemTargeting.useAtTile`（指向模式点击、合法目标校验之后）都先走该兜底，因此数量 0 但材料足够时点地块即自动合成并放置。
 - **验收**：`tools/smoke-ui.mjs` §16.19（数量恒显 / 灰化 / 可点击）与 §19-5（切模式保留 9 号位 / 自动合成放置）。
@@ -400,6 +401,15 @@ canHostEternalContent(gs, ref)             // 【永恒】内容禁止置于临�
 - **尺寸不变**：动画只改 `transform`，不动 `width / maxWidth`；`hide()` 复位卡片位姿，后续任意弹窗从屏内基准位开始。
 - 时长 `DIALOG_SLIDE_MS = 280`，实例字段 `slideMs` 供冒烟测试覆写加速。
 - **验收**：`tools/smoke-ui.mjs`「睡觉 / 跳过弹窗：横向滑入 + 选完快速向右滑出（其余弹窗保持淡出）」、§16.10 睡觉链路、`tools/smoke-story.mjs` E-06b。
+
+### 2.4.10 临时外圈单一判定与栅栏格信息区（2026-11-21）
+
+- **唯一判定**：`TileAccess.isEffectiveOuterRef(gs, ref)` = 外圈格 或 `cell.isPathOuter === true` 的栅栏格。`isLegalStandRef` 直接委托它；`ItemTargeting`、InfoPanel tab 生成、「前往 / 无法抵达」全部改用它，禁止再用 `cell.isPathOuter` 或「与玩家相邻」各自推断。
+- **前往可点击性**：`_renderContentTab` 先取 `canEnter = isEffectiveOuterRef(gs, ref)`；无载具时 `canGo = canEnter && adjacent`，有载具时 `reach = canEnter ? canVehicleReach(...) : {ok:false}`。普通栅栏格即使相邻也只会渲染「无法抵达」。
+- **tab 列表不再串格**：`_rebuildTabs` 每次先保存旧 `prevRender`，再**无条件**写 `this._currentTabs = tabs`；空列表时 `activeTabIdx = 0` 并返回。此前空列表提前 return 会沿用上一格的 tab，导致「tab 整排消失但 body 仍渲染上一格的内容 tab」。
+- **栅栏格状态 tab 恒有**：`_fenceHasState` 删除；fence 模式固定 push `{label:'状态', render:'fenceState'}`，无地形时该行显示「无地形：…」。
+- **地块内容 tab**：`cell.contentId || isEffectiveOuterRef(...)`；非生效小径的普通栅栏格不再凭空出现内容 tab。
+- **验收**：`tools/smoke-ui.mjs` §9.6「小径修复」B / B1b（状态 tab 恒有、普通栅栏格无「前往」）、§16.19（快捷栏灰化）。
 
 ### 2.5 RealtimeClock（统一实时时钟 / 渲染插值）
 
@@ -884,7 +894,7 @@ export const createInitialState = () => ({
 5. **Emoji 占位优先**：MVP 阶段所有美术用 emoji + 色块，图片替换只改 `Assets.js` 映射表
 6. **地图三属性正交**：地形 / 内容 / 状态 独立存储、独立更新、独立触发效果
 7. **元素伤害体系**：7 种元素（火水雷冰草风岩）+ 物理，每种伤害带类型字段，技能注册时声明
-8. **二次确认唯一实现**：所有需要玩家二次确认的操作（睡觉、清空存档、退出等）先弹 `DialogBox` 文字弹窗（选项「取消」+ 目标动作），在弹窗内点目标动作才进入待确认态并复用 `src/ui/ConfirmAction.js`：`arm` 变底色 + 弹窗内显示「你确定这么做？」→ `trigger` 二次同一 tick 立即执行业务 → 弹窗 1.5 秒淡出；待确认文案禁止出现在图标旁 / 屏幕角落。快捷键与按钮走同一入口。禁止各面板自写 `_armed` 标志 / 计时器。取消待确认态只有一个复位入口：`ConfirmAction.disarm` 通过 `onDisarm` 通知调用方同步复位自身状态机（禁止「只改 UI 不改内部状态」），保证 arm → 点别处/ESC 取消 → 再点仍是 arm，绝不跳过待确认直接执行。例外：商店「离开」按钮保持原有"只变底色不改文字"实现；载具页的装载 / 卸下 / 替换为单击即时生效，不弹窗、不进入二次确认。
+8. **二次确认唯一实现**：所有需要玩家二次确认的操作（睡觉、清空存档、退出等）先弹 `DialogBox` 文字弹窗（选项「取消」+ 目标动作），在弹窗内点目标动作才进入待确认态并复用 `src/ui/ConfirmAction.js`：`arm` 变底色 + 弹窗内显示「你确定这么做？」→ `trigger` 二次同一 tick 立即执行业务 → 弹窗 1.5 秒淡出（睡觉 / 跳过例外：横向滑出，见 §2.4.9）；待确认文案禁止出现在图标旁 / 屏幕角落。快捷键与按钮走同一入口。禁止各面板自写 `_armed` 标志 / 计时器。取消待确认态只有一个复位入口：`ConfirmAction.disarm` 通过 `onDisarm` 通知调用方同步复位自身状态机（禁止「只改 UI 不改内部状态」），保证 arm → 点别处/ESC 取消 → 再点仍是 arm，绝不跳过待确认直接执行。例外：商店「离开」按钮保持原有"只变底色不改文字"实现；载具页的装载 / 卸下 / 替换为单击即时生效，不弹窗、不进入二次确认。
 
 ---
 

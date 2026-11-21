@@ -16,7 +16,7 @@ import { devLog } from '../core/Logger.js';
 import { POTIONS } from '../data/potions.js';
 import { isPlantTarget, useItem } from './UseItemSystem.js';
 import { ForgeSystem } from './ForgeSystem.js';
-import { getTile, effectivePathRefs, isFenceRef } from '../core/TileAccess.js';
+import { getTile, effectivePathRefs, isFenceRef, isEffectiveOuterRef } from '../core/TileAccess.js';
 
 let state = { active: false, itemId: null, gs: null };
 
@@ -35,8 +35,8 @@ export function isValidTarget(gs, itemId, target) {
   if (!eff) return false;
   const tile = getTile(gs, target);
   if (!tile) return false;
-  // 栅栏格仅「生效小径格」（临时外圈）可被指定
-  if (isFenceRef(target) && tile.isPathOuter !== true) return false;
+  // 栅栏格仅「生效小径格」（临时外圈）可被指定 —— 与信息区 / 前往共用单一判定
+  if (!isEffectiveOuterRef(gs, target)) return false;
 
   if (eff.type === 'facility_trigger_twice') return isPlantTarget(gs, target);
 

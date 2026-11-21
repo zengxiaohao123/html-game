@@ -99,18 +99,26 @@ export function isPathOuterTile(gs, ref) {
   return !!(cell && cell.isPathOuter === true);
 }
 
+/**
+ * 单一判定：该地块当前是否按「外圈」对待（外圈格 + 生效小径格）。
+ * 信息区 tab 生成 / 地块内容 tab / 「前往」可点击性等**全部从它取**，
+ * 禁止在各处用 `cell.isPathOuter` 或「栅栏格相邻即可前往」自行推断。
+ */
+export function isEffectiveOuterRef(gs, ref) {
+  const n = normalizeTileRef(gs, ref);
+  if (!n) return false;
+  if (n.kind === 'outer') return true;
+  return isPathOuterTile(gs, ref);
+}
+
 export function isOuterRef(gs, ref) {
   const n = normalizeTileRef(gs, ref);
   return !!n && n.kind === 'outer';
 }
 
-/** 是否为玩家可站的合法地块（外圈 + 生效小径） */
+/** 是否为玩家可站的合法地块（外圈 + 生效小径）—— 与 isEffectiveOuterRef 同口径 */
 export function isLegalStandRef(gs, ref) {
-  const n = normalizeTileRef(gs, ref);
-  if (!n) return false;
-  if (n.kind === 'outer') return true;
-  const cell = gs.map?.fence?.[n.row * fenceDimsOf(gs).cols + n.col];
-  return !!(cell && cell.isPathOuter === true);
+  return isEffectiveOuterRef(gs, ref);
 }
 
 /** 取地块对象（外圈/栅栏统一入口） */
@@ -296,6 +304,7 @@ export const TileAccess = {
   fenceRefOfIdx,
   fenceCellOf,
   isPathOuterTile,
+  isEffectiveOuterRef,
   isOuterRef,
   isLegalStandRef,
   getTile,

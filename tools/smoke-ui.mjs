@@ -1704,13 +1704,36 @@ head_('小径修复：栅栏内容 tab / 地形只在状态 tab / 单位同格�
   assert(!hasText(infoPanel.root, '储量'),
     '小径没有储量机制，状态 tab 不出现「储量」文案');
 
-  // ── B) 无地块内容、且不是生效小径的普通栅栏格：不出现地块内容 tab ──
+  // ── B) 无地块内容、且不是生效小径的普通栅栏格：不出现地块内容 tab，但状态 tab 恒有 ──
   cell.contentId = null;
   cell.isPathOuter = false;
+  cell.terrain = 'terrain_none'; // 无地形：状态 tab 仍要出现并显示「无地形」
+  cell.terrainAmount = 0;
   EventBus.emit(GE.FENCE_TILE_CLICKED, { fenceIdx: fi });
   const labelsEmpty = (infoPanel._currentTabs || []).map((t) => t.label).join('/');
   assert(!labelsEmpty.includes('地块内容'),
     `无内容且非生效小径的栅栏格 → 不显示地块内容 tab（实测 ${labelsEmpty}）`);
+  assert(labelsEmpty === '状态', `普通栅栏格至少显示状态 tab（实测 ${labelsEmpty}）`);
+  assert(buttonsWithText(infoPanel.root, '状态').length === 1,
+    '普通栅栏格的 tab 不会整排消失（换成非小径格后重绘正常）');
+  assert(hasText(infoPanel.root, '无地形'), '无地形也显示「无地形」状态行');
+  assert(!hasText(infoPanel.root, '前往'), '普通栅栏格不出现「前往」功能选项');
+
+  // ── B1b) 普通栅栏格（有内容）即使与玩家相邻：角色进不去 → 只能「无法抵达」 ──
+  const savedPlayerForB1 = { x: gs.player.x, loc: gs.player.loc };
+  cell.contentId = 'facility_henhouse';
+  cell.contentState = {};
+  cell.isPathOuter = false;
+  gs.player.x = 3;              // 外圈 (0,1)，与栅栏 (0,0) 相邻
+  gs.player.loc = null;
+  EventBus.emit(GE.FENCE_TILE_CLICKED, { fenceIdx: fi });
+  assert(hasText(infoPanel.root, '无法抵达'),
+    '非生效小径的栅栏格即使相邻也只显示「无法抵达」');
+  assert(!hasText(infoPanel.root, '前往（消耗行动力'), '非生效小径的栅栏格不出现「前往」');
+  cell.contentId = null;
+  cell.contentState = {};
+  gs.player.x = savedPlayerForB1.x;
+  gs.player.loc = savedPlayerForB1.loc;
 
   // ── B2) 无地块内容的生效小径格（临时外圈）：始终显示地块内容 tab，含 前往/无法抵达 ──
   const savedPlayer = { x: gs.player.x, loc: gs.player.loc };
