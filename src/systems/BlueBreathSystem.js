@@ -21,6 +21,7 @@ import { ITEMS } from '../data/items.js';
 import { Random } from '../core/Random.js';
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
+import { isSuppressed } from './SuppressSystem.js';
 
 export const BLUE_FIELD_ID = 'facility_blue_star_fruit';
 export const BLUE_MAX = 7;
@@ -45,6 +46,8 @@ export function blueBreathSources(gs) {
   const out = [];
   for (const { ref, tile } of contentEntries(gs)) {
     if (tile.contentId !== BLUE_FIELD_ID) continue;
+    // 被【压制】的田块特性失效：蓝息随之关闭
+    if (isSuppressed(gs, ref)) continue;
     const n = blueStoredOf(tile);
     if (n <= 0) continue;
     const p = refXY(gs, ref);
