@@ -333,6 +333,12 @@ export class MapView {
       if (res?.ok) ItemTargeting.cancel('buildPlaceDone');
       return;
     }
+    // 地形可作用于栅栏内任意格（与外圈共用同一套点选放置流程）
+    if (contentId.startsWith('terrain_') && typeof ref === 'object' && ref !== null) {
+      const res = BuildSystem.placeFenceTerrain(gs, ref.row, ref.col, contentId);
+      if (res?.ok) this.renderFence(gs);
+      return;
+    }
     BuildSystem.placeContent(gs, ref, contentId);
   }
 

@@ -1692,6 +1692,64 @@ head_('小径修复：栅栏内容 tab / 地形只在状态 tab / 单位同格�
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
 }
 
+// ════════════════════════════════════════════════════════════
+head_('统一放置：六类对象三入口 + 快捷栏全物品显示');
+{
+  const { recomputePathEffect } = await import('../src/systems/PathSystem.js');
+
+  // ── A) 放置资格：六类可放，产物 / 装备等只显示不可放 ──
+  assert(inventoryPanel._isPlaceable('facility_wheat'), '田块（facility_）可放置');
+  assert(inventoryPanel._isPlaceable('resource_wood'), '资源（resource_）可放置');
+  assert(inventoryPanel._isPlaceable('skill_slash'), '技能（skill_）可放置');
+  assert(inventoryPanel._isPlaceable('terrain_grass'), '地形（terrain_）可放置');
+  assert(inventoryPanel._isPlaceable('item_trap'), '放置型道具（needsTarget）可放置');
+  assert(!inventoryPanel._isPlaceable('item_strawberry'), '普通产物不可放置（仅显示）');
+  assert(!inventoryPanel._isPlaceable('equip_sword_wood'), '装备不可放置（仅显示）');
+
+  // ── B) 方法 2/3：地形点选落到任意栅栏格（与拖拽入口一致）──
+  const cell = gs.map.fence[0];
+  const saved = { terrain: cell.terrain, amount: cell.terrainAmount };
+  cell.terrain = 'terrain_none';
+  cell.terrainAmount = 0;
+  const grassBefore = InventorySystem.countItem(gs, 'terrain_grass');
+  InventorySystem.addItem(gs, 'terrain_grass', 1);
+  if (!gs.uiState) gs.uiState = {};
+  gs.uiState.pendingPlaceContentId = 'terrain_grass';
+  mapView._handleBuildPlaceAt({ kind: 'fence', row: cell.row, col: cell.col });
+  assert(cell.terrain === 'terrain_grass',
+    '方法 2/3：地形点选可落到栅栏内任意格（不再只限生效小径）');
+  assert(InventorySystem.countItem(gs, 'terrain_grass') === grassBefore, '地形放置扣除 1 个道具');
+
+  // 还原
+  gs.uiState.pendingPlaceContentId = null;
+  cell.terrain = saved.terrain;
+  cell.terrainAmount = saved.amount;
+  recomputePathEffect(gs, { reason: 'test-restore' });
+  EventBus.emit(GE.FENCE_TILE_UPDATED, { row: cell.row, col: cell.col, fenceIdx: 0 });
+
+  // ── C) 方法 3：建造模式下放置型道具也出现「放置到地图」入口 ──
+  const savedMode = gs.buildMode;
+  const savedSel = { id: inventoryPanel.selectedItemId, from: inventoryPanel.selectedFrom };
+  gs.buildMode = true;
+  InventorySystem.addItem(gs, 'item_trap', 1);
+  inventoryPanel.selectedItemId = 'item_trap';
+  inventoryPanel.selectedFrom = 'items';
+  inventoryPanel._renderActionZone();
+  const placeBtn = buttonsWithText(inventoryPanel.actionEl, '放置到地图')[0];
+  assert(!!placeBtn, '建造模式：放置型道具也出现「放置到地图」功能选项');
+  placeBtn.click();
+  assert(gs.uiState.pendingPlaceContentId === 'item_trap',
+    '点击后进入统一放置流程（记录待放置物品，等待点地块）');
+
+  // 还原
+  gs.uiState.pendingPlaceContentId = null;
+  gs.buildMode = savedMode;
+  inventoryPanel.selectedItemId = savedSel.id;
+  inventoryPanel.selectedFrom = savedSel.from;
+  inventoryPanel._renderActionZone();
+  InventorySystem.removeItem(gs, 'item_trap', 1);
+}
+
 head_('第 11 批：InfoPanel 技能详情只渲染一套（防重复 + 无 ⚡ 提示行）');
 {
   const { SKILLS } = await import('../src/data/characters.js');

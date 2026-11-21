@@ -307,6 +307,8 @@ placeFenceTerrain(gs, row, col, terrainId) // 栅栏内行/列号（0 起）→ 
 - **田块/设施/资源/技能：外圈 + 生效小径格**：`placeContent` 接受外圈 `tileIdx` 或栅栏 ref；栅栏 ref 仅当该格 `isPathOuter === true`（生效小径格）时可放，否则拒绝并提示「只能放在外圈地块或生效小径上」。`placeFenceTerrain` 只接受 `terrains.js` 里登记的地形 id，传入 `facility_*` / `skill_*` 一律按 `unknownTerrain` 拒绝。
 - **拖拽入口**：`MapView` 的 drop 用 `refOfXY` 统一解析目标（外圈优先，落到栅栏时得到 `{kind:'fence',row,col}`），再用 `isLegalStandRef` 判断是否可放；栅栏内地形拖拽由独立模块 `src/ui/FenceTerrainDrop.js` 在容器捕获阶段接管（只处理 `terrain_` 前缀并 `stopPropagation`），放置成功后调用 `mapView.renderFence(gs)` 局部重绘栅栏背景层。
 - **信息区**：`InfoPanel` 订阅 `GE.FENCE_TILE_UPDATED`，正在查看该栅栏格时重渲染「地块内容 / 状态」tab。
+- **统一放置对象（2026-11-21）**：三条入口（背包拖拽、快捷栏选中、背包「放置到地图」）统一支持 `facility_` / `resource_` / `skill_` / `terrain_` 前缀与放置型道具（`ItemTargeting.needsTarget`）。`InventoryPanel._isPlaceable` 纳入 `needsTarget`，背包拖拽起手同样以 `needsTarget` 进入指向；快捷栏 `_canSelectForBuild` 只放行上述类别，其余物品可放入并显示，建造模式点击仅提示「不可放置（仅显示）」。
+- **地形落到栅栏**：方法 2/3 的落点若是栅栏 ref 且为 `terrain_*`，`MapView._handleBuildPlaceAt` 走 `BuildSystem.placeFenceTerrain`（与拖拽入口的 `FenceTerrainDrop` 一致）；其余内容仍走 `placeContent`，按 `isLegalStandRef` 与【永恒】规则判定。
 - **验收**：`node tools/smoke-expand.mjs` 的 X2/X5（新栅栏格随机地形、初始格不回溯）与 X10（地形可放置、扣减、回满、越界拒绝、设施/技能不可）。
 
 ### 2.4.3 统一地块视图与小径系统（2026-11-21）

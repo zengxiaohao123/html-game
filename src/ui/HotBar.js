@@ -139,10 +139,12 @@ export class HotBar {
       return;
     }
 
-    // 建造模式：只接受「地块内容 / 放置型道具」；其余物品（草药等一次性道具、
-    // 产物 / 装备 / 收藏品）不参与建造，点到就明确提示，避免选了个点地块必然失败的槽
+    // 建造模式：只接受「地块内容 / 放置型道具」；其余物品仅在快捷栏展示，不能放置
     if (this.buildMode && !this._canSelectForBuild(slot.itemId)) {
-      EventBus.emit(GE.TOAST_SHOW, { text: '🛠️ 建造模式下请选择地块内容或放置型道具', duration: 2000 });
+      EventBus.emit(GE.TOAST_SHOW, {
+        text: `🚫 ${ITEMS[slot.itemId]?.name || slot.itemId} 不可放置到地块（仅显示）`,
+        duration: 2000,
+      });
       return;
     }
 

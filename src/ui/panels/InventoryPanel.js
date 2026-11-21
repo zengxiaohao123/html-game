@@ -371,7 +371,7 @@ export class InventoryPanel {
         onclick: () => {
           if (!gs.uiState) gs.uiState = {};
           gs.uiState.pendingPlaceContentId = this.selectedItemId;
-          EventBus.emit(GE.TOAST_SHOW, { text: '🖱️ 请点外圈地块放置…', duration: 2500 });
+          EventBus.emit(GE.TOAST_SHOW, { text: '🖱️ 请点要放置的地块…', duration: 2500 });
           this.hide();
         },
       });
@@ -569,13 +569,14 @@ export class InventoryPanel {
 
   /** §16.14 可放置判定（对齐 BuildSystem.placeContent 的前缀校验） */
   _isPlaceable(itemId) {
-    return /^(facility_|resource_|skill_|terrain_)/.test(itemId || '');
+    // 六类可放置对象：田块/设施/资源/技能/地形（前缀）+ 放置型道具（需要指定地块的使用效果）
+    return /^(facility_|resource_|skill_|terrain_)/.test(itemId || '')
+      || ItemTargeting.needsTarget(itemId);
   }
 
-  /** §16.23 放置型消耗道具（陷阱 / 艾草熏香等）：与地块内容一样支持拖拽放置 */
+  /** 放置型消耗道具（陷阱 / 艾草熏香 / 初级肥料等）：与地块内容一样支持拖拽放置 */
   _isPlacedItem(itemId) {
-    const eff = POTIONS[itemId]?.useEffect;
-    return !!(eff && typeof eff.type === 'string' && eff.type.startsWith('placed_'));
+    return ItemTargeting.needsTarget(itemId);
   }
 
   /** 物品图标（iconEl）：group 按物品库 tier1/tier2 归类，原 emoji 作回退 */
