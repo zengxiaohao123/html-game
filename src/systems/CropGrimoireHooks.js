@@ -12,6 +12,7 @@ import { devLog } from '../core/Logger.js';
 import * as Geometry from '../core/Geometry.js';
 import { hasGrimoire } from './PassiveItemSystem.js';
 import { getTile, contentEntries } from '../core/TileAccess.js';
+import { isSuppressed } from './SuppressSystem.js';
 import { getRealtimeClock } from './RealtimeClock.js';
 import {
   GRIMOIRE_POTATO_MINE,
@@ -45,6 +46,7 @@ function wireHooks() {
     let planted = 0;
     for (const tile of gs.map.outerTiles) {
       if (tile?.contentId !== PotatoSystem.POTATO_ID) continue;
+      if (isSuppressed(gs, tile.idx)) continue; // 【压制】禁用该地块所有特性
       if (MineSystem.countMines(gs) >= MAX_MINES) break;
       if (plantMine(gs, tile.idx)) planted += 1;
     }
@@ -59,6 +61,7 @@ function wireHooks() {
     if (TulipSystem.hasTulipSimple(gs)) {
       for (const { ref, tile } of contentEntries(gs)) {
         if (tile?.contentId !== TulipSystem.TULIP_ID) continue;
+        if (isSuppressed(gs, ref)) continue; // 【压制】禁用该地块所有特性
         applyTulipFluctuation(gs, tile, 'turn', ref);
       }
     }

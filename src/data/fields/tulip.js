@@ -9,6 +9,7 @@ import { HookDispatcher } from '../../core/HookDispatcher.js';
 import { devLog } from '../../core/Logger.js';
 import { contentEntries, tileRefKey } from '../../core/TileAccess.js';
 import { applyTulipFluctuation, tulipDisplayValue } from '../../systems/TulipSystem.js';
+import { isSuppressed } from '../../systems/SuppressSystem.js';
 import { defineField, flagKey, getTile, refreshTile, registerSelfHook, toast } from './fieldKit.js';
 
 export const TulipField = defineField({
@@ -20,6 +21,8 @@ export const TulipField = defineField({
     HookDispatcher.register('onDailyStart', ({ gs }) => {
       for (const { ref, tile: t } of contentEntries(gs)) {
         if (t.contentId !== this.id) continue;
+        // 【压制】禁用该地块所有特性，不做例外
+        if (isSuppressed(gs, ref)) continue;
         const key = flagKey(this.id, 'onDailyStart');
         if (t.dailyFlags[key]) continue;
         t.dailyFlags[key] = true;

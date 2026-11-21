@@ -50,7 +50,9 @@ function wireHooks() {
   // （仓廪实生效时，水稻田块同样视同小麦田块，一起计入）
   HookDispatcher.register('onDailyEnd', ({ gs }) => {
     if (InventorySystem.countItem(gs, 'grimoire_grain_full') < 1) return;
-    const n = FieldEffects.countFieldTiles(gs, FieldEffects.FIELD_TYPES.WHEAT);
+    // 【压制】禁用该地块所有特性：被压制的麦田不再计入穗粒满的日末产出
+    const n = FieldEffects.fieldTileRefs(gs, FieldEffects.FIELD_TYPES.WHEAT)
+      .filter(ref => !isSuppressed(gs, ref)).length;
     if (n > 0) {
       InventorySystem.addItem(gs, 'item_wheat', n);
       devLog.info('[Passive] 穗粒满 小麦 +', n);

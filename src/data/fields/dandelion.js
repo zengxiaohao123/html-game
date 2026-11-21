@@ -11,6 +11,7 @@ import { EventBus } from '../../core/EventBus.js';
 import { GE } from '../../core/GameEvents.js';
 import { contentEntries } from '../../core/TileAccess.js';
 import { syncPumpkin } from '../../systems/PassiveItemSystem.js';
+import { isSuppressed } from '../../systems/SuppressSystem.js';
 import { defineField, getTile, isMine, refreshTile, toast } from './fieldKit.js';
 
 export const DandelionField = defineField({
@@ -31,6 +32,7 @@ export const DandelionField = defineField({
     HookDispatcher.register('onPlace', ({ gs, tileIdx, tileRef }) => {
       const ref = tileRef ?? tileIdx;
       if (!isMine(gs, ref, this.id)) return;
+      if (isSuppressed(gs, ref)) return; // 【压制】禁用该地块所有特性
       const tile = getTile(gs, ref);
       const st = ensureStored(tile);
       st.dandelionValue = 1;
@@ -41,6 +43,7 @@ export const DandelionField = defineField({
     HookDispatcher.register('onBlessed', ({ gs, tileIdx, tileRef }) => {
       const ref = tileRef ?? tileIdx;
       if (!isMine(gs, ref, this.id)) return;
+      if (isSuppressed(gs, ref)) return; // 【压制】禁用该地块所有特性
       const tile = getTile(gs, ref);
       ensureStored(tile);   // 已储存则不叠加（至多 1 个）
       toast(`✨ 蒲公英价值提升至 ${Math.max(0, tile.contentState.dandelionValue)}`, 1800);
@@ -51,7 +54,8 @@ export const DandelionField = defineField({
     HookDispatcher.register('onMoveEnd', ({ gs, distance = 0 }) => {
       if (distance <= 0) return;
       const tiles = contentEntries(gs).filter(e => e.tile.contentId === this.id);
-      for (const { tile: t } of tiles) {
+      for (const { ref, tile: t } of tiles) {
+        if (isSuppressed(gs, ref)) continue; // 【压制】禁用该地块所有特性
         const st = t.contentState || (t.contentState = {});
         if (!st.dandelionStored) continue;
         st.dandelionValue = (st.dandelionValue || 1) + distance;

@@ -449,5 +449,33 @@ head('13. 初级肥料：按【每一日开始时】词条判定，不维护名�
 }
 
 // ════════════════════════════════════════════════════════════
+head('14. 【压制】禁用日初波动等一切地块特性（不做例外）');
+{
+  reset();
+  // 郁金香：被压制当日不波动
+  put(ANCHOR, 'facility_tulip');
+  at(ANCHOR).contentState.tulipValue = 50;
+  at(ANCHOR).contentState.suppressUntilDay = gs.day;
+  dayStart();
+  check(at(ANCHOR).contentState.tulipValue === 50, '被压制的郁金香日初不波动', at(ANCHOR).contentState.tulipValue);
+
+  // 解除压制后恢复波动
+  at(ANCHOR).contentState.suppressUntilDay = null;
+  const origRandom = Math.random;
+  Math.random = () => 0.999;
+  dayStart();
+  Math.random = origRandom;
+  check(at(ANCHOR).contentState.tulipValue !== 50, '解除压制后郁金香日初恢复波动', at(ANCHOR).contentState.tulipValue);
+
+  // 幽怜草：被压制当日不枯萎
+  put(ANCHOR, 'facility_ghost_grass');
+  at(ANCHOR).contentState.ghostStored = true;
+  at(ANCHOR).contentState.ghostBlessedToday = false;
+  at(ANCHOR).contentState.suppressUntilDay = gs.day;
+  dayStart();
+  check(at(ANCHOR).contentId === 'facility_ghost_grass', '被压制的幽怜草当日不枯萎', at(ANCHOR).contentId);
+}
+
+// ════════════════════════════════════════════════════════════
 console.log(`\n${fail === 0 ? '✅' : '❌'} smoke-new-fields 结果：${pass} 通过 / ${fail} 失败（共 ${pass + fail}）`);
 process.exit(fail === 0 ? 0 : 1);

@@ -10,6 +10,7 @@
 import { HookDispatcher } from '../../core/HookDispatcher.js';
 import { contentEntries } from '../../core/TileAccess.js';
 import { syncPumpkin } from '../../systems/PassiveItemSystem.js';
+import { isSuppressed } from '../../systems/SuppressSystem.js';
 import { defineField, getTile, isMine, refreshTile, toast } from './fieldKit.js';
 
 export const GhostGrassField = defineField({
@@ -34,6 +35,7 @@ export const GhostGrassField = defineField({
     HookDispatcher.register('onBlessed', ({ gs, tileIdx, tileRef }) => {
       const ref = tileRef ?? tileIdx;
       if (!isMine(gs, ref, this.id)) return;
+      if (isSuppressed(gs, ref)) return; // 【压制】禁用该地块所有特性
       const tile = getTile(gs, ref);
       const st = tile.contentState || (tile.contentState = {});
       if (!st.ghostStored) return;
@@ -52,6 +54,8 @@ export const GhostGrassField = defineField({
       if (scopedTileIdx !== undefined) return;
       for (const { ref, tile: t } of contentEntries(gs)) {
         if (t.contentId !== this.id) continue;
+        // 【压制】当日不结算本格特性：不枯萎、也不重置本日计数
+        if (isSuppressed(gs, ref)) continue;
         const st = t.contentState || (t.contentState = {});
         if (st.ghostStored && st.ghostBlessedToday === false) {
           t.contentId = null;
