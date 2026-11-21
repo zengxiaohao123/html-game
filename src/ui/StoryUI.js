@@ -4,16 +4,17 @@
 // 版式逐项量取自 docs/_art-references/事件ui点击前.jpg / 事件ui一次点击.jpg（1920×868）：
 //   · 事件文本块（左下）
 //       - 参考图标题墨迹 70.8%–73.0%H、正文首行 74.9%H、行距 3.17%H、末行 86.3%H
-//       - 本作向左扩展利用左侧留白：文字左边界 17.0%W、右边界 60.0%W（块宽 43.0%W）
-//       - 正文区**尺寸恒定** `24vh`：文字少留白、不缩；文字多不撑高，按实际渲染高度
-//         自动分页，点击推进下一页。块顶固定 67vh、正文底边约 95%H，不再整块上移
-//       - 圆形徽记直径约 8.6%W，圆心约 (9.5%W, 73%H)
+//       - 右边界 60.0%W 不变；左边界取徽记直径 `min(8.6vw,17.2vh)`，
+//         徽记左缘贴屏幕左边缘，正文从徽记右缘起笔
+//       - 正文区**尺寸恒定** `20vh`：文字少留白、不缩；文字多不撑高，按实际渲染高度
+//         自动分页，点击推进下一页。块顶 71vh、正文底边约 95%H（只压顶、不动底）
+//       - 圆形徽记直径 `min(8.6vw,17.2vh)`，左缘贴屏幕，圆心约 (3.9%W, 77%H)
 //       - 正文落在一块深色「旧纸卷」底板上（.story-scroll，纯装饰层）：
 //         深松林墨绿渐变 + 墨渍 / 茶金晕染 / 纤维纹 + clip-path 手撕边 + 茶金细内框
-//   · 正文切换：淡出 → 换页 / 换分支 → 淡入（约 240ms，不做逐字打字机）
+//   · 正文切换：淡出 240ms → 换页 / 换分支 → 淡入 180ms（不做逐字打字机）
 //   · 选项只在「本节点需要选择 + 已到末页 + 文本播放完」后出现
 //   · 选项区（右侧整列）
-//       - x 65.3vw–94.4vw；不透明深松林卡片，白字标题 + 浅苔绿描述，不使用透明底或暗斑
+//       - x 70.3vw–99.4vw（卡片宽 29.1vw 不变，整列右移，右侧留 0.6vw 安全边）；不透明深松林卡片，白字标题 + 浅苔绿描述，不使用透明底或暗斑
 //       - 整体在选项区内垂直居中（上沿 22.5vh，下沿贴固定的正文区底边）
 //       - 参考节距 20.6vh（卡高 17.6 + 间距 3），四选项时收紧
 //       - 确认提示与确认印章在卡片底部预留行内，不压字、不顶开其它选项
@@ -48,8 +49,9 @@ export const STORY_Z = {
   LAYER: 5750,
 };
 
-/** 正文切换动画时长（毫秒）：淡出一半、换页后再淡入一半；不做逐字打字机 */
-const TEXT_TRANSITION_MS = 240;
+/** 正文切换动画：先淡出 240ms，换页 / 换分支后再淡入 180ms；不做逐字打字机 */
+const TEXT_FADE_OUT_MS = 240;
+const TEXT_FADE_IN_MS = 180;
 
 /** 正文分页的最小单元：不拆开【词条】与数字，换行 / 空白 / 英文词各算一个单元 */
 const TEXT_TOKEN_RE = /【[^】]*】|\d+(?:\.\d+)?%?|\r?\n|[^\S\n]+|[A-Za-z]+|[\s\S]/g;
@@ -138,7 +140,8 @@ export class StoryUI {
     // 冒烟测试可覆写以加速（文档口径 1.5 秒）
     this.confirmFadeMs = CONFIRM_FADE_MS;
     // 冒烟测试可覆写为 0：跳过正文淡出 / 淡入，走同步渲染
-    this.textTransitionMs = TEXT_TRANSITION_MS;
+    this.textFadeOutMs = TEXT_FADE_OUT_MS;
+    this.textFadeInMs = TEXT_FADE_IN_MS;
 
     this._onDocClick = (e) => this._handleDocumentClick(e);
     this._onKeyDownBound = (e) => this._onKeyDown(e);
@@ -515,11 +518,12 @@ export class StoryUI {
     fillRichText(this.textEl, this._pages[index] ?? '');
   }
 
-  /** 淡出 → 换页 → 淡入；textTransitionMs = 0 时同步渲染（测试口径） */
+  /** 淡出 240ms → 换页 / 换分支 → 淡入 180ms；两段都为 0 时同步渲染（测试口径） */
   _swapText(apply) {
-    const ms = Math.max(0, Number(this.textTransitionMs) || 0);
+    const outMs = Math.max(0, Number(this.textFadeOutMs) || 0);
+    const inMs = Math.max(0, Number(this.textFadeInMs) || 0);
     this._clearTextTimer();
-    if (!this.textEl || !ms) {
+    if (!this.textEl || (!outMs && !inMs)) {
       this._transitioning = false;
       this.textEl?.classList?.remove?.('is-swapping');
       apply();
@@ -527,7 +531,6 @@ export class StoryUI {
       return;
     }
     this._transitioning = true;
-    const half = Math.max(1, Math.round(ms / 2));
     this.textEl.classList.add('is-swapping');
     this._textTimer = setTimeout(() => {
       apply();
@@ -537,8 +540,8 @@ export class StoryUI {
       this._textTimer = setTimeout(() => {
         this._textTimer = null;
         this._afterTextShown();
-      }, half);
-    }, half);
+      }, inMs);
+    }, outMs);
   }
 
   /** 正文播放完（含淡入）后的统一收尾：末页才放选项，再判定结果态 */

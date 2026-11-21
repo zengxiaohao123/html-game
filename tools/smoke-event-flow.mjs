@@ -163,7 +163,8 @@ const ui = new StoryUI(director);
 ui.mount(body);
 director.storyUI = ui;
 ui.confirmFadeMs = 0;
-ui.textTransitionMs = 0;   // 正文同步渲染，选项随节点立即上屏
+ui.textFadeOutMs = 0;   // 正文同步渲染，选项随节点立即上屏
+ui.textFadeInMs = 0;
 
 const storyEnds = [];
 const toasts = [];

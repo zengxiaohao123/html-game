@@ -2,13 +2,12 @@
  * §18.2 事件 / 剧情 UI（剧情区 + 选项区）
  *
  * 版式：逐块量取自 docs/_art-references/事件ui点击前.jpg / 事件ui一次点击.jpg（1920×868，两图数值一致）
- *   · 事件文本块：文字左边界 17.0vw、右边界 60.0vw（块宽 43.0vw，利用左侧留白）
- *   · 标题墨迹原参考 70.8vh–73.0vh；本作没有底部信息栏，整块固定到 67vh 起
- *   · 正文区**尺寸恒定 24vh**：少字留白、不缩；多字不撑高，由 StoryUI 自动分页
- *   · 圆形徽记：直径约 8.6vw / 17.2vh，圆心约 (9.5vw, 73vh)，与文字列左缘空 3vw
- *   · 正文切换：淡出 → 换页 / 换分支 → 淡入（约 240ms，不做逐字打字机）
+ *   · 事件文本块：右侧仍为 60.0vw；左边界取徽记直径 `min(8.6vw,17.2vh)`，
+ *     徽记左缘贴屏幕左边缘，正文从徽记右缘起笔（块宽 `60vw - min(8.6vw,17.2vh)`）
+ *   · 标题墨迹 74.9vh 起点；正文区固定 `20vh`，底边仍在约 95vh（只压顶、不动底）
+ *   · 正文切换：淡出 240ms → 换页 / 换分支 → 淡入 180ms（不做逐字打字机）
  *   · 选项只在「需要选择的节点 + 末页 + 文本播放完」后出现
- *   · 选项区：65.3vw–94.4vw，上沿 22.5vh、下沿贴固定正文区底边，选项组在区内垂直居中
+ *   · 选项区：卡片宽 `29.1vw` 不变，整列右移，右缘留 `0.6vw` 安全边（贴屏但不越界）
  *   · 选项卡为不透明深松林底 + 茶金细边，白字标题 / 浅苔绿描述 / 预留确认行
  *   · 跳过入口在正文块右上角（挂块内，右缘 60vw），不占右侧选项列
  *
@@ -30,12 +29,12 @@ body.story-active .hotbar-wrapper {
   display: none;
 }
 
-/* ── 事件文本块（左下；块顶固定 67vh，尺寸恒定，不再随行数移动） ── */
+/* ── 事件文本块（左下；右缘 60vw，左缘让徽记贴屏幕左边缘） ── */
 .story-panel {
   position: absolute;
-  left: 17vw;
-  top: 67vh;
-  width: 43vw;
+  left: min(8.6vw, 17.2vh);
+  top: 71vh;
+  width: calc(60vw - min(8.6vw, 17.2vh));
   padding-bottom: 1.2vh;
   animation: story-rise 0.24s ease-out;
 }
@@ -113,14 +112,15 @@ body.story-active .hotbar-wrapper {
   pointer-events: none;
 }
 
-/* 左侧圆形徽记：双层环 + 内辉光 + 高点反光（圆心 76.3%H） */
+/* 左侧圆形徽记：双层环 + 内辉光 + 高点反光（左缘贴屏幕左边缘，圆心约 76.9%H） */
 .story-emblem {
   position: absolute;
   z-index: 2;
-  left: -11.8vw;
+  left: calc(-1 * min(8.6vw, 17.2vh));
   top: -2.7vh;
   width: min(8.6vw, 17.2vh);
   height: min(8.6vw, 17.2vh);
+  box-sizing: border-box; /* 含 2px 边框，外缘正好等于正文左边界，避免压住首字 */
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -221,11 +221,11 @@ body.story-active .hotbar-wrapper {
 }
 
 /* 事件正文：暖米白，双层暗影，行距 1.38（对齐参考图 3.17vh 行距）
- * **尺寸恒定**：高度固定 24vh，文字少时留白、不缩；文字多时由 StoryUI 按实际
+ * **尺寸恒定**：高度固定 20vh，文字少时留白、不缩；文字多时由 StoryUI 按实际
  * 渲染高度自动分页（不撑高、不裁字），玩家点击进入下一页。
- * 切换动画只做整体淡出 / 淡入（.is-swapping），不做逐字打字机。 */
+ * 切换动画只做整体淡出 / 淡入（.is-swapping）：淡出 240ms、淡入 180ms，不做逐字打字机。 */
 .story-text {
-  height: 24vh;
+  height: 20vh;
   overflow: hidden;
   font-size: clamp(13px, 2.3vh, 26px);
   line-height: 1.38;
@@ -235,12 +235,14 @@ body.story-active .hotbar-wrapper {
   text-shadow:
     0 1px 2px rgba(0, 0, 0, 0.92),
     0 0 1.4vh rgba(0, 0, 0, 0.7);
-  transition: opacity 0.12s ease, transform 0.12s ease;
+  /* 默认用于淡入（180ms）；.is-swapping 里改为淡出 240ms */
+  transition: opacity 0.18s ease, transform 0.18s ease;
 }
 
 .story-text.is-swapping {
   opacity: 0;
   transform: translateY(0.5vh);
+  transition-duration: 0.24s;
 }
 
 /* ── 跳过入口：正文块右上角（挂在 .story-panel 内；右缘 60vw） ── */
@@ -288,15 +290,15 @@ body.story-active .hotbar-wrapper {
 
 /* ── 选项区（右侧竖列） ──
  * 上沿锚在参考图首条位置 22.5vh，下沿由 JS 贴着正文块底边（bottom 用 px 覆盖）；
+ * 卡片宽度保持 29.1vw 不变，整列右移：右缘留 0.6vw 安全边，不越界、不被屏幕裁切。
  * 选项整体在选项区内**垂直居中**：首条 margin-top:auto、末条 margin-bottom:auto
  * 平分剩余高度，1 个选项落在中部，2 个选项成组靠近中部并保留 gap。
  * 内容超出时 auto 边距自动归零，从顶部开始滚动，保证每一条都能滚到。 */
 .option-area {
   position: absolute;
-  /* 内容仍从 65.3vw 起；向左多留 2.8vw 给待确认卡的 1.7vw 位移与金色把手，
-   * 滚动裁切作用在 padding 外沿，卡片左移/悬停时不会再被切掉。 */
-  left: 62.5vw;
-  right: 5.6vw;
+  /* 内容左缘 = 100 - 0.6(右安全边) - 2.8(确认位移缓冲) - 29.1(卡片宽) = 67.5vw */
+  left: 67.5vw;
+  right: 0.6vw;
   top: 22.5vh;
   bottom: 4vh;
   padding-left: 2.8vw;

@@ -165,7 +165,8 @@ const ui = new StoryUI(director);
 ui.mount(body);
 director.storyUI = ui;                 // mount 里已自动挂载；此处显式赋值便于阅读
 ui.confirmFadeMs = 0;                  // 加速淡出（文档口径仍为 1.5 秒）
-ui.textTransitionMs = 0;               // 正文同步渲染（文档口径 240ms 淡出 / 淡入）
+ui.textFadeOutMs = 0;                  // 正文同步渲染（文档口径 240ms 淡出 / 180ms 淡入）
+ui.textFadeInMs = 0;
 
 const storyEnds = [];
 EventBus.on(GE.STORY_END, (p) => storyEnds.push(p));
@@ -506,14 +507,16 @@ delete ui.measureEl.scrollHeight;
 delete ui.textEl.clientHeight;
 
 // 过渡动画：正文淡出 / 淡入期间选项不得提前出现
-ui.textTransitionMs = 60;
+ui.textFadeOutMs = 60;
+ui.textFadeInMs = 45;
 ui.show(optionStory);
 await tick(160);
 ui.advance();
 check(ui.optionAreaEl.style.display === 'none', 'I-07 正文过渡中选项不出现');
 await tick(160);
 check(ui.optionAreaEl.style.display === 'flex', 'I-08 正文播完后选项才出现');
-ui.textTransitionMs = 0;
+ui.textFadeOutMs = 0;
+ui.textFadeInMs = 0;
 ui.closeSilently('test');
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
