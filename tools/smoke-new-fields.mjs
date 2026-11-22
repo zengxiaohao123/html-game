@@ -521,31 +521,42 @@ head('8e. 展示归类：【压制】/【蓝息】只出现在状态页，不在
   const stateText = panel.root.textContent;
   check(stateText.includes('【压制】'), '状态页显示【压制】debuff');
   check(stateText.includes(GLOSSARY.find((g) => g.term === '压制').meaning), '压制行释义取自词条字典');
-  // 蓝息：范围内地块在状态页显示，地块内容只保留「特性」说明
+  // 条件型激活：不另起一行播报，改为特性行末尾的彩色（已激活 / 未激活）后缀
   reset();
   put(ANCHOR, 'facility_blue_star_fruit');
   at(ANCHOR).contentState.blueStored = 7;
   panel.activeTabIdx = 0; // 回到「地块内容」
   panel.selectTile(ANCHOR);
-  const blueContent = panel.root.textContent;
-  check(blueContent.includes('特性：') && blueContent.includes('【蓝息】'), '蓝星果地块内容写「特性：…【蓝息】」');
+  const blueText = panel.root.textContent;
+  check(!blueText.includes('💙 特性：'), '蓝星果不再另起一行播报激活态');
+  check(blueText.includes('（已激活）'), '蓝星果有储存：特性行末尾显示（已激活）');
+  at(ANCHOR).contentState.blueStored = 0;
+  panel._renderBody();
+  check(panel.root.textContent.includes('（未激活）'), '蓝星果无储存：特性行末尾显示（未激活）');
+  at(ANCHOR).contentState.blueStored = 7;
+  syncBlueBreath(gs);
   const blueStateIdx = panel._currentTabs.findIndex((t) => t.render === 'state');
   panel.activeTabIdx = blueStateIdx;
   panel._renderBody();
   check(panel.root.textContent.includes('【蓝息】'), '受影响地块（含蓝星果自身）状态页显示蓝息 buff');
 
-  // 啤酒花：浇水说明走特性行；未浇水仍正常显示（不套封禁）
+  // 啤酒花：激活状态走特性行后缀；未浇水仍正常显示（不套封禁）
   reset();
   put(ANCHOR, 'facility_hops', 'terrain_grass');
   panel.activeTabIdx = 0;
   panel.selectTile(ANCHOR);
   const hopTraitLines = collect(panel.root, 'trait-line');
-  check(hopTraitLines.some((el) => el.textContent.includes('需要浇水')),
-    '啤酒花浇水说明按特性行渲染');
-  check(hopTraitLines.some((el) => el.textContent.includes('未浇水')),
-    '未浇水：运行信息仍按正常特性行显示');
+  const hopLine = hopTraitLines.find((el) => el.textContent.includes('需要浇水'));
+  check(!!hopLine && hopLine.textContent.includes('（未激活）'), '啤酒花未浇水：特性行末尾显示（未激活）');
   check(!hopTraitLines.some((el) => el._classes.has('is-suppressed')),
     '未浇水不套用封禁样式');
+  check(!panel.root.textContent.includes('💧 相邻水面'),
+    '不再单独播报「相邻水面：已浇水」');
+  const waterRef = neighborRefs(gs, ANCHOR)[0];
+  at(waterRef).terrain = 'terrain_water';
+  panel._renderBody();
+  const hopLine2 = collect(panel.root, 'trait-line').find((el) => el.textContent.includes('需要浇水'));
+  check(!!hopLine2 && hopLine2.textContent.includes('（已激活）'), '啤酒花相邻水面：特性行末尾显示（已激活）');
 
   // 蘑菇：地块为水面 → 除水面规则行外，其余特性行套用封禁样式
   reset();
@@ -557,6 +568,8 @@ head('8e. 展示归类：【压制】/【蓝息】只出现在状态页，不在
   check(!!ruleLine && !ruleLine._classes.has('is-suppressed'), '蘑菇水面：「其余所有特性失效」规则行本身不划掉');
   check(otherLines.length > 0 && otherLines.every((el) => el._classes.has('is-suppressed')),
     '蘑菇水面：其余特性行套用封禁样式（红底 + 删除线）', otherLines.length);
+  check(!ruleLine.textContent.includes('（未激活）') && !ruleLine.textContent.includes('（已激活）'),
+    '蘑菇水面走封禁样式，不显示激活态后缀');
 }
 
 // ════════════════════════════════════════════════════════════

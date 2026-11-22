@@ -53,9 +53,9 @@ import { createEl, qs, iconEl } from './dom.js';
 import { renderTraitBadges, renderContentRows } from './TraitBadges.js';
 import { fieldContentRows } from '../data/fieldTraits.js';
 import { renderTermText } from './TermText.js';
-import { takeStoredToBag, hasAdjacentWater } from '../systems/ProduceSystem.js';
+import { takeStoredToBag } from '../systems/ProduceSystem.js';
 import { isSuppressed } from '../systems/SuppressSystem.js';
-import { isInBlueBreath, blueRadiusFor, syncBlueBreath } from '../systems/BlueBreathSystem.js';
+import { isInBlueBreath, syncBlueBreath } from '../systems/BlueBreathSystem.js';
 import { HOPS_MAX } from '../data/fields/hops.js';
 import { MUSHROOM_MAX } from '../data/fields/mushroom.js';
 import { PUMPKIN_THRESHOLD } from '../data/fields/pumpkin.js';
@@ -522,27 +522,17 @@ export class InfoPanel {
   }
 
   /**
-   * 新田块运行信息（只读）：成长值 / 储存 / 水面特性 / 【产出时】临时特性。
-   * 归类口径：特性相关写这里（地块内容）；【压制】debuff 与结界 buff 写状态页。
-   * 储存数量在「身处该格」时由下方操作区显示，离开该格时在此补一行。
+   * 新田块运行信息（只读）：成长值 / 储存数量。
+   * 条件型特性的激活状态不另起一行播报，统一由特性行末尾的（已激活）/（未激活）后缀表达。
    */
   _renderFieldStatus(tile, contentId, gs, ref) {
     const cs = tile.contentState || {};
     const onTile = refsEqual(playerRef(gs), ref);
     const rows = [];
-    // 条件型运行信息与地块描述同属特性，统一走特性行样式（米色底 / 封禁红底）
-    const traitRows = [];
-    const fieldSuppressed = !!isSuppressed(gs, ref);
-    const addTrait = (text) => traitRows.push({
-      text, kind: 'trait', rarity: 1, suppressed: fieldSuppressed,
-    });
 
     if (contentId === 'facility_hops') {
       const n = Math.max(0, Math.min(HOPS_MAX, Number(cs.hopsStored) || 0));
       if (!onTile) rows.push(`🍺 已储存 ${n} / ${HOPS_MAX}`);
-      addTrait(hasAdjacentWater(gs, ref)
-        ? '💧 相邻水面：已浇水，【产出时】产量 +2'
-        : '💧 相邻无水面：未浇水，不触发【产出时】产量 +2');
     } else if (contentId === 'facility_mushroom') {
       const n = Math.max(0, Math.min(MUSHROOM_MAX, Number(cs.mushroomStored) || 0));
       if (!onTile) rows.push(`🍄 已储存 ${n} / ${MUSHROOM_MAX}`);
@@ -550,10 +540,6 @@ export class InfoPanel {
     } else if (contentId === 'facility_blue_star_fruit') {
       const n = Math.max(0, Math.min(7, Number(cs.blueStored) || 0));
       if (!onTile) rows.push(`💙 已储存 ${n} / 7`);
-      // 特性（地块内容）：蓝星果田块给予【蓝息】；影响本身作为 buff 显示在「状态」页
-      addTrait(n > 0
-        ? `💙 特性：储存蓝星果后散发【蓝息】（半径 ${blueRadiusFor(n).toFixed(1)} 米）`
-        : '💙 特性：尚未储存蓝星果，暂不散发【蓝息】');
     } else if (contentId === 'facility_pumpkin') {
       const growth = Math.max(0, Number(cs.pumpkinGrowth) || 0);
       const stored = Math.max(0, Math.min(1, Number(cs.pumpkinStored) || 0));
@@ -573,7 +559,6 @@ export class InfoPanel {
       // 行内的【蓝息】【产出时】等术语走 TermText：内联【】并可点击查看释义
       renderTermText(row, text);
     }
-    renderContentRows(this.bodyWrap, traitRows);
   }
 
   /**

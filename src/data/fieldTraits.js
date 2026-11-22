@@ -12,11 +12,30 @@
 import { ITEMS } from './items.js';
 import { countItem } from '../systems/InventorySystem.js';
 import { FieldEffects } from '../systems/FieldEffects.js';
+import { hasAdjacentWater } from '../systems/ProduceSystem.js';
 import { getTile } from '../core/TileAccess.js';
 import { normalizeTerrain } from './terrains.js';
 
 /** 蘑菇水面规则行：该行说明「其余特性失效」，自身不参与封禁划除 */
 const WATER_RULE_RE = /所在地块地形为水面时/;
+
+/**
+ * 条件型激活特性：特性本身始终发放，只是「条件满足才生效」。
+ * 展示口径：在特性文本末尾追加（已激活）/（未激活）后缀，不另起一行播报。
+ * 明确排除：
+ *   · 先判断条件再决定是否发放的特性（如【黄金浪】——条件不成立就是没有这条特性）
+ *   · 条件满足后反而被禁用的情况（如蘑菇田块处于水面——走封禁红底删除线）
+ */
+const TRAIT_ACTIVATION = {
+  facility_hops: [{
+    match: '激活特性',
+    isActive: (gs, ref) => hasAdjacentWater(gs, ref),
+  }],
+  facility_blue_star_fruit: [{
+    match: '散发小范围【蓝息】',
+    isActive: (gs, ref) => (Number(getTile(gs, ref)?.contentState?.blueStored) || 0) > 0,
+  }],
+};
 
 /** 稀有度底色（1 原色 / 2 绿 / 3 蓝 / 4 紫 / 5 金；0 与 99 用原色） */
 export const TRAIT_FILL = {
@@ -147,7 +166,7 @@ export const FIELD_TRAIT_PROVENANCE = {
  * @param {Array<{text:string, rarity:number}>} [opts.extraTraits] 运行期临时特性（向日葵给予等）
  * @param {number|object|null} [opts.ref] 该田块在地图上的位置（外圈 idx / 栅栏 ref）；
  *        魔导书的条件型特性（如黄金浪）只有拿到真实位置时才可能显示
- * @returns {Array<{text:string, kind:'trait'|'note', rarity:number, suppressed:boolean}>}
+ * @returns {Array<{text:string, kind:'trait'|'note', rarity:number, suppressed:boolean, activation?:boolean}>}
  */
 export function fieldContentRows(gs, fieldId, opts = {}) {
   const { codex = false, suppressed = false, extraTraits = [], ref = null } = opts;
@@ -235,7 +254,17 @@ export function fieldContentRows(gs, fieldId, opts = {}) {
     });
   }
 
-  // 5) 封禁：蘑菇处于水面 → 除水面规则外的特性变红 + 删除线；被【压制】→ 全部特性变红；图鉴永不红
+  // 5) 条件型激活：给「需要满足条件才生效」的特性行打状态标记（渲染时追加彩色后缀）
+  if (!codex && gs && ref !== null && ref !== undefined) {
+    for (const row of rows) {
+      if (row.kind !== 'trait') continue;
+      const rule = (TRAIT_ACTIVATION[fieldId] || []).find((r) => row.text.includes(r.match));
+      if (!rule) continue;
+      row.activation = !!rule.isActive(gs, ref);
+    }
+  }
+
+  // 6) 封禁：蘑菇处于水面 → 除水面规则外的特性变红 + 删除线；被【压制】→ 全部特性变红；图鉴永不红
   if (!codex) {
     if (waterInvalid) {
       for (const row of rows) {

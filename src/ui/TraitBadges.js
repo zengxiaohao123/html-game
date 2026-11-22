@@ -69,7 +69,7 @@ export function renderStateBadges(parent, states, opts = {}) {
  *   · 非特性说明保持原色（不参与封禁）；
  *   · 行内【术语】统一走 TermText。
  * @param {HTMLElement} parent
- * @param {Array<{text:string, kind:'trait'|'note', rarity:number, suppressed:boolean}>} rows
+ * @param {Array<{text:string, kind:'trait'|'note', rarity:number, suppressed:boolean, activation?:boolean}>} rows
  */
 export function renderContentRows(parent, rows) {
   for (const r of rows || []) {
@@ -87,5 +87,13 @@ export function renderContentRows(parent, rows) {
       el.style.color = SUPPRESSED_TEXT;
     }
     renderTermText(el, r.text);
+    // 条件型激活：行末追加彩色状态后缀；被禁用（删除线）时不显示激活态
+    if (typeof r.activation === 'boolean' && !r.suppressed) {
+      createEl('span', {
+        style: { color: r.activation ? '#2e7d32' : '#c62828' },
+        text: `（${r.activation ? '已激活' : '未激活'}）`,
+        parent: el,
+      });
+    }
   }
 }
