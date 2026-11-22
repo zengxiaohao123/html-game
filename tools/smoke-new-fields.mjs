@@ -101,6 +101,12 @@ import {
 } from '../src/systems/BlueBreathSystem.js';
 import { produce } from '../src/systems/ProduceSystem.js';
 import { hasProduceBonus, hasAdjacentWater, grantProduceBonus } from '../src/systems/ProduceSystem.js';
+import { takeStoredToBag } from '../src/systems/ProduceSystem.js';
+import { harvestCropBeforeRemove } from '../src/systems/CropHarvest.js';
+import { placeContent } from '../src/systems/BuildSystem.js';
+import { POOLS } from '../src/data/items.js';
+import { createEl } from '../src/ui/dom.js';
+import { fieldContentRows } from '../src/data/fieldTraits.js';
 import { useItem, hasDailyStartTrait } from '../src/systems/UseItemSystem.js';
 import { addHopsStored } from '../src/data/fields/hops.js';
 import { applyMaxHp } from '../src/systems/HealSystem.js';
@@ -368,6 +374,26 @@ head('8. 蓝星果：储存 / 半径 / 变异只掷一次 / 角色光环');
   gs.inventory.items = [];
   produce(gs, { ref: ANCHOR, itemId: 'item_blue_starfruit', qty: 1 });
   check(gs.inventory.items.every((e) => !e.tags), '蓝星果田块自身产出不带变异词条', gs.inventory.items);
+
+  // A1：逐个产物独立掷（3 件中第 1 件命中 → 只有 1 件带词条）
+  let roll = 0;
+  Random.chance = () => (roll++ % 3) === 0;
+  gs.inventory.items = [];
+  produce(gs, { ref: nb, itemId: 'item_lavender', qty: 3 });
+  const taggedQty = gs.inventory.items.filter((e) => e.tags).reduce((s, e) => s + e.qty, 0);
+  check(taggedQty === 1, '逐件独立判定：3 件只有 1 件变异', taggedQty);
+
+  // A1：拆除自动采摘同样逐件判定（草莓 3 个 → 3 件全变异）
+  Random.chance = () => true;
+  gs.inventory.items = [];
+  put(nb, 'facility_strawberry');
+  at(nb).contentState.strawberryStored = 3;
+  const harvested = harvestCropBeforeRemove(gs, at(nb), nb);
+  const removedTagged = gs.inventory.items
+    .filter((e) => e.itemId === 'item_strawberry' && e.tags)
+    .reduce((s, e) => s + e.qty, 0);
+  check(harvested?.harvested?.length === 1 && removedTagged === 3,
+    '拆除自动采摘：逐件入包并逐件判定变异', { removedTagged, harvested });
   // 角色光环动态增减：先离开范围清空，再进入
   gs.player.x = -1;
   gs.player.loc = null;
@@ -607,6 +633,91 @@ head('14. 【压制】禁用日初波动等一切地块特性（不做例外）'
   at(ANCHOR).contentState.suppressUntilDay = gs.day;
   dayStart();
   check(at(ANCHOR).contentId === 'facility_ghost_grass', '被压制的幽怜草当日不枯萎', at(ANCHOR).contentId);
+}
+
+// ════════════════════════════════════════════════════════════
+head('15. 随机池补向日葵 / 野生种子放置即抽池 / 艾草新特性');
+{
+  reset();
+  // A2：createEl 必须支持 disabled（否则「草莓未满 5 个时取走按钮不可点」形同虚设）
+  const btn = createEl('button', { text: '取走', disabled: true });
+  check(btn.disabled === true, 'createEl 传入 disabled 时按钮真正禁用（A2）');
+
+  // A5：向日葵补进 POOL-01
+  check(POOLS['POOL-01'].entries.some((e) => e.id === 'facility_sunflower'),
+    '田块池1（POOL-01）包含向日葵花田');
+
+  // A5：野生种子放下后立即消失，并调用随机池抽一个田块放置到该格
+  gs.inventory.items = [];
+  InventorySystem.addItem(gs, 'facility_wild_seed', 1);
+  const before = count('facility_wild_seed');
+  const r = placeContent(gs, ANCHOR, 'facility_wild_seed');
+  check(r?.ok !== false && count('facility_wild_seed') === before - 1,
+    '放置野生种子消耗 1 个种子', { before, after: count('facility_wild_seed'), r });
+  check(at(ANCHOR).contentId && at(ANCHOR).contentId !== 'facility_wild_seed',
+    '野生种子立即被随机田块替换', at(ANCHOR).contentId);
+
+  // A6：艾草——回血获得艾草，每回合限 2 次；回合开始重置
+  reset();
+  put(ANCHOR, 'facility_mugwort');
+  HookDispatcher.fire('onTurnStart', { gs });
+  gs.inventory.items = [];
+  gs.player.hp = Math.max(1, gs.player.maxHp - 20);
+  HookDispatcher.fire('onHeal', { gs, amount: 1 });
+  HookDispatcher.fire('onHeal', { gs, amount: 1 });
+  HookDispatcher.fire('onHeal', { gs, amount: 1 });
+  check(count('item_mugwort') === 2, '同回合回血 3 次 → 最多获得 2 个艾草', count('item_mugwort'));
+  HookDispatcher.fire('onTurnStart', { gs });
+  HookDispatcher.fire('onHeal', { gs, amount: 1 });
+  check(count('item_mugwort') === 3, '新回合开始后计数重置（再获得 1 个）', count('item_mugwort'));
+
+  // A6：旧的「每日开始 +2」已删除；受祝福回复 25% 生命
+  reset();
+  put(ANCHOR, 'facility_mugwort');
+  gs.inventory.items = [];
+  dayStart();
+  check(count('item_mugwort') === 0, '日初不再凭空获得艾草（旧 +2 已删）', count('item_mugwort'));
+  gs.player.hp = Math.max(1, Math.floor(gs.player.maxHp / 2));
+  const hpBefore = gs.player.hp;
+  blessTile(ANCHOR);
+  const expectHeal = Math.max(1, Math.round(gs.player.maxHp * 0.25));
+  check(gs.player.hp >= hpBefore && gs.player.hp - hpBefore >= Math.min(expectHeal, gs.player.maxHp - hpBefore),
+    '受祝福回复 25% 生命', { hpBefore, hp: gs.player.hp, maxHp: gs.player.maxHp });
+
+  // ── B / D：特性着色与来源 ──
+  reset();
+  const hopRows = fieldContentRows(gs, 'facility_hops', { suppressed: true });
+  check(hopRows.filter((r) => r.kind === 'trait').every((r) => r.suppressed),
+    '压制：全部特性行标记封禁（红底 + 删除线）');
+  check(hopRows.filter((r) => r.kind === 'note').every((r) => !r.suppressed),
+    '压制：非特性说明（浇水提示）保持原色');
+  const codexRows = fieldContentRows(null, 'facility_hops', { codex: true, suppressed: true });
+  check(codexRows.every((r) => !r.suppressed && r.rarity === 1),
+    '图鉴：只显示原始特性、原色、永不封禁');
+  const withTemp = fieldContentRows(gs, 'facility_lavender', {
+    suppressed: true,
+    extraTraits: [{ text: '向日葵临时特性', rarity: 3 }],
+  });
+  const tempRow = withTemp.find((r) => r.text === '向日葵临时特性');
+  check(tempRow && tempRow.rarity === 3 && tempRow.suppressed,
+    '向日葵给予的临时特性：R3 蓝，被压制时同样变红');
+
+  // 仓廪实：水稻共享小麦魔导书特性（金色 R5），小麦取原书 R4
+  gs.inventory.items = [];
+  InventorySystem.addItem(gs, 'grimoire_granary_full', 1);
+  InventorySystem.addItem(gs, 'grimoire_golden_wave', 1);
+  InventorySystem.addItem(gs, 'grimoire_grain_full', 1);
+  const riceGold = fieldContentRows(gs, 'facility_rice').find((r) => r.text.includes('【经过时】'));
+  const wheatGold = fieldContentRows(gs, 'facility_wheat').find((r) => r.text.includes('【经过时】'));
+  check(riceGold?.rarity === 5 && wheatGold?.rarity === 4,
+    '仓廪实：水稻共享【黄金浪】为金（5），小麦原书为紫（4）', { riceGold, wheatGold });
+
+  // 郁金香两本魔导书：描述合并、底色取最高
+  InventorySystem.addItem(gs, 'grimoire_bubble', 1);
+  InventorySystem.addItem(gs, 'grimoire_tulip_simple', 1);
+  const tulipRows = fieldContentRows(gs, 'facility_tulip').filter((r) => r.text.includes('价值随机'));
+  check(tulipRows.length >= 2 && tulipRows.every((r) => r.rarity === 3),
+    '郁金香两本：两段描述合并，底色取最高 R3', tulipRows);
 }
 
 // ════════════════════════════════════════════════════════════

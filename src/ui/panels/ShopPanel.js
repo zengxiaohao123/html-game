@@ -27,6 +27,7 @@ import { createEl, qs, iconEl } from '../dom.js';
 import { refsEqual } from '../../core/TileAccess.js';
 import { devLog } from '../../core/Logger.js';
 import { ITEMS } from '../../data/items.js';
+import { rarityFill } from '../../data/fieldTraits.js';
 import { renderTraitBadges } from '../TraitBadges.js';
 import { renderTermText } from '../TermText.js';
 import { CATEGORY_TABS, createCategoryBar } from '../CategoryBar.js';
@@ -470,6 +471,8 @@ export class ShopPanel {
 
   /** 格内三要素：顶部小字名称 / 居中图标 / 右下角金币图标+价格（§16.21，不显示描述） */
   _fillCell(cell, { id, name, emoji, price }) {
+    // 槽位整体按物品稀有度染色（稀有度 0 / 99 为原色）
+    cell.style.backgroundColor = rarityFill(ITEMS[id]?.rarity);
     createEl('div', { class: ['shop-cell-name'], text: name, parent: cell });
     cell.appendChild(iconEl('items', id, {
       def: ITEMS[id], fallback: emoji, size: '34px',

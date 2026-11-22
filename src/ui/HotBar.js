@@ -19,6 +19,7 @@ import { ITEMS } from '../data/items.js';
 import { POTIONS } from '../data/potions.js';
 import { ItemTargeting } from '../systems/ItemTargeting.js';
 import { useItem } from '../systems/UseItemSystem.js';
+import { rarityFill } from '../data/fieldTraits.js';
 
 /** 可放到地块上的物品：地块内容（设施 / 资源 / 技能 / 地形） */
 const PLACEABLE_PREFIX = /^(facility_|resource_|skill_|terrain_)/;
@@ -274,8 +275,10 @@ export class HotBar {
 
         // 数量 0 且材料也不足 → 灰底（仍可点击选中，放置会被 BuildSystem 拒绝）；
         // 数量 0 但材料够合成 → 不置灰，放置时由 BuildSystem/ItemTargeting 自动合成
-        slotEl.classList.toggle('no-stock',
-          qty === 0 && !ForgeSystem.findCraftableRecipe(gs, slot.itemId));
+        const noStock = qty === 0 && !ForgeSystem.findCraftableRecipe(gs, slot.itemId);
+        slotEl.classList.toggle('no-stock', noStock);
+        // 槽位整体按稀有度染色；灰底（数量不足且不可合成）优先级最高
+        slotEl.style.backgroundColor = noStock ? 'rgba(150, 150, 150, 0.55)' : rarityFill(ITEMS[slot.itemId]?.rarity);
 
         // 数量恒显（0 也照常显示 0）
         createEl('div', {
@@ -287,6 +290,7 @@ export class HotBar {
         slotEl.classList.remove('has-content', 'no-stock');
         slotEl.classList.add('empty');
         slotEl.style.opacity = '';
+        slotEl.style.backgroundColor = 'rgba(220, 220, 220, 0.6)';
       }
     }
 

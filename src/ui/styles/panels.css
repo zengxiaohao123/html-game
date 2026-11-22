@@ -532,25 +532,31 @@
   text-shadow: 0 1px 1px rgba(0,0,0,0.35);
 }
 
-/* 运行时状态徽章：沿用词条徽章的缎带语言，仅按状态倾向换色（好/坏/中性） */
+/* 地块内容「特性行」：整条 bullet 按来源稀有度上底色；封禁时红底 + 红色删除线 */
+.trait-line {
+  font-size: 12px;
+  line-height: 1.55;
+  color: #4a3a2a;
+  background: #f5ecd8;
+  border-radius: 6px;
+  padding: 3px 8px;
+  margin-bottom: 4px;
+  white-space: pre-line;
+  word-break: break-word;
+  text-align: left;
+}
+.trait-line.is-suppressed {
+  background: #f7d6d6;
+}
+
+/* 运行时状态徽章：沿用词条徽章的缎带语言，底色统一原色 */
 .state-badge-row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 6px;
 }
-.state-badge.good {
-  background: linear-gradient(180deg, #8fd06f 0%, #3f9e4d 100%);
-  border-color: #2e6b36;
-}
-.state-badge.bad {
-  background: linear-gradient(180deg, #f4a24b 0%, #c85a1b 100%);
-  border-color: #8a3b0c;
-}
-.state-badge.neutral {
-  background: linear-gradient(180deg, #8fb8e0 0%, #3f6fa8 100%);
-  border-color: #2b4d78;
-}
+/* 状态 / buff / debuff / 结界：底色统一原色，不再保留好 / 坏语义色 */
 
 /* 术语（【粘液】【虚弱】…）：行内文字，只有配色区别。
    不加底色 / 边框 / 图标 / 胶囊，视觉必须弱于展示词条徽章。

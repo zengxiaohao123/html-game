@@ -181,10 +181,15 @@ for (const [rel] of DETAIL_VIEWS) {
   if (/class:\s*['"]trait-badge/.test(src)) errors.push(`[词条徽章重复实现] ${rel} 自行拼了 trait-badge DOM`);
 }
 
-// 运行时状态徽章：必须走 renderStateBadges 统一入口，且名称/含义取自物品库（禁止自造词）
+// 运行时状态徽章：只在生物详情的「状态」子页展示，名称/含义取自物品库（禁止自造词）；
+// 名称下方不再挂状态徽章（A3：展示词条与运行时状态分开）
 checked++;
-if (!infoSrc.includes('renderStateBadges(')) {
-  errors.push('[状态徽章缺失] InfoPanel 生物详情未接入 renderStateBadges 统一入口');
+if (infoSrc.includes('renderStateBadges(')) {
+  errors.push('[状态徽章位置] InfoPanel 生物详情名称下方不得再挂状态徽章，状态只在「状态」子页展示');
+}
+checked++;
+if (!infoSrc.includes('getCreatureStates(')) {
+  errors.push('[生物状态数据源] InfoPanel 生物详情「状态」子页未读取实例状态');
 }
 checked++;
 if (/class:\s*['"]state-badge/.test(infoSrc)) {

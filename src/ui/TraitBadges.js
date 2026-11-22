@@ -8,6 +8,8 @@
 // renderStateBadges 是**运行时状态（buff/debuff）**的动态徽章入口，同样只渲染名称，不负责术语释义。
 
 import { createEl } from './dom.js';
+import { renderTermText } from './TermText.js';
+import { rarityFill, SUPPRESSED_FILL, SUPPRESSED_TEXT } from '../data/fieldTraits.js';
 
 /**
  * @param {HTMLElement} parent 详情视图容器
@@ -53,9 +55,37 @@ export function renderStateBadges(parent, states, opts = {}) {
     parent,
   });
   list.forEach((s) => createEl('span', {
-    class: ['trait-badge', 'state-badge', s.tone || 'neutral'],
+    // 状态底色统一原色（不再区分好 / 坏语义色）
+    class: ['trait-badge', 'state-badge'],
     text: s.emoji ? `${s.emoji} ${s.name}` : s.name,
     parent: row,
   }));
   return row;
+}
+
+/**
+ * 地块内容行渲染（特性 / 非特性说明）：
+ *   · 特性行按来源稀有度上底色；被封禁时整条红底 + 红色删除线；
+ *   · 非特性说明保持原色（不参与封禁）；
+ *   · 行内【术语】统一走 TermText。
+ * @param {HTMLElement} parent
+ * @param {Array<{text:string, kind:'trait'|'note', rarity:number, suppressed:boolean}>} rows
+ */
+export function renderContentRows(parent, rows) {
+  for (const r of rows || []) {
+    if (r.kind === 'note') {
+      renderTermText(parent, r.text, { tag: 'div', class: 'facility-desc-row' });
+      continue;
+    }
+    const el = createEl('div', {
+      class: r.suppressed ? ['trait-line', 'is-suppressed'] : 'trait-line',
+      parent,
+    });
+    el.style.background = r.suppressed ? SUPPRESSED_FILL : rarityFill(r.rarity);
+    if (r.suppressed) {
+      el.style.textDecoration = 'line-through';
+      el.style.color = SUPPRESSED_TEXT;
+    }
+    renderTermText(el, r.text);
+  }
 }

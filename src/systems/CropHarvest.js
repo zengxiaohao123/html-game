@@ -64,7 +64,7 @@ export function harvestCropBeforeRemove(gs, tile, ref = null) {
       const qty = potatoStoredOf(tile);
       if (qty <= 0) break;
       cs.potatoStored = 0;
-      InventorySystem.addItem(gs, 'item_potato', qty);
+      takeStoredToBag(gs, ref, 'item_potato', qty);
       result.harvested.push(harvestEntry('item_potato', qty));
       break;
     }
@@ -72,7 +72,7 @@ export function harvestCropBeforeRemove(gs, tile, ref = null) {
       const qty = Math.max(0, Math.floor(Number(cs.strawberryStored) || 0));
       if (qty <= 0) break;
       cs.strawberryStored = 0;
-      InventorySystem.addItem(gs, 'item_strawberry', qty);
+      takeStoredToBag(gs, ref, 'item_strawberry', qty);
       result.harvested.push(harvestEntry('item_strawberry', qty));
       break;
     }
@@ -80,7 +80,7 @@ export function harvestCropBeforeRemove(gs, tile, ref = null) {
       const qty = Math.max(0, Math.floor(Number(cs.peaStored) || 0));
       if (qty <= 0) break;
       cs.peaStored = 0;
-      InventorySystem.addItem(gs, 'item_pea', qty);
+      takeStoredToBag(gs, ref, 'item_pea', qty);
       result.harvested.push(harvestEntry('item_pea', qty));
       break;
     }

@@ -2099,30 +2099,34 @@ head_('第 12 批：信息区固定操作区（按钮在滚动区外）+ 生物�
 
   cards[0].click();
   assert(infoPanel.creatureDetailId === 't12_fed', '点第 1 只 → 打开该实例详情');
-  const fedBadges = findAll(infoPanel.root, (el) => el._classes && el._classes.has('state-badge'));
-  assert(fedBadges.length === 1 && fedBadges[0]._text.includes('已投喂'),
-    `已投喂个体显示【已投喂】徽章（实测 ${fedBadges.map((b) => b._text).join('|')}）`);
+  // A3：状态只在「状态」子页展示，名称下方不再挂徽章
+  infoPanel.creatureSubTab = 'states';
+  infoPanel._renderBody();
+  assert(hasText(infoPanel.root, '已投喂'), '已投喂个体在「状态」子页显示【已投喂】');
   assert(!hasText(infoPanel.root, '饥饿'), '已投喂个体不显示【饥饿】');
+  const fedBadges = findAll(infoPanel.root, (el) => el._classes && el._classes.has('state-badge'));
+  assert(fedBadges.length === 0, '生物名称下方不再挂状态徽章');
 
-  // 返回列表 → 点第 2 只（饥饿）→ 徽章不同
+  // 返回列表 → 点第 2 只（饥饿）→ 状态不同
   buttonsWithText(infoPanel.root, '←')[0].click();
   // 返回后重新取卡片（列表已重绘）
   const cards2 = findAll(infoPanel.root, (el) => el._listeners && el._listeners.click && el.tagName === 'DIV'
     && el.attributes && el.attributes.title && ['小鸡'].includes(el.attributes.title));
   cards2[1].click();
   assert(infoPanel.creatureDetailId === 't12_hungry', '点第 2 只 → 打开另一实例');
-  const hungryBadges = findAll(infoPanel.root, (el) => el._classes && el._classes.has('state-badge'));
-  assert(hungryBadges.length === 1 && hungryBadges[0]._text.includes('饥饿'),
-    `饥饿个体显示【饥饿】徽章（实测 ${hungryBadges.map((b) => b._text).join('|')}）`);
+  infoPanel.creatureSubTab = 'states';
+  infoPanel._renderBody();
+  assert(hasText(infoPanel.root, '饥饿'), '饥饿个体在「状态」子页显示【饥饿】');
   assert(!hasText(infoPanel.root, '已投喂'), '饥饿个体不显示【已投喂】');
 
-  // 状态变化 → 详情徽章实时刷新（模拟跨日结算：lastFed 翻转 + CREATURE_DEFEATED 通知）
+  // 状态变化 → 状态子页实时刷新（模拟跨日结算：lastFed 翻转 + CREATURE_DEFEATED 通知）
   const target = gs.creatures.find((c) => c.id === 't12_hungry');
   target.lastFed = true;
   EventBus.emit(GE.CREATURE_DEFEATED, { creature: target });
-  const afterBadges = findAll(infoPanel.root, (el) => el._classes && el._classes.has('state-badge'));
-  assert(afterBadges.length === 1 && afterBadges[0]._text.includes('已投喂'),
-    '状态变为已投喂后徽章随之刷新（无需重开面板）');
+  infoPanel.creatureSubTab = 'states';
+  infoPanel._renderBody();
+  assert(hasText(infoPanel.root, '已投喂') && !hasText(infoPanel.root, '饥饿'),
+    '状态变为已投喂后状态子页随之刷新（无需重开面板）');
 
   // ── 还原 ──
   cell.creatures = savedFenceCreatures;
@@ -3409,7 +3413,7 @@ head_('§18 功能页面删除标题行：无标题节点 / 外框不变 / 内�
     ['角色', 'role', () => rolePanel.helper, '100vw', '100vh'],
     ['编队', 'team', () => teamPanel.helper, '100vw', '100vh'],
     ['合成', 'forge', () => forgePanel.helper, 'min(92vw, 820px)', 'min(86vh, 680px)'],
-    ['图鉴', 'codex', () => codexPanel.helper, 'min(92vw, 900px)', 'min(86vh, 720px)'],
+    ['图鉴', 'codex', () => codexPanel.helper, 'min(96vw, 1080px)', 'min(88vh, 760px)'],
   ];
   for (const [name, key, getHelper, w, h] of STANDARD_PANELS) {
     EventBus.emit(GE.UI_PANEL_OPEN, { panel: key });
@@ -3889,7 +3893,7 @@ head_('§21 术语行内组件（唯一实现）+ 展示词条徽章分离 + 状
   if (playerCard) playerCard.click();
   assert(infoPanel.root.textContent.includes('余默'), '点击角色卡片进入角色详情');
   const playerText = infoPanel.root.textContent;
-  assert(playerText.includes('【虚弱】 25% · 1 回合'), '角色信息区列出【虚弱】+强度+剩余回合');
+  assert(playerText.includes('【虚弱】 25% · 剩余 1 回合'), '角色信息区列出【虚弱】+强度+剩余回合');
   assert(playerText.includes(weakG.meaning), '状态含义逐字取词条字典');
   const weakTerm = findAll(infoPanel.root, (el) => el._classes && el._classes.has('term-inline')
     && el.attributes['data-term'] === '虚弱')[0];
@@ -3899,10 +3903,10 @@ head_('§21 术语行内组件（唯一实现）+ 展示词条徽章分离 + 状
   hideTermPopover();
 
   CombatSystem.applyBuff({ buffId: 'vulnerable', target: gs, duration: 2, params: { strength: 0.25 } });
-  assert(infoPanel.root.textContent.includes('【易伤】 25% · 2 回合'), '新施加 debuff 当场出现');
+  assert(infoPanel.root.textContent.includes('【易伤】 25% · 剩余 2 回合'), '新施加 debuff 当场出现');
   CombatSystem.tickBuffsOnTarget(gs);
   EventBus.emit(GE.TURN_ADVANCE, { turn: gs.turn + 1, day: gs.day });
-  assert(infoPanel.root.textContent.includes('【易伤】 25% · 1 回合'), '过回合递减后实时更新');
+  assert(infoPanel.root.textContent.includes('【易伤】 25% · 剩余 1 回合'), '过回合递减后实时更新');
   CombatSystem.removeBuff(gs, 'weakened');
   assert(!infoPanel.root.textContent.includes('【虚弱】'), '移除后状态条目立即消失');
   CombatSystem.tickBuffsOnTarget(gs);
@@ -3931,8 +3935,8 @@ head_('§21 术语行内组件（唯一实现）+ 展示词条徽章分离 + 状
   const subStateBtns = buttonsWithText(infoPanel.root, '状态');
   subStateBtns[subStateBtns.length - 1].click();
   const cText = infoPanel.root.textContent;
-  assert(cText.includes('【虚弱】 25% · 1 回合'), '生物状态列表显示【虚弱】+强度+剩余回合');
-  assert(cText.includes('【易伤】 25% · 2 回合'), '生物状态列表显示【易伤】+强度+剩余回合');
+  assert(cText.includes('【虚弱】 25% · 剩余 1 回合'), '生物状态列表显示【虚弱】+强度+剩余回合');
+  assert(cText.includes('【易伤】 25% · 剩余 2 回合'), '生物状态列表显示【易伤】+强度+剩余回合');
   assert(findAll(infoPanel.root, (el) => el._classes && el._classes.has('term-inline')
     && el.attributes['data-term'] === '虚弱').length >= 1, '生物状态名按术语样式');
   CombatSystem.removeBuff(slime21, 'vulnerable');

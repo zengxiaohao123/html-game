@@ -14,6 +14,7 @@ import { Assets } from '../core/Assets.js';
  * @param {string} [options.html] innerHTML（优先于 text）
  * @param {object} [options.style] 内联样式对象（如 { color: 'red', fontSize: '14px' }）
  * @param {object} [options.attrs] 其他属性（如 { title: 'tooltip', 'data-idx': '0' }）
+ * @param {boolean} [options.disabled] 是否禁用（按钮等表单控件）
  * @param {Function|object} [options.onclick] 点击事件处理函数（或含多个事件的对象）
  * @param {HTMLElement} [options.parent] 创建后立即 appendChild 到该父元素
  * @returns {HTMLElement}
@@ -43,6 +44,9 @@ export function createEl(tag, options = {}) {
       el.style[k] = v;
     }
   }
+
+  // 禁用状态（按钮等可交互控件）
+  if (options.disabled) el.disabled = true;
 
   // 其他属性
   if (options.attrs) {

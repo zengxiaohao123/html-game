@@ -24,7 +24,8 @@ import { getDef as getFacilityDef } from '../../data/facilities.js';
 import { InventorySystem } from '../../systems/InventorySystem.js';
 import { OUTBOX_SLOTS } from '../../utils/constants.js';
 import { createEl, qs, iconEl } from '../dom.js';
-import { renderTraitBadges } from '../TraitBadges.js';
+import { renderTraitBadges, renderContentRows } from '../TraitBadges.js';
+import { rarityFill, fieldContentRows } from '../../data/fieldTraits.js';
 import { renderTermText } from '../TermText.js';
 import { CATEGORY_TABS as TABS, createCategoryBar } from '../CategoryBar.js';
 
@@ -214,6 +215,8 @@ export class InventoryPanel {
         ],
         parent: grid,
       });
+      // 槽位整体按物品稀有度染色（稀有度 0 / 99 原色）
+      slot.style.background = rarityFill(ITEMS[entry.itemId]?.rarity);
 
       const name = this._resolveName(entry.itemId);
       const tagSuffix = Array.isArray(entry.tags) && entry.tags.length > 0
@@ -351,7 +354,12 @@ export class InventoryPanel {
     renderTraitBadges(this.detailEl, entry.tags, { marginTop: '4px' });
 
     // 描述（topRow 下方独立一行；pre-line 保留数据里的换行；其中【术语】行内可点开释义)
-    renderTermText(this.detailEl, desc, { tag: 'div', class: 'inv-detail-desc' });
+    // 田块：按特性来源上底色（原生原色 / 已购魔导书的稀有度色），图鉴口径不受进度影响
+    if (ITEM?.tier2 === '田块') {
+      renderContentRows(this.detailEl, fieldContentRows(this._getGS(), this.selectedItemId));
+    } else {
+      renderTermText(this.detailEl, desc, { tag: 'div', class: 'inv-detail-desc' });
+    }
   }
 
   // ─────────────────────── 右中：行动区（固定存在，点物品才激活） ───────────────────────
@@ -542,6 +550,7 @@ export class InventoryPanel {
         class: ['inv-outbox-slot', entry ? '' : 'empty'],
         parent: this.outboxGridEl,
       });
+      if (entry) slot.style.background = rarityFill(ITEMS[entry.itemId]?.rarity);
 
       if (entry) {
         const iconWrap = createEl('div', { class: 'inv-big-emoji', parent: slot });

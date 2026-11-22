@@ -10,7 +10,7 @@
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
-import { InventorySystem } from './InventorySystem.js';
+import { takeStoredToBag } from './ProduceSystem.js';
 import { hasGrimoire, syncPumpkin } from './PassiveItemSystem.js';
 import { contentEntries, getTile, isFenceRef } from '../core/TileAccess.js';
 import { fenceDimsOf } from '../core/Distance.js';
@@ -106,6 +106,7 @@ export function harvestPotato(gs, tileRef, qty) {
   if (num <= 0) return { actual: 0, touched: [] };
 
   const touched = [];
+  const takes = [];           // 每块田实际取走的数量（逐块入包 → 逐件判定蓝息变异）
   let actual = 0;
   if (hasPotatoHardship(gs)) {
     let left = num;
@@ -117,6 +118,7 @@ export function harvestPotato(gs, tileRef, qty) {
       e.tile.contentState.potatoStored = stored - take;
       if (e.tile.contentState.potatoStored <= 0) e.tile.contentState.potatoStored = 0;
       touched.push(e.ref);
+      takes.push({ ref: e.ref, qty: take });
       actual += take;
       left -= take;
     }
@@ -129,13 +131,14 @@ export function harvestPotato(gs, tileRef, qty) {
       cs.potatoStored = stored - take;
       if (cs.potatoStored <= 0) cs.potatoStored = 0;
       touched.push(tileRef);
+      takes.push({ ref: tileRef, qty: take });
       actual = take;
     }
   }
 
   if (actual <= 0) return { actual: 0, touched: [] };
 
-  InventorySystem.addItem(gs, 'item_potato', actual);
+  for (const t of takes) takeStoredToBag(gs, t.ref, 'item_potato', t.qty);
   syncPumpkin(gs);
   EventBus.emit(GE.INVENTORY_CHANGE);
   for (const ref of touched) emitPotatoTileChanged(gs, ref);

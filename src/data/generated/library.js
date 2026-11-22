@@ -243,7 +243,7 @@ export const ITEMS = {
   ],
   "owner": null,
   "rarity": 2,
-  "value": 2,
+  "value": 1,
   "valueMode": "固定值",
   "traits": [],
   "description": "气味清苦的药草，可用于合成",
@@ -317,11 +317,12 @@ export const ITEMS = {
   "tier2": "作物",
   "tier3": null,
   "hiddenTags": [
-    "农作物"
+    "农作物",
+    "花朵"
   ],
   "owner": null,
   "rarity": 2,
-  "value": 3,
+  "value": 6,
   "valueMode": "固定值",
   "traits": [],
   "description": "淡紫色的小花，香气持久。",
@@ -343,11 +344,12 @@ export const ITEMS = {
   "tier2": "作物",
   "tier3": null,
   "hiddenTags": [
-    "农作物"
+    "农作物",
+    "花朵"
   ],
   "owner": null,
-  "rarity": 2,
-  "value": 4,
+  "rarity": 3,
+  "value": 8,
   "valueMode": "固定值",
   "traits": [],
   "description": "始终朝着太阳的大花。",
@@ -373,7 +375,7 @@ export const ITEMS = {
   ],
   "owner": null,
   "rarity": 2,
-  "value": 3,
+  "value": 1,
   "valueMode": "固定值",
   "traits": [],
   "description": "酿造用的球果，带着苦香。",
@@ -398,8 +400,8 @@ export const ITEMS = {
     "农作物"
   ],
   "owner": null,
-  "rarity": 2,
-  "value": 5,
+  "rarity": 3,
+  "value": 36,
   "valueMode": "固定值",
   "traits": [],
   "description": "沉甸甸的橙色果实。",
@@ -424,8 +426,8 @@ export const ITEMS = {
     "农作物"
   ],
   "owner": null,
-  "rarity": 3,
-  "value": 8,
+  "rarity": 5,
+  "value": 80,
   "valueMode": "固定值",
   "traits": [],
   "description": "切开像星星的黄色果实。",
@@ -450,8 +452,8 @@ export const ITEMS = {
     "农作物"
   ],
   "owner": null,
-  "rarity": 1,
-  "value": 3,
+  "rarity": 2,
+  "value": 4,
   "valueMode": "固定值",
   "traits": [],
   "description": "阴湿处生长的伞菌。",
@@ -503,7 +505,7 @@ export const ITEMS = {
   ],
   "owner": null,
   "rarity": 2,
-  "value": 3,
+  "value": 2,
   "valueMode": "固定值",
   "traits": [],
   "description": "三片心形叶的小草。",
@@ -525,11 +527,13 @@ export const ITEMS = {
   "tier2": "作物",
   "tier3": null,
   "hiddenTags": [
-    "农作物"
+    "农作物",
+    "湛蓝",
+    "违禁品"
   ],
   "owner": null,
   "rarity": 4,
-  "value": 12,
+  "value": 10,
   "valueMode": "固定值",
   "traits": [
     "湛蓝",
@@ -1440,9 +1444,8 @@ export const ITEMS = {
   "value": 1,
   "valueMode": "固定值",
   "traits": [],
-  "description": "• 【每一日开始时】获得艾草*2\n• 【角色回复生命值时】获得艾草*1\n• 【受祝福时】为角色回复25%生命值",
+  "description": "• 【角色回复生命值时】获得艾草*1（每回合限2次）\n• 【受祝福时】为角色回复25%生命值",
   "triggers": [
-    "每一日开始时",
     "角色回复生命值时",
     "受祝福时"
   ],
@@ -1451,7 +1454,7 @@ export const ITEMS = {
   "stackMax": 999,
   "stackByValue": false,
   "sources": "文档未指定具体途径；地块内容通过开局随机分配、商店、事件、奖励等获得（汇总自 9 章）",
-  "notes": "任意途径回复生命值都算，请注意订阅其他回复生命值的途径 可被初级肥料触发 2 次【每一日开始时】效果。"
+  "notes": "任意途径回复生命值都算，请注意订阅其他回复生命值的途径"
 },
   facility_lavender: {
   "id": "facility_lavender",
@@ -1548,7 +1551,7 @@ export const ITEMS = {
   "tier3": null,
   "hiddenTags": [],
   "owner": null,
-  "rarity": 3,
+  "rarity": 2,
   "value": 1,
   "valueMode": "固定值",
   "traits": [],
@@ -1576,7 +1579,7 @@ export const ITEMS = {
   "tier3": null,
   "hiddenTags": [],
   "owner": null,
-  "rarity": 4,
+  "rarity": 5,
   "value": 1,
   "valueMode": "固定值",
   "traits": [],
@@ -1633,7 +1636,7 @@ export const ITEMS = {
   "tier3": null,
   "hiddenTags": [],
   "owner": null,
-  "rarity": 3,
+  "rarity": 2,
   "value": 1,
   "valueMode": "固定值",
   "traits": [],
@@ -1686,9 +1689,11 @@ export const ITEMS = {
   "tier1": "地块内容",
   "tier2": "田块",
   "tier3": null,
-  "hiddenTags": [],
+  "hiddenTags": [
+    "违禁品"
+  ],
   "owner": null,
-  "rarity": 5,
+  "rarity": 4,
   "value": 1,
   "valueMode": "固定值",
   "traits": [
@@ -3309,7 +3314,7 @@ export const ITEMS = {
   "tier3": null,
   "hiddenTags": [],
   "owner": null,
-  "rarity": 1,
+  "rarity": 3,
   "value": 1,
   "valueMode": "固定值",
   "traits": [],
@@ -3450,6 +3455,16 @@ export const POOLS = {
       "price": null,
       "weight": null,
       "rarity": 4,
+      "placeholder": false,
+      "notes": null
+    },
+    {
+      "libCode": "FAC-018",
+      "id": "facility_sunflower",
+      "name": "向日葵花田",
+      "price": null,
+      "weight": null,
+      "rarity": 3,
       "placeholder": false,
       "notes": null
     },

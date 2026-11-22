@@ -50,9 +50,10 @@ import { ITEMS, GLOSSARY } from '../data/items.js';
 import { getTerrain, normalizeTerrain } from '../data/terrains.js';
 import { playerRef, refsEqual, refXY, getTile, isEffectiveOuterRef } from '../core/TileAccess.js';
 import { createEl, qs, iconEl } from './dom.js';
-import { renderTraitBadges, renderStateBadges } from './TraitBadges.js';
+import { renderTraitBadges, renderContentRows } from './TraitBadges.js';
+import { fieldContentRows } from '../data/fieldTraits.js';
 import { renderTermText } from './TermText.js';
-import { takeStoredToBag, hasAdjacentWater, hasProduceBonus } from '../systems/ProduceSystem.js';
+import { takeStoredToBag, hasAdjacentWater } from '../systems/ProduceSystem.js';
 import { isSuppressed } from '../systems/SuppressSystem.js';
 import { isInBlueBreath, blueRadiusFor, syncBlueBreath } from '../systems/BlueBreathSystem.js';
 import { HOPS_MAX } from '../data/fields/hops.js';
@@ -151,8 +152,8 @@ function getCreatureStates(c) {
 function stateMetaText(s) {
   const parts = [];
   if (typeof s.strength === 'number') parts.push(`${Math.round(s.strength * 100)}%`);
-  if (s.remainingTurns !== null && s.remainingTurns !== undefined) parts.push(`${s.remainingTurns} 回合`);
-  else if (s.remainingDays !== null && s.remainingDays !== undefined) parts.push(`${s.remainingDays} 天`);
+  if (s.remainingTurns !== null && s.remainingTurns !== undefined) parts.push(`剩余 ${s.remainingTurns} 回合`);
+  else if (s.remainingDays !== null && s.remainingDays !== undefined) parts.push(`剩余 ${s.remainingDays} 天`);
   return parts.join(' · ');
 }
 
@@ -462,7 +463,7 @@ export class InfoPanel {
    * 地块内容头部：图标 + 名字 + 词条徽章 + 描述。
    * 外圈地块与栅栏内（生效小径）地块共用同一口径，保证同样内容显示一致。
    */
-  _renderContentHead(contentId) {
+  _renderContentHead(contentId, gs = null, ref = undefined) {
     const titleRow = createEl('div', {
       style: {
         display: 'flex', alignItems: 'center', gap: '10px',
@@ -502,6 +503,19 @@ export class InfoPanel {
     renderTraitBadges(this.bodyWrap, ITEMS[contentId]?.traits, { marginBottom: '8px' });
 
     // 词条描述（每条一行）；文本中的【术语】统一走 TermText 行内组件（可点开释义）
+    // 田块：按特性来源上底色（原生原色 / 魔导书稀有度色 / 封禁红底删除线）
+    if (ITEMS[contentId]?.tier2 === '田块' && gs) {
+      const cs = (ref !== undefined && ref !== null) ? (getTile(gs, ref)?.contentState || {}) : {};
+      const suppressed = (ref !== undefined && ref !== null) && isSuppressed(gs, ref);
+      const extraTraits = (ref !== undefined && ref !== null && Number(cs.produceBonusDay) === Number(gs.day))
+        ? [{
+            text: '✨ 向日葵给予的【产出时】临时特性：本次产量 +1（10% 概率获得向日葵 ×1）',
+            rarity: ITEMS.facility_sunflower?.rarity || 3,
+          }]
+        : [];
+      renderContentRows(this.bodyWrap, fieldContentRows(gs, contentId, { suppressed, extraTraits }));
+      return;
+    }
     for (const desc of descriptions) {
       renderTermText(this.bodyWrap, desc, { tag: 'div', class: 'facility-desc-row' });
     }
@@ -543,10 +557,7 @@ export class InfoPanel {
       rows.push(`⭐ 成长值 ${growth} / ${STARFRUIT_THRESHOLD}（开始 / 结束 / 进入时 +${STARFRUIT_GAIN}）`);
     }
 
-    // 特性归属：向日葵授予邻格的临时特性属于「特性」，写在地块内容并注明来源
-    if (hasProduceBonus(gs, ref)) {
-      rows.push('✨ 向日葵给予的【产出时】临时特性：本次产量 +1');
-    }
+    // 向日葵给予的临时特性已由地块内容顶部按来源着色渲染（见 _renderContentHead）
 
     for (const text of rows) {
       const row = createEl('div', {
@@ -573,7 +584,7 @@ export class InfoPanel {
     const readTile = () => getTile(gs, ref) || tile;
     // 有地块内容：标题行（图标 + 名字）+ 词条徽章 + 描述。
     // 无地块内容：不渲染地形（地形只在「状态」tab），只保留下方「前往 / 无法抵达」基本功能选项。
-    if (contentId) this._renderContentHead(contentId);
+    if (contentId) this._renderContentHead(contentId, gs, ref);
     if (opts.afterHead) opts.afterHead();
     // 新田块运行信息（成长值 / 水面特性 / 储存 / 产出时）：只读展示；buff/debuff 归状态页
     if (contentId) this._renderFieldStatus(tile, contentId, gs, ref);
@@ -672,7 +683,7 @@ export class InfoPanel {
               const cs = curTile.contentState || (curTile.contentState = {});
               const qty = cs.strawberryStored || 0;
               if (qty <= 0) return;
-              InventorySystem.addItem(gs, 'item_strawberry', qty);
+              takeStoredToBag(gs, ref, 'item_strawberry', qty);
               cs.strawberryStored = 0;
               syncPumpkin(gs); // A-12
               EventBus.emit(GE.INVENTORY_CHANGE);
@@ -714,7 +725,7 @@ export class InfoPanel {
               const curTile = readTile();
               const cs = curTile.contentState || (curTile.contentState = {});
               const actually = Math.min(qty, cs.peaStored || 0);
-              InventorySystem.addItem(gs, 'item_pea', actually);
+              takeStoredToBag(gs, ref, 'item_pea', actually);
               cs.peaStored = (cs.peaStored || 0) - actually;
               syncPumpkin(gs); // A-12
               EventBus.emit(GE.INVENTORY_CHANGE);
@@ -1455,8 +1466,8 @@ export class InfoPanel {
       const term = glossaryOf(meta.name);
       const descText = term?.meaning ? `：${term.meaning}` : '';
       const remainText = (s.remainingDays !== undefined && s.remainingDays !== null)
-        ? `${s.remainingDays} 天`
-        : (s.usesRemaining !== undefined ? `${s.usesRemaining} 次` : '');
+        ? `剩余 ${s.remainingDays} 天`
+        : (s.usesRemaining !== undefined ? `剩余 ${s.usesRemaining} 次` : '');
 
       const row = createEl('div', { class: ['state-row'], parent: this.bodyWrap });
       createEl('span', { class: ['state-emoji'], text: meta.emoji, parent: row });
@@ -1509,7 +1520,9 @@ export class InfoPanel {
       createEl('span', { class: ['state-emoji'], text: '⛔', parent: row });
       renderTermText(row, `${termLabel('压制')}：${stateMeaning('压制', '')}`, { class: 'state-name' });
       if (Number.isFinite(until)) {
-        createEl('span', { class: ['state-remain'], text: `至第 ${until} 日`, parent: row });
+        // 含当天：本日内压制 = 剩余 1 天
+        const left = Math.max(1, until - gs.day + 1);
+        createEl('span', { class: ['state-remain'], text: `剩余 ${left} 天`, parent: row });
       }
       count += 1;
     }
@@ -1986,11 +1999,8 @@ export class InfoPanel {
     });
 
     // 生物详情：展示词条统一徽章入口（无词条时不渲染）
+    // 运行时状态（已投喂 / 饥饿 / buff / debuff）只在「状态」子页展示，不再挂在名称下方
     renderTraitBadges(this.bodyWrap, def.traits, { marginBottom: '8px' });
-
-    // 该生物「实例」的运行时状态徽章（已投喂 / 饥饿 / buff），放在名称正下方；
-    // 与上面的展示词条严格区分：词条静态，状态随实例数据实时变化
-    renderStateBadges(this.bodyWrap, getCreatureStates(c), { marginBottom: '8px' });
 
     // 子 tab 条
     const subTabs = [

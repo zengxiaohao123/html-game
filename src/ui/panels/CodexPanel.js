@@ -11,8 +11,9 @@ import { SKILLS, CHARACTERS, getLeadRoleId } from '../../data/characters.js';
 import { COLLECTIBLES } from '../../data/collectibles.js';
 import { createStandardPanel } from './_panelHelper.js';
 import { createEl, iconEl } from '../dom.js';
-import { renderTraitBadges } from '../TraitBadges.js';
+import { renderTraitBadges, renderContentRows } from '../TraitBadges.js';
 import { renderTermText } from '../TermText.js';
+import { fieldContentRows, rarityFill } from '../../data/fieldTraits.js';
 
 const TABS = [
   { id: 'items',        label: '📦 物品' },
@@ -40,13 +41,14 @@ export class CodexPanel {
     this.detailEl = null;
     this.activeTab = 'items';
     this.selectedKey = null;  // 条目的 id（itemId / talentId / skillId / collectibleId）
+    this.searchText = '';
   }
 
   mount() {
     this.helper = createStandardPanel({
       panelKey: 'codex',
-      width: 'min(92vw, 900px)',
-      height: 'min(86vh, 720px)',
+      width: 'min(96vw, 1080px)',
+      height: 'min(88vh, 760px)',
       onMount: (_p, body) => this._build(body),
     });
     this._subscribe();
@@ -68,14 +70,42 @@ export class CodexPanel {
       },
     }));
 
-    // 主区：左列表 + 右详情
+    // 主区：左网格 + 右详情（图鉴页面尺寸固定：左 5 列 × 92px 正方形格）
     const main = createEl('div', {
-      style: { flex: '1', minHeight: '0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' },
+      style: { flex: '1', minHeight: '0', display: 'grid', gridTemplateColumns: '540px 1fr', gap: '10px' },
       parent: body,
     });
     this.listEl = createEl('div', {
-      style: { padding: '10px', background: 'rgba(255,255,255,0.55)', border: '2px solid #b8a888', borderRadius: '12px', overflowY: 'auto' },
+      style: { padding: '10px', background: 'rgba(255,255,255,0.55)', border: '2px solid #b8a888', borderRadius: '12px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' },
       parent: main,
+    });
+    // 搜索（保留，按名称过滤当前分类）
+    this.searchEl = createEl('input', {
+      attrs: {
+        type: 'text',
+        placeholder: '搜索…',
+        value: this.searchText,
+      },
+      style: {
+        width: '100%', boxSizing: 'border-box', padding: '6px 10px', fontSize: '13px',
+        border: '2px solid #b8a888', borderRadius: '8px', outline: 'none',
+        background: 'rgba(255,255,255,0.85)',
+      },
+      parent: this.listEl,
+    });
+    this.searchEl.addEventListener('input', () => {
+      this.searchText = this.searchEl.value || '';
+      this._refreshList();
+    });
+    this.gridEl = createEl('div', {
+      style: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(5, 92px)',
+        gridAutoRows: '92px',
+        gap: '6px',
+        alignContent: 'start',
+      },
+      parent: this.listEl,
     });
     this.detailEl = createEl('div', {
       style: { padding: '12px', background: 'rgba(255,255,255,0.55)', border: '2px solid #b8a888', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto' },
@@ -115,9 +145,9 @@ export class CodexPanel {
     this._refreshDetail();
   }
 
-  // ── 左侧列表 ──
+  // ── 左侧列表（5 列 × 92px 正方形格，按分类 tab 分页） ──
   _refreshList() {
-    this.listEl.innerHTML = '';
+    this.gridEl.innerHTML = '';
 
     if (this.activeTab === 'items') {
       this._listEntries(Object.values(ITEMS), (it) => ({
@@ -168,36 +198,43 @@ export class CodexPanel {
   }
 
   _listEntries(entries, mapper) {
-    if (!entries || entries.length === 0) {
+    const keyword = String(this.searchText || '').trim().toLowerCase();
+    const list = (entries || [])
+      .map(mapper)
+      .filter((m) => !keyword || String(m.name || '').toLowerCase().includes(keyword));
+
+    if (list.length === 0) {
       createEl('div', {
         style: { color: '#b0a090', fontSize: '12px', fontStyle: 'italic', padding: '10px' },
-        text: '（暂无条目）', parent: this.listEl,
+        text: '（暂无条目）', parent: this.gridEl,
       });
       return;
     }
-    entries.forEach((entry) => {
-      const m = mapper(entry);
+    list.forEach((m) => {
       const sel = this.selectedKey === m.id;
-      const row = createEl('div', {
+      const cell = createEl('div', {
         style: {
-          display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 8px', marginBottom: '4px',
-          background: sel ? '#ffe099' : 'rgba(255,255,255,0.7)',
-          border: sel ? '3px solid #e8a900' : '2px solid #b8a888', borderRadius: '8px', cursor: 'pointer',
+          width: '92px', height: '92px', boxSizing: 'border-box',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          gap: '2px', padding: '4px',
+          background: sel ? '#ffe099' : rarityFill(m.rarity),
+          border: sel ? '3px solid #e8a900' : '2px solid #b8a888',
+          borderRadius: '10px', cursor: 'pointer', overflow: 'hidden',
         },
-        parent: this.listEl,
+        parent: this.gridEl,
       });
-      row.appendChild(iconEl(m.group, m.id, { size: '20px', def: m.def, fallback: m.emoji }));
-      const info = createEl('div', { style: { flex: '1', minWidth: 0 }, parent: row });
-      createEl('div', { style: { fontWeight: '800', fontSize: '13px' }, text: m.name, parent: info });
-      if (m.sub) {
-        createEl('div', { style: { fontSize: '11px', color: '#7a6a56' }, text: m.sub, parent: info });
-      }
-      // rarity 星星
-      if (m.rarity != null) {
-        const stars = '★'.repeat(Math.min(m.rarity, 5));
-        createEl('div', { style: { fontSize: '11px', color: '#e8a900' }, text: stars, parent: row });
-      }
-      row.addEventListener('click', () => { this.selectedKey = m.id; this._refresh(); });
+      cell.appendChild(iconEl(m.group, m.id, { size: '30px', def: m.def, fallback: m.emoji }));
+      createEl('div', {
+        style: {
+          fontSize: '11px', lineHeight: '1.15', textAlign: 'center', color: '#3a2e20',
+          display: '-webkit-box', WebkitLineClamp: '2', WebkitBoxOrient: 'vertical',
+          overflow: 'hidden', wordBreak: 'break-all',
+        },
+        text: m.name,
+        parent: cell,
+      });
+      cell.title = m.name;
+      cell.addEventListener('click', () => { this.selectedKey = m.id; this._refresh(); });
     });
   }
 
@@ -238,11 +275,16 @@ export class CodexPanel {
     renderTraitBadges(this.detailEl, entry.traits, { marginBottom: '6px' });
 
     // 公共字段：description（pre-line 保留换行；其中的【术语】走统一行内术语组件，可点开释义）
+    // 图鉴中的田块只显示地块原始特性（与玩家进度无关、不受魔导书影响），且永不显示封禁红。
     if (entry.description) {
-      renderTermText(this.detailEl, entry.description, {
-        tag: 'div',
-        style: { fontSize: '13px', color: '#4a3a2a', lineHeight: '1.7', padding: '6px 8px', background: 'rgba(255,255,255,0.7)', borderRadius: '6px' },
-      });
+      if (this.activeTab === 'items' && entry.tier2 === '田块') {
+        renderContentRows(this.detailEl, fieldContentRows(null, entry.id, { codex: true }));
+      } else {
+        renderTermText(this.detailEl, entry.description, {
+          tag: 'div',
+          style: { fontSize: '13px', color: '#4a3a2a', lineHeight: '1.7', padding: '6px 8px', background: 'rgba(255,255,255,0.7)', borderRadius: '6px' },
+        });
+      }
     }
 
     // Tab 专属字段
@@ -260,9 +302,7 @@ export class CodexPanel {
   _detailItem(it) {
     const rows = [
       ['分类', [it.tier1, it.tier2, it.tier3].filter(Boolean).join(' · ') || '—'],
-      ['稀有度', it.rarity != null ? '★'.repeat(Math.min(it.rarity, 5)) : '—'],
       ['价值', it.value != null ? `🪙 ${it.value}` : '—'],
-      ['叠放', it.stackable ? `✓ 上限 ${it.stackMax || 999}` : '× 不可叠放'],
     ];
     rows.forEach(([k, v]) => this._addDetailRow(k, v));
     if (it.hiddenTags && it.hiddenTags.length) {
