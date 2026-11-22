@@ -513,7 +513,7 @@ export class InfoPanel {
             rarity: ITEMS.facility_sunflower?.rarity || 3,
           }]
         : [];
-      renderContentRows(this.bodyWrap, fieldContentRows(gs, contentId, { suppressed, extraTraits }));
+      renderContentRows(this.bodyWrap, fieldContentRows(gs, contentId, { suppressed, extraTraits, ref }));
       return;
     }
     for (const desc of descriptions) {

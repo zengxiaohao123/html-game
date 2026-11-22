@@ -1,25 +1,28 @@
 // CodexPanel.js —— Phase 4 新建（图鉴占位面板）
 // 快捷键 K（可后续在 InputManager 里绑定；目前靠 GE.UI_PANEL_OPEN({panel:'codex'}) 打开）
-// 4 个 tab：物品 / 天赋 / 技能 / 收藏品
+// 分类：与背包一致的物品分类（不含「总览」）+ 天赋 + 生物
 // 外观严格套 _panelHelper.createStandardPanel 模板
 
 import { EventBus } from '../../core/EventBus.js';
 import { GE } from '../../core/GameEvents.js';
-import { ITEMS } from '../../data/items.js';
+import { ITEMS, getBuyPrice } from '../../data/items.js';
 import { TALENTS } from '../../data/talents.js';
 import { SKILLS, CHARACTERS, getLeadRoleId } from '../../data/characters.js';
 import { COLLECTIBLES } from '../../data/collectibles.js';
+import { CREATURES } from '../../data/creatures.js';
+import { CATEGORY_TABS } from '../CategoryBar.js';
 import { createStandardPanel } from './_panelHelper.js';
 import { createEl, iconEl } from '../dom.js';
 import { renderTraitBadges, renderContentRows } from '../TraitBadges.js';
 import { renderTermText } from '../TermText.js';
 import { fieldContentRows, rarityFill } from '../../data/fieldTraits.js';
 
+// 物品分类：与背包 CategoryBar 完全同源（跳过「总览」），再补天赋 / 生物
+const ITEM_CATEGORY_TABS = CATEGORY_TABS.filter((t) => t.id !== 'all');
 const TABS = [
-  { id: 'items',        label: '📦 物品' },
-  { id: 'talents',      label: '🌟 天赋' },
-  { id: 'skills',       label: '⚔️ 技能' },
-  { id: 'collectibles', label: '🏆 收藏品' },
+  ...ITEM_CATEGORY_TABS.map((t) => ({ id: t.id, label: t.label, match: t.match })),
+  { id: 'talents', label: '天赋' },
+  { id: 'creatures', label: '生物' },
 ];
 
 const EMOJI_FONT = '"Segoe UI Emoji",sans-serif';
@@ -39,7 +42,7 @@ export class CodexPanel {
     this.tabsRow = null;
     this.listEl = null;
     this.detailEl = null;
-    this.activeTab = 'items';
+    this.activeTab = ITEM_CATEGORY_TABS[0]?.id || 'field';
     this.selectedKey = null;  // 条目的 id（itemId / talentId / skillId / collectibleId）
     this.searchText = '';
   }
@@ -149,7 +152,22 @@ export class CodexPanel {
   _refreshList() {
     this.gridEl.innerHTML = '';
 
-    if (this.activeTab === 'items') {
+    const itemTab = ITEM_CATEGORY_TABS.find((t) => t.id === this.activeTab);
+    if (itemTab) {
+      this._listEntries(
+        Object.values(ITEMS).filter((it) => itemTab.match(it.id)),
+        (it) => ({
+          emoji: it.emoji,
+          name: it.name,
+          id: it.id,
+          group: iconGroupOfItem(it),
+          def: it,
+          sub: `${it.tier1 || ''}${it.tier2 ? ' · ' + it.tier2 : ''}`,
+          rarity: it.rarity,
+        }),
+      );
+    } else if (this.activeTab === 'items') {
+      // 兼容旧入口：不分分类时展示全部物品
       this._listEntries(Object.values(ITEMS), (it) => ({
         emoji: it.emoji,
         name: it.name,
@@ -172,6 +190,16 @@ export class CodexPanel {
           rarity: null,
         };
       });
+    } else if (this.activeTab === 'creatures') {
+      this._listEntries(Object.entries(CREATURES), ([id, c]) => ({
+        emoji: c.emoji,
+        name: c.name,
+        id,
+        group: 'ui',
+        def: c,
+        sub: c.category === 'danger' ? '危险' : c.category === 'friendly' ? '友善' : '',
+        rarity: null,
+      }));
     } else if (this.activeTab === 'skills') {
       this._listEntries(Object.values(SKILLS), (sk) => {
         return {
@@ -250,24 +278,27 @@ export class CodexPanel {
     }
 
     let entry = null;
-    if (this.activeTab === 'items') entry = ITEMS[this.selectedKey];
+    const itemTab = ITEM_CATEGORY_TABS.find((t) => t.id === this.activeTab);
+    if (itemTab || this.activeTab === 'items') entry = ITEMS[this.selectedKey];
     else if (this.activeTab === 'talents') entry = TALENTS[this.selectedKey];
     else if (this.activeTab === 'skills') entry = SKILLS[this.selectedKey];
     else if (this.activeTab === 'collectibles') entry = COLLECTIBLES[this.selectedKey];
+    else if (this.activeTab === 'creatures') entry = CREATURES[this.selectedKey];
 
     if (!entry) {
       createEl('div', { style: { color: '#c0392b' }, text: '⚠️ 未找到对应条目', parent: this.detailEl });
       return;
     }
+    const entryId = entry.id || this.selectedKey;
 
     // 大标题行
     const header = createEl('div', {
       style: { display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '2px solid #3a3a3a', paddingBottom: '6px', marginBottom: '6px' },
       parent: this.detailEl,
     });
-    const group = this.activeTab === 'items' ? iconGroupOfItem(entry)
+    const group = (itemTab || this.activeTab === 'items') ? iconGroupOfItem(entry)
       : this.activeTab === 'collectibles' ? 'items' : 'ui';
-    header.appendChild(iconEl(group, entry.id, { size: '36px', def: entry, fallback: entry.emoji }));
+    header.appendChild(iconEl(group, entryId, { size: '36px', def: entry, fallback: entry.emoji }));
     createEl('div', { style: { flex: '1' }, parent: header });
     createEl('div', { style: { fontSize: '18px', fontWeight: '900' }, text: entry.name, parent: header });
 
@@ -277,8 +308,8 @@ export class CodexPanel {
     // 公共字段：description（pre-line 保留换行；其中的【术语】走统一行内术语组件，可点开释义）
     // 图鉴中的田块只显示地块原始特性（与玩家进度无关、不受魔导书影响），且永不显示封禁红。
     if (entry.description) {
-      if (this.activeTab === 'items' && entry.tier2 === '田块') {
-        renderContentRows(this.detailEl, fieldContentRows(null, entry.id, { codex: true }));
+      if ((itemTab || this.activeTab === 'items') && entry.tier2 === '田块') {
+        renderContentRows(this.detailEl, fieldContentRows(null, entryId, { codex: true }));
       } else {
         renderTermText(this.detailEl, entry.description, {
           tag: 'div',
@@ -288,7 +319,7 @@ export class CodexPanel {
     }
 
     // Tab 专属字段
-    if (this.activeTab === 'items') {
+    if (itemTab || this.activeTab === 'items') {
       this._detailItem(entry);
     } else if (this.activeTab === 'talents') {
       this._detailTalent(entry);
@@ -296,6 +327,8 @@ export class CodexPanel {
       this._detailSkill(entry);
     } else if (this.activeTab === 'collectibles') {
       this._detailCollectible(entry);
+    } else if (this.activeTab === 'creatures') {
+      this._detailCreature(entry);
     }
   }
 
@@ -304,10 +337,28 @@ export class CodexPanel {
       ['分类', [it.tier1, it.tier2, it.tier3].filter(Boolean).join(' · ') || '—'],
       ['价值', it.value != null ? `🪙 ${it.value}` : '—'],
     ];
+    // 价格：取物品库随机池里的买价；没有价格的物品不显示这一行
+    const price = getBuyPrice(it.id);
+    if (price != null) rows.push(['价格', `🪙 ${price}`]);
     rows.forEach(([k, v]) => this._addDetailRow(k, v));
     if (it.hiddenTags && it.hiddenTags.length) {
       this._addDetailRow('词条', it.hiddenTags.join(' · '));
     }
+  }
+
+  _detailCreature(c) {
+    const categoryLabel = c.category === 'danger' ? '危险' : c.category === 'friendly' ? '友善' : (c.category || '—');
+    const rows = [
+      ['分类', categoryLabel],
+      ['生命值', c.hp != null ? `${c.hp}` : '—'],
+      ['攻击力', c.atk != null ? `${c.atk}` : '—'],
+      ['元素', c.element || '—'],
+    ];
+    if (c.speedPerTile != null) rows.push(['移速', `${c.speedPerTile} 秒/格`]);
+    if (c.drops && c.drops.length) {
+      rows.push(['掉落', c.drops.map((d) => `${ITEMS[d.itemId]?.name || d.itemId} ×${d.qty}`).join(' · ')]);
+    }
+    rows.forEach(([k, v]) => this._addDetailRow(k, v));
   }
 
   _detailTalent(t) {

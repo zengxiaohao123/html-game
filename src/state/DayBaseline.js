@@ -10,7 +10,7 @@
 // 不入档：任何墙钟（*Ms / *At）、连携队列与计数、演出/界面态、建造态、睡眠结算中间量。
 
 import { devLog } from '../core/Logger.js';
-import { applyMaxHp } from '../systems/HealSystem.js';
+import { clearStatBonus, STAT_BONUS } from '../systems/StatBonusSystem.js';
 
 /** 存档格式版本号（迁移识别用） */
 export const SAVE_SCHEMA_VERSION = 2;
@@ -98,24 +98,16 @@ export function capture(gs) {
   base.blessingQueue = [];
   delete base.blessLockUntilMs;
 
-  // 【蓝息】动态光环：剥离运行期增量，避免把临时加成写进日初基线
+  // 【蓝息】动态光环：从基数账本里移除该来源，避免把临时加成写进日初基线
+  // （悲伤的南瓜等其它来源保持原样；移除时严格回到基数，不会留下取整误差）
   if (base.player) {
-    const aura = base._blueAura;
-    if (aura) {
-      applyMaxHp(base.player, Math.max(1, (base.player.maxHp || 0) - (aura.hpApplied || 0)));
-      base.player.atk = Math.max(0, (base.player.atk || 0) - (aura.atkApplied || 0));
-    }
+    clearStatBonus(base.player, STAT_BONUS.BLUE_AURA);
     delete base._blueAura;
   }
   for (const c of base.creatures || []) {
     if (!isPlainObject(c)) continue;
-    const aura = c._blueAura;
-    if (aura) {
-      applyMaxHp(c, Math.round(((c.maxHp || 0) - (aura.hpApplied || 0)) * 10) / 10);
-      c.atk = Math.round(((c.atk || 0) - (aura.atkApplied || 0)) * 10) / 10;
-      if (aura.speedApplied) c.speedPerTile = Math.round(c.speedPerTile * 1.5 * 1000) / 1000;
-      delete c._blueAura;
-    }
+    clearStatBonus(c, STAT_BONUS.BLUE_AURA);
+    delete c._blueAura;
   }
 
   // 随机：只存主种子，不存日内已抽过的进度

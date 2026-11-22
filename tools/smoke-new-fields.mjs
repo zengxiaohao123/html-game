@@ -93,7 +93,7 @@ import { HookDispatcher } from '../src/core/HookDispatcher.js';
 import { Random } from '../src/core/Random.js';
 import { getTile, neighborRefs8, neighborRefs, refXY } from '../src/core/TileAccess.js';
 import * as InventorySystem from '../src/systems/InventorySystem.js';
-import { initPassiveItems } from '../src/systems/PassiveItemSystem.js';
+import { initPassiveItems, syncPumpkin } from '../src/systems/PassiveItemSystem.js';
 import { FieldAuraSystem } from '../src/systems/FieldAuraSystem.js';
 import { isSuppressed, releaseBlackberry } from '../src/systems/SuppressSystem.js';
 import {
@@ -147,6 +147,9 @@ function reset() {
   gs.player.atk = BASE_ATK;
   gs.player.hp = BASE_HP;
   gs.player.x = 0;
+  // 动态加成账本（蓝息 / 悲伤的南瓜）也要清空：测试直接改数值后就从当前值重新记基数
+  delete gs.player._statLedger;
+  gs._pumpkin = null;
   gs._blueAura = null;
   Random.chance = origChance;
   Random.pick = origPick;
@@ -406,6 +409,15 @@ head('8. 蓝星果：储存 / 半径 / 变异只掷一次 / 角色光环');
   gs.player.loc = null;
   syncBlueBreath(gs);
   check(gs.player.maxHp === hp0, '离开范围后动态移除', gs.player.maxHp);
+  // 反复进出 → 加成全部移除后必须精确回到原值（不允许取整漂移）
+  for (let i = 0; i < 5; i++) {
+    gs.player.x = ANCHOR;
+    syncBlueBreath(gs);
+    gs.player.x = -1;
+    gs.player.loc = null;
+    syncBlueBreath(gs);
+  }
+  check(gs.player.maxHp === hp0, '反复进出蓝息 5 次后最大生命精确回到原值', gs.player.maxHp);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -502,6 +514,26 @@ head('8e. 展示归类：【压制】/【蓝息】只出现在状态页，不在
   panel.activeTabIdx = blueStateIdx;
   panel._renderBody();
   check(panel.root.textContent.includes('【蓝息】'), '受影响地块（含蓝星果自身）状态页显示蓝息 buff');
+}
+
+// ════════════════════════════════════════════════════════════
+head('8f. 悲伤的南瓜：储存反复增减后，最大生命 / 攻击精确回到原值');
+{
+  reset();
+  gs.inventory.items = [];
+  InventorySystem.addItem(gs, 'collectible_sad_pumpkin', 1);
+  put(ANCHOR, 'facility_pumpkin');
+  const baseHp = gs.player.maxHp;
+  const baseAtk = gs.player.atk;
+  for (let i = 0; i < 6; i++) {
+    at(ANCHOR).contentState.potatoStored = 5;
+    syncPumpkin(gs);
+    at(ANCHOR).contentState.potatoStored = 0;
+    syncPumpkin(gs);
+  }
+  check(gs.player.maxHp === baseHp && gs.player.atk === baseAtk,
+    `南瓜储存加满再清空 6 次：${baseHp}/${baseAtk} 精确回到原值`,
+    { maxHp: gs.player.maxHp, atk: gs.player.atk });
 }
 
 // ════════════════════════════════════════════════════════════
@@ -703,14 +735,27 @@ head('15. 随机池补向日葵 / 野生种子放置即抽池 / 艾草新特性'
     '向日葵给予的临时特性：R3 蓝，被压制时同样变红');
 
   // 仓廪实：水稻共享小麦魔导书特性（金色 R5），小麦取原书 R4
+  // 黄金浪是「条件发放」：只有真实处于 ≥3 相连簇内的田块才发放这条特性，
+  // 描述本身不得包含条件；背包（无位置）不显示。
+  reset();
+  put(0, 'facility_wheat');
+  put(1, 'facility_wheat');
+  put(2, 'facility_wheat');
+  put(3, 'facility_rice');
   gs.inventory.items = [];
   InventorySystem.addItem(gs, 'grimoire_granary_full', 1);
   InventorySystem.addItem(gs, 'grimoire_golden_wave', 1);
   InventorySystem.addItem(gs, 'grimoire_grain_full', 1);
-  const riceGold = fieldContentRows(gs, 'facility_rice').find((r) => r.text.includes('【经过时】'));
-  const wheatGold = fieldContentRows(gs, 'facility_wheat').find((r) => r.text.includes('【经过时】'));
+  const riceGold = fieldContentRows(gs, 'facility_rice', { ref: 3 }).find((r) => r.text.includes('【经过时】'));
+  const wheatGold = fieldContentRows(gs, 'facility_wheat', { ref: 0 }).find((r) => r.text.includes('【经过时】'));
   check(riceGold?.rarity === 5 && wheatGold?.rarity === 4,
     '仓廪实：水稻共享【黄金浪】为金（5），小麦原书为紫（4）', { riceGold, wheatGold });
+  check(wheatGold && wheatGold.text === '【经过时】获得小麦 ×1',
+    '黄金浪特性描述只写效果，不带「至少 3 个田块相连」条件', wheatGold?.text);
+  const bagGold = fieldContentRows(gs, 'facility_wheat').find((r) => r.text.includes('【经过时】'));
+  check(!bagGold, '背包无位置：不发放黄金浪特性（条件不满足）', bagGold);
+  const isolatedGold = fieldContentRows(gs, 'facility_wheat', { ref: 999 }).find((r) => r.text.includes('【经过时】'));
+  check(!isolatedGold, '不在 ≥3 相连簇内的田块：不发放黄金浪特性', isolatedGold);
 
   // 郁金香两本魔导书：描述合并、底色取最高
   InventorySystem.addItem(gs, 'grimoire_bubble', 1);

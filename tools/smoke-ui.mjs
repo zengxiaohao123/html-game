@@ -2274,7 +2274,13 @@ head_('第 10 批任务 B：CodexPanel 切 tab（点击触发状态变化 + 高�
   EventBus.emit(GE.UI_PANEL_OPEN, { panel: 'codex' });
   buttonsWithText(codexPanel.helper.root, '天赋')[0].click();
   assert(codexPanel.activeTab === 'talents', '点天赋 → activeTab=talents', codexPanel.activeTab);
-  assert(codexPanel.tabBtns[1].classList.contains('active'), '天赋 tab 点击后高亮');
+  assert(codexPanel.tabBtns[8].classList.contains('active'), '天赋 tab 点击后高亮');
+  buttonsWithText(codexPanel.helper.root, '生物')[0].click();
+  assert(codexPanel.activeTab === 'creatures', '点生物 → activeTab=creatures', codexPanel.activeTab);
+  assert(codexPanel.tabBtns[9].classList.contains('active'), '生物 tab 点击后高亮');
+  assert(codexPanel.gridEl.children.length > 0, '生物分类有条目');
+  codexPanel.gridEl.children[0].click();
+  assert(codexPanel.detailEl.textContent.includes('生命值'), '生物详情显示生命值', codexPanel.detailEl.textContent.slice(0, 80));
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'codex' });
 }
 

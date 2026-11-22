@@ -11,6 +11,7 @@
 
 import { ITEMS } from './items.js';
 import { countItem } from '../systems/InventorySystem.js';
+import { FieldEffects } from '../systems/FieldEffects.js';
 
 /** 稀有度底色（1 原色 / 2 绿 / 3 蓝 / 4 紫 / 5 金；0 与 99 用原色） */
 export const TRAIT_FILL = {
@@ -52,7 +53,10 @@ export const FIELD_TRAIT_PROVENANCE = {
       {
         grimoire: 'grimoire_golden_wave',
         op: 'add',
-        line: '【经过时】获得小麦 ×1（至少 3 个小麦田块相连）',
+        line: '【经过时】获得小麦 ×1',
+        // 条件属于「发放判定」，不属于特性描述：只有该格真正处于
+        // 「≥3 个小麦田块相连」的簇内（仓廪实时水稻同样计入）才显示这条特性
+        condition: (gs, ref) => ref != null && FieldEffects.hasGoldenWaveTrait(gs, ref),
       },
     ],
   },
@@ -67,7 +71,8 @@ export const FIELD_TRAIT_PROVENANCE = {
       {
         via: 'grimoire_granary_full',
         grimoire: 'grimoire_golden_wave',
-        line: '【经过时】获得小麦 ×1（至少 3 个小麦田块相连）',
+        line: '【经过时】获得小麦 ×1',
+        condition: (gs, ref) => ref != null && FieldEffects.hasGoldenWaveTrait(gs, ref),
       },
     ],
   },
@@ -83,7 +88,7 @@ export const FIELD_TRAIT_PROVENANCE = {
       {
         grimoire: 'grimoire_potato_mine',
         op: 'add',
-        line: '【每一日开始时】在栅栏内埋下 1 个【土豆地雷】：5 回合后探出，敌人碰撞时爆炸并使敌人【晕眩】1 回合',
+        line: '【每一日开始时】在栅栏内埋下 1 个【土豆地雷】（场上至多 5 个）：5 回合后探出，敌人碰撞时爆炸造成小范围火元素伤害，伤害量为本田块当前储存的土豆数量，并使敌人【晕眩】1 回合',
       },
     ],
   },
@@ -111,12 +116,11 @@ export const FIELD_TRAIT_PROVENANCE = {
   },
 };
 
-/** 该行是否属于「特性」（含【】术语触发词，且不在非特性说明白名单里） */
+/** 该行是否属于「特性」：除白名单里的非特性说明外，一律按特性渲染（统一米色底） */
 export function isTraitLine(line) {
   const text = stripBullet(line);
   if (!text) return false;
-  if (NOTE_LINES.has(text)) return false;
-  return text.includes('【');
+  return !NOTE_LINES.has(text);
 }
 
 /**
@@ -127,14 +131,18 @@ export function isTraitLine(line) {
  * @param {boolean} [opts.codex] 图鉴：只显示地块原始特性，与玩家进度无关，永不封禁变红
  * @param {boolean} [opts.suppressed] 该地块当前是否被【压制】
  * @param {Array<{text:string, rarity:number}>} [opts.extraTraits] 运行期临时特性（向日葵给予等）
+ * @param {number|object|null} [opts.ref] 该田块在地图上的位置（外圈 idx / 栅栏 ref）；
+ *        魔导书的条件型特性（如黄金浪）只有拿到真实位置时才可能显示
  * @returns {Array<{text:string, kind:'trait'|'note', rarity:number, suppressed:boolean}>}
  */
 export function fieldContentRows(gs, fieldId, opts = {}) {
-  const { codex = false, suppressed = false, extraTraits = [] } = opts;
+  const { codex = false, suppressed = false, extraTraits = [], ref = null } = opts;
   const def = ITEMS[fieldId];
   if (!def) return [];
 
   const owned = (id) => !!gs && countItem(gs, id) >= 1;
+  // 条件属于「发放判定」：满足才发放这条特性；背包 / 图鉴等没有真实位置时不发放
+  const granted = (entry) => !entry.condition || (!!gs && entry.condition(gs, ref));
   const nativeLines = String(def.description || '').split('\n').map((l) => l.trim()).filter(Boolean);
 
   let rows = nativeLines.map((line) => ({
@@ -172,7 +180,7 @@ export function fieldContentRows(gs, fieldId, opts = {}) {
 
     // 2) 魔导书新增特性
     for (const mod of provenance.mods || []) {
-      if (mod.op !== 'add' || !owned(mod.grimoire)) continue;
+      if (mod.op !== 'add' || !owned(mod.grimoire) || !granted(mod)) continue;
       rows.push({
         text: mod.line,
         kind: 'trait',
@@ -183,7 +191,7 @@ export function fieldContentRows(gs, fieldId, opts = {}) {
 
     // 3) 仓廪实共享：需要同时持有 via 与原书，底色取 via 的稀有度
     for (const shared of provenance.shared || []) {
-      if (!owned(shared.via) || !owned(shared.grimoire)) continue;
+      if (!owned(shared.via) || !owned(shared.grimoire) || !granted(shared)) continue;
       rows.push({
         text: shared.line,
         kind: 'trait',

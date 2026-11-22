@@ -12,9 +12,10 @@
 //   · NPC 例行搜查系统尚未开发，本模块不实现
 //
 // 存档：光环本身不落盘，只由「地块储存数 + 玩家/生物当前位置」实时推导；
-//       _blueAura 只是运行期增量记录，不进日初基线。
+//       数值加成走 StatBonusSystem（基数 + 加成账本），_blueAura 只存 active 标记，
+//       不进日初基线。
 
-import { applyMaxHp } from './HealSystem.js';
+import { setStatBonus, clearStatBonus, STAT_BONUS } from './StatBonusSystem.js';
 import {
   contentEntries,
   getTile,
@@ -131,36 +132,23 @@ export function rollBlueMutationPerUnit(gs, ref, itemId, qty) {
   return blue;
 }
 
-function auraDelta(base, mult) {
-  return Math.round(base * mult * 10) / 10 - base;
-}
-
 /** 角色光环：在蓝息范围内时最大生命 / 攻击 +25% */
 export function syncPlayerBlueAura(gs) {
   if (!gs?.player) return false;
   const ref = playerRef(gs);
   // 角色按所在地块中心点判定：蓝息必须覆盖该格中心点
   const covered = ref !== null && isTileCenterInBlueBreath(gs, ref);
-  const rec = gs._blueAura || (gs._blueAura = { hpApplied: 0, atkApplied: 0, active: false });
+  const rec = gs._blueAura || (gs._blueAura = { active: false });
 
   if (covered) {
-    const baseHp = gs.player.maxHp - rec.hpApplied;
-    const baseAtk = gs.player.atk - rec.atkApplied;
-    const targetHp = Math.round(baseHp * BLUE_STAT_MULT);
-    const targetAtk = Math.round(baseAtk * BLUE_STAT_MULT * 10) / 10;
-    rec.hpApplied = targetHp - baseHp;
-    rec.atkApplied = Math.round((targetAtk - baseAtk) * 10) / 10;
-    applyMaxHp(gs.player, targetHp); // 上限变化 → 当前生命按原百分比同步
-    gs.player.atk = targetAtk;
+    // 基数 + 加成账本：反复进出范围后移除加成仍精确回到原值
+    setStatBonus(gs.player, STAT_BONUS.BLUE_AURA, { hpPct: 0.25, atkPct: 0.25 });
     if (!rec.active) {
       rec.active = true;
       EventBus.emit(GE.TOAST_SHOW, { text: '💙 进入蓝息范围：最大生命 / 攻击 +25%', duration: 1800 });
     }
-  } else if (rec.active || rec.hpApplied || rec.atkApplied) {
-    applyMaxHp(gs.player, Math.round((gs.player.maxHp - rec.hpApplied) * 10) / 10);
-    gs.player.atk = Math.round((gs.player.atk - rec.atkApplied) * 10) / 10;
-    rec.hpApplied = 0;
-    rec.atkApplied = 0;
+  } else {
+    clearStatBonus(gs.player, STAT_BONUS.BLUE_AURA);
     if (rec.active) {
       rec.active = false;
       EventBus.emit(GE.TOAST_SHOW, { text: '💙 离开蓝息范围', duration: 1500 });
@@ -184,35 +172,16 @@ export function syncCreatureBlueAura(gs) {
         if (Math.hypot(cx - src.x, cy - src.y) <= src.radius + cRadius + 1e-9) { covered = true; break; }
       }
     }
-    const rec = c._blueAura || (c._blueAura = { hpApplied: 0, atkApplied: 0, speedApplied: false, active: false });
+    const rec = c._blueAura || (c._blueAura = { active: false });
     if (covered) {
-      const baseHp = (c.maxHp || 0) - rec.hpApplied;
-      const baseAtk = (c.atk || 0) - rec.atkApplied;
-      if (baseHp > 0) {
-        // 1 位小数：保留上限提升后的百分比精度（当前生命由 applyMaxHp 同步）
-        const targetHp = Math.round(baseHp * BLUE_STAT_MULT * 10) / 10;
-        rec.hpApplied = targetHp - baseHp;
-        applyMaxHp(c, targetHp);
-      }
-      if (baseAtk > 0) {
-        const targetAtk = Math.round(baseAtk * BLUE_STAT_MULT);
-        rec.atkApplied = targetAtk - baseAtk;
-        c.atk = targetAtk;
-      }
-      if (!rec.speedApplied && c.speedPerTile > 0) {
-        c.speedPerTile = Math.round((c.speedPerTile / BLUE_SPEED_MULT) * 1000) / 1000;
-        rec.speedApplied = true;
-      }
+      setStatBonus(c, STAT_BONUS.BLUE_AURA, {
+        hpPct: 0.25,
+        atkPct: 0.25,
+        speedMult: BLUE_SPEED_MULT,
+      });
       rec.active = true;
-    } else if (rec.hpApplied || rec.atkApplied || rec.speedApplied || rec.active) {
-      applyMaxHp(c, Math.round(((c.maxHp || 0) - rec.hpApplied) * 10) / 10);
-      c.atk = Math.round(((c.atk || 0) - rec.atkApplied) * 10) / 10;
-      if (rec.speedApplied) {
-        c.speedPerTile = Math.round(c.speedPerTile * BLUE_SPEED_MULT * 1000) / 1000;
-        rec.speedApplied = false;
-      }
-      rec.hpApplied = 0;
-      rec.atkApplied = 0;
+    } else {
+      clearStatBonus(c, STAT_BONUS.BLUE_AURA);
       rec.active = false;
     }
   }

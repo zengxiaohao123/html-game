@@ -18,6 +18,7 @@ import { ITEMS } from '../data/items.js';
 import { drawFromPool } from './RandomPool.js';
 import * as InventorySystem from './InventorySystem.js';
 import { HealSystem, applyMaxHp } from './HealSystem.js';
+import { setStatBonus, STAT_BONUS } from './StatBonusSystem.js';
 import { FieldEffects } from './FieldEffects.js';
 import { contentEntries } from '../core/TileAccess.js';
 import { produce } from './ProduceSystem.js';
@@ -226,7 +227,8 @@ export function onItemGained(gs, itemId) {
 
 /**
  * 悲伤的南瓜：按"场上储存的作物总数"给出最大生命/攻击加成。
- * 由于储存量随时变化，这里用"记录上次加成 → 求差 → 增量应用"的方式，避免重复叠加。
+ * 加成走 StatBonusSystem 的基数账本（百分比直接由基数重算），
+ * 储存量反复增减、加成因全部移除后，数值精确回到原始值。
  */
 export function syncPumpkin(gs) {
   if (InventorySystem.countItem(gs, 'collectible_sad_pumpkin') < 1) return;
@@ -240,20 +242,11 @@ export function syncPumpkin(gs) {
     // v0.6 新增储存类田块（用户 2026-11-21 确认「悲恸南瓜可以吃到新的储存类作物」）
     stored += (st.hopsStored || 0) + (st.mushroomStored || 0) + (st.blueStored || 0) + (st.pumpkinStored || 0);
   }
-  gs._pumpkin = gs._pumpkin || { stored: 0, hpApplied: 0, atkApplied: 0 };
-  const delta = stored - gs._pumpkin.stored;
-  if (delta === 0) return;
-
-  const baseHp = gs.player.maxHp - gs._pumpkin.hpApplied;
-  const baseAtk = gs.player.atk - gs._pumpkin.atkApplied;
-  const hpAdd = Math.floor(baseHp * 0.02 * delta);
-  const atkAdd = Math.floor(baseAtk * 0.02 * delta);
-
-  applyMaxHp(gs.player, gs.player.maxHp + hpAdd); // 上限变化 → 当前生命按百分比同步
-  gs.player.atk += atkAdd;
+  gs._pumpkin = gs._pumpkin || { stored: 0 };
   gs._pumpkin.stored = stored;
-  gs._pumpkin.hpApplied += hpAdd;
-  gs._pumpkin.atkApplied += atkAdd;
+
+  const pct = 0.02 * stored;
+  setStatBonus(gs.player, STAT_BONUS.SAD_PUMPKIN, stored > 0 ? { hpPct: pct, atkPct: pct } : null);
 }
 
 /**

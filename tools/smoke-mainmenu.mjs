@@ -128,7 +128,7 @@ async function main() {
         mapCount: document.querySelectorAll('#app .map-container').length,
         tileCount: document.querySelectorAll('#app [class*="tile"]').length,
         settingsVisible: document.body.innerText.includes('存 档 管 理'),
-        codexVisible: document.body.innerText.includes('收藏品'),
+        codexVisible: document.body.innerText.includes('天赋'),
         hasGS: !!window.__gameDirector?.getGS?.(),
       };
     })()`);
