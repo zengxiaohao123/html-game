@@ -1,26 +1,29 @@
 // src/systems/TulipSystem.js
 // 郁金香价值体系（魔导书 batch：泡沫 / 郁金香，简单！/ 经济上行）
 //
-// 口径（写入设计文档 §20.2）：
+// 口径（2026-11-22 用户十条答复）：
 //   · 初始价值：物品库 note「郁金香初始价格为 3」→ 3；经济上行再 +6 → 9；
-//   · 波动：默认【每一日开始时】-4~+10（历史值）；泡沫改为 -9~+18；
-//     郁金香，简单！改为【每回合开始时】-4~+9（两者同时拥有时以「简单！」为准）；
-//   · 叠放：简单！生效时可在郁金香上再叠一个郁金香，价值 += 初始价值，波动倍率 +1 倍；
-//     波动量 = 区间随机值 ×（1 + 叠放层数），四舍五入取整；
-//   · 结算：价值 > 50 时 ×1.5（向下取整），< -50 时 ×1.5（向上取整为负债）；
-//     采摘/拆除时若结算值为负 → 仅当拥有《泡沫》才按负值结算（扣金币，金币可为负）；
-//     没有《泡沫》时对外显示 max(0, 价值) 且按 max(0, 结算值) 结算，不扣金币；
-//   · 内部价值永远按真实数值累加（波动/叠放/经济上行都在真实值上加减），绝不中途夹 0；
-//   · 价值 < -100 时，日初波动结算后强制拆除（读【显示值】；不产出、不扣金币）。
-//     没有《泡沫》时显示值恒为 max(0, 内部值) ≥ 0 → 永远不会触发强制拆除；
-//     有《泡沫》时显示值 = 真实值，正常触发。
-//     注意：这条与 settleTulipValue 的 |价值| > 50 → ×1.5 不同，后者读的是真实值。
+//   · 泡沫与简单！修改的是同一条波动特性的两部分，只显示一条特性：
+//       - 泡沫改数值：-9~+18；
+//       - 简单！改节点：日初 → 每回合；
+//       - 两书同持：节点=每回合、区间=-9~+18；
+//   · 波动：未持书【每一日开始时】-4~+10；只持简单！【每回合开始时】-4~+9；
+//     只持泡沫【每一日开始时】-9~+18；
+//   · 叠放（简单！）：价值 += 初始价值（3 / 经济上行 9），每次叠放都加，无上限；
+//     波动结果 ×(1 + 叠放层数)，同格共用一次随机，不出现层间不同数值；
+//   · 【受祝福时】立即使价值波动 2 次，两次各自独立掷点，每次结果再乘叠放倍率；
+//   · 结算：持《泡沫》时 |价值| > 50 → ×1.5（正向下取整 / 负向上取整为负债）；
+//     不持《泡沫》时不做 ×1.5，且对外显示 / 采摘结算夹 0（不扣金币）；
+//   · 内部价值永远按真实数值累加（波动 / 叠放 / 经济上行都在真实值上加减），不会中途夹 0；
+//   · 价值 < -100（读显示值，严格小于）时强制拆除；拆除不结算金币、不产出。
+//     没有《泡沫》时显示值恒为 max(0, 内部值) ≥ 0 → 永远不会触发强制拆除。
 
 import { EventBus } from '../core/EventBus.js';
 import { GE } from '../core/GameEvents.js';
 import { InventorySystem } from './InventorySystem.js';
 import { hasGrimoire, syncPumpkin } from './PassiveItemSystem.js';
 import { addGold } from './GoldSystem.js';
+import { isSuppressed } from './SuppressSystem.js';
 import { isFenceRef, fenceIdxOf } from '../core/TileAccess.js';
 
 export const TULIP_ID = 'facility_tulip';
@@ -49,6 +52,13 @@ export function hasTulipSimple(gs) {
 
 export function hasBubble(gs) {
   return hasGrimoire(gs, GRIMOIRE_BUBBLE);
+}
+
+/** 《泡沫》的常态性质是否生效：被【压制】时与该地块特性一起失效 */
+function bubbleActive(gs, ref = null) {
+  if (!hasBubble(gs)) return false;
+  if (ref != null && isSuppressed(gs, ref)) return false;
+  return true;
 }
 
 export function hasEconomyUp(gs) {
@@ -92,34 +102,40 @@ export function stackTulip(gs, tile) {
   return { value: cs.tulipValue, stacks: cs.tulipStacks };
 }
 
-/** 波动区间基数（不含叠放倍率） */
-function fluctuationBase(gs, mode) {
-  if (mode === 'turn') return randInt(-4, 9);
-  if (mode === 'bless') {
-    if (hasTulipSimple(gs)) return randInt(-4, 9);
-    return hasBubble(gs) ? randInt(-9, 18) : randInt(-4, 10);
-  }
-  // daily
-  return hasBubble(gs) ? randInt(-9, 18) : randInt(-4, 10);
+/**
+ * 当前波动区间：[min, max]；返回 null 表示该时点不波动。
+ * 泡沫只改数值，简单！只改节点：
+ *   未持书 → 日初 -4~+10
+ *   只持简单！ → 回合 -4~+9
+ *   只持泡沫 → 日初 -9~+18
+ *   两书同持 → 回合 -9~+18
+ */
+function fluctuationRange(gs, mode) {
+  if (mode === 'turn' && !hasTulipSimple(gs)) return null;
+  if (mode === 'daily' && hasTulipSimple(gs)) return null;
+  if (hasBubble(gs)) return [-9, 18];
+  if (hasTulipSimple(gs)) return [-4, 9];
+  return [-4, 10];
 }
 
 /**
- * 应用一次波动（bless 模式一次调用=2 次效果）。
+ * 应用一次波动（bless 模式一次调用 = 2 次独立波动）。
  * mode: 'daily' | 'turn' | 'bless'
  * @param {number|object} [ref] 地块 ref（外圈 idx / fence ref），仅用于事件载荷
  * @returns {number} 波动后的价值
  */
 export function applyTulipFluctuation(gs, tile, mode = 'daily', ref = null) {
   if (!tile) return 0;
-  if (mode === 'daily' && hasTulipSimple(gs)) return tulipValue(tile); // 日波动被回合波动替换
-  if (mode === 'turn' && !hasTulipSimple(gs)) return tulipValue(tile); // 未拥有简单！不触发回合波动
+  const range = fluctuationRange(gs, mode);
+  if (!range) return tulipValue(tile); // 该时点不波动（节点被另一本书替换）
 
   const cs = tile.contentState || (tile.contentState = {});
   const times = mode === 'bless' ? 2 : 1;
   const mult = 1 + tulipStacks(tile);
   let v = tulipValue(tile);
   for (let i = 0; i < times; i++) {
-    v += Math.round(fluctuationBase(gs, mode) * mult);
+    // 每次波动独立掷点；同一格内的叠层共用这一次结果，只按倍率放大
+    v += Math.round(randInt(range[0], range[1]) * mult);
   }
   cs.tulipValue = v;
   EventBus.emit(GE.TILE_UPDATED, tulipPayload(gs, tile, ref));
@@ -134,7 +150,7 @@ export function applyTulipFluctuation(gs, tile, mode = 'daily', ref = null) {
  */
 export function maybeForceRemoveTulip(gs, tile, ref = null) {
   if (!tile || tile.contentId !== TULIP_ID) return false;
-  if (tulipDisplayValue(gs, tile) >= TULIP_FORCE_REMOVE_THRESHOLD) return false;
+  if (tulipDisplayValue(gs, tile, ref) >= TULIP_FORCE_REMOVE_THRESHOLD) return false;
 
   tile.contentId = null;
   tile.contentState = {};
@@ -149,9 +165,10 @@ export function maybeForceRemoveTulip(gs, tile, ref = null) {
   return true;
 }
 
-/** 结算价值：|价值| > 50 时 ×1.5（读传入的真实值，不做显示夹取） */
-export function settleTulipValue(raw) {
+/** 结算价值：持《泡沫》（且未被压制）时 |价值| > 50 → ×1.5 */
+export function settleTulipValue(gs, raw, ref = null) {
   let v = Math.round(Number(raw) || 0);
+  if (!bubbleActive(gs, ref)) return v;
   if (v > TULIP_HIGH_THRESHOLD) v = Math.floor(v * 1.5);
   else if (v < -TULIP_HIGH_THRESHOLD) v = -Math.ceil(Math.abs(v) * 1.5);
   return v;
@@ -161,18 +178,18 @@ export function settleTulipValue(raw) {
  * 对外显示值：没有《泡沫》时显示 max(0, 内部真实值)；有《泡沫》时显示真实值（可为负）。
  * 注意只影响显示，不修改内部值。
  */
-export function tulipDisplayValue(gs, tile) {
+export function tulipDisplayValue(gs, tile, ref = null) {
   const v = tulipValue(tile);
-  return hasBubble(gs) ? v : Math.max(0, v);
+  return bubbleActive(gs, ref) ? v : Math.max(0, v);
 }
 
 /**
  * 实际结算值：先按真实值算 ×1.5，再按是否拥有《泡沫》决定负值是否生效。
  * 没有《泡沫》→ max(0, settled)；有《泡沫》→ 真实 settled（可为负）。
  */
-export function tulipSettleValue(gs, tile) {
-  const settled = settleTulipValue(tulipValue(tile));
-  return hasBubble(gs) ? settled : Math.max(0, settled);
+export function tulipSettleValue(gs, tile, ref = null) {
+  const settled = settleTulipValue(gs, tulipValue(tile), ref);
+  return bubbleActive(gs, ref) ? settled : Math.max(0, settled);
 }
 
 function clearTulipTile(tile) {
@@ -187,10 +204,10 @@ function clearTulipTile(tile) {
  * @returns {{ settled: number, rawSettled: number, debt: number, itemValue: number }}
  */
 export function pickTulip(gs, tile, opts = {}) {
-  const { silent = false } = opts;
+  const { silent = false, ref = null } = opts;
   if (!tile || tile.contentId !== TULIP_ID) return { settled: 0, rawSettled: 0, debt: 0, itemValue: 0 };
-  const rawSettled = settleTulipValue(tulipValue(tile));
-  const settled = hasBubble(gs) ? rawSettled : Math.max(0, rawSettled);
+  const rawSettled = settleTulipValue(gs, tulipValue(tile), ref);
+  const settled = bubbleActive(gs, ref) ? rawSettled : Math.max(0, rawSettled);
   let itemValue = 0;
   let debt = 0;
   if (settled < 0) {
@@ -222,8 +239,8 @@ export function pickTulip(gs, tile, opts = {}) {
 }
 
 /** UI 用：当前内部价值 + 对外显示值 + 叠放层数 */
-export function tulipInfo(gs, tile) {
-  return { value: tulipValue(tile), display: tulipDisplayValue(gs, tile), stacks: tulipStacks(tile) };
+export function tulipInfo(gs, tile, ref = null) {
+  return { value: tulipValue(tile), display: tulipDisplayValue(gs, tile, ref), stacks: tulipStacks(tile) };
 }
 
 export const TulipSystem = {

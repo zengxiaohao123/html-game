@@ -46,6 +46,8 @@ const stripBullet = (line) => String(line || '').replace(/^\s*•\s*/, '').trim(
  *           op='replace' → 修改已有特性（match 命中原文行；多本同时命中则描述合并、底色取最高）
  *   shared: 仓廪实共享（稻 / 麦互为视同）—— 满足 via 与原书都持有时追加，底色 = via 的稀有度
  */
+const ownsBook = (gs, id) => !!gs && countItem(gs, id) >= 1;
+
 export const FIELD_TRAIT_PROVENANCE = {
   facility_wheat: {
     mods: [
@@ -95,22 +97,39 @@ export const FIELD_TRAIT_PROVENANCE = {
 
   facility_tulip: {
     mods: [
+      // 泡沫与「简单！」修改同一条波动特性：数值 vs 节点。
+      // 两书同持时合并为一条（节点=每回合、区间=-9~+18），由下面「简单！」那条统一产出。
       {
         grimoire: 'grimoire_bubble',
         op: 'replace',
         match: '【每一日开始时】',
-        line: '【每一日开始时】价值随机 -9~+18；价值可为负（采摘 / 拆除按价值结算金币，|价值| > 50 时 ×1.5，< -100 时强制拆除）',
+        line: (gs) => (ownsBook(gs, 'grimoire_tulip_simple') ? null : '【每一日开始时】价值随机 -9~+18'),
       },
       {
         grimoire: 'grimoire_tulip_simple',
         op: 'replace',
         match: '【每一日开始时】',
-        line: '【每回合开始时】价值随机 -4~+9',
+        line: (gs) => (ownsBook(gs, 'grimoire_bubble')
+          ? '【每回合开始时】价值随机 -9~+18'
+          : '【每回合开始时】价值随机 -4~+9'),
+      },
+      // 简单！把祝福从「引用日初效果」改为直接波动 2 次（有泡沫时即 -9~+18）
+      {
+        grimoire: 'grimoire_tulip_simple',
+        op: 'replace',
+        match: '【受祝福时】',
+        line: '【受祝福时】立即使价值波动 2 次',
+      },
+      // 泡沫后三段合为一条常态特性；被【压制】时随该特性一起失效
+      {
+        grimoire: 'grimoire_bubble',
+        op: 'add',
+        line: '价值可以为负：为负时采摘或拆除扣除对应价值的金币；|价值| > 50 时采摘或拆除价值 ×1.5；价值 < -100 时强制拆除',
       },
       {
         grimoire: 'grimoire_tulip_simple',
         op: 'add',
-        line: '可在郁金香田块上叠放新的郁金香：当前价值 += 初始价值，此后波动效果 +1 倍 / 层',
+        line: '可在郁金香田块上叠放新的郁金香：当前价值 += 初始价值（3；有经济上行时为 9，每次叠放都加），此后波动结果 ×(1 + 叠放层数)',
       },
     ],
   },
@@ -161,8 +180,11 @@ export function fieldContentRows(gs, fieldId, opts = {}) {
       if (mod.op !== 'replace' || !owned(mod.grimoire)) continue;
       const idx = rows.findIndex((r) => r.kind === 'trait' && r.text.includes(mod.match));
       if (idx < 0) continue;
+      // line 可为函数：返回 null 表示「与另一本书合并后由对方统一产出」，避免重复成行
+      const line = typeof mod.line === 'function' ? mod.line(gs) : mod.line;
+      if (!line) continue;
       const rec = replaced.get(idx) || { lines: [], rarity: 1 };
-      rec.lines.push(mod.line);
+      rec.lines.push(line);
       rec.rarity = Math.max(rec.rarity, ITEMS[mod.grimoire]?.rarity || 1);
       replaced.set(idx, rec);
     }
@@ -181,8 +203,10 @@ export function fieldContentRows(gs, fieldId, opts = {}) {
     // 2) 魔导书新增特性
     for (const mod of provenance.mods || []) {
       if (mod.op !== 'add' || !owned(mod.grimoire) || !granted(mod)) continue;
+      const line = typeof mod.line === 'function' ? mod.line(gs) : mod.line;
+      if (!line) continue;
       rows.push({
-        text: mod.line,
+        text: line,
         kind: 'trait',
         rarity: ITEMS[mod.grimoire]?.rarity || 1,
         suppressed: false,

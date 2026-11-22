@@ -35,7 +35,7 @@ export const TulipField = defineField({
       const tile = getTile(gs, ref);
       // 立即触发 2 次波动（叠放倍率 / 泡沫区间 / 简单！回合区间都按当前生效规则）
       applyTulipFluctuation(gs, tile, 'bless', ref);
-      toast(`✨ 郁金香祝福 +2 次波动，当前值 ${tulipDisplayValue(gs, tile)}`, 2000);
+      toast(`✨ 郁金香祝福 +2 次波动，当前值 ${tulipDisplayValue(gs, tile, ref)}`, 2000);
       refreshTile(gs, ref);
     });
   },

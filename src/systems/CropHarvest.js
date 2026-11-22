@@ -146,7 +146,7 @@ export function harvestCropBeforeRemove(gs, tile, ref = null) {
     }
     case TULIP_ID: {
       // 与手动采摘同口径：silent 只省略单条采摘 toast，由下方统一汇总
-      const picked = pickTulip(gs, tile, { silent: true });
+      const picked = pickTulip(gs, tile, { silent: true, ref });
       result.harvested.push(harvestEntry('item_tulip', 1, picked.itemValue));
       result.goldDelta = -picked.debt;
       break;

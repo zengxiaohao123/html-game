@@ -267,7 +267,7 @@ export function placeContent(gs, refOrIdx, contentId) {
       return { ok: false, reason: 'noItem' };
     }
     const { stacks } = stackTulip(gs, tile);
-    const shown = TulipSystem.tulipDisplayValue(gs, tile);
+    const shown = TulipSystem.tulipDisplayValue(gs, tile, ref);
     EventBus.emit(GE.TILE_UPDATED, { ...tilePayload(gs, ref) });
     EventBus.emit(GE.INVENTORY_CHANGE, { type: 'stack', ...tilePayload(gs, ref), contentId });
     EventBus.emit(GE.TOAST_SHOW, {

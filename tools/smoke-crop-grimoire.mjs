@@ -339,10 +339,36 @@ head('6. 郁金香价值体系：波动 / 叠放 / 结算 / 负价值 / 强制�
   Math.random = realRandom;
   check(TulipSystem.tulipValue(tile(0)) === 6 + 9 * 2, '回合波动 +9 × 2 倍 = +18 → 24', TulipSystem.tulipValue(tile(0)));
 
-  // 结算 ×1.5：>50 floor；< -50 用 -ceil
-  check(TulipSystem.settleTulipValue(51) === 76, '51 × 1.5 = 76.5 → floor 76', TulipSystem.settleTulipValue(51));
-  check(TulipSystem.settleTulipValue(-51) === -77, '-51 × 1.5 → -ceil(76.5) = -77', TulipSystem.settleTulipValue(-51));
-  check(TulipSystem.settleTulipValue(50) === 50, '50 不触发 ×1.5', TulipSystem.settleTulipValue(50));
+  // 两书同持：节点=每回合、区间=-9~+18；日初不再波动
+  reset();
+  put(0, TULIP);
+  give(BUBBLE);
+  give(SIMPLE);
+  TulipSystem.initTulipTile(gs, tile(0));
+  Math.random = () => 0.999;
+  TulipSystem.applyTulipFluctuation(gs, tile(0), 'daily');
+  check(TulipSystem.tulipValue(tile(0)) === 3, '两书同持：日初不再波动', TulipSystem.tulipValue(tile(0)));
+  TulipSystem.applyTulipFluctuation(gs, tile(0), 'turn');
+  Math.random = realRandom;
+  check(TulipSystem.tulipValue(tile(0)) === 3 + 18, '两书同持：回合波动取泡沫区间 +18', TulipSystem.tulipValue(tile(0)));
+
+  // 受祝福：2 次各自独立掷点（-9 与 +18），不是同一次结果 ×2
+  reset();
+  put(0, TULIP);
+  give(BUBBLE);
+  give(SIMPLE);
+  TulipSystem.initTulipTile(gs, tile(0));
+  const seq = [0, 0.999];
+  Math.random = () => (seq.length ? seq.shift() : 0.5);
+  TulipSystem.applyTulipFluctuation(gs, tile(0), 'bless');
+  Math.random = realRandom;
+  check(TulipSystem.tulipValue(tile(0)) === 3 - 9 + 18, '祝福 2 次独立掷点：-9 与 +18 → 12', TulipSystem.tulipValue(tile(0)));
+
+  // 结算 ×1.5：>50 floor；< -50 用 -ceil（只在持有《泡沫》时生效）
+  give(BUBBLE);
+  check(TulipSystem.settleTulipValue(gs, 51) === 76, '51 × 1.5 = 76.5 → floor 76', TulipSystem.settleTulipValue(gs, 51));
+  check(TulipSystem.settleTulipValue(gs, -51) === -77, '-51 × 1.5 → -ceil(76.5) = -77', TulipSystem.settleTulipValue(gs, -51));
+  check(TulipSystem.settleTulipValue(gs, 50) === 50, '50 不触发 ×1.5', TulipSystem.settleTulipValue(gs, 50));
 
   // 三日示例（任务 2 关键断言）：内部真实值累加，无《泡沫》时显示/结算夹 0，但绝不在中途把内部值夹 0
   reset();

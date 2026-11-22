@@ -232,9 +232,11 @@ head('2. 郁金香：内部真实值 / 显示夹 0 / 结算夹 0');
 {
   check(TulipSystem.TULIP_FORCE_REMOVE_THRESHOLD === -100, '强制拆除阈值 -100');
 
-  // ×1.5 判定读真实值（不是显示值）
-  check(TulipSystem.settleTulipValue(60) === 90, '真实值 60 → 结算 90（读真实值）');
-  check(TulipSystem.settleTulipValue(-60) === -90, '真实值 -60 → 结算 -90（读真实值）');
+  // ×1.5 判定读真实值（不是显示值），且只在持有《泡沫》时生效
+  reset();
+  give(TulipSystem.GRIMOIRE_BUBBLE);
+  check(TulipSystem.settleTulipValue(gs, 60) === 90, '持泡沫：真实值 60 → 结算 90');
+  check(TulipSystem.settleTulipValue(gs, -60) === -90, '持泡沫：真实值 -60 → 结算 -90');
 
   // 显示：无《泡沫》夹 0；有《泡沫》显示真实负值
   reset();
@@ -248,6 +250,7 @@ head('2. 郁金香：内部真实值 / 显示夹 0 / 结算夹 0');
   check(TulipSystem.tulipSettleValue(gs, tile(0)) === -37, '有《泡沫》结算 -37（|v|≤50 不放大）');
   gs.inventory.items = gs.inventory.items.filter((e) => e.itemId !== TulipSystem.GRIMOIRE_BUBBLE);
   check(TulipSystem.tulipSettleValue(gs, tile(0)) === 0, '无《泡沫》结算 0');
+  check(TulipSystem.settleTulipValue(gs, 60) === 60, '无《泡沫》：60 不做 ×1.5');
 
   // 强制拆除读【显示值】（§16.5.4）：无《泡沫》显示值恒 ≥ 0 → 永不触发
   reset();
@@ -256,6 +259,13 @@ head('2. 郁金香：内部真实值 / 显示夹 0 / 结算夹 0');
   check(TulipSystem.tulipDisplayValue(gs, tile(0)) === 0, '无《泡沫》：显示值 0');
   check(TulipSystem.maybeForceRemoveTulip(gs, tile(0)) === false, '无《泡沫》：显示值 0 → 不触发强制拆除');
   check(tile(0).contentId === 'facility_tulip', '无《泡沫》：田块仍在');
+
+  // 严格小于 -100 才强拆：-100 本身保留
+  reset();
+  put(0, 'facility_tulip', { tulipValue: -100, tulipStacks: 0, tulipInit: true });
+  give(TulipSystem.GRIMOIRE_BUBBLE);
+  check(TulipSystem.maybeForceRemoveTulip(gs, tile(0)) === false, '-100 不强拆（严格小于才拆）');
+  check(tile(0).contentId === 'facility_tulip', '-100：田块仍在');
 
   // 有《泡沫》时显示值 = 真实值 → 正常触发
   reset();

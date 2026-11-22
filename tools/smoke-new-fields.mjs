@@ -757,12 +757,17 @@ head('15. 随机池补向日葵 / 野生种子放置即抽池 / 艾草新特性'
   const isolatedGold = fieldContentRows(gs, 'facility_wheat', { ref: 999 }).find((r) => r.text.includes('【经过时】'));
   check(!isolatedGold, '不在 ≥3 相连簇内的田块：不发放黄金浪特性', isolatedGold);
 
-  // 郁金香两本魔导书：描述合并、底色取最高
+  // 郁金香两本魔导书：修改同一条波动特性的数值与节点 → 只显示一条合并特性
   InventorySystem.addItem(gs, 'grimoire_bubble', 1);
   InventorySystem.addItem(gs, 'grimoire_tulip_simple', 1);
   const tulipRows = fieldContentRows(gs, 'facility_tulip').filter((r) => r.text.includes('价值随机'));
-  check(tulipRows.length >= 2 && tulipRows.every((r) => r.rarity === 3),
-    '郁金香两本：两段描述合并，底色取最高 R3', tulipRows);
+  check(tulipRows.length === 1 && tulipRows[0].text === '【每回合开始时】价值随机 -9~+18',
+    '郁金香两书同持：合并为一条【每回合开始时】-9~+18', tulipRows);
+  check(tulipRows[0]?.rarity === 3, '合并特性底色取最高 R3', tulipRows[0]);
+  const blessRow = fieldContentRows(gs, 'facility_tulip').find((r) => r.text.includes('【受祝福时】'));
+  check(blessRow?.text === '【受祝福时】立即使价值波动 2 次', '简单！改写祝福描述为直接波动 2 次', blessRow);
+  const bubblePassive = fieldContentRows(gs, 'facility_tulip').filter((r) => r.text.startsWith('价值可以为负'));
+  check(bubblePassive.length === 1, '泡沫后三段合并为一条常态特性', bubblePassive);
 }
 
 // ════════════════════════════════════════════════════════════
