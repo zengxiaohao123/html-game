@@ -13,6 +13,7 @@ import { GE } from '../core/GameEvents.js';
 import { takeStoredToBag } from './ProduceSystem.js';
 import { hasGrimoire, syncPumpkin } from './PassiveItemSystem.js';
 import { contentEntries, getTile, isFenceRef } from '../core/TileAccess.js';
+import { isSuppressed } from './SuppressSystem.js';
 import { fenceDimsOf } from '../core/Distance.js';
 
 export const POTATO_ID = 'facility_potato';
@@ -112,6 +113,7 @@ export function harvestPotato(gs, tileRef, qty) {
     let left = num;
     for (const e of potatoEntriesOf(gs)) {
       if (left <= 0) break;
+      if (isSuppressed(gs, e.ref)) continue; // 取走型特性受【压制】约束
       const stored = potatoStoredOf(e.tile);
       if (stored <= 0) continue;
       const take = Math.min(stored, left);
@@ -123,6 +125,7 @@ export function harvestPotato(gs, tileRef, qty) {
       left -= take;
     }
   } else {
+    if (isSuppressed(gs, tileRef)) return { actual: 0, touched: [] }; // 取走型特性受【压制】约束
     const tile = getTile(gs, tileRef);
     const stored = potatoStoredOf(tile);
     const take = Math.min(stored, num);

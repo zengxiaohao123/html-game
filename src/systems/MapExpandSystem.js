@@ -183,11 +183,16 @@ export function expandMapInPlace(gs, axis) {
   }
 
   // ── 1. 旧外圈按网格坐标建索引 ──
+  //    以数组位置作为地块的稳定标识（与 getTile / contentEntries 同口径）；
+  //    tile.idx 只用于生成旧→新映射，避免旧档 idx 失配导致整块内容（含扩散出的蘑菇田块）丢失。
   const oldByXY = new Map();
-  for (const t of map.outerTiles) {
-    const { x, y } = outerIdxToXY(oldDims, t.idx);
+  const oldIdxOfTile = new Map();
+  map.outerTiles.forEach((t, i) => {
+    if (!t) return;
+    oldIdxOfTile.set(t, Number.isInteger(t.idx) ? t.idx : i);
+    const { x, y } = outerIdxToXY(oldDims, i);
     oldByXY.set(xyKey(x, y), t);
-  }
+  });
 
   // ── 2. 重建外圈（按新 idx 顺序）──
   const newOuter = [];
@@ -210,7 +215,7 @@ export function expandMapInPlace(gs, axis) {
     }
 
     if (tile) {
-      if (Number.isInteger(tile.idx)) idxMap.set(tile.idx, idx);
+      if (oldIdxOfTile.has(tile)) idxMap.set(oldIdxOfTile.get(tile), idx);
       tile.idx = idx;
     } else {
       tile = createOuterTile(idx);

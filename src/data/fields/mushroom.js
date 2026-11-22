@@ -3,16 +3,18 @@
 // 【每一日开始时】储存蘑菇*2（至多6）。储存超出上限时向相邻空地块扩散1个蘑菇田块
 // 【进入时】可以取走储存的蘑菇
 // 【受祝福时】储存蘑菇*5。储存超出上限扩散
-// 蘑菇田块所在地块地形为水面时，所有特性失效
+// 蘑菇田块所在地块地形为水面时，其余所有特性失效
 //
 // 扩散口径：目标必须是外圈地块（小径不算）且地块内容为空；多个候选随机 1 个；
 //           一次超上限只扩散 1 块，多余丢弃。
+//           扩散生成的田块与「一手放置」完全等同：同一条 onPlace 初始化 + 同一套地块标识，
+//           扩建时随地块对象一起重映射（不得因扩建消失）。
 
 import { HookDispatcher } from '../../core/HookDispatcher.js';
 import { EventBus } from '../../core/EventBus.js';
 import { GE } from '../../core/GameEvents.js';
 import { Random } from '../../core/Random.js';
-import { getTile, neighborRefs } from '../../core/TileAccess.js';
+import { getTile, isOuterRef, neighborRefs } from '../../core/TileAccess.js';
 import { normalizeTerrain } from '../terrains.js';
 import { produce, CHANNEL } from '../../systems/ProduceSystem.js';
 import {
@@ -46,17 +48,20 @@ export function addMushroomStored(tile, n) {
 export function spreadMushroom(gs, ref) {
   const candidates = [];
   for (const nb of neighborRefs(gs, ref)) {
-    const tile = (gs.map.outerTiles || []).find(t => t.idx === nb);
-    if (tile && !tile.contentId) candidates.push(tile);
+    if (!isOuterRef(gs, nb)) continue; // 小径格不算扩散目标
+    const tile = getTile(gs, nb);      // 以地块位置（数组下标）为准，避免旧 idx 失配
+    if (tile && !tile.contentId) candidates.push({ tile, ref: nb });
   }
   if (candidates.length === 0) return null;
-  const target = Random.pick(candidates);
+  const { tile: target, ref: targetRef } = Random.pick(candidates);
   target.contentId = MUSHROOM_ID;
-  target.contentState = { mushroomStored: 0 };
+  target.contentState = {};
   target.states = [];
   target.dailyFlags = {};
+  // 与 BuildSystem.placeContent 同一条初始化链路：扩散出的田块与手放田块完全等同
+  HookDispatcher.fire('onPlace', { gs, tileIdx: targetRef, tileRef: targetRef, contentId: MUSHROOM_ID });
   EventBus.emit(GE.TILE_CONTENT_CHANGED, {
-    tileIdx: target.idx, tileRef: target.idx, newContentId: MUSHROOM_ID, oldContentId: null,
+    tileIdx: targetRef, tileRef: targetRef, newContentId: MUSHROOM_ID, oldContentId: null,
   });
   EventBus.emit(GE.TOAST_SHOW, {
     text: `🍄 蘑菇田块向相邻空地扩散了 1 个（${ITEMS[MUSHROOM_ID]?.name || '蘑菇田块'}）`, duration: 2400,
@@ -78,7 +83,7 @@ export const MushroomField = defineField({
 
     const grow = (amount, hook) => ({ gs }) => {
       eachOwnTile(gs, this.id, (ref, tile) => {
-        if (isWaterTile(tile)) return; // 水面：所有特性失效
+        if (isWaterTile(tile)) return; // 水面：其余所有特性失效
         let overflow = false;
         produce(gs, {
           ref, itemId: 'item_mushroom', qty: amount, channel: CHANNEL.STORE,

@@ -284,7 +284,7 @@ addItem(gs, 'item_trap', 1);
 gs.map.outerTiles[0].contentState = {};
 const ut = useItem(gs, 'item_trap', { tileIdx: 0 });
 assert(ut.ok, '陷阱放置成功', ut);
-assert(gs.map.outerTiles[0].contentState.placedItems?.[0]?.itemId === 'item_trap', '陷阱进入地块状态');
+assert(gs.map.outerTiles[0].placedItems?.[0]?.itemId === 'item_trap', '陷阱进入地块本身（tile.placedItems）');
 assert(!useItem(gs, 'item_trap', { tileIdx: 0 }).ok || countItem(gs, 'item_trap') === 0, '同名陷阱不能重复放置或已无库存');
 
 head('道具指向模式 + 初级肥料');

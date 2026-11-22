@@ -41,7 +41,7 @@ export function isValidTarget(gs, itemId, target) {
   if (eff.type === 'facility_trigger_twice') return isPlantTarget(gs, target);
 
   // 放置型：任意外圈地块，但同一地块不能重复放同名道具
-  const placed = tile.contentState?.placedItems || [];
+  const placed = tile.placedItems || [];
   return !placed.some((p) => p.itemId === itemId);
 }
 

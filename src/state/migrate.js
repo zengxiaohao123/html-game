@@ -224,6 +224,30 @@ export function migrateGS(loadedGs) {
     if (typeof cell.isPathOuter !== 'boolean') cell.isPathOuter = false;
   }
 
+  // 放置型道具归属迁移：旧档把 placedItems 存在 contentState 里（绑定地块内容），
+  // 新口径挂在 tile.placedItems（绑定地块本身）：拆除/替换内容不消失，扩建随地块重映射。
+  const migratePlacedItems = (tile) => {
+    if (!isPlainObject(tile)) return;
+    const legacy = tile.contentState?.placedItems;
+    if (!Array.isArray(legacy) || legacy.length === 0) {
+      if (isPlainObject(tile.contentState) && 'placedItems' in tile.contentState) {
+        delete tile.contentState.placedItems;
+      }
+      return;
+    }
+    const list = Array.isArray(tile.placedItems) ? tile.placedItems : [];
+    const seen = new Set(list.map((p) => p?.itemId).filter(Boolean));
+    for (const p of legacy) {
+      if (!p?.itemId || seen.has(p.itemId)) continue;
+      seen.add(p.itemId);
+      list.push(p);
+    }
+    tile.placedItems = list;
+    delete tile.contentState.placedItems;
+  };
+  for (const tile of loadedGs.map?.outerTiles || []) migratePlacedItems(tile);
+  for (const cell of loadedGs.map?.fence || []) migratePlacedItems(cell);
+
   // 技能石概念已删除：旧档里的技能石条目换算为对应技能物品（背包 / 出货箱 / 快捷栏 / 商店库存）
   const stoneConverted = migrateLegacySkillStones(loadedGs);
   if (stoneConverted > 0) {

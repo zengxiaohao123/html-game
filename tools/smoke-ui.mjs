@@ -248,7 +248,7 @@ head_('§16.3 地块视觉层级：地形背景层 ~95% + 放置型道具标志�
   assert(flagsOf(tileIdx).length === 0, '无放置型道具 → 无标志');
 
   // 2.1) 单个标志接近 20%
-  tile.contentState = { placedItems: [{ itemId: 'item_trap' }] };
+  tile.placedItems = [{ itemId: 'item_trap' }];
   EventBus.emit(GE.TILE_UPDATED, { tileIdx });
   const flags1 = flagsOf(tileIdx);
   const ratio1 = parseFloat(flags1[0]?.getAttribute('data-size-ratio'));
@@ -256,7 +256,7 @@ head_('§16.3 地块视觉层级：地形背景层 ~95% + 放置型道具标志�
     `单个标志接近 20%（实测 ${(ratio1 * 100).toFixed(1)}%）`, ratio1);
 
   // 3) 两个放置型道具：右下→左下、6%~20%、不重叠
-  tile.contentState = { placedItems: [{ itemId: 'item_trap' }, { itemId: 'item_incense' }] };
+  tile.placedItems = [{ itemId: 'item_trap' }, { itemId: 'item_incense' }];
   EventBus.emit(GE.TILE_UPDATED, { tileIdx });
   const flags2 = flagsOf(tileIdx);
   const wrap2 = wrapOf(tileIdx);
@@ -279,12 +279,12 @@ head_('§16.3 地块视觉层级：地形背景层 ~95% + 放置型道具标志�
   POTIONS.__smoke_placed_d = { name: '烟雾测试放置物D', emoji: '🎯', useEffect: { type: 'placed_smoke_d' } };
 
   // 4) 数量多 → 单个标志更小；非放置型道具（草药）不出标志
-  tile.contentState = { placedItems: [
+  tile.placedItems = [
     { itemId: 'item_trap' }, { itemId: 'item_incense' },
     { itemId: '__smoke_placed_a' }, { itemId: '__smoke_placed_b' },
     { itemId: '__smoke_placed_c' }, { itemId: '__smoke_placed_d' },
     { itemId: 'item_herb' },
-  ] };
+  ];
   EventBus.emit(GE.TILE_UPDATED, { tileIdx });
   const flags6 = flagsOf(tileIdx);
   assert(flags6.length === 6, `6 个放置型道具 → 6 个标志（非放置型物品被过滤，实测 ${flags6.length}）`);
@@ -293,7 +293,7 @@ head_('§16.3 地块视觉层级：地形背景层 ~95% + 放置型道具标志�
     '数量多时单个标志更小且仍在 6%~20%', { ratio2: ratios2[0], ratio6 });
 
   // 5) 数据驱动：新增 useEffect.type 以 placed_ 开头的道具自动出标志
-  tile.contentState = { placedItems: [{ itemId: '__smoke_placed_a' }] };
+  tile.placedItems = [{ itemId: '__smoke_placed_a' }];
   EventBus.emit(GE.TILE_UPDATED, { tileIdx });
   const flagsNew = flagsOf(tileIdx);
   assert(flagsNew.length === 1 && flagsNew[0].getAttribute('data-item-id') === '__smoke_placed_a',
@@ -604,7 +604,7 @@ head_('§16.4 InfoPanel：1/4 宽 + 动态 tab（按选中对象生成）+ 面�
 {
   const tile = gs.map.outerTiles[2];
   const saved = {
-    terrain: tile.terrain, states: tile.states, placedItems: tile.contentState?.placedItems,
+    terrain: tile.terrain, states: tile.states, placedItems: tile.placedItems,
     contentId: tile.contentId, contentState: tile.contentState, px: gs.player.x,
   };
   // 基准：无地形、无状态、玩家不在该格 → 只有「地块内容」
@@ -651,11 +651,35 @@ head_('§16.4 InfoPanel：1/4 宽 + 动态 tab（按选中对象生成）+ 面�
 
   tile.terrain = saved.terrain;
   tile.states = saved.states;
+  tile.placedItems = saved.placedItems;
   tile.contentId = saved.contentId;
   tile.contentState = saved.contentState;
   gs.player.x = saved.px;
   EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
   assert(infoPanel._panelOpen === false, 'UI_PANEL_CLOSE(info) → 滑出');
+}
+
+head_('取走型特性受【压制】约束：被压制时不能取走');
+{
+  const tile = gs.map.outerTiles[3];
+  const saved = { contentId: tile.contentId, contentState: tile.contentState, placedItems: tile.placedItems, px: gs.player.x };
+  tile.contentId = 'facility_strawberry';
+  tile.contentState = { strawberryStored: 5, suppressUntilDay: gs.day + 1 };
+  tile.placedItems = [];
+  gs.player.x = 3; // 草莓为【进入时】取走：玩家需在该格
+  infoPanel.selectTile(3);
+  const btnSuppressed = buttonsWithText(infoPanel.root, '取走草莓')[0];
+  assert(btnSuppressed && btnSuppressed.disabled, '被压制：储存已满也不能取走（按钮禁用）');
+  assert(hasText(infoPanel.root, '取走类特性失效'), '被压制：信息区给出取走失效提示');
+  tile.contentState.suppressUntilDay = 0;
+  infoPanel._renderBody();
+  const btnNormal = buttonsWithText(infoPanel.root, '取走草莓')[0];
+  assert(btnNormal && !btnNormal.disabled, '未压制：储存满时取走按钮可用');
+  tile.contentId = saved.contentId;
+  tile.contentState = saved.contentState;
+  tile.placedItems = saved.placedItems;
+  gs.player.x = saved.px;
+  EventBus.emit(GE.UI_PANEL_CLOSE, { panel: 'info' });
 }
 
 head_('§16.15 InventoryPanel：9 tab + 出货箱 + 幂等 OPEN');
@@ -3059,7 +3083,7 @@ head_('§16.23 放置型道具（陷阱 / 艾草熏香）拖拽放置：与地�
       dataTransfer: { getData: () => itemId },
     });
   };
-  const placedOf = (idx, itemId) => (gs.map.outerTiles[idx].contentState?.placedItems || [])
+  const placedOf = (idx, itemId) => (gs.map.outerTiles[idx].placedItems || [])
     .filter((p) => p.itemId === itemId);
   const flagsOf = (idx, itemId) => findAll(mapView.tileEls.get(idx), (el) =>
     el.getAttribute && el.getAttribute('data-item-id') === itemId
@@ -3601,7 +3625,7 @@ head_('§19 HotBar 全类型物品：拖入 / 点击响应 / 建造模式放置'
     assert(ItemTargeting.isActive() && ItemTargeting.currentItem() === 'item_trap',
       '放置型道具：探索模式点击快捷栏 → 进入既有指向模式（可放置高亮）');
     mapView.tileEls.get(tileA).dispatchEvent({ type: 'click', target: mapView.tileEls.get(tileA), preventDefault() {}, stopPropagation() {} });
-    const placed = (gs.map.outerTiles[tileA].contentState?.placedItems || []).filter((p) => p.itemId === 'item_trap');
+    const placed = (gs.map.outerTiles[tileA].placedItems || []).filter((p) => p.itemId === 'item_trap');
     assert(placed.length === 1, '放置型道具：点合法地块 → 放置成功');
     assert(InventorySystem.countItem(gs, 'item_trap') === beforeTrap, '放置型道具：放置后不消耗、仍留在背包');
     assert(!ItemTargeting.isActive(), '放置型道具：成功后退出指向模式');
@@ -3637,7 +3661,7 @@ head_('§19 HotBar 全类型物品：拖入 / 点击响应 / 建造模式放置'
       '建造模式：点放置型道具槽 → 进入指向模式并高亮可放置地块');
     const tileC = plain[2].idx;
     mapView.tileEls.get(tileC).dispatchEvent({ type: 'click', target: mapView.tileEls.get(tileC), preventDefault() {}, stopPropagation() {} });
-    assert((gs.map.outerTiles[tileC].contentState?.placedItems || []).filter((p) => p.itemId === 'item_trap').length === 1,
+    assert((gs.map.outerTiles[tileC].placedItems || []).filter((p) => p.itemId === 'item_trap').length === 1,
       '建造模式：放置型道具点地块 → 放置成功');
     assert(InventorySystem.countItem(gs, 'item_trap') === beforeTrap, '建造模式：放置型道具不消耗');
     assert(findAll(mapView.tileEls.get(tileC), (el) => el.getAttribute && el.getAttribute('data-item-id') === 'item_trap').length >= 1,
@@ -3650,7 +3674,7 @@ head_('§19 HotBar 全类型物品：拖入 / 点击响应 / 建造模式放置'
     const beforeDup = InventorySystem.countItem(gs, 'item_trap');
     mapView.tileEls.get(tileC).dispatchEvent({ type: 'click', target: mapView.tileEls.get(tileC), preventDefault() {}, stopPropagation() {} });
     EventBus.off(GE.TOAST_SHOW, onToast);
-    const dupPlaced = (gs.map.outerTiles[tileC].contentState?.placedItems || []).filter((p) => p.itemId === 'item_trap');
+    const dupPlaced = (gs.map.outerTiles[tileC].placedItems || []).filter((p) => p.itemId === 'item_trap');
     assert(dupPlaced.length === 1, '非法落点：同名道具重复放置被拒绝（不新增）');
     assert(InventorySystem.countItem(gs, 'item_trap') === beforeDup, '非法落点：拒绝时不消耗道具');
     assert(toasts.some((t) => t.includes('不能使用')), '非法落点：给出明确失败提示');
@@ -3687,7 +3711,7 @@ head_('§19 HotBar 全类型物品：拖入 / 点击响应 / 建造模式放置'
     assert(hotBar.slotEls[tentSlotIdx].classList.contains('selected'), '保留的槽位仍带 selected 类');
     assert(gs.uiState.selectedBuildContentId === 'facility_tent', '保留的槽位仍同步给 MapView');
     const pickEmptyTile = () => gs.map.outerTiles.find((t) =>
-      !t.contentId && !(t.contentState?.placedItems?.length) && t.idx !== gs.player.x).idx;
+      !t.contentId && !(t.placedItems?.length) && t.idx !== gs.player.x).idx;
     const keepTile = pickEmptyTile();
     mapView.tileEls.get(keepTile).click();
     assert(gs.map.outerTiles[keepTile].contentId === 'facility_tent',

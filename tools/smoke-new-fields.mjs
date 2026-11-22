@@ -95,6 +95,7 @@ import { getTile, neighborRefs8, neighborRefs, refXY } from '../src/core/TileAcc
 import * as InventorySystem from '../src/systems/InventorySystem.js';
 import { initPassiveItems, syncPumpkin } from '../src/systems/PassiveItemSystem.js';
 import { FieldAuraSystem } from '../src/systems/FieldAuraSystem.js';
+import { expandMapInPlace, EXPAND_AXIS } from '../src/systems/MapExpandSystem.js';
 import { isSuppressed, releaseBlackberry } from '../src/systems/SuppressSystem.js';
 import {
   blueRadiusFor, isInBlueBreath, isTileCenterInBlueBreath, syncBlueBreath, syncCreatureBlueAura,
@@ -103,7 +104,9 @@ import { produce } from '../src/systems/ProduceSystem.js';
 import { hasProduceBonus, hasAdjacentWater, grantProduceBonus } from '../src/systems/ProduceSystem.js';
 import { takeStoredToBag } from '../src/systems/ProduceSystem.js';
 import { harvestCropBeforeRemove } from '../src/systems/CropHarvest.js';
-import { placeContent } from '../src/systems/BuildSystem.js';
+import { placeContent, clearContent } from '../src/systems/BuildSystem.js';
+import { migrateGS } from '../src/state/migrate.js';
+import { harvestPotato } from '../src/systems/PotatoSystem.js';
 import { POOLS } from '../src/data/items.js';
 import { createEl } from '../src/ui/dom.js';
 import { fieldContentRows } from '../src/data/fieldTraits.js';
@@ -142,6 +145,7 @@ function reset() {
     t.states = [];
     t.dailyFlags = {};
     t.contentState = {};
+    t.placedItems = [];
   }
   gs.player.maxHp = BASE_HP;
   gs.player.atk = BASE_ATK;
@@ -324,7 +328,7 @@ head('7. 蘑菇：水面失效；日初储存 2；满 6 后扩散');
   reset();
   put(ANCHOR, 'facility_mushroom', 'terrain_water');
   dayStart();
-  check(at(ANCHOR).contentState.mushroomStored === undefined || at(ANCHOR).contentState.mushroomStored === 0, '水面：所有特性失效');
+  check(at(ANCHOR).contentState.mushroomStored === undefined || at(ANCHOR).contentState.mushroomStored === 0, '水面：其余所有特性失效');
   at(ANCHOR).terrain = 'terrain_grass';
   dayStart();
   check(at(ANCHOR).contentState.mushroomStored === 2, '日初储存 2', at(ANCHOR).contentState.mushroomStored);
@@ -335,6 +339,16 @@ head('7. 蘑菇：水面失效；日初储存 2；满 6 后扩散');
   dayStart();
   const spread = neighborRefs(gs, ANCHOR).filter((r) => at(r).contentId === 'facility_mushroom').length;
   check(spread >= 1, '满 6 后向相邻空地扩散 1 个蘑菇田块', spread);
+  // 扩散出的田块 = 独立真实田块：扩建后不消失，随地块一起重映射
+  const probe = JSON.parse(JSON.stringify(gs));
+  const mushIdx = new Set(gs.map.outerTiles.filter((t) => t.contentId === 'facility_mushroom').map((t) => t.idx));
+  for (const t of probe.map.outerTiles) if (mushIdx.has(t.idx)) t._probeMush = true;
+  const n0 = probe.map.outerTiles.filter((t) => t._probeMush).length;
+  expandMapInPlace(probe, EXPAND_AXIS.LENGTH);
+  expandMapInPlace(probe, EXPAND_AXIS.WIDTH);
+  const kept = probe.map.outerTiles.filter((t) => t._probeMush && t.contentId === 'facility_mushroom').length;
+  check(n0 === mushIdx.size && kept === n0, '蘑菇扩散田块经两次扩建后仍存在（随地块重映射）',
+    { before: n0, kept });
 }
 
 // ════════════════════════════════════════════════════════════
@@ -533,13 +547,16 @@ head('8e. 展示归类：【压制】/【蓝息】只出现在状态页，不在
   check(!hopTraitLines.some((el) => el._classes.has('is-suppressed')),
     '未浇水不套用封禁样式');
 
-  // 蘑菇：地块为水面 → 所有特性行套用封禁样式
+  // 蘑菇：地块为水面 → 除水面规则行外，其余特性行套用封禁样式
   reset();
   put(ANCHOR, 'facility_mushroom', 'terrain_water');
   panel.selectTile(ANCHOR);
   const mushTraitLines = collect(panel.root, 'trait-line');
-  check(mushTraitLines.length > 0 && mushTraitLines.every((el) => el._classes.has('is-suppressed')),
-    '蘑菇水面：所有特性行套用封禁样式（红底 + 删除线）', mushTraitLines.length);
+  const ruleLine = mushTraitLines.find((el) => el.textContent.includes('所在地块地形为水面时'));
+  const otherLines = mushTraitLines.filter((el) => el !== ruleLine);
+  check(!!ruleLine && !ruleLine._classes.has('is-suppressed'), '蘑菇水面：「其余所有特性失效」规则行本身不划掉');
+  check(otherLines.length > 0 && otherLines.every((el) => el._classes.has('is-suppressed')),
+    '蘑菇水面：其余特性行套用封禁样式（红底 + 删除线）', otherLines.length);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -756,7 +773,7 @@ head('15. 随机池补向日葵 / 野生种子放置即抽池 / 艾草新特性'
   check(codexRows.every((r) => !r.suppressed && r.rarity === 1 && r.kind === 'trait'),
     '图鉴：只显示原始特性、原色、永不封禁');
 
-  // 蘑菇：非水面正常特性；水面时「所有特性失效」→ 整块按封禁样式
+  // 蘑菇：非水面正常特性；水面时「其余所有特性失效」→ 除规则行外按封禁样式
   reset();
   put(ANCHOR, 'facility_mushroom', 'terrain_grass');
   const mushDry = fieldContentRows(gs, 'facility_mushroom', { ref: ANCHOR });
@@ -764,11 +781,14 @@ head('15. 随机池补向日葵 / 野生种子放置即抽池 / 艾草新特性'
     '蘑菇（非水面）：全部按正常特性行渲染');
   at(ANCHOR).terrain = 'terrain_water';
   const mushWet = fieldContentRows(gs, 'facility_mushroom', { ref: ANCHOR });
-  const mushRule = mushWet.find((r) => r.text.includes('所有特性失效'));
-  check(mushWet.every((r) => r.kind === 'trait' && r.suppressed),
-    '蘑菇（水面）：所有特性整条封禁（红底 + 删除线）');
-  check(!!mushRule && mushRule.kind === 'trait',
-    '「所有特性失效」本身也是特性行', mushRule);
+  const mushRule = mushWet.find((r) => r.text.includes('所在地块地形为水面时'));
+  const mushOthers = mushWet.filter((r) => r !== mushRule);
+  check(!!mushRule && mushRule.kind === 'trait' && !mushRule.suppressed,
+    '「其余所有特性失效」规则行本身不划掉', mushRule);
+  check(mushOthers.length > 0 && mushOthers.every((r) => r.kind === 'trait' && r.suppressed),
+    '蘑菇（水面）：其余特性整条封禁（红底 + 删除线）', mushOthers);
+  check(mushRule?.text === '蘑菇田块所在地块地形为水面时，其余所有特性失效',
+    '蘑菇水面文案与物品库一致', mushRule?.text);
   const mushCodex = fieldContentRows(null, 'facility_mushroom', { codex: true });
   check(mushCodex.every((r) => !r.suppressed),
     '蘑菇图鉴：永不显示封禁');
@@ -815,6 +835,59 @@ head('15. 随机池补向日葵 / 野生种子放置即抽池 / 艾草新特性'
     '祝福描述取自物品库原文：立即使价值波动 2 次', blessRow);
   const bubblePassive = fieldContentRows(gs, 'facility_tulip').filter((r) => r.text.startsWith('价值可以为负'));
   check(bubblePassive.length === 1, '泡沫后三段合并为一条常态特性', bubblePassive);
+}
+
+// ════════════════════════════════════════════════════════════
+head('N. 放置型道具归属地块：内容拆除/替换保留；扩建随地块重映射；旧档迁移');
+{
+  reset();
+  put(ANCHOR, 'facility_strawberry');
+  InventorySystem.addItem(gs, 'item_trap', 1);
+  InventorySystem.addItem(gs, 'item_incense', 1);
+  check(useItem(gs, 'item_trap', { tileIdx: ANCHOR }).ok, '陷阱放置成功');
+  check(useItem(gs, 'item_incense', { tileIdx: ANCHOR }).ok, '艾草熏香放置成功');
+  check((at(ANCHOR).placedItems || []).length === 2, '两种放置型道具可共存于同一地块');
+
+  // 替换地块内容：不消失
+  InventorySystem.addItem(gs, 'facility_lavender', 1);
+  placeContent(gs, ANCHOR, 'facility_lavender');
+  check(at(ANCHOR).contentId === 'facility_lavender' && (at(ANCHOR).placedItems || []).length === 2,
+    '替换地块内容后放置型道具不消失');
+  // 拆除地块内容：不消失
+  gs.buildMode = true;
+  const cleared = clearContent(gs, ANCHOR);
+  gs.buildMode = false;
+  check(cleared.ok && !at(ANCHOR).contentId && (at(ANCHOR).placedItems || []).length === 2,
+    '拆除地块内容后放置型道具不消失', cleared);
+
+  // 扩建：随地块一起重映射（右列整体右移）
+  const { x: x0, y: y0 } = refXY(gs, ANCHOR);
+  const oldCols = gs.map.cols;
+  expandMapInPlace(gs, EXPAND_AXIS.LENGTH);
+  const moved = gs.map.outerTiles.find((t) => (t.placedItems || []).length === 2);
+  const { x: x1, y: y1 } = moved ? refXY(gs, moved.idx) : { x: NaN, y: NaN };
+  check(moved && x1 === (x0 === oldCols - 1 ? x0 + 1 : x0) && y1 === y0,
+    '扩建后放置型道具不消失，且随地块按规则重映射', { before: [x0, y0], after: [x1, y1] });
+
+  // 取走型特性受【压制】：土豆田块被压制时不能取走
+  reset();
+  put(ANCHOR, 'facility_potato');
+  at(ANCHOR).contentState = { potatoStored: 5 };
+  check(harvestPotato(gs, ANCHOR, 5).actual === 5, '土豆未压制：可正常收获');
+  at(ANCHOR).contentState.potatoStored = 5;
+  at(ANCHOR).contentState.suppressUntilDay = gs.day + 1;
+  check(harvestPotato(gs, ANCHOR, 5).actual === 0, '土豆被压制：即使有储存也不能取走');
+
+  // 旧档迁移：contentState.placedItems → tile.placedItems
+  reset();
+  const legacy = JSON.parse(JSON.stringify(gs));
+  const lt = legacy.map.outerTiles[ANCHOR];
+  lt.contentState = { placedItems: [{ itemId: 'item_trap', placedDay: 1 }] };
+  delete lt.placedItems;
+  const migrated = migrateGS(legacy);
+  check((migrated.map.outerTiles[ANCHOR].placedItems || []).some((p) => p.itemId === 'item_trap')
+    && !(migrated.map.outerTiles[ANCHOR].contentState?.placedItems),
+    '旧存档迁移：contentState.placedItems 并入 tile.placedItems');
 }
 
 // ════════════════════════════════════════════════════════════

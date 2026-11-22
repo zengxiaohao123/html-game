@@ -373,7 +373,7 @@ export class InfoPanel {
     if (!tile) return false;
     if (tile.terrain && normTerrain(tile.terrain) !== 'terrain_none') return true;
     if ((tile.states || []).length > 0) return true;
-    if ((tile.contentState?.placedItems || []).length > 0) return true;
+    if ((tile.placedItems || []).length > 0) return true;
     if (ref !== undefined && ref !== null && isInBlueBreath(gs, ref)) return true;
     if (ref !== undefined && ref !== null && isSuppressed(gs, ref)) return true;
     return false;
@@ -607,6 +607,8 @@ export class InfoPanel {
     ]);
     if (contentId && FACILITIES_WITH_OPTIONS.has(contentId)) {
       const onTile = refsEqual(playerRef(gs), ref); // 玩家是否身处该格（含生效小径格）
+      // 取走型特性同受【压制】约束：被压制时，即使满足原本条件也不能取走
+      const suppressedNow = ref !== undefined && ref !== null && isSuppressed(gs, ref);
       // L-04：功能选项区仅在「身处该格」或「该设施存在随时可用的选项」时渲染。
       //   郁金香/蒲公英/幽怜草（随时采摘）、鸡舍/史莱姆屋（随时开关门）属于后者；
       //   土豆/草莓/豌豆只有身处该格才有可操作选项 → 不在该格时整块不显示。
@@ -626,6 +628,13 @@ export class InfoPanel {
           text: onTile ? '⚡ 功能选项（你在该格）' : '⚡ 功能选项',
           parent: this.bodyWrap,
         });
+        if (suppressedNow) {
+          createEl('div', {
+            style: { fontSize: '12px', color: '#b03030', marginBottom: '6px' },
+            text: '🚫 该田块已被【压制】，取走类特性失效',
+            parent: this.bodyWrap,
+          });
+        }
       }
 
       // 每个设施的功能选项
@@ -655,9 +664,10 @@ export class InfoPanel {
             class: 'action-btn',
             style: { width: '100%', fontSize: '13px', background: '#fff0c0' },
             text: '🥔 确认收获',
-            disabled: stored <= 0,
+            disabled: stored <= 0 || suppressedNow,
             parent: this.bodyWrap,
             onclick: () => {
+              if (suppressedNow) return;
               const qty = parseInt(range.value, 10) || 0;
               if (qty <= 0) return;
               const { actual } = harvestPotato(gs, ref, qty);
@@ -683,9 +693,10 @@ export class InfoPanel {
             class: 'action-btn',
             style: { width: '100%', fontSize: '13px', background: '#ffcce0' },
             text: '🍓 取走草莓',
-            disabled: !full,
+            disabled: !full || suppressedNow,
             parent: this.bodyWrap,
             onclick: () => {
+              if (suppressedNow) return;
               const curTile = readTile();
               const cs = curTile.contentState || (curTile.contentState = {});
               const qty = cs.strawberryStored || 0;
@@ -724,9 +735,10 @@ export class InfoPanel {
             class: 'action-btn',
             style: { width: '100%', fontSize: '13px', background: '#d0f0d0' },
             text: '🫛 确认收获',
-            disabled: stored <= 0,
+            disabled: stored <= 0 || suppressedNow,
             parent: this.bodyWrap,
             onclick: () => {
+              if (suppressedNow) return;
               const qty = parseInt(range.value, 10) || 0;
               if (qty <= 0) return;
               const curTile = readTile();
@@ -766,9 +778,10 @@ export class InfoPanel {
             class: 'action-btn',
             style: { width: '100%', fontSize: '13px', background: '#e8d8a0' },
             text: '🍺 取走啤酒花',
-            disabled: stored <= 0,
+            disabled: stored <= 0 || suppressedNow,
             parent: this.bodyWrap,
             onclick: () => {
+              if (suppressedNow) return;
               const qty = parseInt(range.value, 10) || 0;
               if (qty <= 0) return;
               const curTile = readTile();
@@ -808,9 +821,10 @@ export class InfoPanel {
             class: 'action-btn',
             style: { width: '100%', fontSize: '13px', background: '#e0d0c0' },
             text: '🍄 取走蘑菇',
-            disabled: stored <= 0,
+            disabled: stored <= 0 || suppressedNow,
             parent: this.bodyWrap,
             onclick: () => {
+              if (suppressedNow) return;
               const qty = parseInt(range.value, 10) || 0;
               if (qty <= 0) return;
               const curTile = readTile();
@@ -850,9 +864,10 @@ export class InfoPanel {
             class: 'action-btn',
             style: { width: '100%', fontSize: '13px', background: '#cfe4ff' },
             text: '💙 取走蓝星果',
-            disabled: stored <= 0,
+            disabled: stored <= 0 || suppressedNow,
             parent: this.bodyWrap,
             onclick: () => {
+              if (suppressedNow) return;
               const qty = parseInt(range.value, 10) || 0;
               if (qty <= 0) return;
               const curTile = readTile();
@@ -1485,7 +1500,7 @@ export class InfoPanel {
     }
 
     // 3) 放置在本地块上的放置型消耗道具（陷阱 / 艾草熏香等）：名称 + 效果描述
-    const placed = tile.contentState?.placedItems || [];
+    const placed = tile.placedItems || [];
     for (const p of placed) {
       const def = POTIONS[p.itemId];
       const row = createEl('div', { class: ['state-row'], parent: this.bodyWrap });

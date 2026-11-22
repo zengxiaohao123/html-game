@@ -15,6 +15,9 @@ import { FieldEffects } from '../systems/FieldEffects.js';
 import { getTile } from '../core/TileAccess.js';
 import { normalizeTerrain } from './terrains.js';
 
+/** 蘑菇水面规则行：该行说明「其余特性失效」，自身不参与封禁划除 */
+const WATER_RULE_RE = /所在地块地形为水面时/;
+
 /** 稀有度底色（1 原色 / 2 绿 / 3 蓝 / 4 紫 / 5 金；0 与 99 用原色） */
 export const TRAIT_FILL = {
   1: '#f5ecd8',
@@ -154,7 +157,7 @@ export function fieldContentRows(gs, fieldId, opts = {}) {
   const owned = (id) => !!gs && countItem(gs, id) >= 1;
   // 条件属于「发放判定」：满足才发放这条特性；背包 / 图鉴等没有真实位置时不发放
   const granted = (entry) => !entry.condition || (!!gs && entry.condition(gs, ref));
-  // 蘑菇田块所在地块地形为水面时，所有特性失效（整块按封禁样式，与【压制】同规格）
+  // 蘑菇田块所在地块地形为水面时，其余所有特性失效（规则本身保持原样，其余特性按封禁样式）
   const waterInvalid = !codex && !!gs && ref !== null && ref !== undefined
     && fieldId === 'facility_mushroom'
     && normalizeTerrain(getTile(gs, ref)?.terrain) === 'terrain_water';
@@ -232,9 +235,18 @@ export function fieldContentRows(gs, fieldId, opts = {}) {
     });
   }
 
-  // 5) 封禁：被【压制】或蘑菇处于水面 → 特性整条变红 + 删除线；图鉴永不红
-  if ((suppressed || waterInvalid) && !codex) {
-    for (const row of rows) if (row.kind === 'trait') row.suppressed = true;
+  // 5) 封禁：蘑菇处于水面 → 除水面规则外的特性变红 + 删除线；被【压制】→ 全部特性变红；图鉴永不红
+  if (!codex) {
+    if (waterInvalid) {
+      for (const row of rows) {
+        if (row.kind !== 'trait') continue;
+        if (WATER_RULE_RE.test(row.text)) continue; // 「所在地块地形为水面时…」这条规则本身不划掉
+        row.suppressed = true;
+      }
+    }
+    if (suppressed) {
+      for (const row of rows) if (row.kind === 'trait') row.suppressed = true;
+    }
   }
   return rows;
 }

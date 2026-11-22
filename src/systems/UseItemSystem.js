@@ -197,13 +197,13 @@ export function useItem(gs, itemId, opts = {}) {
       const targetRef = opts.tileRef ?? opts.tileIdx;
       const tile = getTile(gs, targetRef);
       if (!tile) return { ok: false, reason: 'invalidTileIdx' };
-      tile.contentState = tile.contentState || {};
-      tile.contentState.placedItems = tile.contentState.placedItems || [];
-      if (tile.contentState.placedItems.some((p) => p.itemId === itemId)) {
+      // 放置型道具归属「地块」而非「地块内容」：存在 tile 上，拆除/替换内容不清除，扩建随地块重映射
+      tile.placedItems = tile.placedItems || [];
+      if (tile.placedItems.some((p) => p.itemId === itemId)) {
         EventBus.emit(GE.TOAST_SHOW, { text: '🪤 该地块已有同名放置道具', duration: 1600 });
         return { ok: false, reason: 'duplicate' };
       }
-      tile.contentState.placedItems.push({ itemId, placedDay: gs.day });
+      tile.placedItems.push({ itemId, placedDay: gs.day });
       consumed = false;  // A-11：§14.2 放置型「被放置到地块后持续生效，道具不消失」—— 放置后仍留在背包
       EventBus.emit(GE.TILE_CONTENT_CHANGED, isFenceRef(targetRef)
         ? { tileIdx: null, tileRef: targetRef, fenceIdx: fenceIdxOf(gs, targetRef) }
@@ -239,7 +239,7 @@ export function useItem(gs, itemId, opts = {}) {
 /** 每日开始：结算放置型道具 */
 export function onDailyStart(gs) {
   for (const { tile } of contentEntries(gs)) {
-    const list = tile.contentState?.placedItems;
+    const list = tile.placedItems;
     if (!Array.isArray(list) || list.length === 0) continue;
     for (const p of list) {
       const def = POTIONS[p.itemId];
@@ -261,7 +261,7 @@ export function onDailyStart(gs) {
 /** 睡觉时：结算放置型道具（艾草熏香） */
 export function onSleep(gs) {
   const tile = getTile(gs, playerRef(gs));
-  const list = tile?.contentState?.placedItems;
+  const list = tile?.placedItems;
   if (!Array.isArray(list)) return 0;
   let total = 0;
   for (const p of list) {

@@ -289,7 +289,7 @@ getLastExpandRemap()         // 最近一次扩建的旧→新映射（只读查
 - **I 型（列 +1）**：原最右列（`x = cols-1`）整体右移 1 格到 `x = cols`，腾空的 `x = cols-1` 生成新列——上下端为外圈格，中间为栅栏格；`fenceCols + 1`，新栅栏列追加在末尾。
 - **II 型（行 +1）**：原最上行（`y = 0`）保持，`y ≥ 1` 整体下移 1 行（`y → y+1`），腾空的 `y = 1` 生成新行——左右端为外圈格，中间为栅栏格；`fenceRows + 1`（旧行下移、新行插在最前），栅栏格行索引 `+1`。
 - **跟随规则**：角色恰好站在被移动地块上时随之平移（`player.x/y` 同步重算），该位移**不视为移动**，不触发任何技能/地块效果。
-- **内容保留与索引重映射**：重建 `map.outerTiles` 时按新的环形顺序排布，地块对象（含 `contentId / contentState / terrain / states / dailyFlags`，即设施、资源、技能卡、地形与商店状态）随「同一块地」搬到新 idx；并产出完整 `remap`（外圈 `outerIdx`、栅栏 `fenceIdx`、栅栏 `fenceRow/fenceCol`，含反向表与新增格列表，见上）。扩建同时重映射扩建自己持有的裸索引引用：`player.x`（角色/载具所在格，跟随不视为移动）、`player.visitedTodayIdx`、`creatures[].pos/renderPos/targetPos/renderFrom` 与主格缓存 `row/col`（II 型世界原点下移 1 行）、`fence[].creatures` 缓存（统一存生物 id）、`linkSkillCounters` / `linkSkillCooldowns` 的 `tileIdx|skillId` 键、连携队列的 `tileIdx`/`key`、`uiState.selectedTileIdx`、生物归属 `creatures[].sourceTileIdx`。
+- **内容保留与索引重映射**：重建 `map.outerTiles` 时按新的环形顺序排布，地块对象（含 `contentId / contentState / terrain / states / dailyFlags / placedItems`，即设施、资源、技能卡、地形、商店状态与放置型道具）随「同一块地」搬到新 idx；外圈位置以数组下标为稳定标识（旧档 `idx` 失配时也不会丢内容）。并产出完整 `remap`（外圈 `outerIdx`、栅栏 `fenceIdx`、栅栏 `fenceRow/fenceCol`，含反向表与新增格列表，见上）。扩建同时重映射扩建自己持有的裸索引引用：`player.x`（角色/载具所在格，跟随不视为移动）、`player.visitedTodayIdx`、`creatures[].pos/renderPos/targetPos/renderFrom` 与主格缓存 `row/col`（II 型世界原点下移 1 行）、`fence[].creatures` 缓存（统一存生物 id）、`linkSkillCounters` / `linkSkillCooldowns` 的 `tileIdx|skillId` 键、连携队列的 `tileIdx`/`key`、`uiState.selectedTileIdx`、生物归属 `creatures[].sourceTileIdx`。
 - **归属稳定化（配合 CreatureSystem）**：重映射 `sourceTileIdx` 时同步补 `sourceTileUid`（= 目标地块 `tile.uid`，缺失则生成 `tile_exp_*`）；消费方优先按 uid 判归属，因此扩建后鸡舍/史莱姆屋的归属生物不会退化成野生，且订阅方不会对同一份映射二次重映射。其它系统按裸索引保存位置的引用（如 UI 面板的 `currentTileIdx/currentFenceIdx`）应订阅 `GE.MAP_EXPANDED` 并使用 `payload.remap` 自行重映射，扩建侧不改其文件。
 - **地形**：新外圈格与新增栅栏格都走 §4 地形权重（45/40/10/5）掷骰并写入 `terrainAmount`；初始 3×3 已有的栅栏格保持 `terrain_none`，不回溯。
 - **小径自动延续（原子）**：扩建前先用 `PathGraph.computePathComponents(gs)` 收集「已生效小径块」中**原属栅栏内、因连通被视为外圈（临时外圈）**的小径格，且满足 I 型 `x === oldCols-2`（从右往左第二列）、II 型 `y === 1`（从上往下第二行）；原本就是外圈、仅地形改为小径的格子不在 `comp.fenceIdx` 中，天然不触发。结构重建、玩家/索引重映射完成后，在同一结算内向每个对象对应的新格补 `terrain_path`：I 型补 `(oldCols-1, y)`（新图从右往左第二列、同一行），II 型补 `(x, 1)`（新图从上往下第二行、同一列）。补格免费、不扣任何物品；补格完成后才调用一次 `PathSystem.recomputePathEffect({reason:'expand'})`，因此不会因中途短暂切断而误拆地块内容。返回值 `continued` 为补格 ref 列表，`pathResult` 为重算结果。自动延续未覆盖的情况（目标格不可用等）不做确认/提示，直接按普通还原流程拆除。`player.loc` 与 `visitedTodayRefs` 随 remap 同步重映射。
@@ -481,7 +481,7 @@ getRealtimeClock() / resetRealtimeClock()  // 进程内单例 / 测试重置
   3. 地块内容图标 `.tile-content`：~60~70%，居中，`z-index: 2`。
   4. 角色图标：MapView 根层 `player-avatar`（`z-index: 10`），居中。
   5. 放置型道具标志 `.tile-flags` / `.tile-flag`：`z-index: 3`，贴右下角、沿底边向左。
-- **标志数据驱动**：只读 `tile.contentState.placedItems`，按 `POTIONS[itemId].useEffect.type` 以 `placed_` 开头（或显式 `placement === true`）判定「放置型道具」，不写死 `item_trap` / `item_incense`；新增放置型道具自动出标志。
+- **标志数据驱动**：只读 `tile.placedItems`（地块级，不随 contentState 清空、随扩建重映射），按 `POTIONS[itemId].useEffect.type` 以 `placed_` 开头（或显式 `placement === true`）判定「放置型道具」，不写死 `item_trap` / `item_incense`；新增放置型道具自动出标志。
 - **排列与尺寸**：容器 `right/bottom` 贴边 + `flex-direction: row-reverse`（第一个标志在右下角，后续向左）；单个占比 `clamp(0.20 / max(1, n*0.5), 0.06, 0.20)`，1 个时接近 20%，数量增多逐步缩到 6% 附近，互不重叠且不溢出格子。
 - **覆盖层不被遮挡**：技能高亮（`tile-hl-red/gold/gold-flash` 的 outline + 外发光）、受祝福边框（`.blessed-tile`）、道具指向高亮（`.tile-aim-ok`）都是地块自身的 outline / box-shadow 覆盖样式，绘制在子层之上。
 - **栅栏内地块同一口径**：有地形时同样渲染 `.tile-terrain-bg` 背景层，不再画中心小图标；尺寸与定位基准与外圈格完全一致（同像素口径、同格心居中）。栅栏容器自身 4px 边框会让绝对定位子节点以 padding box 为基准，栅栏格的 `left/top` 已扣减该边框宽度，保证与外圈格落在同一逻辑网格上。
@@ -779,9 +779,10 @@ export const createInitialState = () => ({
     rows: 3,                   // 行数（= 设计文档“宽度”）；扩建 II 型 +1
     cols: 3,                   // 列数（= 设计文档“长度”）；扩建 I 型 +1
     size: 3,                   // 兼容字段：初始 3，扩建后 = Math.max(rows, cols)
-    outerTiles: [],            // 外圈格数组，长度 2rows+2cols-4；每格 { idx, terrain, terrainAmount, contentId, contentState, states: [], dailyFlags: {} }
+    outerTiles: [],            // 外圈格数组，长度 2rows+2cols-4；每格 { idx, terrain, terrainAmount, contentId, contentState, placedItems: [], states: [], dailyFlags: {} }
+                               // 放置型道具存 tile.placedItems（地块级）：拆除/替换地块内容不清除，扩建随地块重映射；旧档 contentState.placedItems 由 migrateGS 迁入
                                // 商店格 contentState.shop = { kind, weekKey, stock:[{id,name,price,group,placeholder,sold}], refreshUsed, visited, freeRefreshPending }
-    fence: [],                 // 栅栏内网格，fenceRows × fenceCols；每格 { row, col, terrain, terrainAmount, contentId, contentState, states: [], dailyFlags: {}, isPathOuter, creatures: [], items: [] }
+    fence: [],                 // 栅栏内网格，fenceRows × fenceCols；每格 { row, col, terrain, terrainAmount, contentId, contentState, placedItems: [], states: [], dailyFlags: {}, isPathOuter, creatures: [], items: [] }
     fenceRows: 1,              // = rows - 2（栅栏内行数；原点恒为网格 (1,1)）
     fenceCols: 1,              // = cols - 2（栅栏内列数；线性索引 = row*fenceCols+col）
     fenceRowCols: 1,           // 兼容字段：初始 = size - 2；扩建后 = fenceRows

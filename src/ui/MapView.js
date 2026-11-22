@@ -580,7 +580,7 @@ export class MapView {
 
   /** 放置型道具标志层：右下角起沿底边向左依次排列，互不重叠 */
   _renderPlacedItemFlags(tileEl, tile, box, ratio) {
-    const placed = (tile.contentState?.placedItems || [])
+    const placed = (tile.placedItems || [])
       .filter((p) => this._isPlacementItem(p.itemId));
     if (placed.length === 0) return;
 

@@ -510,7 +510,7 @@ console.log('\n═══ 23. 放置型道具放置后不消失（§14.2） ═�
   const r = UseItemSystem.useItem(g, 'item_trap', { tileIdx: 0 });
   check(r.ok, '陷阱放置成功');
   check(InventorySystem.countItem(g, 'item_trap') === 1, '放置型道具放置后仍留在背包（不消失）');
-  check(g.map.outerTiles[0].contentState.placedItems?.[0]?.itemId === 'item_trap', '陷阱已登记到地块状态');
+  check(g.map.outerTiles[0].placedItems?.[0]?.itemId === 'item_trap', '陷阱已登记到地块本身（tile.placedItems）');
 }
 
 console.log('\n═══ 24. 易伤同名取最高值（§15） ═══');
