@@ -765,7 +765,8 @@ head('15. 随机池补向日葵 / 野生种子放置即抽池 / 艾草新特性'
     '郁金香两书同持：合并为一条【每回合开始时】-9~+18', tulipRows);
   check(tulipRows[0]?.rarity === 3, '合并特性底色取最高 R3', tulipRows[0]);
   const blessRow = fieldContentRows(gs, 'facility_tulip').find((r) => r.text.includes('【受祝福时】'));
-  check(blessRow?.text === '【受祝福时】立即使价值波动 2 次', '简单！改写祝福描述为直接波动 2 次', blessRow);
+  check(blessRow?.text.includes('【受祝福时】立即使价值波动 2 次') && !blessRow?.text.includes('触发 2 次'),
+    '祝福描述取自物品库原文：立即使价值波动 2 次', blessRow);
   const bubblePassive = fieldContentRows(gs, 'facility_tulip').filter((r) => r.text.startsWith('价值可以为负'));
   check(bubblePassive.length === 1, '泡沫后三段合并为一条常态特性', bubblePassive);
 }

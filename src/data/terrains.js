@@ -62,19 +62,18 @@ export const TERRAINS = {
 
 export const ALL_TERRAIN_IDS = Object.keys(TERRAINS);
 
-/** 地图生成时的初始地形权重（v0.5 §4：50% / 40% / 10%；v0.6 起小径进入地形随机池，权重 5） */
+/** 地图生成时的初始地形权重（v0.5 §4：50% / 40% / 10%）
+ *  v0.6.1 起小径不再进入任何自然生成池：只能通过道具放置获得。 */
 export const TERRAIN_SPAWN_WEIGHTS = [
-  { id: 'terrain_none', weight: 45 },
+  { id: 'terrain_none', weight: 50 },
   { id: 'terrain_grass', weight: 40 },
   { id: 'terrain_water', weight: 10 },
-  { id: 'terrain_path', weight: 5 },
 ];
 
 /**
- * 外圈新地块的生成池：**不含小径**。
- * 小径只应存在于栅栏内（连通后才被视为外圈）；若外圈新格随机刷成小径，
- * 扩建时会被误认成「自动填补把外圈地块改成了小径」，并污染连通判定，
- * 因此外圈生成池直接剔除 terrain_path（在生成源头收口，而不是事后过滤）。
+ * 外圈新地块的生成池：与初始地形同分布（同样不含小径）。
+ * 保留独立常量是为了让「外圈新格」的生成入口语义清晰；
+ * 小径在生成源头就不存在，因此任何扩建都不会随机刷出小径。
  */
 export const OUTER_TERRAIN_SPAWN_WEIGHTS = TERRAIN_SPAWN_WEIGHTS.filter((x) => x.id !== 'terrain_path');
 

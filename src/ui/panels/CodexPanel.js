@@ -245,7 +245,7 @@ export class CodexPanel {
           width: '92px', height: '92px', boxSizing: 'border-box',
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
           gap: '2px', padding: '4px',
-          background: sel ? '#ffe099' : rarityFill(m.rarity),
+          background: rarityFill(m.rarity),
           border: sel ? '3px solid #e8a900' : '2px solid #b8a888',
           borderRadius: '10px', cursor: 'pointer', overflow: 'hidden',
         },

@@ -16,7 +16,7 @@ import { harvestPotato, potatoStoredOf } from '../src/systems/PotatoSystem.js';
 import { setFacilityDoorOpen } from '../src/systems/CreatureSystem.js';
 import { enterShop, leaveShop } from '../src/systems/ShopSystem.js';
 import { InventorySystem } from '../src/systems/InventorySystem.js';
-import { rollSpawnTerrain } from '../src/data/terrains.js';
+import { rollSpawnTerrain, TERRAIN_SPAWN_WEIGHTS, OUTER_TERRAIN_SPAWN_WEIGHTS } from '../src/data/terrains.js';
 import { computePathComponents } from '../src/core/PathGraph.js';
 import { capacityExtra } from '../src/systems/CapacitySystem.js';
 import { MovementSystem } from '../src/systems/MovementSystem.js';
@@ -300,7 +300,7 @@ console.log('\n═══ 8d. 连续快速扩建：外圈地块不会随机成小
   recomputePathEffect(gs);
 
   const prevRandom = Math.random;
-  // 极端抽样：旧随机池下（含小径权重 5）这个值必然落到 terrain_path
+  // 极端抽样：任何随机池都不应再产出小径
   Math.random = () => 0.999;
   let carriedBroken = 0;
   let addedPath = 0;
@@ -329,7 +329,9 @@ console.log('\n═══ 8d. 连续快速扩建：外圈地块不会随机成小
   check(carriedBroken === 0, '连续扩建后搬运的外圈地块地形均未被改写');
   check(addedPath === 0, '连续扩建新增的外圈地块不会随机成小径');
   check(badContinued === 0, '自动延续只落在栅栏内格，从不触碰外圈地块');
-  check(rollSpawnTerrain(() => 0.999) === PATH, '栅栏内新格仍保留「随机出小径」的生成可能性');
+  check(rollSpawnTerrain(() => 0.999) !== PATH, '初始地形池不会随机出小径');
+  check(!TERRAIN_SPAWN_WEIGHTS.some((x) => x.id === PATH), '初始地形权重表不含小径');
+  check(!OUTER_TERRAIN_SPAWN_WEIGHTS.some((x) => x.id === PATH), '外圈地形权重表不含小径');
   Math.random = prevRandom;
 }
 

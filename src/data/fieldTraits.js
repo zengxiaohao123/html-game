@@ -105,6 +105,7 @@ export const FIELD_TRAIT_PROVENANCE = {
         match: '【每一日开始时】',
         line: (gs) => (ownsBook(gs, 'grimoire_tulip_simple') ? null : '【每一日开始时】价值随机 -9~+18'),
       },
+      // 简单！把日初节点换成回合节点；祝福文案以物品库原文为准，不在代码里另拼
       {
         grimoire: 'grimoire_tulip_simple',
         op: 'replace',
@@ -112,13 +113,6 @@ export const FIELD_TRAIT_PROVENANCE = {
         line: (gs) => (ownsBook(gs, 'grimoire_bubble')
           ? '【每回合开始时】价值随机 -9~+18'
           : '【每回合开始时】价值随机 -4~+9'),
-      },
-      // 简单！把祝福从「引用日初效果」改为直接波动 2 次（有泡沫时即 -9~+18）
-      {
-        grimoire: 'grimoire_tulip_simple',
-        op: 'replace',
-        match: '【受祝福时】',
-        line: '【受祝福时】立即使价值波动 2 次',
       },
       // 泡沫后三段合为一条常态特性；被【压制】时随该特性一起失效
       {

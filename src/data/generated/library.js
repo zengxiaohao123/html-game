@@ -1169,7 +1169,7 @@ export const ITEMS = {
   "value": 1,
   "valueMode": "固定值",
   "traits": [],
-  "description": "• 【每一日开始时】价值随机 -4~+10\n• 【受祝福时】立即触发 2 次【每一日开始时】的效果\n• 可以随时采摘",
+  "description": "• 【每一日开始时】价值随机 -4~+10\n• 【受祝福时】立即使价值波动 2 次\n• 可以随时采摘",
   "triggers": [
     "每一日开始时",
     "受祝福时"
@@ -5498,7 +5498,7 @@ export const OUTPUTS = [
     "product": "价值变动",
     "amount": "价值随机 -4~+10",
     "trigger": "每一日开始时",
-    "condition": "受祝福时立即触发 2 次",
+    "condition": "受祝福时立即使价值波动 2 次",
     "notes": null
   },
   {

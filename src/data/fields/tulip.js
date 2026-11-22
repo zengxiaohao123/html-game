@@ -1,7 +1,7 @@
 // src/data/fields/tulip.js
 // 郁金香花田（FAC-003）
 // 【每一日开始时】价值随机 -4 ~ +10（存在 tile.contentState.tulipValue；对外显示 max(0, val)）
-// 【受祝福时】立即触发 2 次每日效果
+// 【受祝福时】立即使价值波动 2 次
 //
 // 魔导书「泡沫」→ -9~+18；「郁金香，简单！」改为每回合波动（此处在日初路径跳过）。
 
@@ -33,7 +33,7 @@ export const TulipField = defineField({
 
     registerSelfHook('onBlessed', this, ({ gs }, ref) => {
       const tile = getTile(gs, ref);
-      // 立即触发 2 次波动（叠放倍率 / 泡沫区间 / 简单！回合区间都按当前生效规则）
+      // 立即使价值波动 2 次（叠放倍率 / 泡沫区间 / 简单！回合区间都按当前生效规则）
       applyTulipFluctuation(gs, tile, 'bless', ref);
       toast(`✨ 郁金香祝福 +2 次波动，当前值 ${tulipDisplayValue(gs, tile, ref)}`, 2000);
       refreshTile(gs, ref);
