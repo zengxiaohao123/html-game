@@ -4,7 +4,7 @@
 //   · 魔导书新增 / 修改的特性 —— 该书稀有度色；多本作用于同一特性时描述合并、底色取最高
 //   · 其他地块给予的临时特性 —— 给予者稀有度色（向日葵 R3 → 蓝）
 //   · 被封禁（【压制】）的特性 —— 整条红底 + 红色删除线（图鉴永不显示红）
-//   · 非特性说明（啤酒花浇水、蘑菇水面失效等）—— 保持原色，不参与封禁
+//   · 地块描述全部按特性行渲染（含啤酒花浇水、蘑菇水面失效等条件型说明），不再另设白名单
 //
 // 物品库只存人类可读描述；「哪一行来自哪本魔导书 / 哪个地块」全部集中在本注册表，
 // 不往物品库新增结构化列。
@@ -12,6 +12,8 @@
 import { ITEMS } from './items.js';
 import { countItem } from '../systems/InventorySystem.js';
 import { FieldEffects } from '../systems/FieldEffects.js';
+import { getTile } from '../core/TileAccess.js';
+import { normalizeTerrain } from './terrains.js';
 
 /** 稀有度底色（1 原色 / 2 绿 / 3 蓝 / 4 紫 / 5 金；0 与 99 用原色） */
 export const TRAIT_FILL = {
@@ -31,14 +33,17 @@ export function rarityFill(rarity) {
   return TRAIT_FILL[n] || TRAIT_FILL[1];
 }
 
-/** 不上色、不参与封禁的原生说明行（非特性） */
-const NOTE_LINES = new Set([
-  '啤酒花需要浇水，当相邻格的地形有水面时，激活特性：【产出时】产量+2',
-  '蘑菇田块所在地块地形为水面时，所有特性失效',
-]);
+/** 不上色、不参与封禁的原生说明行（非特性）：当前没有，保留空集以备后续明确豁免 */
+const NOTE_LINES = new Set();
 
 const stripBullet = (line) => String(line || '').replace(/^\s*•\s*/, '').trim();
 
+/** 该行是否属于「特性」：除显式豁免外，一律按特性渲染（统一米色底） */
+export function isTraitLine(line) {
+  const text = stripBullet(line);
+  if (!text) return false;
+  return !NOTE_LINES.has(text);
+}
 /**
  * 地块特性来源注册表
  *   mods:   魔导书对该田块特性的操作
@@ -129,13 +134,6 @@ export const FIELD_TRAIT_PROVENANCE = {
   },
 };
 
-/** 该行是否属于「特性」：除白名单里的非特性说明外，一律按特性渲染（统一米色底） */
-export function isTraitLine(line) {
-  const text = stripBullet(line);
-  if (!text) return false;
-  return !NOTE_LINES.has(text);
-}
-
 /**
  * 计算某田块「地块内容」应显示的行
  * @param {object|null} gs 游戏状态（图鉴模式 / 未提供时忽略玩家进度）
@@ -156,6 +154,10 @@ export function fieldContentRows(gs, fieldId, opts = {}) {
   const owned = (id) => !!gs && countItem(gs, id) >= 1;
   // 条件属于「发放判定」：满足才发放这条特性；背包 / 图鉴等没有真实位置时不发放
   const granted = (entry) => !entry.condition || (!!gs && entry.condition(gs, ref));
+  // 蘑菇田块所在地块地形为水面时，所有特性失效（整块按封禁样式，与【压制】同规格）
+  const waterInvalid = !codex && !!gs && ref !== null && ref !== undefined
+    && fieldId === 'facility_mushroom'
+    && normalizeTerrain(getTile(gs, ref)?.terrain) === 'terrain_water';
   const nativeLines = String(def.description || '').split('\n').map((l) => l.trim()).filter(Boolean);
 
   let rows = nativeLines.map((line) => ({
@@ -230,8 +232,8 @@ export function fieldContentRows(gs, fieldId, opts = {}) {
     });
   }
 
-  // 5) 【压制】：特性整条变红 + 删除线；非特性说明保持原样；图鉴永不红
-  if (suppressed && !codex) {
+  // 5) 封禁：被【压制】或蘑菇处于水面 → 特性整条变红 + 删除线；图鉴永不红
+  if ((suppressed || waterInvalid) && !codex) {
     for (const row of rows) if (row.kind === 'trait') row.suppressed = true;
   }
   return rows;

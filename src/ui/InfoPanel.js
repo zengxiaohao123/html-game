@@ -530,22 +530,28 @@ export class InfoPanel {
     const cs = tile.contentState || {};
     const onTile = refsEqual(playerRef(gs), ref);
     const rows = [];
+    // 条件型运行信息与地块描述同属特性，统一走特性行样式（米色底 / 封禁红底）
+    const traitRows = [];
+    const fieldSuppressed = !!isSuppressed(gs, ref);
+    const addTrait = (text) => traitRows.push({
+      text, kind: 'trait', rarity: 1, suppressed: fieldSuppressed,
+    });
 
     if (contentId === 'facility_hops') {
       const n = Math.max(0, Math.min(HOPS_MAX, Number(cs.hopsStored) || 0));
       if (!onTile) rows.push(`🍺 已储存 ${n} / ${HOPS_MAX}`);
-      rows.push(hasAdjacentWater(gs, ref)
+      addTrait(hasAdjacentWater(gs, ref)
         ? '💧 相邻水面：已浇水，【产出时】产量 +2'
         : '💧 相邻无水面：未浇水，不触发【产出时】产量 +2');
     } else if (contentId === 'facility_mushroom') {
       const n = Math.max(0, Math.min(MUSHROOM_MAX, Number(cs.mushroomStored) || 0));
       if (!onTile) rows.push(`🍄 已储存 ${n} / ${MUSHROOM_MAX}`);
-      if (normalizeTerrain(tile.terrain) === 'terrain_water') rows.push('🌊 地块为水面：所有特性失效');
+      // 水面失效规则由地块描述行统一渲染并整块封禁，此处不再重复
     } else if (contentId === 'facility_blue_star_fruit') {
       const n = Math.max(0, Math.min(7, Number(cs.blueStored) || 0));
       if (!onTile) rows.push(`💙 已储存 ${n} / 7`);
       // 特性（地块内容）：蓝星果田块给予【蓝息】；影响本身作为 buff 显示在「状态」页
-      rows.push(n > 0
+      addTrait(n > 0
         ? `💙 特性：储存蓝星果后散发【蓝息】（半径 ${blueRadiusFor(n).toFixed(1)} 米）`
         : '💙 特性：尚未储存蓝星果，暂不散发【蓝息】');
     } else if (contentId === 'facility_pumpkin') {
@@ -567,6 +573,7 @@ export class InfoPanel {
       // 行内的【蓝息】【产出时】等术语走 TermText：内联【】并可点击查看释义
       renderTermText(row, text);
     }
+    renderContentRows(this.bodyWrap, traitRows);
   }
 
   /**

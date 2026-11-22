@@ -484,6 +484,11 @@ head('8d. 图标兜底 / 蓝息术语 / 违禁品词条');
 // ════════════════════════════════════════════════════════════
 head('8e. 展示归类：【压制】/【蓝息】只出现在状态页，不在区块内容');
 {
+  const collect = (el, cls, out = []) => {
+    if (el?._classes?.has(cls)) out.push(el);
+    for (const c of el?.children || []) collect(c, cls, out);
+    return out;
+  };
   const { InfoPanel } = await import('../src/ui/InfoPanel.js');
   const panel = new InfoPanel();
   panel.mount();
@@ -514,6 +519,27 @@ head('8e. 展示归类：【压制】/【蓝息】只出现在状态页，不在
   panel.activeTabIdx = blueStateIdx;
   panel._renderBody();
   check(panel.root.textContent.includes('【蓝息】'), '受影响地块（含蓝星果自身）状态页显示蓝息 buff');
+
+  // 啤酒花：浇水说明走特性行；未浇水仍正常显示（不套封禁）
+  reset();
+  put(ANCHOR, 'facility_hops', 'terrain_grass');
+  panel.activeTabIdx = 0;
+  panel.selectTile(ANCHOR);
+  const hopTraitLines = collect(panel.root, 'trait-line');
+  check(hopTraitLines.some((el) => el.textContent.includes('需要浇水')),
+    '啤酒花浇水说明按特性行渲染');
+  check(hopTraitLines.some((el) => el.textContent.includes('未浇水')),
+    '未浇水：运行信息仍按正常特性行显示');
+  check(!hopTraitLines.some((el) => el._classes.has('is-suppressed')),
+    '未浇水不套用封禁样式');
+
+  // 蘑菇：地块为水面 → 所有特性行套用封禁样式
+  reset();
+  put(ANCHOR, 'facility_mushroom', 'terrain_water');
+  panel.selectTile(ANCHOR);
+  const mushTraitLines = collect(panel.root, 'trait-line');
+  check(mushTraitLines.length > 0 && mushTraitLines.every((el) => el._classes.has('is-suppressed')),
+    '蘑菇水面：所有特性行套用封禁样式（红底 + 删除线）', mushTraitLines.length);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -716,16 +742,36 @@ head('15. 随机池补向日葵 / 野生种子放置即抽池 / 艾草新特性'
   check(gs.player.hp >= hpBefore && gs.player.hp - hpBefore >= Math.min(expectHeal, gs.player.maxHp - hpBefore),
     '受祝福回复 25% 生命', { hpBefore, hp: gs.player.hp, maxHp: gs.player.maxHp });
 
-  // ── B / D：特性着色与来源 ──
+  // ── B / D：特性着色与来源（描述全部按特性行渲染，不再有非特性白名单）──
   reset();
   const hopRows = fieldContentRows(gs, 'facility_hops', { suppressed: true });
-  check(hopRows.filter((r) => r.kind === 'trait').every((r) => r.suppressed),
-    '压制：全部特性行标记封禁（红底 + 删除线）');
-  check(hopRows.filter((r) => r.kind === 'note').every((r) => !r.suppressed),
-    '压制：非特性说明（浇水提示）保持原色');
+  check(hopRows.every((r) => r.kind === 'trait'),
+    '啤酒花描述全部按特性行渲染（含浇水说明）');
+  check(hopRows.every((r) => r.suppressed),
+    '压制：啤酒花全部特性行（含浇水说明）标记封禁');
+  const hopWater = hopRows.find((r) => r.text.includes('需要浇水'));
+  check(hopWater && hopWater.rarity === 1 && hopWater.kind === 'trait',
+    '浇水说明：原生原色特性行', hopWater);
   const codexRows = fieldContentRows(null, 'facility_hops', { codex: true, suppressed: true });
-  check(codexRows.every((r) => !r.suppressed && r.rarity === 1),
+  check(codexRows.every((r) => !r.suppressed && r.rarity === 1 && r.kind === 'trait'),
     '图鉴：只显示原始特性、原色、永不封禁');
+
+  // 蘑菇：非水面正常特性；水面时「所有特性失效」→ 整块按封禁样式
+  reset();
+  put(ANCHOR, 'facility_mushroom', 'terrain_grass');
+  const mushDry = fieldContentRows(gs, 'facility_mushroom', { ref: ANCHOR });
+  check(mushDry.every((r) => r.kind === 'trait' && !r.suppressed),
+    '蘑菇（非水面）：全部按正常特性行渲染');
+  at(ANCHOR).terrain = 'terrain_water';
+  const mushWet = fieldContentRows(gs, 'facility_mushroom', { ref: ANCHOR });
+  const mushRule = mushWet.find((r) => r.text.includes('所有特性失效'));
+  check(mushWet.every((r) => r.kind === 'trait' && r.suppressed),
+    '蘑菇（水面）：所有特性整条封禁（红底 + 删除线）');
+  check(!!mushRule && mushRule.kind === 'trait',
+    '「所有特性失效」本身也是特性行', mushRule);
+  const mushCodex = fieldContentRows(null, 'facility_mushroom', { codex: true });
+  check(mushCodex.every((r) => !r.suppressed),
+    '蘑菇图鉴：永不显示封禁');
   const withTemp = fieldContentRows(gs, 'facility_lavender', {
     suppressed: true,
     extraTraits: [{ text: '向日葵临时特性', rarity: 3 }],
