@@ -9,6 +9,7 @@
 //   6) 啤酒花：日初/日末各储存 1（上限 18）；相邻水面激活【产出时】+2；经过自动取走
 //   7) 蘑菇：水面失效；日初储存 2；满 6 不产出不扩散，5/6 溢出一部分才扩散
 //   8) 蓝星果：日初储存 1；半径公式；蓝息变异只掷一次；角色光环 +25% 动态增减
+//   8g) 蓝息按「产出」判定：蓝星果田块【产出时】掷出的向日葵也逐件参与 10% 变异
 //   9) 杨桃：日初/日末/进入 +8；达到 200 产出 1 并重置 100
 //  10) 南瓜：日末 +12；满 100 储存 1；进入取走且田块消失
 //  11) 背包/出货箱按展示词条分堆，搬移保留词条
@@ -599,6 +600,38 @@ head('8f. 悲伤的南瓜：储存反复增减后，最大生命 / 攻击精确�
 }
 
 // ════════════════════════════════════════════════════════════
+head('8g. 蓝息按「产出」判定：蓝星果田块掷出的向日葵也参与 10% 变异');
+{
+  reset();
+  put(ANCHOR, 'facility_sunflower');
+  const blue = neighborRefs(gs, ANCHOR)[0];
+  put(blue, 'facility_blue_star_fruit');
+  Random.pick = (arr) => arr[0];
+  gs.inventory.items = [];
+  // ① 向日葵 10% 命中 ② 第 1 颗向日葵变异命中 ③ +1 那颗变异不中 ④ 递归再掷不中
+  const seq = [true, true, false, false];
+  let calls = 0;
+  Random.chance = () => (calls < seq.length ? seq[calls++] : false);
+  dayStart();
+  check(at(blue).contentState.blueStored === 2, '蓝星果储存 2（基础 1 + 产出时 1）',
+    at(blue).contentState.blueStored);
+  const blueSun = gs.inventory.items
+    .filter((e) => e.itemId === 'item_sunflower' && e.tags)
+    .reduce((s, e) => s + e.qty, 0);
+  const plainSun = gs.inventory.items
+    .filter((e) => e.itemId === 'item_sunflower' && !e.tags)
+    .reduce((s, e) => s + e.qty, 0);
+  check(blueSun === 1 && plainSun === 1,
+    '蓝星果田块掷出的 2 颗向日葵逐件判定：1 颗【湛蓝】【违禁品】、1 颗普通', { blueSun, plainSun });
+  check(calls === 4, '共 4 次概率：授予向日葵 1 + 两件变异 2 + 递归 1', calls);
+  // 蓝星果本体固定【湛蓝】：取走时不参与随机
+  calls = 0;
+  Random.chance = () => { calls += 1; return true; };
+  takeStoredToBag(gs, blue, 'item_blue_starfruit', 2);
+  check(calls === 0, '蓝星果本体恒为【湛蓝】：取走时不掷变异概率', calls);
+}
+
+// ════════════════════════════════════════════════════════════
 head('9. 杨桃：日初/日末/进入 +8；满 200 产出 1 并重置 100');
 {
   reset();
@@ -883,14 +916,14 @@ head('16. 储存类与【产出时】：先产出再落地；满储不再产出'
   takeStoredToBag(gs, blue, 'item_blue_starfruit', 2);
   check(count('item_sunflower') === 0, '取走储存物不触发【产出时】：不会凭空掷出向日葵', count('item_sunflower'));
 
-  // B. 10% 命中一次：递归产出向日葵
+  // B. 10% 命中一次：递归产出向日葵（递归作物本身也走蓝息变异判定）
   blue = setupBlueNextToSunflower();
   let rolls = 0;
-  Random.chance = () => (rolls++ === 0); // 第一次命中、递归里再掷时未命中
+  Random.chance = () => (rolls++ === 0); // 只有「授予向日葵」这次命中
   dayStart();
   check(at(blue).contentState.blueStored === 2, '命中 10%：蓝星果储存仍为 2', at(blue).contentState.blueStored);
   check(count('item_sunflower') === 2, '命中 10%：递归产出向日葵 2（基础 1 + 产出时 1）', count('item_sunflower'));
-  check(rolls === 2, '10% 只在 +1 落地后掷 1 次；递归事件本身再掷 1 次', rolls);
+  check(rolls === 4, '本事件共 4 次概率：授予 1 + 递归两件变异 2 + 递归再掷 1', rolls);
 
   // C. 储存已满 7/7：不产出、不 +1、不掷概率
   blue = setupBlueNextToSunflower();

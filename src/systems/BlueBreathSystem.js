@@ -5,7 +5,9 @@
 //   · 半径 = 0.6 + 0.2 × (储存数 - 1) 米；1 格 = 1 米
 //   · 范围判定分三类：地块按四周边缘接触、角色/NPC 按所在地块中心点、
 //     栅栏内生物按自身碰撞框接触（源心到生物中心 ≤ 蓝息半径 + 生物半径）
-//   · 蓝星果田块自身一定在范围内，但不参与变异（它产出的蓝星果恒为【湛蓝】）
+//   · 蓝星果田块自身在范围内；它产出的蓝星果恒为【湛蓝】、不参与随机，
+//     但它通过【产出时】临时特性额外产出的其它作物（如向日葵）照常逐件判定
+//   · 变异按「产出」判定：范围内田块产出的作物都参与（含蓝星果田块自身掷出的作物）
 //   · 范围重叠取最高、不叠加、不重复判定（变异只掷一次）
 //   · 角色 / 生物 +25% 最大生命与攻击为动态光环；生物移速 +50%（speedPerTile ÷ 1.5）
 //   · 生命上限变化时当前生命按原百分比同步（HealSystem.applyMaxHp，不低于 1）
@@ -96,22 +98,22 @@ export function isTileCenterInBlueBreath(gs, ref) {
   return false;
 }
 
-/** 该格是否可作为变异来源的目标（其他田块、非蓝星果田块） */
+/** 该格是否可作为变异来源的目标（范围内的田块，含蓝星果田块自身） */
 function isMutationTargetTile(gs, ref) {
   const tile = getTile(gs, ref);
   if (!tile || !tile.contentId) return false;
-  if (tile.contentId === BLUE_FIELD_ID) return false;
   return ITEMS[tile.contentId]?.tier2 === '田块';
 }
 
-/** 该物品是否属于「种出的作物」（产物 / 作物） */
+/** 该物品是否属于「产出的作物」（产物 / 作物） */
 export function isCropItem(itemId) {
   const def = ITEMS[itemId];
   return !!def && def.tier1 === '产物' && def.tier2 === '作物';
 }
 
 /**
- * 产出变异判定：在蓝息范围内的其他田块产出的作物，10% 概率变异为【湛蓝】【违禁品】。
+ * 产出变异判定：在蓝息范围内的田块产出的作物，10% 概率变异为【湛蓝】【违禁品】。
+ * 蓝星果本体恒为【湛蓝】，不参与随机；蓝星果田块通过【产出时】额外产出的其它作物照常判定。
  * 范围重叠不重复判定（只掷一次）。
  * @returns {string[]|null} 命中返回展示词条数组，否则 null
  */
