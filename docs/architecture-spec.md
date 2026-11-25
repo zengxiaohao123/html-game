@@ -1207,3 +1207,11 @@ minesNextId: 1,   // 地雷 id 自增序号（逻辑值，入日初基线）
 | 覆盖的储存类 | 土豆（含薯道难共用池）、草莓、豌豆、啤酒花、蘑菇、蓝星果、南瓜（成长阈值）、鸡舍鸡蛋 / 优质蛋（共享上限 10） |
 | 蘑菇扩散 | 只有本次实际存入 > 0 且总量超上限才扩散 1 块；储存已满（一个都存不进）不扩散 |
 | 验收 | `tools/smoke-new-fields.mjs` §7（蘑菇满储不扩散）与 §16（蓝星果 + 向日葵：授予 / 产量 / 储存增量 / 10% 递归 / 满储不掷概率；啤酒花满储） |
+
+### 10.9 向日葵田块位图试验（2026-11-25）
+
+- `Assets.tileImages` 登记的地块内容改用整格位图渲染：图片宽度铺满格子内框、底边贴齐，植株部分向上溢出。位图设 `pointer-events:none`，点击仍以格子 footprint 为准；溢出到相邻格的部分不会抢相邻格的点击。
+- 目前只登记 `facility_sunflower` → `assets/images/facilities/field_sunflower.png`（384×518；底部 384×384 为透视校正后的方形土面，上方为植株溢出区，透明底）。
+- 图标：`Assets.icons.facilities.facility_sunflower` → `assets/images/icons/facility_sunflower.png`（256×256 方形），背包 / 图鉴 / 快捷栏 / 信息区共用同一张图；未登记或图片加载失败时回退原 emoji `🌻`。
+- 回退：删除 `Assets.tileImages` 中对应条目即可恢复 emoji 渲染，其它田块与作物不受影响。
+- 验收：`tools/smoke-ui.mjs` §16.3d 断言位图元素、正式资源路径、emoji 回退，以及其他田块仍走原渲染。

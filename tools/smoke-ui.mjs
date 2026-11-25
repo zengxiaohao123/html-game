@@ -529,6 +529,46 @@ head_('§16.3c 地块内容放置/移除即时刷新（不移动、不做其它�
   if (saved.buildMode !== true) exitBuildMode(gs);
 }
 
+head_('§16.3d 向日葵田块位图试验：整格位图 + 方形图标 + emoji 回退');
+{
+  const { placeContent, clearContent, enterBuildMode, exitBuildMode } = await import('../src/systems/BuildSystem.js');
+  const { InventorySystem } = await import('../src/systems/InventorySystem.js');
+  const { Assets } = await import('../src/core/Assets.js');
+  const tileIdx = gs.map.outerTiles.length - 1;
+  const tile = gs.map.outerTiles[tileIdx];
+  const saved = { contentId: tile.contentId, contentState: tile.contentState, buildMode: gs.buildMode };
+  tile.contentId = null;
+  tile.contentState = {};
+  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+
+  if (gs.buildMode !== true) enterBuildMode(gs);
+  InventorySystem.addItem(gs, 'facility_sunflower', 1);
+  placeContent(gs, tileIdx, 'facility_sunflower');
+  const bitmapsOf = () => findAll(mapView.tileEls.get(tileIdx),
+    (el) => el._classes && el._classes.has('tile-content-bitmap'));
+  const bitmap = bitmapsOf()[0];
+  assert(bitmap?.tagName === 'IMG', '向日葵田块用整格位图渲染', bitmap?.tagName);
+  assert((bitmap?.getAttribute('src') || '').includes('field_sunflower.png'),
+    '位图指向仓库内正式资源', bitmap?.getAttribute('src'));
+  assert(Assets.getTileImage('facility_sunflower') === 'assets/images/facilities/field_sunflower.png',
+    'Assets.tileImages 登记向日葵田块位图');
+  assert(Assets.getEmoji('facilities', 'facility_sunflower') === '🌻',
+    '保留原 emoji 作为资源缺失回退');
+  assert((Assets.getIcon('facilities', 'facility_sunflower') || '')
+    .includes('facility_sunflower.png'), '背包/图鉴/快捷栏共用的方形图标已登记');
+
+  // 其他田块不受影响
+  InventorySystem.addItem(gs, 'facility_corn', 1);
+  placeContent(gs, tileIdx, 'facility_corn');
+  assert(bitmapsOf().length === 0, '其他田块仍走原 emoji / icon 渲染');
+
+  clearContent(gs, tileIdx);
+  tile.contentId = saved.contentId;
+  tile.contentState = saved.contentState;
+  EventBus.emit(GE.TILE_UPDATED, { tileIdx });
+  if (saved.buildMode !== true) exitBuildMode(gs);
+}
+
 head_('§16.6 SpiritArea：只显示精灵图标（无名字文字）');
 {
   const icons = findAll(spiritArea.root, (el) => el.getAttribute && el.getAttribute('data-icon-id'));

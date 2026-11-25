@@ -657,7 +657,7 @@ export class MapView {
       if (!fallback) {
         fallback = Assets.getEmoji('facilities', cell.contentId);
       }
-      tileEl.appendChild(iconEl(group, cell.contentId, {
+      const makeIcon = () => iconEl(group, cell.contentId, {
         def,
         fallback,
         size: `${Math.round(40 * ratio)}px`,
@@ -670,7 +670,38 @@ export class MapView {
           zIndex: '2',
           filter: 'drop-shadow(0 2px 1px rgba(0,0,0,0.3))',
         },
-      }));
+      });
+
+      // ── 试验分支（2026-11-25）──
+      // Assets.tileImages 登记的地块内容改用整格位图：宽高按格子内框铺满，
+      // 土面四边与格子贴齐、植株向上溢出。pointer-events:none 保证点击仍以格子
+      // footprint 为准；图片加载失败时回退到原来的 emoji / icon。
+      // 回退方式：删掉 Assets.tileImages 中对应条目即可，其它逻辑不变。
+      const tileImage = Assets.getTileImage?.(cell.contentId);
+      if (tileImage) {
+        const img = createEl('img', {
+          class: ['tile-content', 'tile-content-bitmap'],
+          attrs: { src: tileImage, alt: '', 'data-bitmap-content': cell.contentId },
+          style: {
+            position: 'absolute',
+            left: '0',
+            bottom: '0',
+            width: '100%',
+            height: 'auto',
+            display: 'block',
+            pointerEvents: 'none',
+            zIndex: '2',
+            filter: 'drop-shadow(0 2px 1px rgba(0,0,0,0.3))',
+          },
+          parent: tileEl,
+        });
+        img.addEventListener('error', () => {
+          if (img.parentNode) img.parentNode.removeChild(img);
+          tileEl.appendChild(makeIcon());
+        });
+      } else {
+        tileEl.appendChild(makeIcon());
+      }
     }
 
     this._renderPlacedItemFlags(tileEl, cell || {}, box, ratio);

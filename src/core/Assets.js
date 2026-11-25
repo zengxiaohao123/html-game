@@ -105,12 +105,22 @@ export const Assets = {
     slime_wind: '🌪️',
   },
 
+  // ── 地块位图（试验，2026-11-25）──
+  // 仅登记在这里的地块内容会用整格位图渲染（土面四边贴齐格子、植株可向上溢出）；
+  // 未登记的内容仍走普通 emoji / icon。删除对应条目即可回退，无需改其它代码。
+  tileImages: {
+    facility_sunflower: 'assets/images/facilities/field_sunflower.png',
+  },
+
   // ── icon PNG 路径映射（阶段 1 新增）──
   // 只有仓库里 **真实存在** 的 PNG 才登记；其余条目 getIcon 返回 null，UI 层应回退 emoji。
   // 美术按 art-icon-manifest.md 补齐 assets/images/icons/*.png 后，
   // 把对应 id 加进来（路径同 manifest）或直接在数据文件的 icon 字段填好即可。
   icons: {
-    facilities: {},
+    facilities: {
+      // 试验：向日葵田块位图配套的方形图标（背包 / 图鉴 / 快捷栏 / 商店共用）
+      facility_sunflower: 'assets/images/icons/facility_sunflower.png',
+    },
     resources: {},
     terrains: {
       terrain_none: 'assets/images/terrain/tile_none.png',
@@ -147,6 +157,15 @@ export const Assets = {
     if (hit) return hit;
     // 物品库自带 emoji 兜底：新增田块 / 物品无需同步维护本表（地图、背包、快捷栏共用）
     return ITEMS[id]?.emoji || '❓';
+  },
+
+  /**
+   * 查表：返回地块整格位图路径；未登记返回 null（调用方回退 emoji / icon）。
+   * @param {string} id 地块内容 id
+   * @returns {string|null}
+   */
+  getTileImage(id) {
+    return Assets.tileImages[id] || null;
   },
 
   /**
