@@ -65,7 +65,8 @@ export const StrawberryField = defineField({
           return a;
         },
       });
-      toast(`✨ 祝福储存 +${actuallyAdded} 草莓（上限 ${STRAWBERRY_MAX}）`, 2000);
+      if (actuallyAdded > 0) toast(`✨ 祝福储存 +${actuallyAdded} 草莓（上限 ${STRAWBERRY_MAX}）`, 2000);
+      else toast(`🍓 储存已满（${STRAWBERRY_MAX}/${STRAWBERRY_MAX}），本次不产出`, 2000);
       afterStorageChange(gs, ref);
     });
   },

@@ -59,9 +59,12 @@ export const HopsField = defineField({
     registerSelfHook('onBlessed', this, ({ gs }, ref) => {
       const tile = tileOf(gs, ref);
       if (!tile) return;
-      produce(gs, { ref, itemId: 'item_hops', qty: 1, channel: CHANNEL.STORE, apply: (k) => addHopsStored(tile, k) });
+      const n = produce(gs, {
+        ref, itemId: 'item_hops', qty: 1, channel: CHANNEL.STORE, apply: (k) => addHopsStored(tile, k),
+      });
       afterStorageChange(gs, ref);
-      toast(`✨ 储存 +1 啤酒花（${hopsStoredOf(tile)}/${HOPS_MAX}）`, 2000);
+      if (n > 0) toast(`✨ 储存 +${n} 啤酒花（${hopsStoredOf(tile)}/${HOPS_MAX}）`, 2000);
+      else toast(`🍺 储存已满（${HOPS_MAX}/${HOPS_MAX}），本次不产出`, 2000);
     });
 
     registerSelfHook('onPass', this, ({ gs }, ref) => {

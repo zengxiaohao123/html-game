@@ -7,6 +7,8 @@
 //
 // 扩散口径：目标必须是外圈地块（小径不算）且地块内容为空；多个候选随机 1 个；
 //           一次超上限只扩散 1 块，多余丢弃。
+//           储存已满（本次一个都存不进）视为没有产出：不扩散、不触发【产出时】。
+//           只有本次真的存入了一部分、且总量超过上限时，才算「溢出」并扩散。
 //           扩散生成的田块与「一手放置」完全等同：同一条 onPlace 初始化 + 同一套地块标识，
 //           扩建时随地块对象一起重映射（不得因扩建消失）。
 
@@ -85,15 +87,18 @@ export const MushroomField = defineField({
       eachOwnTile(gs, this.id, (ref, tile) => {
         if (isWaterTile(tile)) return; // 水面：其余所有特性失效
         let overflow = false;
+        let added = 0;
         produce(gs, {
           ref, itemId: 'item_mushroom', qty: amount, channel: CHANNEL.STORE,
           apply: (k) => {
             const r = addMushroomStored(tile, k);
             if (r.overflow) overflow = true;
+            added += r.added;
             return r.added;
           },
         });
-        if (overflow) spreadMushroom(gs, ref);
+        // 储存已满（added = 0）视为本次没有产出：不扩散
+        if (added > 0 && overflow) spreadMushroom(gs, ref);
         afterStorageChange(gs, ref);
       });
     };
@@ -104,15 +109,17 @@ export const MushroomField = defineField({
       const tile = tileOf(gs, ref);
       if (!tile || isWaterTile(tile)) return;
       let overflow = false;
+      let added = 0;
       produce(gs, {
         ref, itemId: 'item_mushroom', qty: MUSHROOM_BLESS, channel: CHANNEL.STORE,
         apply: (k) => {
           const r = addMushroomStored(tile, k);
           if (r.overflow) overflow = true;
+          added += r.added;
           return r.added;
         },
       });
-      if (overflow) spreadMushroom(gs, ref);
+      if (added > 0 && overflow) spreadMushroom(gs, ref);
       afterStorageChange(gs, ref);
       toast(`✨ 储存蘑菇（${mushroomStoredOf(tile)}/${MUSHROOM_MAX}）`, 2000);
       refreshTile(gs, ref);

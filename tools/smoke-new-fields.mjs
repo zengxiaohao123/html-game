@@ -7,7 +7,7 @@
 //   4) 黑莓：日初压制周围 8 格田块；受祝福清除并进入 4 天解除期
 //   5) 酢浆草：经过自压制 → 当日日末不产出
 //   6) 啤酒花：日初/日末各储存 1（上限 18）；相邻水面激活【产出时】+2；经过自动取走
-//   7) 蘑菇：水面失效；日初储存 2；满 6 后向相邻空地扩散
+//   7) 蘑菇：水面失效；日初储存 2；满 6 不产出不扩散，5/6 溢出一部分才扩散
 //   8) 蓝星果：日初储存 1；半径公式；蓝息变异只掷一次；角色光环 +25% 动态增减
 //   9) 杨桃：日初/日末/进入 +8；达到 200 产出 1 并重置 100
 //  10) 南瓜：日末 +12；满 100 储存 1；进入取走且田块消失
@@ -323,7 +323,7 @@ head('6. 啤酒花：邻水常规 1 + 额外 2 = 3；【产出时】独立于水
 }
 
 // ════════════════════════════════════════════════════════════
-head('7. 蘑菇：水面失效；日初储存 2；满 6 后扩散');
+head('7. 蘑菇：水面失效；日初储存 2；满 6 不产出不扩散；5/6 溢出才扩散');
 {
   reset();
   put(ANCHOR, 'facility_mushroom', 'terrain_water');
@@ -333,12 +333,18 @@ head('7. 蘑菇：水面失效；日初储存 2；满 6 后扩散');
   dayStart();
   check(at(ANCHOR).contentState.mushroomStored === 2, '日初储存 2', at(ANCHOR).contentState.mushroomStored);
   at(ANCHOR).contentState.mushroomStored = 6;
-  const empty = neighborRefs(gs, ANCHOR).find((r) => !at(r).contentId);
-  if (empty !== undefined) at(empty).contentId = null;
   Random.pick = (arr) => arr[0];
+  const mushTiles = () => gs.map.outerTiles.filter((t) => t.contentId === 'facility_mushroom').length;
+  const nFull = mushTiles();
   dayStart();
-  const spread = neighborRefs(gs, ANCHOR).filter((r) => at(r).contentId === 'facility_mushroom').length;
-  check(spread >= 1, '满 6 后向相邻空地扩散 1 个蘑菇田块', spread);
+  check(at(ANCHOR).contentState.mushroomStored === 6 && mushTiles() === nFull,
+    '储存已满 6/6：日初不再产出，也不扩散',
+    { stored: at(ANCHOR).contentState.mushroomStored, tiles: mushTiles() });
+  at(ANCHOR).contentState.mushroomStored = 5;
+  dayStart();
+  check(at(ANCHOR).contentState.mushroomStored === 6 && mushTiles() === nFull + 1,
+    '5/6 → 只落地 1 个，溢出扩散 1 块',
+    { stored: at(ANCHOR).contentState.mushroomStored, tiles: mushTiles() });
   // 扩散出的田块 = 独立真实田块：扩建后不消失，随地块一起重映射
   const probe = JSON.parse(JSON.stringify(gs));
   const mushIdx = new Set(gs.map.outerTiles.filter((t) => t.contentId === 'facility_mushroom').map((t) => t.idx));
@@ -848,6 +854,71 @@ head('15. 随机池补向日葵 / 野生种子放置即抽池 / 艾草新特性'
     '祝福描述取自物品库原文：立即使价值波动 2 次', blessRow);
   const bubblePassive = fieldContentRows(gs, 'facility_tulip').filter((r) => r.text.startsWith('价值可以为负'));
   check(bubblePassive.length === 1, '泡沫后三段合并为一条常态特性', bubblePassive);
+}
+
+// ════════════════════════════════════════════════════════════
+head('16. 储存类与【产出时】：先产出再落地；满储不再产出');
+{
+  const setupBlueNextToSunflower = () => {
+    reset();
+    put(ANCHOR, 'facility_sunflower');
+    const blue = neighborRefs(gs, ANCHOR)[0];
+    put(blue, 'facility_blue_star_fruit');
+    Random.pick = (arr) => arr[0];
+    gs.inventory.items = [];
+    return blue;
+  };
+
+  // A. 空储存：基础 1 + 【产出时】1；10% 未命中
+  let blue = setupBlueNextToSunflower();
+  Random.chance = () => false;
+  dayStart();
+  check(at(blue).contentState.produceBonusDay === gs.day, '向日葵日初授予蓝星果田块 1 条【产出时】',
+    at(blue).contentState.produceBonusDay);
+  check(at(blue).contentState.blueStored === 2, '未命中 10%：蓝星果产量 2（基础 1 + 产出时 1），储存 0→2',
+    at(blue).contentState.blueStored);
+  check(count('item_sunflower') === 0, '未命中 10%：递归不产出向日葵', count('item_sunflower'));
+  // 取走储存物只是搬运：不算产出、不触发【产出时】/10%
+  Random.chance = () => true;
+  takeStoredToBag(gs, blue, 'item_blue_starfruit', 2);
+  check(count('item_sunflower') === 0, '取走储存物不触发【产出时】：不会凭空掷出向日葵', count('item_sunflower'));
+
+  // B. 10% 命中一次：递归产出向日葵
+  blue = setupBlueNextToSunflower();
+  let rolls = 0;
+  Random.chance = () => (rolls++ === 0); // 第一次命中、递归里再掷时未命中
+  dayStart();
+  check(at(blue).contentState.blueStored === 2, '命中 10%：蓝星果储存仍为 2', at(blue).contentState.blueStored);
+  check(count('item_sunflower') === 2, '命中 10%：递归产出向日葵 2（基础 1 + 产出时 1）', count('item_sunflower'));
+  check(rolls === 2, '10% 只在 +1 落地后掷 1 次；递归事件本身再掷 1 次', rolls);
+
+  // C. 储存已满 7/7：不产出、不 +1、不掷概率
+  blue = setupBlueNextToSunflower();
+  at(blue).contentState.blueStored = 7;
+  rolls = 0;
+  Random.chance = () => { rolls += 1; return true; };
+  dayStart();
+  check(at(blue).contentState.produceBonusDay === gs.day, '满储仍会获得【产出时】（满 ≠ 特性失效）',
+    at(blue).contentState.produceBonusDay);
+  check(at(blue).contentState.blueStored === 7, '满储 7/7：日初不再产出，储存不变', at(blue).contentState.blueStored);
+  check(count('item_sunflower') === 0 && rolls === 0, '满储：不触发【产出时】、10% 一次都没掷',
+    { rolls, sun: count('item_sunflower') });
+
+  // D. 啤酒花满储：邻水 +2 与【产出时】+1 都不落地，10% 不掷
+  reset();
+  put(ANCHOR, 'facility_hops');
+  const waterRef = neighborRefs(gs, ANCHOR)[0];
+  at(waterRef).terrain = 'terrain_water';
+  at(waterRef).contentId = null;
+  at(ANCHOR).contentState.hopsStored = 18;
+  grantProduceBonus(at(ANCHOR), gs.day);
+  rolls = 0;
+  Random.chance = () => { rolls += 1; return true; };
+  dayStart();
+  dayEnd();
+  check(at(ANCHOR).contentState.hopsStored === 18, '啤酒花满储 18/18：日初/日末都不再产出',
+    at(ANCHOR).contentState.hopsStored);
+  check(rolls === 0, '啤酒花满储：邻水 +2 / 产出时 +1 均不落地，10% 不掷', rolls);
 }
 
 // ════════════════════════════════════════════════════════════
