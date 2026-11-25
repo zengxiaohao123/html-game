@@ -10,14 +10,15 @@
 //     取走储存物只是搬运，不是产出，不触发【产出时】、不掷向日葵 10%。
 //   · 储存已满 / 容量截断后落地为 0 → 本次没有产出：不叠加【产出时】+1、
 //     不掷 10%，也不结算溢出类效果（蘑菇满 6 不再扩散）。这不属于特性失效。
+//   · 只要本次有实际产出（applied > 0），即使【产出时】+1 被容量截断，仍按本事件掷 1 次 10%。
 //
 // 结算顺序（一次产出事件）：
 //   1. 基础产出落地：背包 / 储存（容量截断）/ 价值（不参与）
 //   1b. 啤酒花田块：相邻有水面时本次基础产量 +2（常规 1 + 额外 2 = 3，答案不叠加覆盖）
 //   2. 若该地块本日带【产出时】临时特性（向日葵授予）且未被【压制】：
 //      本次产量 +1（该次事件只 +1，不按件数放大）
-//   3. 若 +1 真的落地，再以 10% 概率获得向日葵 ×1（入背包），
-//      该次获得向日葵本身又是一次产出事件 → 递归触发【产出时】
+//   3. 一次产出事件只掷 1 次 10%：只要本次有实际产出就掷（即使 +1 被容量截断）；
+//      命中则获得向日葵 ×1（入背包），该次获得向日葵本身又是一次产出事件 → 递归触发【产出时】
 //   4. 背包产出逐件判定蓝息变异（10% → 【湛蓝】【违禁品】）
 //
 // 所有调用方都不应直接 addItem 产出作物，统一走本模块，避免遗漏【产出时】。
@@ -144,13 +145,16 @@ export function produce(gs, opts) {
 
   const traitOn = bonus && ref !== undefined && ref !== null && hasProduceBonus(gs, ref);
   if (traitOn) {
+    // 【产出时】+1 是同一次产出事件内的加量（只加 1 次），不会再次触发【产出时】
     const extra = channel === CHANNEL.STORE
       ? (typeof apply === 'function' ? Math.max(0, apply(1)) : 0)
       : (mutate ? addToBagWithMutation(gs, ref, itemId, 1) : addItem(gs, itemId, 1));
     applied += extra;
 
-    // 只有 +1 真的落地，才继续掷 10% 向日葵；向日葵本身也是一次产出事件（可递归）
-    if (extra > 0 && depth < MAX_RECURSION && Random.chance(PRODUCE_BONUS_RATE)) {
+    // 一次产出事件只掷 1 次 10%：本次已有实际产出就掷，即使 +1 被容量截断也照掷；
+    // 本次 0 落地已在上方提前 return（满储不产出、不掷）。
+    // 命中后的向日葵本身是新的产出事件，按同一口径继续结算。
+    if (depth < MAX_RECURSION && Random.chance(PRODUCE_BONUS_RATE)) {
       devLog.info('[produce] 产出时 → 向日葵 ×1（递归 depth', depth + 1, '）');
       produce(gs, {
         ref, itemId: SUNFLOWER_ID, qty: 1, channel: CHANNEL.BAG, mutate: true, bonus: true, depth: depth + 1,

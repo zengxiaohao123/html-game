@@ -922,6 +922,58 @@ head('16. 储存类与【产出时】：先产出再落地；满储不再产出'
 }
 
 // ════════════════════════════════════════════════════════════
+head('17. 产出事件粒度：+1 是同一次事件的加量，10% 每事件只掷 1 次');
+{
+  // 1) 蓝星果 6/7 + 【产出时】：基础 1 落地到 7，+1 被截断；10% 仍掷 1 次
+  reset();
+  put(ANCHOR, 'facility_sunflower');
+  let blue = neighborRefs(gs, ANCHOR)[0];
+  put(blue, 'facility_blue_star_fruit');
+  at(blue).contentState.blueStored = 6;
+  Random.pick = (arr) => arr[0];
+  let rolls = 0;
+  Random.chance = () => { rolls += 1; return false; };
+  gs.inventory.items = [];
+  dayStart();
+  check(at(blue).contentState.blueStored === 7, '6/7 + 产出时：基础 1 落地到 7，+1 被上限截断',
+    at(blue).contentState.blueStored);
+  check(rolls === 1, '6/7 的本次产出仍掷 1 次 10%（不因 +1 截断而少掷）', rolls);
+  check(count('item_sunflower') === 0, '10% 未命中：本次没有向日葵', count('item_sunflower'));
+
+  // 2) 一次产出多个单位：+1 只加 1 次，且只掷 1 次 10%
+  reset();
+  put(ANCHOR, 'facility_hops');
+  at(ANCHOR).contentState.hopsStored = 0;
+  grantProduceBonus(at(ANCHOR), gs.day);
+  rolls = 0;
+  Random.chance = () => { rolls += 1; return false; };
+  const n = produce(gs, {
+    ref: ANCHOR, itemId: 'item_hops', qty: 3, channel: 'store',
+    apply: (k) => addHopsStored(at(ANCHOR), k),
+  });
+  check(n === 4 && at(ANCHOR).contentState.hopsStored === 4,
+    '一次产出 3 + 产出时 1 = 4（+1 按事件加 1 次，不按件数放大）', n);
+  check(rolls === 1, '一次产出事件只掷 1 次 10%（+1 不再触发【产出时】）', rolls);
+
+  // 3) 蘑菇 4/6 + 产出时：基础 +2 → 6，+1 溢出 → 扩散 1 块，储存封顶 6
+  reset();
+  put(ANCHOR, 'facility_sunflower');
+  const mush = neighborRefs(gs, ANCHOR)[0];
+  put(mush, 'facility_mushroom');
+  at(mush).contentState.mushroomStored = 4;
+  Random.pick = (arr) => arr[0];
+  rolls = 0;
+  Random.chance = () => { rolls += 1; return false; };
+  const mushTiles = () => gs.map.outerTiles.filter((t) => t.contentId === 'facility_mushroom').length;
+  const m0 = mushTiles();
+  dayStart();
+  check(at(mush).contentState.mushroomStored === 6,
+    '蘑菇 4 → 基础 +2 到 6，+1 超上限被丢弃，储存封顶 6', at(mush).contentState.mushroomStored);
+  check(mushTiles() === m0 + 1, '本次溢出触发 1 次扩散', { before: m0, after: mushTiles() });
+  check(rolls === 1, '蘑菇本次有实际产出：只掷 1 次 10%', rolls);
+}
+
+// ════════════════════════════════════════════════════════════
 head('N. 放置型道具归属地块：内容拆除/替换保留；扩建随地块重映射；旧档迁移');
 {
   reset();
